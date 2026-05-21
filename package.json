@@ -1,0 +1,22 @@
+{
+  "name": "xxyy-ask",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interview-ready AI agent and RAG support assistant for XXYY documentation.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @xxyy-ask/web dev",
+    "build:web": "pnpm --filter @xxyy-ask/web build",
+    "lint:ts": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "dev:api": "uvicorn xxyy_agent_api.main:app --app-dir apps/agent-api/src --reload --host 0.0.0.0 --port 8000",
+    "test:api": "pytest apps/agent-api/tests -q",
+    "lint:python": "ruff check apps",
+    "format:python": "ruff format apps"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}
+

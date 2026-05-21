@@ -1,0 +1,43 @@
+[project]
+name = "xxyy-ask"
+version = "0.1.0"
+description = "Interview-ready AI agent and RAG support assistant for XXYY documentation."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "fastapi>=0.115.0",
+  "httpx>=0.27.0",
+  "langchain>=0.3.0",
+  "langgraph>=0.2.0",
+  "openai>=1.0.0",
+  "pydantic-settings>=2.5.0",
+  "python-dotenv>=1.0.1",
+  "python-telegram-bot>=21.0",
+  "supabase>=2.0.0",
+  "uvicorn[standard]>=0.30.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.11.0",
+  "pytest>=8.3.0",
+  "ruff>=0.6.0"
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "apps/agent-api/src",
+  "apps/bot/src"
+]
+testpaths = [
+  "apps/agent-api/tests"
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
