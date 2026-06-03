@@ -1,16 +1,17 @@
 # XXYY 产品功能知识库
 
-本目录由 https://docs.xxyy.io/ 的中文产品功能文档整理而来，用于 xxyy-ask RAG 客服系统的知识库种子。
+本目录主要由 https://docs.xxyy.io/ 的中文产品功能文档整理而来，并补充官方 X 账号历史更新内容，用于 xxyy-ask RAG 客服系统的知识库种子。
 
 ## 范围
 
 已纳入：产品概览、新手入门、钱包连接、交易钱包、移动端登录、邀请、交易代币、快捷交易、发现、搜索、K 线区域、代币信息区、Dashboard、扫链、持仓盈亏、钱包管理、XXYY Pro 权益等产品功能页面。
 
-未纳入：API 参考文档、Telegram 官方答疑群、功能更新、用户条款、隐私协议，以及英文镜像页面。
+官网清洗文档未纳入：API 参考文档、Telegram 官方答疑群、用户条款、隐私协议，以及英文镜像页面。官方 X 历史功能更新已单独整理为 `xxyy-x-updates.md`。
 
 ## 文件
 
 - `xxyy-product-functions.md`：按产品模块汇总后的完整知识库文档。
+- `xxyy-x-updates.md`：按官方 X 历史推文整理的产品更新汇总，用于补充官网文档之外的迭代信息。
 - `pages/`：按 GitBook 原始页面拆分的清洗版 Markdown。
 - `manifest.jsonl`：每个页面一行元数据，方便后续入库、切分和 embedding。
 
