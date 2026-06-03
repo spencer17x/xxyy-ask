@@ -10,16 +10,26 @@
 
 这些文档主要由 `https://docs.xxyy.io/` 的中文产品功能页面整理而来，并补充官方 X 账号历史更新内容，后续可作为 RAG 客服系统的知识库种子。
 
-## 产品客服 RAG
+## 产品客服 Agentic RAG
 
 当前实现采用轻量 pnpm workspace monorepo：
 
 - `packages/shared`：共享类型与聊天请求/响应契约。
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、索引读写。
-- `packages/rag-core`：意图分类、混合检索、客服回答、评测。
+- `packages/rag-core`：意图分类、混合检索、LLM 回答生成、边界回复、评测。
 - `apps/cli`：本地 `ingest` / `ask` / `evaluate`。
 - `apps/api`：`GET /health`、`POST /api/chat`，并在 `/` 提供 Web UI。
 - `apps/web`：静态聊天页，调用同源 `/api/chat`。
+
+LLM 配置：
+
+```bash
+cp .env.example .env
+export OPENAI_API_KEY="你的 API Key"
+export OPENAI_MODEL="你的模型名"
+```
+
+默认使用 OpenAI 兼容的 Chat Completions 接口，`OPENAI_BASE_URL` 默认是 `https://api.openai.com/v1`。如果使用兼容服务，可以把 `OPENAI_BASE_URL` 改成对应地址。
 
 常用命令：
 
@@ -30,7 +40,7 @@ pnpm rag:evaluate
 pnpm start
 ```
 
-默认索引文件写入 `.rag/index.json`，该目录不提交。启动 API 前如果索引不存在，先运行 `pnpm rag:ingest`。Web UI 由 `apps/api` 在 `/` 提供，因此本地体验直接运行 `pnpm start` 后打开 API 地址即可。
+默认索引文件写入 `.rag/index.json`，该目录不提交。启动 API 前如果索引不存在，先运行 `pnpm rag:ingest`。产品问答会检索知识库片段，再调用 LLM 生成客服回答；如果缺少 `OPENAI_API_KEY` 或 `OPENAI_MODEL`，CLI 会直接报错，API 会返回 `llm_configuration_missing`。Web UI 由 `apps/api` 在 `/` 提供，因此本地体验直接运行 `pnpm start` 后打开 API 地址即可。
 
 HTTP 交互：
 

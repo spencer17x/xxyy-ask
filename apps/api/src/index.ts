@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { loadKnowledgeIndex } from '@xxyy/knowledge';
-import { createChatService, loadRagConfig } from '@xxyy/rag-core';
+import { createChatService, LlmConfigurationError, loadRagConfig } from '@xxyy/rag-core';
 import type { ChatRequest, ChatChannel } from '@xxyy/shared';
 import { supportedChannels } from '@xxyy/shared';
 import type { ChatService, RagEnv } from '@xxyy/rag-core';
@@ -59,7 +59,8 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const absoluteIndexPath = path.resolve(cwd, config.indexPath);
   const renderHtml = options.renderHtml ?? renderChatPage;
   const getChatService =
-    options.getChatService ?? createCachedChatServiceLoader(absoluteIndexPath, displayIndexPath);
+    options.getChatService ??
+    createCachedChatServiceLoader(absoluteIndexPath, displayIndexPath, config);
 
   return async function handleRequest(request, response): Promise<void> {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
@@ -96,6 +97,14 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
 
       if (error instanceof BadRequestError) {
         sendJson(response, 400, { error: 'bad_request', message: error.message });
+        return;
+      }
+
+      if (error instanceof LlmConfigurationError) {
+        sendJson(response, 503, {
+          error: 'llm_configuration_missing',
+          message: error.message,
+        });
         return;
       }
 
@@ -139,6 +148,7 @@ export function startServer(
 function createCachedChatServiceLoader(
   absoluteIndexPath: string,
   displayIndexPath: string,
+  config: ReturnType<typeof loadRagConfig>,
 ): () => Promise<ChatService> {
   let cachedService: ChatService | undefined;
 
@@ -149,7 +159,7 @@ function createCachedChatServiceLoader(
 
     try {
       const index = await loadKnowledgeIndex(absoluteIndexPath);
-      cachedService = createChatService({ index });
+      cachedService = createChatService({ config, index });
       return cachedService;
     } catch (error) {
       if (isMissingFileError(error)) {

@@ -4,7 +4,9 @@ import {
   classifyQuestion,
   createChatService,
   createGroundedAnswer,
+  createOpenAiAnswerProvider,
   evaluateCases,
+  LlmConfigurationError,
   loadRagConfig,
   retrieve,
   workspacePackageName,
@@ -17,6 +19,8 @@ describe('rag-core public exports', () => {
     expect(classifyQuestion).toBeTypeOf('function');
     expect(retrieve).toBeTypeOf('function');
     expect(createGroundedAnswer).toBeTypeOf('function');
+    expect(createOpenAiAnswerProvider).toBeTypeOf('function');
+    expect(LlmConfigurationError).toBeTypeOf('function');
     expect(createChatService).toBeTypeOf('function');
     expect(evaluateCases).toBeTypeOf('function');
   });

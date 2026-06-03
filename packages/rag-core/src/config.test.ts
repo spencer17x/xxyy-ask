@@ -6,10 +6,13 @@ describe('loadRagConfig', () => {
   it('returns deterministic defaults when no environment is provided', () => {
     expect(loadRagConfig({})).toEqual({
       topK: 6,
-      answerProvider: 'extractive',
+      answerProvider: 'openai',
       embeddingProvider: 'local',
       indexPath: '.rag/index.json',
+      openAiApiKey: undefined,
+      openAiBaseUrl: 'https://api.openai.com/v1',
       openAiApiKeyPresent: false,
+      openAiModel: undefined,
     });
   });
 
@@ -21,13 +24,18 @@ describe('loadRagConfig', () => {
         RAG_EMBEDDING_PROVIDER: 'future-embeddings',
         RAG_INDEX_PATH: '/tmp/xxyy-index.json',
         RAG_TOP_K: '3',
+        OPENAI_BASE_URL: 'https://llm.example/v1',
+        OPENAI_MODEL: 'gpt-test',
       }),
     ).toEqual({
       topK: 3,
       answerProvider: 'future-provider',
       embeddingProvider: 'future-embeddings',
       indexPath: '/tmp/xxyy-index.json',
+      openAiApiKey: 'sk-future-only',
+      openAiBaseUrl: 'https://llm.example/v1',
       openAiApiKeyPresent: true,
+      openAiModel: 'gpt-test',
     });
   });
 

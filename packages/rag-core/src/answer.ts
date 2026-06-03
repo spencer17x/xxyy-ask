@@ -24,7 +24,7 @@ export function createGroundedAnswer(
     };
   }
 
-  const citations = retrievedChunks.slice(0, MAX_CITATIONS).map(createCitation);
+  const citations = createCitationsFromChunks(retrievedChunks);
   const excerpts = citations.map((citation) => citation.excerpt);
   const answerPrefix =
     classification.intent === 'how_to' ? '根据知识库，可以按这些信息操作：' : '根据知识库，';
@@ -40,7 +40,7 @@ export function createGroundedAnswer(
   };
 }
 
-function createBoundaryAnswer(classification: Classification): ChatResponse {
+export function createBoundaryAnswer(classification: Classification): ChatResponse {
   return {
     answer: boundaryText(classification.intent),
     intent: classification.intent,
@@ -63,6 +63,10 @@ function boundaryText(intent: Intent): string {
     case 'how_to':
       return '暂时没有找到可引用的知识库内容。';
   }
+}
+
+export function createCitationsFromChunks(retrievedChunks: RetrievedChunk[]): Citation[] {
+  return retrievedChunks.slice(0, MAX_CITATIONS).map(createCitation);
 }
 
 function createCitation(chunk: RetrievedChunk): Citation {

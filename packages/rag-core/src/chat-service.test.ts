@@ -1,11 +1,32 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ChatResponse } from '@xxyy/shared';
+
+import type { AnswerProvider } from './answer-provider.js';
 import { createChatService } from './chat-service.js';
 import { createFixtureIndex } from './test-fixtures.js';
 
 describe('createChatService', () => {
-  it('classifies, retrieves, and answers grounded product questions', async () => {
+  it('classifies, retrieves, and delegates grounded product questions to the answer provider', async () => {
+    const calls: string[] = [];
+    const answerProvider: AnswerProvider = {
+      answer({ question, retrievedChunks }) {
+        calls.push(question);
+        const response: ChatResponse = {
+          answer: '可以通过 Telegram 钱包监控页面设置提醒。',
+          citations: retrievedChunks.map((chunk) => ({
+            excerpt: chunk.text,
+            file: 'docs/telegram.md',
+            title: chunk.metadata.title,
+          })),
+          confidence: 0.88,
+          intent: 'how_to',
+        };
+        return Promise.resolve(response);
+      },
+    };
     const service = createChatService({
+      answerProvider,
       config: { topK: 1 },
       index: createFixtureIndex([
         {
@@ -25,9 +46,10 @@ describe('createChatService', () => {
     });
 
     expect(response.intent).toBe('how_to');
-    expect(response.answer).toContain('Telegram');
+    expect(response.answer).toContain('Telegram 钱包监控');
     expect(response.citations).toHaveLength(1);
     expect(response.citations[0]?.file).toBe('docs/telegram.md');
+    expect(calls).toEqual(['如何设置 Telegram 钱包监控？']);
   });
 
   it('does not retrieve factual answers for realtime account lookup requests', async () => {
@@ -52,8 +74,58 @@ describe('createChatService', () => {
     expect(response.citations).toEqual([]);
   });
 
-  it('keeps investment boundary when a profit promise is mixed into a product operation question', async () => {
+  it('requires LLM configuration for grounded product questions when no provider is injected', async () => {
     const service = createChatService({
+      config: {
+        answerProvider: 'openai',
+        openAiApiKeyPresent: false,
+        openAiModel: undefined,
+      },
+      index: createFixtureIndex([
+        {
+          id: 'official_docs:pro:chunk:0001',
+          title: 'XXYY Pro 权益',
+          sourceType: 'official_docs',
+          text: 'XXYY Pro 支持更多提醒。',
+        },
+      ]),
+    });
+
+    await expect(
+      service.ask({
+        channel: 'cli',
+        message: 'XXYY Pro 有哪些权益？',
+      }),
+    ).rejects.toThrow('OPENAI_API_KEY is required');
+  });
+
+  it('still returns fixed boundary responses without LLM configuration', async () => {
+    const service = createChatService({
+      config: {
+        answerProvider: 'openai',
+        openAiApiKeyPresent: false,
+        openAiModel: undefined,
+      },
+      index: createFixtureIndex([]),
+    });
+
+    const response = await service.ask({
+      channel: 'cli',
+      message: '帮我查一下钱包余额',
+    });
+
+    expect(response.intent).toBe('realtime_account_query');
+    expect(response.citations).toEqual([]);
+  });
+
+  it('keeps investment boundary when a profit promise is mixed into a product operation question', async () => {
+    const answerProvider: AnswerProvider = {
+      answer() {
+        throw new Error('Answer provider should not be called for investment advice');
+      },
+    };
+    const service = createChatService({
+      answerProvider,
       index: createFixtureIndex([
         {
           id: 'official_docs:swap:chunk:0001',

@@ -1,12 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
+import type { AnswerProvider } from './answer-provider.js';
 import { createChatService } from './chat-service.js';
 import { evaluateCases } from './evaluate.js';
 import { createFixtureIndex } from './test-fixtures.js';
 
 describe('evaluateCases', () => {
   it('checks expected intent and minimum citation counts', async () => {
+    const answerProvider: AnswerProvider = {
+      answer({ classification, retrievedChunks }) {
+        return Promise.resolve({
+          answer: 'XXYY Pro 支持 Telegram 钱包监控。',
+          citations: retrievedChunks.map((chunk) => ({
+            excerpt: chunk.text,
+            file: chunk.metadata.file,
+            title: chunk.metadata.title,
+          })),
+          confidence: classification.confidence,
+          intent: classification.intent,
+        });
+      },
+    };
     const service = createChatService({
+      answerProvider,
       index: createFixtureIndex([
         {
           id: 'official_docs:pro:chunk:0001',
