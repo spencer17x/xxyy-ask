@@ -5,9 +5,10 @@ export {
   createLocalHashEmbedding,
   loadKnowledgeIndex,
   localHashEmbeddingProvider,
+  prepareKnowledgeChunks,
   saveKnowledgeIndex,
 } from './index-store.js';
-export type { EmbeddingProvider } from './index-store.js';
+export type { EmbeddingProvider, PreparedKnowledgeChunk } from './index-store.js';
 export { loadProductDocuments } from './load-documents.js';
 export type { LoadProductDocumentsOptions } from './load-documents.js';
 export {

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -14,19 +15,46 @@ export interface EmbeddingProvider {
   embed(text: string, chunk: RagChunk): number[] | Promise<number[]>;
 }
 
+export interface PreparedKnowledgeChunk extends RagChunk {
+  searchableText: string;
+  tokens: string[];
+  contentHash: string;
+}
+
+export function prepareKnowledgeChunks(documents: SourceDocument[]): PreparedKnowledgeChunk[] {
+  return chunkMarkdownDocuments(documents).map((chunk) => {
+    const searchableText = createSearchableText(chunk);
+    return {
+      ...chunk,
+      metadata: {
+        ...chunk.metadata,
+        file: normalizeFilePath(chunk.metadata.file),
+      },
+      searchableText,
+      tokens: tokenize(searchableText),
+      contentHash: createContentHash(chunk.text),
+    };
+  });
+}
+
 export async function buildKnowledgeIndex(
   documents: SourceDocument[],
   embeddingProvider: EmbeddingProvider = localHashEmbeddingProvider,
 ): Promise<RagIndex> {
-  const chunks = chunkMarkdownDocuments(documents);
+  const chunks = prepareKnowledgeChunks(documents);
   const entries: IndexEntry[] = [];
 
   for (const chunk of chunks) {
-    const searchableText = createSearchableText(chunk);
+    const entry = {
+      id: chunk.id,
+      documentId: chunk.documentId,
+      text: chunk.text,
+      metadata: chunk.metadata,
+      tokens: chunk.tokens,
+    };
     entries.push({
-      ...chunk,
-      tokens: tokenize(searchableText),
-      embedding: await embeddingProvider.embed(searchableText, chunk),
+      ...entry,
+      embedding: await embeddingProvider.embed(chunk.searchableText, entry),
     });
   }
 
@@ -64,6 +92,14 @@ function createSearchableText(chunk: RagChunk): string {
     ...chunk.metadata.headingPath,
     chunk.text,
   ].join('\n');
+}
+
+function createContentHash(content: string): string {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+function normalizeFilePath(file: string): string {
+  return file.replace(/^\/+/, '');
 }
 
 export function createLocalHashEmbedding(

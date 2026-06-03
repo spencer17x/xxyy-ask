@@ -6,7 +6,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { SourceDocument } from '@xxyy/shared';
 
-import { buildKnowledgeIndex, loadKnowledgeIndex, saveKnowledgeIndex } from './index-store.js';
+import {
+  buildKnowledgeIndex,
+  loadKnowledgeIndex,
+  prepareKnowledgeChunks,
+  saveKnowledgeIndex,
+} from './index-store.js';
 
 const document: SourceDocument = {
   id: 'official_docs:pages/pro',
@@ -20,6 +25,35 @@ const document: SourceDocument = {
 };
 
 describe('knowledge index storage', () => {
+  it('prepares chunks with tokens, searchable text, and stable content hashes', () => {
+    const documents = [
+      {
+        id: 'official_docs:pro',
+        title: 'XXYY Pro 权益',
+        module: 'XXYY Pro',
+        sourceType: 'official_docs' as const,
+        file: '/docs/pro.md',
+        content: '# XXYY Pro 权益\n\nXXYY Pro 支持 Telegram 钱包监控。',
+      },
+    ];
+
+    const chunks = prepareKnowledgeChunks(documents);
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toMatchObject({
+      documentId: 'official_docs:pro',
+      metadata: {
+        title: 'XXYY Pro 权益',
+        module: 'XXYY Pro',
+        sourceType: 'official_docs',
+        file: 'docs/pro.md',
+      },
+    });
+    expect(chunks[0]?.tokens).toContain('xxyy');
+    expect(chunks[0]?.searchableText).toContain('Telegram 钱包监控');
+    expect(chunks[0]?.contentHash).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
   it('builds a deterministic local token and embedding index', async () => {
     const first = await buildKnowledgeIndex([document]);
     const second = await buildKnowledgeIndex([document]);
