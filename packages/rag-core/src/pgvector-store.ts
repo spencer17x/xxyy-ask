@@ -120,7 +120,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
             file = excluded.file,
             heading_path = excluded.heading_path,
             order_index = excluded.order_index,
-            retrieved_at = excluded.retrieved_at,
+            retrieved_at = coalesce(excluded.retrieved_at, knowledge_chunks.retrieved_at),
             content = excluded.content,
             tokens = excluded.tokens,
             embedding = excluded.embedding,

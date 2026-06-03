@@ -65,6 +65,9 @@ describe('createPgVectorStore', () => {
     ]);
 
     expect(client.queries[0]?.sql).toContain('insert into knowledge_chunks');
+    expect(client.queries[0]?.sql).toContain(
+      'retrieved_at = coalesce(excluded.retrieved_at, knowledge_chunks.retrieved_at)',
+    );
     expect(client.queries[0]?.values).toContain(
       toPgVectorLiteral(embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 })),
     );
