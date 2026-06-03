@@ -3,14 +3,31 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import {
+  EmbeddingConfigurationError,
   buildKnowledgeIndex,
+  createOpenAiEmbeddingProvider,
   loadKnowledgeIndex,
   loadProductDocuments,
+  prepareKnowledgeChunks,
   saveKnowledgeIndex,
+  type PreparedKnowledgeChunk,
 } from '@xxyy/knowledge';
-import { createChatService, evaluateCases, loadRagConfig } from '@xxyy/rag-core';
+import {
+  VectorStoreConfigurationError,
+  createChatService,
+  createPgPool,
+  createPgVectorStore,
+  evaluateCases,
+  loadRagConfig,
+} from '@xxyy/rag-core';
 import type { ChatResponse, ChatRequest } from '@xxyy/shared';
-import type { EvaluationCase, EvaluationReport, RagEnv } from '@xxyy/rag-core';
+import type {
+  ChatService,
+  EmbeddedKnowledgeChunk,
+  EvaluationCase,
+  EvaluationReport,
+  RagEnv,
+} from '@xxyy/rag-core';
 
 type CliEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
 
@@ -33,12 +50,19 @@ interface CliIo {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
 }
 
+interface CliChatRuntime {
+  service: ChatService;
+  close(): Promise<void>;
+}
+
 const HELP_TEXT = [
   'Usage:',
   '  pnpm rag:ingest',
   '  pnpm rag:ask -- "question"',
   '  pnpm rag:evaluate',
 ].join('\n');
+
+const EMBEDDING_BATCH_SIZE = 64;
 
 const BUILT_IN_EVALUATION_CASES: EvaluationCase[] = [
   {
@@ -146,30 +170,44 @@ export async function runCli(
   }
 
   if (parsed.command === 'ingest') {
-    const summary = await ingest({ ...io, cwd: workspaceCwd });
-    writeLine(io.stdout, formatIngestSummary(summary));
-    return 0;
+    try {
+      const summary = await ingest({ ...io, cwd: workspaceCwd });
+      writeLine(io.stdout, formatIngestSummary(summary));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
   }
 
   const config = loadRagConfig(io.env);
   const displayIndexPath = config.indexPath;
-  const absoluteIndexPath = path.resolve(workspaceCwd, config.indexPath);
 
   try {
-    const index = await loadKnowledgeIndex(absoluteIndexPath);
-    const service = createChatService({ config, index });
+    const runtime = await createCliChatRuntime(config, workspaceCwd);
+    try {
+      const service = runtime.service;
 
-    if (parsed.command === 'ask') {
-      const request: ChatRequest = { channel: 'cli', message: parsed.question };
-      const response = await service.ask(request);
-      writeLine(io.stdout, formatChatResponse(response));
-      return 0;
+      if (parsed.command === 'ask') {
+        const request: ChatRequest = { channel: 'cli', message: parsed.question };
+        const response = await service.ask(request);
+        writeLine(io.stdout, formatChatResponse(response));
+        return 0;
+      }
+
+      const report = await evaluateCases(BUILT_IN_EVALUATION_CASES, service);
+      writeLine(io.stdout, formatEvaluationReport(report));
+      return report.passed === report.total ? 0 : 1;
+    } finally {
+      await runtime.close();
+    }
+  } catch (error) {
+    if (writeConfigurationError(io, error)) {
+      return 1;
     }
 
-    const report = await evaluateCases(BUILT_IN_EVALUATION_CASES, service);
-    writeLine(io.stdout, formatEvaluationReport(report));
-    return report.passed === report.total ? 0 : 1;
-  } catch (error) {
     if (isMissingFileError(error)) {
       writeLine(io.stderr, missingIndexMessage(displayIndexPath));
       return 1;
@@ -194,6 +232,32 @@ export function resolveWorkspaceCwd(cwd: string, env: CliEnv): string {
 async function ingest(io: CliIo): Promise<IngestSummary> {
   const config = loadRagConfig(io.env);
   const documents = await loadProductDocuments({ cwd: io.cwd });
+
+  if (config.vectorStore === 'pgvector') {
+    const chunks = prepareKnowledgeChunks(documents);
+    const pool = createPgPool(config.databaseUrl);
+
+    try {
+      const embeddingProvider = createOpenAiEmbeddingProvider({
+        apiKey: config.openAiApiKey,
+        baseUrl: config.openAiBaseUrl,
+        model: config.openAiEmbeddingModel,
+      });
+      const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
+      const store = createPgVectorStore({ client: pool, embeddingProvider });
+      await store.migrate();
+      await store.upsertChunks(embeddedChunks);
+    } finally {
+      await pool.end();
+    }
+
+    return {
+      documentCount: documents.length,
+      chunkCount: chunks.length,
+      indexPath: 'pgvector',
+    };
+  }
+
   const index = await buildKnowledgeIndex(documents);
   const absoluteIndexPath = path.resolve(io.cwd, config.indexPath);
   await saveKnowledgeIndex(absoluteIndexPath, index);
@@ -205,12 +269,79 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
   };
 }
 
+async function embedPreparedChunks(
+  chunks: PreparedKnowledgeChunk[],
+  embeddingProvider: { embedTexts(texts: string[]): Promise<number[][]> },
+): Promise<EmbeddedKnowledgeChunk[]> {
+  const embeddedChunks: EmbeddedKnowledgeChunk[] = [];
+
+  for (let index = 0; index < chunks.length; index += EMBEDDING_BATCH_SIZE) {
+    const batch = chunks.slice(index, index + EMBEDDING_BATCH_SIZE);
+    const embeddings = await embeddingProvider.embedTexts(
+      batch.map((chunk) => chunk.searchableText),
+    );
+    batch.forEach((chunk, batchIndex) => {
+      const embedding = embeddings[batchIndex];
+      if (embedding === undefined) {
+        throw new Error(`Missing embedding for chunk ${chunk.id}.`);
+      }
+      embeddedChunks.push({ ...chunk, embedding });
+    });
+  }
+
+  return embeddedChunks;
+}
+
+async function createCliChatRuntime(
+  config: ReturnType<typeof loadRagConfig>,
+  workspaceCwd: string,
+): Promise<CliChatRuntime> {
+  if (config.vectorStore === 'pgvector') {
+    const pool = createPgPool(config.databaseUrl);
+    try {
+      const embeddingProvider = createOpenAiEmbeddingProvider({
+        apiKey: config.openAiApiKey,
+        baseUrl: config.openAiBaseUrl,
+        model: config.openAiEmbeddingModel,
+      });
+      const retriever = createPgVectorStore({ client: pool, embeddingProvider });
+      return {
+        service: createChatService({ config, retriever }),
+        close: () => pool.end(),
+      };
+    } catch (error) {
+      await pool.end();
+      throw error;
+    }
+  }
+
+  const index = await loadKnowledgeIndex(path.resolve(workspaceCwd, config.indexPath));
+  return {
+    service: createChatService({ config, index }),
+    close: () => Promise.resolve(),
+  };
+}
+
 function missingIndexMessage(indexPath: string): string {
   return `Knowledge index not found at ${indexPath}. Run pnpm rag:ingest first.`;
 }
 
 function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): void {
   stream.write(`${message}\n`);
+}
+
+function writeConfigurationError(io: CliIo, error: unknown): boolean {
+  if (error instanceof EmbeddingConfigurationError) {
+    writeLine(io.stderr, error.message);
+    return true;
+  }
+
+  if (error instanceof VectorStoreConfigurationError) {
+    writeLine(io.stderr, error.message);
+    return true;
+  }
+
+  return false;
 }
 
 function isMissingFileError(error: unknown): boolean {

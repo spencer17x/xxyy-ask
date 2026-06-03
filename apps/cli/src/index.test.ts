@@ -10,6 +10,7 @@ import {
   formatIngestSummary,
   parseCliArgs,
   resolveWorkspaceCwd,
+  runCli,
 } from './index.js';
 
 describe('parseCliArgs', () => {
@@ -105,5 +106,39 @@ describe('CLI output formatting', () => {
         ],
       }),
     ).toContain('Evaluation: 1/2 passed');
+  });
+
+  it('formats pgvector ingest summaries', () => {
+    expect(
+      formatIngestSummary({
+        chunkCount: 491,
+        documentCount: 65,
+        indexPath: 'pgvector',
+      }),
+    ).toContain('Saved index: pgvector');
+  });
+});
+
+describe('runCli', () => {
+  it('prints database configuration errors from pgvector mode', async () => {
+    const stderr: string[] = [];
+    const exitCode = await runCli(['ask', 'XXYY Pro 有哪些权益？'], {
+      cwd: process.cwd(),
+      env: {
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_MODEL: 'test-model',
+        RAG_VECTOR_STORE: 'pgvector',
+      },
+      stderr: {
+        write: (message: string) => {
+          stderr.push(message);
+          return true;
+        },
+      },
+      stdout: { write: () => true },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('')).toContain('DATABASE_URL is required when RAG_VECTOR_STORE=pgvector');
   });
 });
