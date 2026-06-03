@@ -82,13 +82,21 @@ describe('createPgVectorStore', () => {
         tokens: ['xxyy', 'pro', 'telegram'],
       },
     ];
+    const embeddedTexts: string[][] = [];
     const store = createPgVectorStore({
       client,
-      embeddingProvider: { embedTexts: () => Promise.resolve([[0.1, 0.2, 0.3]]) },
+      embeddingProvider: {
+        embedTexts(texts) {
+          embeddedTexts.push(texts);
+          return Promise.resolve([[0.1, 0.2, 0.3]]);
+        },
+      },
     });
 
     const results = await store.retrieve('XXYY Pro 支持什么？', { topK: 1 });
 
+    expect(embeddedTexts).toEqual([['XXYY Pro 支持什么？']]);
+    expect(client.queries.at(-1)?.sql).toContain('embedding <=> $1::vector');
     expect(results[0]).toMatchObject({
       id: 'official_docs:pro:chunk:0001',
       rank: 1,
