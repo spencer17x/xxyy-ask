@@ -68,6 +68,8 @@ describe('knowledge index storage', () => {
       throw new Error('Expected the knowledge index to contain one entry');
     }
 
+    expect(entry).not.toHaveProperty('searchableText');
+    expect(entry).not.toHaveProperty('contentHash');
     expect(entry.id).toBe('official_docs:pages/pro:chunk:0001');
     expect(entry.documentId).toBe(document.id);
     for (const token of ['xxyy', 'pro', 'telegram', '钱包', '监控']) {
