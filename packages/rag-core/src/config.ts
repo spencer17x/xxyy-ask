@@ -46,8 +46,7 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
     openAiApiKeyPresent: Boolean(env.OPENAI_API_KEY),
     openAiBaseUrl: env.OPENAI_BASE_URL ?? DEFAULT_OPENAI_BASE_URL,
     openAiModel: env.OPENAI_MODEL,
-    openAiEmbeddingModel:
-      env.OPENAI_EMBEDDING_MODEL ?? DEFAULT_OPENAI_EMBEDDING_MODEL,
+    openAiEmbeddingModel: env.OPENAI_EMBEDDING_MODEL ?? DEFAULT_OPENAI_EMBEDDING_MODEL,
   };
 
   return config;

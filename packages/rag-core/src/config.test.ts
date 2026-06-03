@@ -61,9 +61,7 @@ describe('loadRagConfig', () => {
     });
 
     expect(config.vectorStore).toBe('pgvector');
-    expect(config.databaseUrl).toBe(
-      'postgres://xxyy:secret@localhost:5432/xxyy_ask',
-    );
+    expect(config.databaseUrl).toBe('postgres://xxyy:secret@localhost:5432/xxyy_ask');
     expect(config.openAiEmbeddingModel).toBe('text-embedding-3-large');
   });
 
