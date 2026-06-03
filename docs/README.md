@@ -56,3 +56,41 @@ POST /api/chat
 ```
 
 第一期只做产品客服。涉及个人账户、订单、钱包余额、交易记录、MEV/夹子检测和投资建议的问题会走边界回复，不会假装查询实时数据。
+
+## 正式 RAG：Postgres + pgvector
+
+开发环境可以启动本地 pgvector：
+
+```bash
+docker compose up -d postgres
+```
+
+配置：
+
+```bash
+export RAG_VECTOR_STORE=pgvector
+export DATABASE_URL="postgres://xxyy:password@localhost:5432/xxyy_ask"
+export OPENAI_API_KEY="你的 API Key"
+export OPENAI_MODEL="你的回答模型"
+export OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
+```
+
+写入知识库：
+
+```bash
+pnpm rag:ingest
+```
+
+运行 API：
+
+```bash
+pnpm start
+```
+
+本地 fallback 仍可使用：
+
+```bash
+export RAG_VECTOR_STORE=local
+pnpm rag:ingest
+pnpm rag:ask -- "XXYY Pro 有哪些权益？"
+```
