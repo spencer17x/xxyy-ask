@@ -54,6 +54,24 @@ describe('knowledge index storage', () => {
     expect(chunks[0]?.contentHash).toMatch(/^[a-f0-9]{64}$/u);
   });
 
+  it('preserves document retrieval timestamps on prepared chunks', () => {
+    const chunks = prepareKnowledgeChunks([
+      {
+        id: 'official_docs:pro',
+        title: 'XXYY Pro 权益',
+        module: 'XXYY Pro',
+        sourceType: 'official_docs' as const,
+        file: '/docs/pro.md',
+        content: '# XXYY Pro 权益\n\nXXYY Pro 支持 Telegram 钱包监控。',
+        retrievedAt: '2026-05-24T06:41:04.265Z',
+      },
+    ]);
+
+    expect(chunks[0]?.metadata).toMatchObject({
+      retrievedAt: '2026-05-24T06:41:04.265Z',
+    });
+  });
+
   it('builds a deterministic local token and embedding index', async () => {
     const first = await buildKnowledgeIndex([document]);
     const second = await buildKnowledgeIndex([document]);

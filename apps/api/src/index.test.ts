@@ -9,7 +9,7 @@ import { createLocalHashEmbedding, tokenize } from '@xxyy/knowledge';
 import { describe, expect, it } from 'vitest';
 
 import type { ChatResponse } from '@xxyy/shared';
-import { LlmConfigurationError } from '@xxyy/rag-core';
+import { LlmConfigurationError, VectorStoreUnavailableError } from '@xxyy/rag-core';
 
 import { MissingIndexError, createRequestHandler, type ApiRequestHandler } from './index.js';
 
@@ -151,6 +151,26 @@ describe('createRequestHandler', () => {
     });
   });
 
+  it('answers boundary questions in pgvector mode before requiring vector configuration', async () => {
+    const handler = createRequestHandler({
+      env: {
+        RAG_VECTOR_STORE: 'pgvector',
+      },
+    });
+
+    const response = await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat',
+      body: { message: '帮我查一下钱包余额' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({
+      intent: 'realtime_account_query',
+      citations: [],
+    });
+  });
+
   it('returns a useful 503 when pgvector configuration is missing', async () => {
     const handler = createRequestHandler({
       env: {
@@ -192,6 +212,29 @@ describe('createRequestHandler', () => {
     expect(JSON.parse(response.body)).toEqual({
       error: 'embedding_configuration_missing',
       message: 'OPENAI_API_KEY is required for embedding generation.',
+    });
+  });
+
+  it('returns a useful 503 when vector store runtime is unavailable', async () => {
+    const handler = createRequestHandler({
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.reject(new VectorStoreUnavailableError(new Error('connect refused')));
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat',
+      body: { message: 'XXYY Pro 有哪些权益？' },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'vector_store_unavailable',
+      message: 'Vector store is unavailable. Check DATABASE_URL and database connectivity.',
     });
   });
 

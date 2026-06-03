@@ -51,6 +51,12 @@ const DEFAULT_TOP_K = 6;
 
 export class VectorStoreConfigurationError extends Error {}
 
+export class VectorStoreUnavailableError extends Error {
+  constructor(public readonly originalError: unknown) {
+    super('Vector store is unavailable. Check DATABASE_URL and database connectivity.');
+  }
+}
+
 export function createPgPool(databaseUrl: string | undefined): Pool {
   if (databaseUrl === undefined || databaseUrl.trim().length === 0) {
     throw new VectorStoreConfigurationError(
@@ -64,8 +70,10 @@ export function createPgPool(databaseUrl: string | undefined): Pool {
 export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStore {
   return {
     async migrate(): Promise<void> {
-      await options.client.query('create extension if not exists vector');
-      await options.client.query(`
+      await queryDatabase(options.client, 'create extension if not exists vector');
+      await queryDatabase(
+        options.client,
+        `
         create table if not exists knowledge_chunks (
           id text primary key,
           document_id text not null,
@@ -84,26 +92,37 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           created_at timestamptz not null default now(),
           updated_at timestamptz not null default now()
         )
-      `);
-      await options.client.query(`
+      `,
+      );
+      await queryDatabase(
+        options.client,
+        `
         create index if not exists knowledge_chunks_embedding_idx
           on knowledge_chunks using ivfflat (embedding vector_cosine_ops)
-      `);
-      await options.client.query(`
+      `,
+      );
+      await queryDatabase(
+        options.client,
+        `
         create index if not exists knowledge_chunks_tokens_idx
           on knowledge_chunks using gin (tokens)
-      `);
-      await options.client.query(`
+      `,
+      );
+      await queryDatabase(
+        options.client,
+        `
         create index if not exists knowledge_chunks_source_type_idx
           on knowledge_chunks (source_type)
-      `);
+      `,
+      );
     },
 
     async upsertChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void> {
       for (const chunk of chunks) {
         validateEmbedding(chunk.embedding);
 
-        await options.client.query(
+        await queryDatabase(
+          options.client,
           `
           insert into knowledge_chunks (
             id, document_id, title, module, source_type, source_url, file,
@@ -157,7 +176,8 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
 
       const topK = normalizeTopK(retrieveOptions.topK);
       const queryTokens = tokenize(question);
-      const response = await options.client.query<KnowledgeChunkRow>(
+      const response = await queryDatabase<KnowledgeChunkRow>(
+        options.client,
         `
         select
           id, document_id, title, module, source_type, source_url, file,
@@ -177,6 +197,18 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         .map((chunk, index) => ({ ...chunk, rank: index + 1 }));
     },
   };
+}
+
+async function queryDatabase<T>(
+  client: PgClientLike,
+  sql: string,
+  values: readonly unknown[] = [],
+): Promise<{ rows: T[] }> {
+  try {
+    return await client.query<T>(sql, values);
+  } catch (error) {
+    throw new VectorStoreUnavailableError(error);
+  }
 }
 
 export function toPgVectorLiteral(vector: number[]): string {
@@ -227,6 +259,7 @@ function mapRow(row: KnowledgeChunkRow, queryTokens: string[]): RetrievedChunk {
       title: row.title,
       ...(row.source_url === null ? {} : { sourceUrl: row.source_url }),
       ...(row.order_index === null ? {} : { order: row.order_index }),
+      ...(row.retrieved_at === null ? {} : { retrievedAt: row.retrieved_at }),
     },
     text: row.content,
     tokens: row.tokens,

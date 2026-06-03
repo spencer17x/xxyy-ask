@@ -123,6 +123,33 @@ describe('CLI output formatting', () => {
 });
 
 describe('runCli', () => {
+  it('answers boundary questions in pgvector mode before requiring vector configuration', async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exitCode = await runCli(['ask', '帮我查一下钱包余额'], {
+      cwd: process.cwd(),
+      env: {
+        RAG_VECTOR_STORE: 'pgvector',
+      },
+      stderr: {
+        write: (message: string) => {
+          stderr.push(message);
+          return true;
+        },
+      },
+      stdout: {
+        write: (message: string) => {
+          stdout.push(message);
+          return true;
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout.join('')).toContain('Intent: realtime_account_query');
+    expect(stderr.join('')).toBe('');
+  });
+
   it('prints database configuration errors from pgvector mode', async () => {
     const stderr: string[] = [];
     const exitCode = await runCli(['ask', 'XXYY Pro 有哪些权益？'], {

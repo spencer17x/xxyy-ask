@@ -4,6 +4,7 @@ import {
   createPgVectorStore,
   toPgVectorLiteral,
   type EmbeddedKnowledgeChunk,
+  VectorStoreUnavailableError,
 } from './pgvector-store.js';
 
 class FakePgClient {
@@ -143,6 +144,21 @@ describe('createPgVectorStore', () => {
       },
       text: 'XXYY Pro 支持 Telegram 钱包监控。',
     });
+  });
+
+  it('wraps pgvector query failures as vector store unavailability', async () => {
+    const store = createPgVectorStore({
+      client: {
+        query: () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:5432')),
+      },
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1 })]),
+      },
+    });
+
+    await expect(store.retrieve('XXYY Pro 支持什么？', { topK: 1 })).rejects.toBeInstanceOf(
+      VectorStoreUnavailableError,
+    );
   });
 
   it('rejects query embeddings with the wrong dimension', async () => {

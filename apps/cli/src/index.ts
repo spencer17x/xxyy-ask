@@ -14,7 +14,9 @@ import {
 } from '@xxyy/knowledge';
 import {
   VectorStoreConfigurationError,
+  VectorStoreUnavailableError,
   createChatService,
+  createLazyRetriever,
   createPgPool,
   createPgVectorStore,
   evaluateCases,
@@ -297,22 +299,32 @@ async function createCliChatRuntime(
   workspaceCwd: string,
 ): Promise<CliChatRuntime> {
   if (config.vectorStore === 'pgvector') {
-    const pool = createPgPool(config.databaseUrl);
-    try {
-      const embeddingProvider = createOpenAiEmbeddingProvider({
-        apiKey: config.openAiApiKey,
-        baseUrl: config.openAiBaseUrl,
-        model: config.openAiEmbeddingModel,
-      });
-      const retriever = createPgVectorStore({ client: pool, embeddingProvider });
-      return {
-        service: createChatService({ config, retriever }),
-        close: () => pool.end(),
-      };
-    } catch (error) {
-      await pool.end();
-      throw error;
-    }
+    let pool: ReturnType<typeof createPgPool> | undefined;
+    const retriever = createLazyRetriever(async () => {
+      const nextPool = createPgPool(config.databaseUrl);
+
+      try {
+        const embeddingProvider = createOpenAiEmbeddingProvider({
+          apiKey: config.openAiApiKey,
+          baseUrl: config.openAiBaseUrl,
+          model: config.openAiEmbeddingModel,
+        });
+        pool = nextPool;
+        return createPgVectorStore({ client: nextPool, embeddingProvider });
+      } catch (error) {
+        await nextPool.end();
+        throw error;
+      }
+    });
+
+    return {
+      service: createChatService({ config, retriever }),
+      close: async () => {
+        const currentPool = pool;
+        pool = undefined;
+        await currentPool?.end();
+      },
+    };
   }
 
   const index = await loadKnowledgeIndex(path.resolve(workspaceCwd, config.indexPath));
@@ -337,6 +349,11 @@ function writeConfigurationError(io: CliIo, error: unknown): boolean {
   }
 
   if (error instanceof VectorStoreConfigurationError) {
+    writeLine(io.stderr, error.message);
+    return true;
+  }
+
+  if (error instanceof VectorStoreUnavailableError) {
     writeLine(io.stderr, error.message);
     return true;
   }

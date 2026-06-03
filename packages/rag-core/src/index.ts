@@ -10,9 +10,10 @@ export {
   createPgVectorStore,
   toPgVectorLiteral,
   VectorStoreConfigurationError,
+  VectorStoreUnavailableError,
 } from './pgvector-store.js';
 export { retrieve } from './retrieve.js';
-export { createLocalRetriever } from './retriever.js';
+export { createLazyRetriever, createLocalRetriever } from './retriever.js';
 export { createChatService } from './chat-service.js';
 
 export type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';

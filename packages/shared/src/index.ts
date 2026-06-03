@@ -58,6 +58,7 @@ export interface ChunkMetadata {
   headingPath: string[];
   sourceUrl?: string;
   order?: number;
+  retrievedAt?: string;
 }
 
 export interface RagChunk {
