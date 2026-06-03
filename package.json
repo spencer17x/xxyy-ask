@@ -2,16 +2,23 @@
   "name": "xxyy-ask",
   "version": "1.0.0",
   "description": "",
+  "private": true,
+  "type": "module",
   "main": "index.js",
   "scripts": {
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck",
-    "dev": "tsx watch src/index.ts",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
+    "dev": "pnpm --filter @xxyy/api start",
     "format": "prettier --write \"**/*.{ts,js,mjs,cjs,json,md,yml,yaml}\" \".vscode/*.json\"",
     "format:check": "prettier --check \"**/*.{ts,js,mjs,cjs,json,md,yml,yaml}\" \".vscode/*.json\"",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
-    "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "rag:ask": "pnpm --filter @xxyy/cli rag:ask",
+    "rag:evaluate": "pnpm --filter @xxyy/cli rag:evaluate",
+    "rag:ingest": "pnpm --filter @xxyy/cli rag:ingest",
+    "start": "pnpm --filter @xxyy/api start",
+    "test": "vitest run",
+    "typecheck": "pnpm typecheck:root && pnpm -r --if-present --filter \"@xxyy/*\" typecheck",
+    "typecheck:root": "tsc --noEmit -p tsconfig.json"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +33,7 @@
     "prettier": "^3.8.3",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.4"
+    "typescript-eslint": "^8.59.4",
+    "vitest": "^4.1.8"
   }
 }

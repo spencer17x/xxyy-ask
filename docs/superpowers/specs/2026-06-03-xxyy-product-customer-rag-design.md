@@ -25,16 +25,51 @@
 
 第一期采用 RAG-first 架构，并保留一个轻量问题分类器。分类器只决定走产品知识问答，还是走超范围响应，不做复杂 agent 循环。
 
+项目结构采用轻量 pnpm workspace monorepo。产品客服能力沉到共享包里，CLI、HTTP API、Web UI 和后续 Telegram bot 都作为入口适配器，不直接实现检索、prompt 或 LLM 调用。
+
 备选方案一是纯 RAG，不做分类器。实现最快，但面对“帮我查交易”“我是不是被夹了”等问题时容易给出泛化回答，边界不够稳。
 
 备选方案二是完整 Agentic RAG。它可以为后续工具调用做好准备，但第一期没有工具，过早引入 agent loop 会增加复杂度和误判风险。
 
 推荐选择轻量分类器加 RAG：它能控制风险，又不会给第一期增加太多工程负担。
 
+## 项目结构
+
+```text
+xxyy-ask/
+  apps/
+    cli/              # 本地 ingest / ask / evaluate 命令
+    api/              # HTTP API，提供 POST /api/chat
+    web/              # 第一版 Web 聊天界面
+
+  packages/
+    shared/           # ChatRequest、ChatResponse、Citation 等共享类型
+    knowledge/        # 文档加载、Markdown chunk、索引读写
+    rag-core/         # 分类、检索、回答生成、评测主流程
+
+  docs/
+    product-features/
+    superpowers/
+
+  data/
+    indexes/          # 可选本地索引目录，不提交生成文件
+```
+
+边界原则：
+
+- `packages/rag-core` 暴露统一客服问答入口，例如 `askProductQuestion()` 或 `ChatService.ask()`。
+- `apps/api`、`apps/web`、`apps/cli` 只负责输入输出适配，不直接访问 chunker、BM25、prompt 或 LLM provider。
+- `packages/knowledge` 只处理知识库文档与索引，不依赖 API、Web、Telegram 或具体 channel。
+- `packages/shared` 只放跨包共享类型，避免把业务逻辑塞进公共包。
+
 ## 架构
 
 ```text
-用户问题
+用户问题 / Web / Telegram / CLI
+  ↓
+Channel Adapter
+  ↓
+ChatService
   ↓
 输入清洗与语言检测
   ↓
@@ -43,6 +78,30 @@
   ├─ 操作步骤问题 → 检索 → 步骤化回答 → 来源引用
   ├─ 超范围实时查询 → 边界说明 → 人工/后续工具引导
   └─ 投资/喊单问题 → 安全拒答 → 可替代的产品功能说明
+```
+
+统一请求响应结构：
+
+```ts
+interface ChatRequest {
+  message: string;
+  sessionId?: string;
+  userId?: string;
+  channel: 'cli' | 'web' | 'telegram';
+}
+
+interface ChatResponse {
+  answer: string;
+  intent:
+    | 'product_qa'
+    | 'how_to'
+    | 'realtime_account_query'
+    | 'mev_or_chain_forensics'
+    | 'investment_advice'
+    | 'unknown';
+  citations: Citation[];
+  confidence: number;
+}
 ```
 
 ### 问题分类器
@@ -126,6 +185,43 @@
 6. 检索结果经过重排与去重。
 7. 生成器根据片段回答，并附来源。
 8. 记录查询、命中片段、回答和用户反馈，用于后续评测。
+
+## 前端与 API 交互
+
+第一版 Web UI 使用普通聊天窗口调用 HTTP API。
+
+```http
+POST /api/chat
+```
+
+请求：
+
+```json
+{
+  "message": "XXYY 的钱包监控怎么设置？",
+  "sessionId": "web-session-1",
+  "channel": "web"
+}
+```
+
+响应：
+
+```json
+{
+  "answer": "可以在 Dashboard 的监控管理中配置关注钱包...",
+  "intent": "how_to",
+  "citations": [
+    {
+      "title": "Telegram Wallet Monitoring Configuration Guide",
+      "file": "docs/product-features/pages/51-getting-started__dashboard__jian-kong-guan-li__telegram-wallet-monitoring-configuration-guide.md",
+      "excerpt": "..."
+    }
+  ],
+  "confidence": 0.82
+}
+```
+
+Telegram bot 后续复用同一个 `ChatService`。它只负责把 Telegram message 转成 `ChatRequest`，再把 `ChatResponse` 格式化成 Telegram 文本。
 
 ## 评测
 

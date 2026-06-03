@@ -2,11 +2,24 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first-phase XXYY product customer service RAG CLI with document ingestion, retrieval, scoped answer generation, source citations, and out-of-scope handling.
+**Goal:** Build the first-phase XXYY product customer service RAG system with document ingestion, retrieval, scoped answer generation, source citations, out-of-scope handling, CLI access, and a first API/Web entrypoint.
 
-**Architecture:** Use a local TypeScript RAG pipeline over the existing Markdown knowledge base. Keep the core deterministic and testable: document loading, chunking, BM25, local hash embeddings, classification, retrieval, and extractive fallback all work without API keys; OpenAI generation/embeddings are optional adapters behind interfaces.
+**Architecture:** Use a lightweight pnpm workspace monorepo. Keep the product-support capability in shared packages and make CLI/API/Web thin adapters. Use a local TypeScript RAG pipeline over the existing Markdown knowledge base. Keep the core deterministic and testable: document loading, chunking, BM25, local hash embeddings, classification, retrieval, and extractive fallback all work without API keys; OpenAI generation/embeddings are optional adapters behind interfaces.
 
-**Tech Stack:** TypeScript, Node.js, pnpm, Vitest, optional OpenAI SDK, local JSON index files.
+**Tech Stack:** TypeScript, Node.js, pnpm workspaces, Vitest, optional OpenAI SDK, local JSON index files, lightweight HTTP API, Vite React Web UI.
+
+## Monorepo Amendment
+
+The original task list below used `src/rag/*` paths. Implement the same behavior through these workspace boundaries instead:
+
+- `packages/shared`: shared domain types and channel-neutral request/response contracts.
+- `packages/knowledge`: document loading, Markdown chunking, tokenization helpers, and local index persistence.
+- `packages/rag-core`: config, classification, BM25/vector retrieval, grounded answering, evaluation, and `ChatService`.
+- `apps/cli`: `ingest`, `ask`, and `evaluate` commands that call shared packages.
+- `apps/api`: HTTP server with `POST /api/chat` and health endpoint.
+- `apps/web`: minimal chat UI that calls the API and displays citations.
+
+Generated runtime files should live under `.rag/` or `data/indexes/` and should not be committed unless explicitly promoted to fixtures.
 
 ---
 

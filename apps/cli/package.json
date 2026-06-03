@@ -1,0 +1,22 @@
+{
+  "name": "@xxyy/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@xxyy/knowledge": "workspace:*",
+    "@xxyy/rag-core": "workspace:*",
+    "@xxyy/shared": "workspace:*"
+  },
+  "scripts": {
+    "rag:ask": "tsx src/index.ts ask",
+    "rag:evaluate": "tsx src/index.ts evaluate",
+    "rag:ingest": "tsx src/index.ts ingest",
+    "start": "tsx src/index.ts",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

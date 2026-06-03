@@ -1,0 +1,16 @@
+{
+  "name": "@xxyy/rag-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@xxyy/knowledge": "workspace:*",
+    "@xxyy/shared": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

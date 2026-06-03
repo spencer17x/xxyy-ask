@@ -1,0 +1,20 @@
+{
+  "name": "@xxyy/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@xxyy/knowledge": "workspace:*",
+    "@xxyy/rag-core": "workspace:*",
+    "@xxyy/shared": "workspace:*",
+    "@xxyy/web": "workspace:*"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}
