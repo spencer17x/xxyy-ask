@@ -18,6 +18,13 @@ interface EmbeddingResponse {
 
 export class EmbeddingConfigurationError extends Error {}
 
+function isNumericEmbedding(embedding: unknown): embedding is number[] {
+  return (
+    Array.isArray(embedding) &&
+    embedding.every((value) => typeof value === 'number' && Number.isFinite(value))
+  );
+}
+
 export function createOpenAiEmbeddingProvider(
   options: OpenAiEmbeddingProviderOptions,
 ): BatchEmbeddingProvider {
@@ -56,13 +63,30 @@ export function createOpenAiEmbeddingProvider(
 
       const payload = (await response.json()) as EmbeddingResponse;
       const rows = payload.data ?? [];
-      const sortedRows = [...rows].sort((left, right) => (left.index ?? 0) - (right.index ?? 0));
-      const embeddings = sortedRows.map((row) => row.embedding);
+      const embeddings = new Array<number[] | undefined>(texts.length);
+      const seenIndexes = new Set<number>();
 
-      if (
-        embeddings.length !== texts.length ||
-        embeddings.some((embedding) => !Array.isArray(embedding))
-      ) {
+      if (rows.length !== texts.length) {
+        throw new Error('Embedding response did not include all embeddings.');
+      }
+
+      for (const row of rows) {
+        if (
+          row.index === undefined ||
+          !Number.isInteger(row.index) ||
+          row.index < 0 ||
+          row.index >= texts.length ||
+          seenIndexes.has(row.index) ||
+          !isNumericEmbedding(row.embedding)
+        ) {
+          throw new Error('Embedding response did not include all embeddings.');
+        }
+
+        seenIndexes.add(row.index);
+        embeddings[row.index] = row.embedding;
+      }
+
+      if (embeddings.some((embedding) => embedding === undefined)) {
         throw new Error('Embedding response did not include all embeddings.');
       }
 
