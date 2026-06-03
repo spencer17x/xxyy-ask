@@ -59,9 +59,7 @@ export class VectorStoreUnavailableError extends Error {
 
 export function createPgPool(databaseUrl: string | undefined): Pool {
   if (databaseUrl === undefined || databaseUrl.trim().length === 0) {
-    throw new VectorStoreConfigurationError(
-      'DATABASE_URL is required when RAG_VECTOR_STORE=pgvector.',
-    );
+    throw new VectorStoreConfigurationError('DATABASE_URL is required for pgvector retrieval.');
   }
 
   return new Pool({ connectionString: databaseUrl });

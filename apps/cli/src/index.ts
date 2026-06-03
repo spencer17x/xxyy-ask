@@ -4,12 +4,9 @@ import path from 'node:path';
 
 import {
   EmbeddingConfigurationError,
-  buildKnowledgeIndex,
   createOpenAiEmbeddingProvider,
-  loadKnowledgeIndex,
   loadProductDocuments,
   prepareKnowledgeChunks,
-  saveKnowledgeIndex,
   type PreparedKnowledgeChunk,
 } from '@xxyy/knowledge';
 import {
@@ -185,10 +182,9 @@ export async function runCli(
   }
 
   const config = loadRagConfig(io.env);
-  const displayIndexPath = config.indexPath;
 
   try {
-    const runtime = await createCliChatRuntime(config, workspaceCwd);
+    const runtime = createCliChatRuntime(config);
     try {
       const service = runtime.service;
 
@@ -207,11 +203,6 @@ export async function runCli(
     }
   } catch (error) {
     if (writeConfigurationError(io, error)) {
-      return 1;
-    }
-
-    if (isMissingFileError(error)) {
-      writeLine(io.stderr, missingIndexMessage(displayIndexPath));
       return 1;
     }
     throw error;
@@ -234,40 +225,27 @@ export function resolveWorkspaceCwd(cwd: string, env: CliEnv): string {
 async function ingest(io: CliIo): Promise<IngestSummary> {
   const config = loadRagConfig(io.env);
   const documents = await loadProductDocuments({ cwd: io.cwd });
+  const chunks = prepareKnowledgeChunks(documents);
+  const pool = createPgPool(config.databaseUrl);
 
-  if (config.vectorStore === 'pgvector') {
-    const chunks = prepareKnowledgeChunks(documents);
-    const pool = createPgPool(config.databaseUrl);
-
-    try {
-      const embeddingProvider = createOpenAiEmbeddingProvider({
-        apiKey: config.openAiApiKey,
-        baseUrl: config.openAiBaseUrl,
-        model: config.openAiEmbeddingModel,
-      });
-      const store = createPgVectorStore({ client: pool, embeddingProvider });
-      await store.migrate();
-      const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
-      await store.upsertChunks(embeddedChunks);
-    } finally {
-      await pool.end();
-    }
-
-    return {
-      documentCount: documents.length,
-      chunkCount: chunks.length,
-      indexPath: 'pgvector',
-    };
+  try {
+    const embeddingProvider = createOpenAiEmbeddingProvider({
+      apiKey: config.openAiApiKey,
+      baseUrl: config.openAiBaseUrl,
+      model: config.openAiEmbeddingModel,
+    });
+    const store = createPgVectorStore({ client: pool, embeddingProvider });
+    await store.migrate();
+    const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
+    await store.upsertChunks(embeddedChunks);
+  } finally {
+    await pool.end();
   }
-
-  const index = await buildKnowledgeIndex(documents);
-  const absoluteIndexPath = path.resolve(io.cwd, config.indexPath);
-  await saveKnowledgeIndex(absoluteIndexPath, index);
 
   return {
     documentCount: documents.length,
-    chunkCount: index.entries.length,
-    indexPath: config.indexPath,
+    chunkCount: chunks.length,
+    indexPath: 'pgvector',
   };
 }
 
@@ -294,48 +272,33 @@ async function embedPreparedChunks(
   return embeddedChunks;
 }
 
-async function createCliChatRuntime(
-  config: ReturnType<typeof loadRagConfig>,
-  workspaceCwd: string,
-): Promise<CliChatRuntime> {
-  if (config.vectorStore === 'pgvector') {
-    let pool: ReturnType<typeof createPgPool> | undefined;
-    const retriever = createLazyRetriever(async () => {
-      const nextPool = createPgPool(config.databaseUrl);
+function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChatRuntime {
+  let pool: ReturnType<typeof createPgPool> | undefined;
+  const retriever = createLazyRetriever(async () => {
+    const nextPool = createPgPool(config.databaseUrl);
 
-      try {
-        const embeddingProvider = createOpenAiEmbeddingProvider({
-          apiKey: config.openAiApiKey,
-          baseUrl: config.openAiBaseUrl,
-          model: config.openAiEmbeddingModel,
-        });
-        pool = nextPool;
-        return createPgVectorStore({ client: nextPool, embeddingProvider });
-      } catch (error) {
-        await nextPool.end();
-        throw error;
-      }
-    });
+    try {
+      const embeddingProvider = createOpenAiEmbeddingProvider({
+        apiKey: config.openAiApiKey,
+        baseUrl: config.openAiBaseUrl,
+        model: config.openAiEmbeddingModel,
+      });
+      pool = nextPool;
+      return createPgVectorStore({ client: nextPool, embeddingProvider });
+    } catch (error) {
+      await nextPool.end();
+      throw error;
+    }
+  });
 
-    return {
-      service: createChatService({ config, retriever }),
-      close: async () => {
-        const currentPool = pool;
-        pool = undefined;
-        await currentPool?.end();
-      },
-    };
-  }
-
-  const index = await loadKnowledgeIndex(path.resolve(workspaceCwd, config.indexPath));
   return {
-    service: createChatService({ config, index }),
-    close: () => Promise.resolve(),
+    service: createChatService({ config, retriever }),
+    close: async () => {
+      const currentPool = pool;
+      pool = undefined;
+      await currentPool?.end();
+    },
   };
-}
-
-function missingIndexMessage(indexPath: string): string {
-  return `Knowledge index not found at ${indexPath}. Run pnpm rag:ingest first.`;
 }
 
 function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): void {
@@ -361,15 +324,10 @@ function writeConfigurationError(io: CliIo, error: unknown): boolean {
   return false;
 }
 
-function isMissingFileError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
-}
-
 function hasWorkspaceEvidence(candidatePath: string): boolean {
   return (
     existsSync(path.join(candidatePath, 'pnpm-workspace.yaml')) ||
-    existsSync(path.join(candidatePath, 'docs', 'product-features')) ||
-    existsSync(path.join(candidatePath, '.rag', 'index.json'))
+    existsSync(path.join(candidatePath, 'docs', 'product-features'))
   );
 }
 

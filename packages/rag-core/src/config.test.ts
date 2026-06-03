@@ -7,9 +7,6 @@ describe('loadRagConfig', () => {
     expect(loadRagConfig({})).toEqual({
       topK: 6,
       answerProvider: 'openai',
-      embeddingProvider: 'local',
-      indexPath: '.rag/index.json',
-      vectorStore: 'local',
       databaseUrl: undefined,
       openAiApiKey: undefined,
       openAiBaseUrl: 'https://api.openai.com/v1',
@@ -19,10 +16,12 @@ describe('loadRagConfig', () => {
     });
   });
 
-  it('defaults to local vector store and OpenAI small embedding model', () => {
+  it('defaults to OpenAI small embedding model without exposing local mode', () => {
     const config = loadRagConfig({});
 
-    expect(config.vectorStore).toBe('local');
+    expect(config).not.toHaveProperty('vectorStore');
+    expect(config).not.toHaveProperty('indexPath');
+    expect(config).not.toHaveProperty('embeddingProvider');
     expect(config.databaseUrl).toBeUndefined();
     expect(config.openAiEmbeddingModel).toBe('text-embedding-3-small');
   });
@@ -32,8 +31,6 @@ describe('loadRagConfig', () => {
       loadRagConfig({
         OPENAI_API_KEY: 'sk-future-only',
         RAG_ANSWER_PROVIDER: 'future-provider',
-        RAG_EMBEDDING_PROVIDER: 'future-embeddings',
-        RAG_INDEX_PATH: '/tmp/xxyy-index.json',
         RAG_TOP_K: '3',
         OPENAI_BASE_URL: 'https://llm.example/v1',
         OPENAI_MODEL: 'gpt-test',
@@ -41,9 +38,6 @@ describe('loadRagConfig', () => {
     ).toEqual({
       topK: 3,
       answerProvider: 'future-provider',
-      embeddingProvider: 'future-embeddings',
-      indexPath: '/tmp/xxyy-index.json',
-      vectorStore: 'local',
       databaseUrl: undefined,
       openAiApiKey: 'sk-future-only',
       openAiBaseUrl: 'https://llm.example/v1',
@@ -53,21 +47,27 @@ describe('loadRagConfig', () => {
     });
   });
 
-  it('loads pgvector and embedding configuration from env', () => {
+  it('loads database and embedding configuration from env', () => {
     const config = loadRagConfig({
       DATABASE_URL: 'postgres://xxyy:secret@localhost:5432/xxyy_ask',
       OPENAI_EMBEDDING_MODEL: 'text-embedding-3-large',
-      RAG_VECTOR_STORE: 'pgvector',
     });
 
-    expect(config.vectorStore).toBe('pgvector');
     expect(config.databaseUrl).toBe('postgres://xxyy:secret@localhost:5432/xxyy_ask');
     expect(config.openAiEmbeddingModel).toBe('text-embedding-3-large');
   });
 
-  it('rejects unsupported vector store configuration', () => {
-    expect(() => loadRagConfig({ RAG_VECTOR_STORE: 'pinecone' })).toThrow(
-      'Unsupported RAG_VECTOR_STORE: pinecone',
+  it('derives database URL from Postgres parts when DATABASE_URL is omitted', () => {
+    const config = loadRagConfig({
+      POSTGRES_DB: 'xxyy_ask',
+      POSTGRES_HOST: 'db.internal',
+      POSTGRES_PASSWORD: 'secret with symbols/@',
+      POSTGRES_PORT: '15432',
+      POSTGRES_USER: 'xxyy',
+    });
+
+    expect(config.databaseUrl).toBe(
+      'postgres://xxyy:secret%20with%20symbols%2F%40@db.internal:15432/xxyy_ask',
     );
   });
 

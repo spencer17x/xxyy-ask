@@ -128,9 +128,7 @@ describe('runCli', () => {
     const stderr: string[] = [];
     const exitCode = await runCli(['ask', '帮我查一下钱包余额'], {
       cwd: process.cwd(),
-      env: {
-        RAG_VECTOR_STORE: 'pgvector',
-      },
+      env: {},
       stderr: {
         write: (message: string) => {
           stderr.push(message);
@@ -157,7 +155,6 @@ describe('runCli', () => {
       env: {
         OPENAI_API_KEY: 'test-key',
         OPENAI_MODEL: 'test-model',
-        RAG_VECTOR_STORE: 'pgvector',
       },
       stderr: {
         write: (message: string) => {
@@ -169,7 +166,7 @@ describe('runCli', () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(stderr.join('')).toContain('DATABASE_URL is required when RAG_VECTOR_STORE=pgvector');
+    expect(stderr.join('')).toContain('DATABASE_URL is required for pgvector retrieval');
   });
 
   it('migrates pgvector storage before embedding prepared chunks', async () => {
@@ -242,15 +239,12 @@ describe('runCli', () => {
         loadRagConfig: vi.fn(() => ({
           answerProvider: 'openai',
           databaseUrl: 'postgres://example.test/db',
-          embeddingProvider: 'openai',
-          indexPath: '.rag/index.json',
           openAiApiKey: 'test-key',
           openAiApiKeyPresent: true,
           openAiBaseUrl: 'https://api.openai.test/v1',
           openAiEmbeddingModel: 'text-embedding-3-small',
           openAiModel: 'gpt-test',
           topK: 6,
-          vectorStore: 'pgvector',
         })),
       };
     });

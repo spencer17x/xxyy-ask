@@ -33,20 +33,19 @@
 
 ## 运行模式
 
-正式模式：
+当前项目只保留正式 Agentic RAG 路径：Postgres + pgvector + OpenAI-compatible embeddings。
 
 ```bash
-RAG_VECTOR_STORE=pgvector
-DATABASE_URL=postgres://xxyy:password@localhost:5432/xxyy_ask
+POSTGRES_DB=xxyy_ask
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=xxyy
+POSTGRES_PASSWORD=replace_me_with_a_strong_password
 OPENAI_API_KEY=...
 OPENAI_MODEL=...
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-```
-
-开发 fallback：
-
-```bash
-RAG_VECTOR_STORE=local
+RAG_TOP_K=6
+RAG_ANSWER_PROVIDER=openai
 ```
 
 注意：项目当前不会自动加载 `.env`。需要先运行：
@@ -76,24 +75,22 @@ pnpm test packages/rag-core/src/pgvector-store.test.ts
 关键行为验证：
 
 ```bash
-RAG_VECTOR_STORE=local pnpm rag:ingest
-env -u DATABASE_URL -u OPENAI_API_KEY -u OPENAI_MODEL RAG_VECTOR_STORE=pgvector pnpm rag:ask -- "帮我查一下钱包余额"
-env -u DATABASE_URL RAG_VECTOR_STORE=pgvector OPENAI_API_KEY=test-key OPENAI_MODEL=test-model OPENAI_EMBEDDING_MODEL=text-embedding-3-small pnpm rag:ask -- "XXYY Pro 有哪些权益？"
+env -u DATABASE_URL -u OPENAI_API_KEY -u OPENAI_MODEL pnpm rag:ask -- "帮我查一下钱包余额"
+env -u DATABASE_URL OPENAI_API_KEY=test-key OPENAI_MODEL=test-model OPENAI_EMBEDDING_MODEL=text-embedding-3-small pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 ```
 
 期望：
 
-- local ingest 成功生成 `.rag/index.json`。
-- 边界问题在 pgvector 模式下也不需要 DB/API key，应该返回 `realtime_account_query`。
-- 产品问题在 pgvector 模式下缺 `DATABASE_URL` 应明确失败。
+- 边界问题不需要 DB/API key，应该返回 `realtime_account_query`。
+- 产品问题缺 `DATABASE_URL` 应明确失败。
 
 ## 开发约束
 
 - 优先遵循现有模块边界，不要随意重构 monorepo 结构。
 - 不要提交 `.rag/`、`.env`、数据库数据或密钥。
+- 不要在 `docker-compose.yml` 写死数据库密码；使用 `.env` 注入。
 - 不要把真实 API key 写入测试、README 或日志。
-- pgvector API 服务端不负责迁移，迁移和写库由 `pnpm rag:ingest` 完成。
-- 本地 fallback 必须保持可用。
+- API 服务端不负责迁移，迁移和写库由 `pnpm rag:ingest` 完成。
 - 新增行为需要加测试；风险较高的改动跑 `pnpm check`。
 - 对外错误信息应清晰区分：
   - LLM 配置缺失

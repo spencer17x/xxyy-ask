@@ -1,14 +1,9 @@
-import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { IncomingHttpHeaders } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import {
-  createOpenAiEmbeddingProvider,
-  EmbeddingConfigurationError,
-  loadKnowledgeIndex,
-} from '@xxyy/knowledge';
+import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
   createChatService,
   createLazyRetriever,
@@ -24,7 +19,7 @@ import { supportedChannels } from '@xxyy/shared';
 import type { ChatService, RagEnv } from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
 
-type ApiEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
+type ApiEnv = RagEnv;
 
 export interface ApiRequestLike {
   method?: string;
@@ -45,7 +40,6 @@ export type ApiRequestHandler = (
 ) => Promise<void>;
 
 export interface CreateRequestHandlerOptions {
-  cwd?: string;
   env?: ApiEnv;
   getChatService?: () => Promise<ChatService>;
   renderHtml?: () => string;
@@ -58,22 +52,11 @@ interface ChatPayload {
   userId?: string;
 }
 
-export class MissingIndexError extends Error {
-  constructor(public readonly indexPath: string) {
-    super(`Knowledge index not found at ${indexPath}. Run pnpm rag:ingest first.`);
-  }
-}
-
 export function createRequestHandler(options: CreateRequestHandlerOptions = {}): ApiRequestHandler {
   const env = options.env ?? process.env;
-  const cwd = resolveWorkspaceCwd(options.cwd ?? process.cwd(), env);
   const config = loadRagConfig(env);
-  const displayIndexPath = config.indexPath;
-  const absoluteIndexPath = path.resolve(cwd, config.indexPath);
   const renderHtml = options.renderHtml ?? renderChatPage;
-  const getChatService =
-    options.getChatService ??
-    createCachedChatServiceLoader(absoluteIndexPath, displayIndexPath, config);
+  const getChatService = options.getChatService ?? createCachedChatServiceLoader(config);
 
   return async function handleRequest(request, response): Promise<void> {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
@@ -100,14 +83,6 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
 
       sendJson(response, 404, { error: 'not_found', message: 'Route not found.' });
     } catch (error) {
-      if (error instanceof MissingIndexError) {
-        sendJson(response, 503, {
-          error: 'knowledge_index_missing',
-          message: error.message,
-        });
-        return;
-      }
-
       if (error instanceof BadRequestError) {
         sendJson(response, 400, { error: 'bad_request', message: error.message });
         return;
@@ -153,19 +128,6 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   };
 }
 
-export function resolveWorkspaceCwd(cwd: string, env: ApiEnv): string {
-  const initCwd = env.INIT_CWD;
-  if (initCwd !== undefined && hasWorkspaceEvidence(initCwd)) {
-    return path.resolve(initCwd);
-  }
-
-  if (hasWorkspaceEvidence(cwd)) {
-    return path.resolve(cwd);
-  }
-
-  return findWorkspaceRoot(cwd) ?? path.resolve(cwd);
-}
-
 export function startServer(
   options: CreateRequestHandlerOptions = {},
 ): ReturnType<typeof createServer> {
@@ -183,47 +145,32 @@ export function startServer(
 }
 
 function createCachedChatServiceLoader(
-  absoluteIndexPath: string,
-  displayIndexPath: string,
   config: ReturnType<typeof loadRagConfig>,
 ): () => Promise<ChatService> {
   let cachedService: ChatService | undefined;
 
-  return async () => {
+  return () => {
     if (cachedService !== undefined) {
-      return cachedService;
+      return Promise.resolve(cachedService);
     }
 
-    if (config.vectorStore === 'pgvector') {
-      const retriever = createLazyRetriever(async () => {
-        const pool = createPgPool(config.databaseUrl);
+    const retriever = createLazyRetriever(async () => {
+      const pool = createPgPool(config.databaseUrl);
 
-        try {
-          const embeddingProvider = createOpenAiEmbeddingProvider({
-            apiKey: config.openAiApiKey,
-            baseUrl: config.openAiBaseUrl,
-            model: config.openAiEmbeddingModel,
-          });
-          return createPgVectorStore({ client: pool, embeddingProvider });
-        } catch (error) {
-          await pool.end();
-          throw error;
-        }
-      });
-      cachedService = createChatService({ config, retriever });
-      return cachedService;
-    }
-
-    try {
-      const index = await loadKnowledgeIndex(absoluteIndexPath);
-      cachedService = createChatService({ config, index });
-      return cachedService;
-    } catch (error) {
-      if (isMissingFileError(error)) {
-        throw new MissingIndexError(displayIndexPath);
+      try {
+        const embeddingProvider = createOpenAiEmbeddingProvider({
+          apiKey: config.openAiApiKey,
+          baseUrl: config.openAiBaseUrl,
+          model: config.openAiEmbeddingModel,
+        });
+        return createPgVectorStore({ client: pool, embeddingProvider });
+      } catch (error) {
+        await pool.end();
+        throw error;
       }
-      throw error;
-    }
+    });
+    cachedService = createChatService({ config, retriever });
+    return Promise.resolve(cachedService);
   };
 }
 
@@ -322,34 +269,6 @@ function sendHtml(response: ApiResponseLike, statusCode: number, html: string): 
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   response.end(html);
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
-}
-
-function hasWorkspaceEvidence(candidatePath: string): boolean {
-  return (
-    existsSync(path.join(candidatePath, 'pnpm-workspace.yaml')) ||
-    existsSync(path.join(candidatePath, 'docs', 'product-features')) ||
-    existsSync(path.join(candidatePath, '.rag', 'index.json'))
-  );
-}
-
-function findWorkspaceRoot(startPath: string): string | undefined {
-  let currentPath = path.resolve(startPath);
-
-  while (true) {
-    if (hasWorkspaceEvidence(currentPath)) {
-      return currentPath;
-    }
-
-    const parentPath = path.dirname(currentPath);
-    if (parentPath === currentPath) {
-      return undefined;
-    }
-    currentPath = parentPath;
-  }
 }
 
 class BadRequestError extends Error {}

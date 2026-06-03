@@ -45,14 +45,21 @@ docker compose up -d postgres
 `.env` 示例：
 
 ```bash
-RAG_VECTOR_STORE=pgvector
-DATABASE_URL=postgres://xxyy:password@localhost:5432/xxyy_ask
+POSTGRES_DB=xxyy_ask
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=xxyy
+POSTGRES_PASSWORD=换成强密码
 
 OPENAI_API_KEY=你的_API_Key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=你的回答模型
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+RAG_TOP_K=6
+RAG_ANSWER_PROVIDER=openai
 ```
+
+应用会从 `POSTGRES_*` 自动组装数据库连接串。使用外部托管数据库时，也可以只配置 `DATABASE_URL` 覆盖。
 
 写入知识库：
 
@@ -77,19 +84,6 @@ pnpm start
 ```text
 http://localhost:3000
 ```
-
-## 本地 fallback
-
-不用数据库临时开发时，可以使用本地索引模式：
-
-```bash
-export RAG_VECTOR_STORE=local
-pnpm rag:ingest
-pnpm rag:ask -- "XXYY Pro 有哪些权益？"
-pnpm start
-```
-
-本地索引写入 `.rag/index.json`，该目录不提交。
 
 ## API
 

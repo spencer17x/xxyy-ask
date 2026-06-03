@@ -1,11 +1,6 @@
-export type VectorStoreKind = 'local' | 'pgvector';
-
 export interface RagConfig {
   topK: number;
   answerProvider: string;
-  embeddingProvider: string;
-  indexPath: string;
-  vectorStore: VectorStoreKind;
   databaseUrl: string | undefined;
   openAiApiKey: string | undefined;
   openAiApiKeyPresent: boolean;
@@ -21,11 +16,13 @@ export type RagEnv = Partial<
     | 'OPENAI_BASE_URL'
     | 'OPENAI_EMBEDDING_MODEL'
     | 'OPENAI_MODEL'
+    | 'POSTGRES_DB'
+    | 'POSTGRES_HOST'
+    | 'POSTGRES_PASSWORD'
+    | 'POSTGRES_PORT'
+    | 'POSTGRES_USER'
     | 'RAG_ANSWER_PROVIDER'
-    | 'RAG_EMBEDDING_PROVIDER'
-    | 'RAG_INDEX_PATH'
-    | 'RAG_TOP_K'
-    | 'RAG_VECTOR_STORE',
+    | 'RAG_TOP_K',
     string
   >
 >;
@@ -33,15 +30,14 @@ export type RagEnv = Partial<
 const DEFAULT_TOP_K = 6;
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+const DEFAULT_POSTGRES_HOST = 'localhost';
+const DEFAULT_POSTGRES_PORT = '5432';
 
 export function loadRagConfig(env: RagEnv = process.env): RagConfig {
   const config: RagConfig = {
     topK: parseTopK(env.RAG_TOP_K),
     answerProvider: env.RAG_ANSWER_PROVIDER ?? 'openai',
-    embeddingProvider: env.RAG_EMBEDDING_PROVIDER ?? 'local',
-    indexPath: env.RAG_INDEX_PATH ?? '.rag/index.json',
-    vectorStore: parseVectorStore(env.RAG_VECTOR_STORE),
-    databaseUrl: env.DATABASE_URL,
+    databaseUrl: env.DATABASE_URL ?? buildPostgresUrl(env),
     openAiApiKey: env.OPENAI_API_KEY,
     openAiApiKeyPresent: Boolean(env.OPENAI_API_KEY),
     openAiBaseUrl: env.OPENAI_BASE_URL ?? DEFAULT_OPENAI_BASE_URL,
@@ -50,6 +46,31 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
   };
 
   return config;
+}
+
+function buildPostgresUrl(env: RagEnv): string | undefined {
+  if (
+    env.POSTGRES_DB === undefined ||
+    env.POSTGRES_PASSWORD === undefined ||
+    env.POSTGRES_USER === undefined
+  ) {
+    return undefined;
+  }
+
+  const host = env.POSTGRES_HOST ?? DEFAULT_POSTGRES_HOST;
+  const port = env.POSTGRES_PORT ?? DEFAULT_POSTGRES_PORT;
+  return [
+    'postgres://',
+    encodeURIComponent(env.POSTGRES_USER),
+    ':',
+    encodeURIComponent(env.POSTGRES_PASSWORD),
+    '@',
+    host,
+    ':',
+    port,
+    '/',
+    encodeURIComponent(env.POSTGRES_DB),
+  ].join('');
 }
 
 function parseTopK(value: string | undefined): number {
@@ -63,12 +84,4 @@ function parseTopK(value: string | undefined): number {
   }
 
   return parsed;
-}
-
-function parseVectorStore(value: string | undefined): VectorStoreKind {
-  if (value === undefined || value === 'local' || value === 'pgvector') {
-    return value ?? 'local';
-  }
-
-  throw new Error(`Unsupported RAG_VECTOR_STORE: ${value}`);
 }

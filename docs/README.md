@@ -40,7 +40,7 @@ pnpm rag:evaluate
 pnpm start
 ```
 
-默认索引文件写入 `.rag/index.json`，该目录不提交。启动 API 前如果索引不存在，先运行 `pnpm rag:ingest`。产品问答会检索知识库片段，再调用 LLM 生成客服回答；如果缺少 `OPENAI_API_KEY` 或 `OPENAI_MODEL`，CLI 会直接报错，API 会返回 `llm_configuration_missing`。Web UI 由 `apps/api` 在 `/` 提供，因此本地体验直接运行 `pnpm start` 后打开 API 地址即可。
+正式知识库写入 Postgres + pgvector。启动 API 前先运行 `pnpm rag:ingest` 完成迁移和写库。产品问答会检索知识库片段，再调用 LLM 生成客服回答；如果缺少 `OPENAI_API_KEY` 或 `OPENAI_MODEL`，CLI 会直接报错，API 会返回对应配置错误。Web UI 由 `apps/api` 在 `/` 提供，因此本地体验直接运行 `pnpm start` 后打开 API 地址即可。
 
 HTTP 交互：
 
@@ -68,12 +68,19 @@ docker compose up -d postgres
 配置：
 
 ```bash
-export RAG_VECTOR_STORE=pgvector
-export DATABASE_URL="postgres://xxyy:password@localhost:5432/xxyy_ask"
+export POSTGRES_DB="xxyy_ask"
+export POSTGRES_HOST="localhost"
+export POSTGRES_PORT="5432"
+export POSTGRES_USER="xxyy"
+export POSTGRES_PASSWORD="换成强密码"
 export OPENAI_API_KEY="你的 API Key"
 export OPENAI_MODEL="你的回答模型"
 export OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
+export RAG_TOP_K=6
+export RAG_ANSWER_PROVIDER=openai
 ```
+
+应用会从 `POSTGRES_*` 自动组装数据库连接串。使用外部托管数据库时，也可以只配置 `DATABASE_URL` 覆盖。
 
 写入知识库：
 
@@ -85,12 +92,4 @@ pnpm rag:ingest
 
 ```bash
 pnpm start
-```
-
-本地 fallback 仍可使用：
-
-```bash
-export RAG_VECTOR_STORE=local
-pnpm rag:ingest
-pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 ```
