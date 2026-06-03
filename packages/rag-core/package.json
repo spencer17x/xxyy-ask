@@ -8,9 +8,13 @@
   },
   "dependencies": {
     "@xxyy/knowledge": "workspace:*",
-    "@xxyy/shared": "workspace:*"
+    "@xxyy/shared": "workspace:*",
+    "pg": "^8.21.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0"
   }
 }

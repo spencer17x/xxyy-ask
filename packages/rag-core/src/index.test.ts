@@ -6,10 +6,14 @@ import {
   createGroundedAnswer,
   createLocalRetriever,
   createOpenAiAnswerProvider,
+  createPgPool,
+  createPgVectorStore,
   evaluateCases,
   LlmConfigurationError,
   loadRagConfig,
   retrieve,
+  toPgVectorLiteral,
+  VectorStoreConfigurationError,
   workspacePackageName,
 } from './index.js';
 
@@ -23,6 +27,10 @@ describe('rag-core public exports', () => {
     expect(createGroundedAnswer).toBeTypeOf('function');
     expect(createOpenAiAnswerProvider).toBeTypeOf('function');
     expect(LlmConfigurationError).toBeTypeOf('function');
+    expect(createPgPool).toBeTypeOf('function');
+    expect(createPgVectorStore).toBeTypeOf('function');
+    expect(toPgVectorLiteral).toBeTypeOf('function');
+    expect(VectorStoreConfigurationError).toBeTypeOf('function');
     expect(createChatService).toBeTypeOf('function');
     expect(evaluateCases).toBeTypeOf('function');
   });
