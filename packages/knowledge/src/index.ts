@@ -10,6 +10,14 @@ export {
 export type { EmbeddingProvider } from './index-store.js';
 export { loadProductDocuments } from './load-documents.js';
 export type { LoadProductDocumentsOptions } from './load-documents.js';
+export {
+  createOpenAiEmbeddingProvider,
+  EmbeddingConfigurationError,
+} from './openai-embedding-provider.js';
+export type {
+  BatchEmbeddingProvider,
+  OpenAiEmbeddingProviderOptions,
+} from './openai-embedding-provider.js';
 export { tokenize } from './tokenize.js';
 
 export type {
