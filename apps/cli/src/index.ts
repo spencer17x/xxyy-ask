@@ -243,9 +243,9 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
         baseUrl: config.openAiBaseUrl,
         model: config.openAiEmbeddingModel,
       });
-      const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
       const store = createPgVectorStore({ client: pool, embeddingProvider });
       await store.migrate();
+      const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
       await store.upsertChunks(embeddedChunks);
     } finally {
       await pool.end();

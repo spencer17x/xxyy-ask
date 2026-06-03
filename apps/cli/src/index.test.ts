@@ -2,7 +2,10 @@ import { mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import type { PreparedKnowledgeChunk } from '@xxyy/knowledge';
+import type { SourceDocument } from '@xxyy/shared';
 
 import {
   formatChatResponse,
@@ -140,5 +143,106 @@ describe('runCli', () => {
 
     expect(exitCode).toBe(1);
     expect(stderr.join('')).toContain('DATABASE_URL is required when RAG_VECTOR_STORE=pgvector');
+  });
+
+  it('migrates pgvector storage before embedding prepared chunks', async () => {
+    vi.resetModules();
+
+    const events: string[] = [];
+    const documents = [
+      {
+        id: 'doc-1',
+        title: 'Doc 1',
+        module: 'Product',
+        sourceType: 'official_docs',
+        file: 'docs/doc-1.md',
+        content: 'Doc content',
+      },
+    ] satisfies SourceDocument[];
+    const chunks = [
+      {
+        id: 'chunk-1',
+        documentId: 'doc-1',
+        text: 'Doc content',
+        metadata: {
+          title: 'Doc 1',
+          module: 'Product',
+          sourceType: 'official_docs',
+          file: 'docs/doc-1.md',
+          headingPath: [],
+        },
+        searchableText: 'Doc 1 Doc content',
+        tokens: ['doc', 'content'],
+        contentHash: 'hash-1',
+      },
+    ] satisfies PreparedKnowledgeChunk[];
+    const embedTexts = vi.fn(() => {
+      events.push('embed');
+      return Promise.resolve([[0.1, 0.2, 0.3]]);
+    });
+    const migrate = vi.fn(() => {
+      events.push('migrate');
+      return Promise.resolve();
+    });
+    const upsertChunks = vi.fn(() => {
+      events.push('upsert');
+      return Promise.resolve();
+    });
+    const end = vi.fn(() => {
+      events.push('pool.end');
+      return Promise.resolve();
+    });
+
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createOpenAiEmbeddingProvider: vi.fn(() => ({ embedTexts })),
+        loadProductDocuments: vi.fn(() => Promise.resolve(documents)),
+        prepareKnowledgeChunks: vi.fn(() => chunks),
+      };
+    });
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgPool: vi.fn(() => ({ end })),
+        createPgVectorStore: vi.fn(() => ({
+          migrate,
+          retrieve: vi.fn(),
+          upsertChunks,
+        })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          embeddingProvider: 'openai',
+          indexPath: '.rag/index.json',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiModel: 'gpt-test',
+          topK: 6,
+          vectorStore: 'pgvector',
+        })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+
+      const exitCode = await runCliWithMocks(['ingest'], {
+        cwd: process.cwd(),
+        env: {},
+        stderr: { write: () => true },
+        stdout: { write: () => true },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(events).toEqual(['migrate', 'embed', 'upsert', 'pool.end']);
+    } finally {
+      vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+    }
   });
 });
