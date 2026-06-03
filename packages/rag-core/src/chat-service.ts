@@ -5,14 +5,15 @@ import type { AnswerProvider } from './answer-provider.js';
 import { classifyQuestion } from './classify.js';
 import { loadRagConfig, type RagConfig } from './config.js';
 import { createOpenAiAnswerProvider } from './openai-answer-provider.js';
-import { retrieve } from './retrieve.js';
+import { createLocalRetriever, type Retriever } from './retriever.js';
 
 export interface ChatService {
   ask(request: ChatRequest): Promise<ChatResponse>;
 }
 
 export interface CreateChatServiceOptions {
-  index: RagIndex;
+  index?: RagIndex;
+  retriever?: Retriever;
   answerProvider?: AnswerProvider;
   config?: Partial<RagConfig>;
 }
@@ -22,6 +23,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
     ...loadRagConfig(),
     ...options.config,
   };
+  const retriever = createRetriever(options);
 
   return {
     async ask(request: ChatRequest): Promise<ChatResponse> {
@@ -30,7 +32,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
         return createBoundaryAnswer(classification);
       }
 
-      const retrievedChunks = retrieve(request.message, options.index, { topK: config.topK });
+      const retrievedChunks = await retriever.retrieve(request.message, { topK: config.topK });
       const answerProvider = options.answerProvider ?? createConfiguredAnswerProvider(config);
 
       return answerProvider.answer({
@@ -40,6 +42,18 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
       });
     },
   };
+}
+
+function createRetriever(options: CreateChatServiceOptions): Retriever {
+  if (options.retriever !== undefined) {
+    return options.retriever;
+  }
+
+  if (options.index !== undefined) {
+    return createLocalRetriever(options.index);
+  }
+
+  throw new Error('createChatService requires either index or retriever.');
 }
 
 function shouldRetrieve(intent: ChatResponse['intent']): boolean {

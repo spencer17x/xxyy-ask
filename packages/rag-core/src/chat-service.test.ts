@@ -74,6 +74,79 @@ describe('createChatService', () => {
     expect(response.citations).toEqual([]);
   });
 
+  it('uses an async retriever for grounded product questions', async () => {
+    const retrievedQuestions: string[] = [];
+    const answerProvider: AnswerProvider = {
+      answer({ retrievedChunks }) {
+        return Promise.resolve({
+          answer: 'XXYY Pro 支持 Telegram 钱包监控。',
+          citations: retrievedChunks.map((chunk) => ({
+            excerpt: chunk.text,
+            file: chunk.metadata.file,
+            title: chunk.metadata.title,
+          })),
+          confidence: 0.9,
+          intent: 'product_qa',
+        });
+      },
+    };
+    const service = createChatService({
+      answerProvider,
+      retriever: {
+        retrieve(question) {
+          retrievedQuestions.push(question);
+          const fixtureEntry = createFixtureIndex([
+            {
+              id: 'official_docs:pro:chunk:0001',
+              title: 'XXYY Pro 权益',
+              sourceType: 'official_docs',
+              file: 'docs/pro.md',
+              text: 'XXYY Pro 支持 Telegram 钱包监控。',
+            },
+          ]).entries[0];
+          if (fixtureEntry === undefined) {
+            throw new Error('Expected fixture entry to exist');
+          }
+
+          return Promise.resolve([
+            {
+              ...fixtureEntry,
+              lexicalScore: 1,
+              rank: 1,
+              score: 1,
+              vectorScore: 1,
+            },
+          ]);
+        },
+      },
+    });
+
+    const response = await service.ask({
+      channel: 'web',
+      message: 'XXYY Pro 支持什么？',
+    });
+
+    expect(response.citations).toHaveLength(1);
+    expect(retrievedQuestions).toEqual(['XXYY Pro 支持什么？']);
+  });
+
+  it('does not call the async retriever for boundary questions', async () => {
+    const service = createChatService({
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
+    });
+
+    const response = await service.ask({
+      channel: 'web',
+      message: '帮我查一下钱包余额',
+    });
+
+    expect(response.intent).toBe('realtime_account_query');
+  });
+
   it('requires LLM configuration for grounded product questions when no provider is injected', async () => {
     const service = createChatService({
       config: {

@@ -6,6 +6,7 @@ export { loadRagConfig } from './config.js';
 export { evaluateCases } from './evaluate.js';
 export { createOpenAiAnswerProvider, LlmConfigurationError } from './openai-answer-provider.js';
 export { retrieve } from './retrieve.js';
+export { createLocalRetriever } from './retriever.js';
 export { createChatService } from './chat-service.js';
 
 export type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
@@ -14,3 +15,4 @@ export type { RagConfig, RagEnv } from './config.js';
 export type { EvaluationCase, EvaluationReport, EvaluationResult } from './evaluate.js';
 export type { OpenAiAnswerProviderOptions } from './openai-answer-provider.js';
 export type { RetrieveOptions, RetrievedChunk } from './retrieve.js';
+export type { Retriever } from './retriever.js';
