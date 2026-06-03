@@ -4,8 +4,19 @@ import type { IncomingHttpHeaders } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { loadKnowledgeIndex } from '@xxyy/knowledge';
-import { createChatService, LlmConfigurationError, loadRagConfig } from '@xxyy/rag-core';
+import {
+  createOpenAiEmbeddingProvider,
+  EmbeddingConfigurationError,
+  loadKnowledgeIndex,
+} from '@xxyy/knowledge';
+import {
+  createChatService,
+  createPgPool,
+  createPgVectorStore,
+  LlmConfigurationError,
+  loadRagConfig,
+  VectorStoreConfigurationError,
+} from '@xxyy/rag-core';
 import type { ChatRequest, ChatChannel } from '@xxyy/shared';
 import { supportedChannels } from '@xxyy/shared';
 import type { ChatService, RagEnv } from '@xxyy/rag-core';
@@ -108,6 +119,22 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
         return;
       }
 
+      if (error instanceof EmbeddingConfigurationError) {
+        sendJson(response, 503, {
+          error: 'embedding_configuration_missing',
+          message: error.message,
+        });
+        return;
+      }
+
+      if (error instanceof VectorStoreConfigurationError) {
+        sendJson(response, 503, {
+          error: 'vector_store_configuration_missing',
+          message: error.message,
+        });
+        return;
+      }
+
       sendJson(response, 500, {
         error: 'internal_error',
         message: 'Unable to process request.',
@@ -155,6 +182,24 @@ function createCachedChatServiceLoader(
   return async () => {
     if (cachedService !== undefined) {
       return cachedService;
+    }
+
+    if (config.vectorStore === 'pgvector') {
+      const pool = createPgPool(config.databaseUrl);
+
+      try {
+        const embeddingProvider = createOpenAiEmbeddingProvider({
+          apiKey: config.openAiApiKey,
+          baseUrl: config.openAiBaseUrl,
+          model: config.openAiEmbeddingModel,
+        });
+        const retriever = createPgVectorStore({ client: pool, embeddingProvider });
+        cachedService = createChatService({ config, retriever });
+        return cachedService;
+      } catch (error) {
+        await pool.end();
+        throw error;
+      }
     }
 
     try {

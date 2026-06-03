@@ -151,6 +151,50 @@ describe('createRequestHandler', () => {
     });
   });
 
+  it('returns a useful 503 when pgvector configuration is missing', async () => {
+    const handler = createRequestHandler({
+      env: {
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_MODEL: 'test-model',
+        RAG_VECTOR_STORE: 'pgvector',
+      },
+    });
+
+    const response = await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat',
+      body: { message: 'XXYY Pro 有哪些权益？' },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'vector_store_configuration_missing',
+      message: 'DATABASE_URL is required when RAG_VECTOR_STORE=pgvector.',
+    });
+  });
+
+  it('returns a useful 503 when embedding configuration is missing', async () => {
+    const handler = createRequestHandler({
+      env: {
+        DATABASE_URL: 'postgres://xxyy:password@localhost:5432/xxyy_ask',
+        OPENAI_MODEL: 'test-model',
+        RAG_VECTOR_STORE: 'pgvector',
+      },
+    });
+
+    const response = await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat',
+      body: { message: 'XXYY Pro 有哪些权益？' },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'embedding_configuration_missing',
+      message: 'OPENAI_API_KEY is required for embedding generation.',
+    });
+  });
+
   it('uses handler env when loading the default ChatService', async () => {
     const llmRequests: unknown[] = [];
     const server = createServer((request, response) => {
