@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 
 import type { BatchEmbeddingProvider, PreparedKnowledgeChunk } from '@xxyy/knowledge';
 import { tokenize } from '@xxyy/knowledge';
-import type { IndexEntry, SourceType } from '@xxyy/shared';
+import type { ChunkMetadata, IndexEntry, SourceType } from '@xxyy/shared';
 
 import type { RetrieveOptions, RetrievedChunk } from './retrieve.js';
 import type { Retriever } from './retriever.js';
@@ -11,7 +11,12 @@ export interface PgClientLike {
   query<T>(sql: string, values?: readonly unknown[]): Promise<{ rows: T[] }>;
 }
 
-export interface EmbeddedKnowledgeChunk extends PreparedKnowledgeChunk {
+interface PgVectorChunkMetadata extends ChunkMetadata {
+  retrievedAt?: string;
+}
+
+export interface EmbeddedKnowledgeChunk extends Omit<PreparedKnowledgeChunk, 'metadata'> {
+  metadata: PgVectorChunkMetadata;
   embedding: number[];
 }
 
@@ -40,6 +45,9 @@ interface KnowledgeChunkRow {
   tokens: string[];
   embedding_distance: number;
 }
+
+const PGVECTOR_EMBEDDING_DIMENSION = 1536;
+const DEFAULT_TOP_K = 6;
 
 export class VectorStoreConfigurationError extends Error {}
 
@@ -93,6 +101,8 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
 
     async upsertChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void> {
       for (const chunk of chunks) {
+        validateEmbedding(chunk.embedding);
+
         await options.client.query(
           `
           insert into knowledge_chunks (
@@ -127,7 +137,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
             chunk.metadata.file,
             JSON.stringify(chunk.metadata.headingPath),
             chunk.metadata.order,
-            undefined,
+            chunk.metadata.retrievedAt ?? null,
             chunk.text,
             chunk.tokens,
             toPgVectorLiteral(chunk.embedding),
@@ -143,7 +153,9 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         return [];
       }
 
-      const topK = retrieveOptions.topK ?? 6;
+      validateEmbedding(queryEmbedding);
+
+      const topK = normalizeTopK(retrieveOptions.topK);
       const queryTokens = tokenize(question);
       const response = await options.client.query<KnowledgeChunkRow>(
         `
@@ -169,6 +181,32 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
 
 export function toPgVectorLiteral(vector: number[]): string {
   return `[${vector.join(',')}]`;
+}
+
+function validateEmbedding(embedding: number[]): void {
+  if (embedding.length !== PGVECTOR_EMBEDDING_DIMENSION) {
+    throw new Error(
+      `Expected embedding dimension ${PGVECTOR_EMBEDDING_DIMENSION}, got ${embedding.length}.`,
+    );
+  }
+
+  for (let index = 0; index < PGVECTOR_EMBEDDING_DIMENSION; index += 1) {
+    if (!Number.isFinite(embedding[index])) {
+      throw new Error('Embedding contains a non-finite value.');
+    }
+  }
+}
+
+function normalizeTopK(topK: number | undefined): number {
+  if (topK === undefined) {
+    return DEFAULT_TOP_K;
+  }
+
+  if (!Number.isInteger(topK) || topK <= 0) {
+    return DEFAULT_TOP_K;
+  }
+
+  return topK;
 }
 
 function mapRow(row: KnowledgeChunkRow, queryTokens: string[]): RetrievedChunk {

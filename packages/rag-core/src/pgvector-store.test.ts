@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { createPgVectorStore, toPgVectorLiteral } from './pgvector-store.js';
+import {
+  createPgVectorStore,
+  toPgVectorLiteral,
+  type EmbeddedKnowledgeChunk,
+} from './pgvector-store.js';
 
 class FakePgClient {
   queries: Array<{ sql: string; values: readonly unknown[] }> = [];
@@ -14,7 +18,9 @@ class FakePgClient {
 
 describe('toPgVectorLiteral', () => {
   it('formats vectors for pgvector parameters', () => {
-    expect(toPgVectorLiteral([0.1, -0.2, 0])).toBe('[0.1,-0.2,0]');
+    const vector = embedding1536({ 0: 0.1, 1: -0.2 });
+
+    expect(toPgVectorLiteral(vector)).toBe(`[${vector.join(',')}]`);
   });
 });
 
@@ -41,26 +47,53 @@ describe('createPgVectorStore', () => {
     });
 
     await store.upsertChunks([
-      {
-        contentHash: 'hash-1',
-        documentId: 'official_docs:pro',
-        embedding: [0.1, 0.2, 0.3],
-        id: 'official_docs:pro:chunk:0001',
+      createChunk({
+        embedding: embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 }),
+        metadata: { retrievedAt: '2026-05-24T06:41:04.265Z' },
+      }),
+      createChunk({
+        contentHash: 'hash-2',
+        documentId: 'official_docs:basic',
+        id: 'official_docs:basic:chunk:0001',
         metadata: {
-          file: 'docs/pro.md',
-          headingPath: ['XXYY Pro 权益'],
-          module: 'XXYY Pro',
-          sourceType: 'official_docs',
-          title: 'XXYY Pro 权益',
+          file: 'docs/basic.md',
+          headingPath: ['XXYY Basic'],
+          module: 'XXYY Basic',
+          title: 'XXYY Basic',
         },
-        searchableText: 'XXYY Pro 权益\nXXYY Pro 支持 Telegram 钱包监控。',
-        text: 'XXYY Pro 支持 Telegram 钱包监控。',
-        tokens: ['xxyy', 'pro', 'telegram'],
-      },
+      }),
     ]);
 
     expect(client.queries[0]?.sql).toContain('insert into knowledge_chunks');
-    expect(client.queries[0]?.values).toContain('[0.1,0.2,0.3]');
+    expect(client.queries[0]?.values).toContain(
+      toPgVectorLiteral(embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 })),
+    );
+    expect(client.queries[0]?.values[9]).toBe('2026-05-24T06:41:04.265Z');
+    expect(client.queries[1]?.values[9]).toBeNull();
+  });
+
+  it('rejects upsert chunk embeddings with the wrong dimension', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await expect(store.upsertChunks([createChunk({ embedding: [0.1, 0.2, 0.3] })])).rejects.toThrow(
+      'Expected embedding dimension 1536, got 3.',
+    );
+  });
+
+  it('rejects upsert chunk embeddings with non-finite values', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await expect(
+      store.upsertChunks([createChunk({ embedding: embedding1536({ 0: Number.NaN }) })]),
+    ).rejects.toThrow('Embedding contains a non-finite value.');
   });
 
   it('retrieves and maps pgvector rows into RetrievedChunk results', async () => {
@@ -88,7 +121,7 @@ describe('createPgVectorStore', () => {
       embeddingProvider: {
         embedTexts(texts) {
           embeddedTexts.push(texts);
-          return Promise.resolve([[0.1, 0.2, 0.3]]);
+          return Promise.resolve([embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 })]);
         },
       },
     });
@@ -108,4 +141,99 @@ describe('createPgVectorStore', () => {
       text: 'XXYY Pro 支持 Telegram 钱包监控。',
     });
   });
+
+  it('rejects query embeddings with the wrong dimension', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([[0.1, 0.2, 0.3]]) },
+    });
+
+    await expect(store.retrieve('XXYY Pro 支持什么？', { topK: 1 })).rejects.toThrow(
+      'Expected embedding dimension 1536, got 3.',
+    );
+  });
+
+  it('rejects query embeddings with non-finite values', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: Number.POSITIVE_INFINITY })]),
+      },
+    });
+
+    await expect(store.retrieve('XXYY Pro 支持什么？', { topK: 1 })).rejects.toThrow(
+      'Embedding contains a non-finite value.',
+    );
+  });
+
+  it.each([0, -2])('normalizes invalid topK %s to the default', async (topK) => {
+    const client = new FakePgClient();
+    client.rows = Array.from({ length: 8 }, (_, index) => ({
+      content: `XXYY Pro chunk ${index}`,
+      document_id: 'official_docs:pro',
+      embedding_distance: index / 100,
+      file: 'docs/pro.md',
+      heading_path: ['XXYY Pro 权益'],
+      id: `official_docs:pro:chunk:${String(index + 1).padStart(4, '0')}`,
+      module: 'XXYY Pro',
+      order_index: null,
+      retrieved_at: null,
+      source_type: 'official_docs',
+      source_url: null,
+      title: 'XXYY Pro 权益',
+      tokens: ['xxyy', 'pro'],
+    }));
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 })]),
+      },
+    });
+
+    const results = await store.retrieve('XXYY Pro 支持什么？', { topK });
+
+    expect(client.queries.at(-1)?.values[1]).toBe(24);
+    expect(results).toHaveLength(6);
+  });
 });
+
+type TestChunk = EmbeddedKnowledgeChunk & {
+  metadata: EmbeddedKnowledgeChunk['metadata'] & { retrievedAt?: string };
+};
+
+type TestChunkOverrides = Partial<Omit<TestChunk, 'metadata'>> & {
+  metadata?: Partial<TestChunk['metadata']>;
+};
+
+function embedding1536(overrides: Record<number, number> = {}): number[] {
+  const vector = Array.from({ length: 1536 }, () => 0);
+  for (const [index, value] of Object.entries(overrides)) {
+    vector[Number(index)] = value;
+  }
+  return vector;
+}
+
+function createChunk(overrides: TestChunkOverrides = {}): TestChunk {
+  const { metadata: metadataOverrides, ...chunkOverrides } = overrides;
+
+  return {
+    contentHash: 'hash-1',
+    documentId: 'official_docs:pro',
+    embedding: embedding1536(),
+    id: 'official_docs:pro:chunk:0001',
+    metadata: {
+      file: 'docs/pro.md',
+      headingPath: ['XXYY Pro 权益'],
+      module: 'XXYY Pro',
+      sourceType: 'official_docs',
+      title: 'XXYY Pro 权益',
+      ...metadataOverrides,
+    },
+    searchableText: 'XXYY Pro 权益\nXXYY Pro 支持 Telegram 钱包监控。',
+    text: 'XXYY Pro 支持 Telegram 钱包监控。',
+    tokens: ['xxyy', 'pro', 'telegram'],
+    ...chunkOverrides,
+  };
+}
