@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -47,6 +47,13 @@ interface CliIo {
   env: CliEnv;
   stderr: Pick<NodeJS.WriteStream, 'write'>;
   stdout: Pick<NodeJS.WriteStream, 'write'>;
+}
+
+interface DefaultCliIoOptions {
+  cwd?: string;
+  env?: CliEnv;
+  stderr?: Pick<NodeJS.WriteStream, 'write'>;
+  stdout?: Pick<NodeJS.WriteStream, 'write'>;
 }
 
 interface CliChatRuntime {
@@ -151,14 +158,22 @@ export function formatEvaluationReport(report: EvaluationReport): string {
   return lines.join('\n');
 }
 
+export function createDefaultCliIo(options: DefaultCliIoOptions = {}): CliIo {
+  const cwd = options.cwd ?? process.cwd();
+  const shellEnv = options.env ?? process.env;
+  const workspaceCwd = resolveWorkspaceCwd(cwd, shellEnv);
+
+  return {
+    cwd,
+    env: mergeEnv(loadDotEnvFile(path.join(workspaceCwd, '.env')), shellEnv),
+    stderr: options.stderr ?? process.stderr,
+    stdout: options.stdout ?? process.stdout,
+  };
+}
+
 export async function runCli(
   args: readonly string[] = process.argv.slice(2),
-  io: CliIo = {
-    cwd: process.cwd(),
-    env: process.env,
-    stderr: process.stderr,
-    stdout: process.stdout,
-  },
+  io: CliIo = createDefaultCliIo(),
 ): Promise<number> {
   const parsed = parseCliArgs(args);
   const workspaceCwd = resolveWorkspaceCwd(io.cwd, io.env);
@@ -322,6 +337,63 @@ function writeConfigurationError(io: CliIo, error: unknown): boolean {
   }
 
   return false;
+}
+
+function loadDotEnvFile(filePath: string): CliEnv {
+  if (!existsSync(filePath)) {
+    return {};
+  }
+
+  const values: Record<string, string> = {};
+  for (const rawLine of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.length === 0 || line.startsWith('#')) {
+      continue;
+    }
+
+    const withoutExport = line.startsWith('export ') ? line.slice('export '.length).trim() : line;
+    const separatorIndex = withoutExport.indexOf('=');
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = withoutExport.slice(0, separatorIndex).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      continue;
+    }
+
+    values[key] = parseDotEnvValue(withoutExport.slice(separatorIndex + 1).trim());
+  }
+
+  return values;
+}
+
+function parseDotEnvValue(value: string): string {
+  const quote = value[0];
+  if ((quote === '"' || quote === "'") && value.length >= 2 && value[value.length - 1] === quote) {
+    const unquoted = value.slice(1, -1);
+    return quote === '"' ? unquoted.replaceAll('\\n', '\n').replaceAll('\\"', '"') : unquoted;
+  }
+
+  return value;
+}
+
+function mergeEnv(fileEnv: CliEnv, shellEnv: CliEnv): CliEnv {
+  const merged: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(fileEnv)) {
+    if (value !== undefined) {
+      merged[key] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(shellEnv)) {
+    if (value !== undefined) {
+      merged[key] = value;
+    }
+  }
+
+  return merged;
 }
 
 function hasWorkspaceEvidence(candidatePath: string): boolean {

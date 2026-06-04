@@ -26,13 +26,7 @@ pnpm install
 cp .env.example .env
 ```
 
-当前项目不会自动加载 `.env`。运行命令前需要在 shell 里加载：
-
-```bash
-set -a
-source .env
-set +a
-```
+`pnpm rag:*` 命令会自动读取项目根目录 `.env`。如果同名变量已经在 shell 里导出，则 shell 里的值优先。
 
 ## 正式运行：Postgres + pgvector
 

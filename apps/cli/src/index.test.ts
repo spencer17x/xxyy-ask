@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -8,6 +8,7 @@ import type { PreparedKnowledgeChunk } from '@xxyy/knowledge';
 import type { SourceDocument } from '@xxyy/shared';
 
 import {
+  createDefaultCliIo,
   formatChatResponse,
   formatEvaluationReport,
   formatIngestSummary,
@@ -42,6 +43,37 @@ describe('resolveWorkspaceCwd', () => {
     await mkdir(appCwd, { recursive: true });
 
     expect(resolveWorkspaceCwd(appCwd, { INIT_CWD: workspaceRoot })).toBe(workspaceRoot);
+  });
+});
+
+describe('createDefaultCliIo', () => {
+  it('loads workspace .env values without overriding shell env', async () => {
+    const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-cli-env-'));
+    await writeFile(path.join(workspaceRoot, 'pnpm-workspace.yaml'), 'packages: []\n');
+    await writeFile(
+      path.join(workspaceRoot, '.env'),
+      [
+        'POSTGRES_DB=xxyy_ask',
+        'POSTGRES_HOST=localhost',
+        'POSTGRES_PORT=5432',
+        'POSTGRES_USER=xxyy',
+        'POSTGRES_PASSWORD=from_file',
+        'OPENAI_MODEL=openrouter/free',
+      ].join('\n'),
+    );
+
+    const io = createDefaultCliIo({
+      cwd: workspaceRoot,
+      env: {
+        POSTGRES_PASSWORD: 'from_shell',
+      },
+      stderr: { write: () => true },
+      stdout: { write: () => true },
+    });
+
+    expect(io.env.POSTGRES_DB).toBe('xxyy_ask');
+    expect(io.env.POSTGRES_PASSWORD).toBe('from_shell');
+    expect(io.env.OPENAI_MODEL).toBe('openrouter/free');
   });
 });
 

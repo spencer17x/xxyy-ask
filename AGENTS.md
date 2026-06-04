@@ -48,13 +48,7 @@ RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
 ```
 
-注意：项目当前不会自动加载 `.env`。需要先运行：
-
-```bash
-set -a
-source .env
-set +a
-```
+`pnpm rag:*` 命令会自动读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
 
 ## 常用验证
 
@@ -75,14 +69,14 @@ pnpm test packages/rag-core/src/pgvector-store.test.ts
 关键行为验证：
 
 ```bash
-env -u DATABASE_URL -u OPENAI_API_KEY -u OPENAI_MODEL pnpm rag:ask -- "帮我查一下钱包余额"
-env -u DATABASE_URL OPENAI_API_KEY=test-key OPENAI_MODEL=test-model OPENAI_EMBEDDING_MODEL=text-embedding-3-small pnpm rag:ask -- "XXYY Pro 有哪些权益？"
+env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD -u OPENAI_API_KEY -u OPENAI_MODEL pnpm rag:ask -- "帮我查一下钱包余额"
+env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_API_KEY=test-key OPENAI_MODEL=test-model OPENAI_EMBEDDING_MODEL=text-embedding-3-small pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 ```
 
 期望：
 
 - 边界问题不需要 DB/API key，应该返回 `realtime_account_query`。
-- 产品问题缺 `DATABASE_URL` 应明确失败。
+- 产品问题缺 `DATABASE_URL` 或 `POSTGRES_*` 应明确失败。
 
 ## 开发约束
 
