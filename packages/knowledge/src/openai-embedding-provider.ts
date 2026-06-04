@@ -58,10 +58,11 @@ export function createOpenAiEmbeddingProvider(
       });
 
       if (!response.ok) {
-        throw new Error(`Embedding request failed with status ${response.status}`);
+        const detail = await readErrorDetail(response);
+        throw new Error(`Embedding request failed with status ${response.status}${detail}`);
       }
 
-      const payload = (await response.json()) as EmbeddingResponse;
+      const payload = await readJsonResponse<EmbeddingResponse>(response);
       const rows = payload.data ?? [];
       const embeddings = new Array<number[] | undefined>(texts.length);
       const seenIndexes = new Set<number>();
@@ -93,4 +94,43 @@ export function createOpenAiEmbeddingProvider(
       return embeddings as number[][];
     },
   };
+}
+
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.length > 0 && !contentType.toLowerCase().includes('json')) {
+    throw new Error('Embedding response was not JSON. Check OPENAI_BASE_URL.');
+  }
+
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new Error('Embedding response was not valid JSON. Check OPENAI_BASE_URL.');
+  }
+}
+
+async function readErrorDetail(response: Response): Promise<string> {
+  const text = await response.text();
+  if (text.trim().length === 0) {
+    return '';
+  }
+
+  try {
+    const payload = JSON.parse(text) as {
+      error?: { message?: unknown };
+      message?: unknown;
+    };
+    const message = payload.error?.message ?? payload.message;
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return `: ${message.trim()}`;
+    }
+  } catch {
+    return `: ${truncateErrorDetail(text)}`;
+  }
+
+  return `: ${truncateErrorDetail(text)}`;
+}
+
+function truncateErrorDetail(text: string): string {
+  return text.replace(/\s+/gu, ' ').trim().slice(0, 300);
 }

@@ -117,4 +117,50 @@ describe('createOpenAiEmbeddingProvider', () => {
       'Embedding response did not include all embeddings.',
     );
   });
+
+  it('includes provider error details when an embedding request fails', async () => {
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: '模型 text-embedding-3-small 无可用渠道',
+            },
+          }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+
+    const provider = createOpenAiEmbeddingProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'text-embedding-3-small',
+    });
+
+    await expect(provider.embedTexts(['ping'])).rejects.toThrow(
+      'Embedding request failed with status 503: 模型 text-embedding-3-small 无可用渠道',
+    );
+  });
+
+  it('rejects non-JSON embedding responses with a configuration hint', async () => {
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(
+        new Response('<!doctype html><title>New API</title>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }),
+      );
+
+    const provider = createOpenAiEmbeddingProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example',
+      fetchImpl,
+      model: 'text-embedding-3-small',
+    });
+
+    await expect(provider.embedTexts(['ping'])).rejects.toThrow(
+      'Embedding response was not JSON. Check OPENAI_BASE_URL',
+    );
+  });
 });
