@@ -48,6 +48,7 @@ interface KnowledgeChunkRow {
 
 const PGVECTOR_EMBEDDING_DIMENSION = 1536;
 const DEFAULT_TOP_K = 6;
+const LEXICAL_SCORE_WEIGHT = 0.5;
 
 export class VectorStoreConfigurationError extends Error {}
 
@@ -174,18 +175,48 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
 
       const topK = normalizeTopK(retrieveOptions.topK);
       const queryTokens = tokenize(question);
+      const candidateLimit = Math.max(topK * 4, topK);
       const response = await queryDatabase<KnowledgeChunkRow>(
         options.client,
         `
-        select
+        with vector_candidates as (
+          select
+            id, document_id, title, module, source_type, source_url, file,
+            heading_path, order_index, retrieved_at, content, tokens,
+            embedding <=> $1::vector as embedding_distance,
+            0::integer as token_overlap
+          from knowledge_chunks
+          order by embedding <=> $1::vector
+          limit $2
+        ),
+        lexical_candidates as (
+          select
+            id, document_id, title, module, source_type, source_url, file,
+            heading_path, order_index, retrieved_at, content, tokens,
+            embedding <=> $1::vector as embedding_distance,
+            (
+              select count(*)::integer
+              from unnest(tokens) as token(value)
+              where token.value = any($3::text[])
+            ) as token_overlap
+          from knowledge_chunks
+          where tokens && $3::text[]
+          order by token_overlap desc, embedding_distance asc
+          limit $2
+        ),
+        combined_candidates as (
+          select * from vector_candidates
+          union all
+          select * from lexical_candidates
+        )
+        select distinct on (id)
           id, document_id, title, module, source_type, source_url, file,
           heading_path, order_index, retrieved_at, content, tokens,
-          embedding <=> $1::vector as embedding_distance
-        from knowledge_chunks
-        order by embedding <=> $1::vector
-        limit $2
+          embedding_distance
+        from combined_candidates
+        order by id, token_overlap desc, embedding_distance asc
         `,
-        [toPgVectorLiteral(queryEmbedding), Math.max(topK * 4, topK)],
+        [toPgVectorLiteral(queryEmbedding), candidateLimit, queryTokens],
       );
 
       return response.rows
@@ -243,7 +274,7 @@ function mapRow(row: KnowledgeChunkRow, queryTokens: string[]): RetrievedChunk {
   const lexicalScore = queryTokens.filter((token) => row.tokens.includes(token)).length;
   const vectorScore = Math.max(0, 1 - row.embedding_distance);
   const score = Number(
-    (vectorScore + lexicalScore * 0.1 + sourceBoost(row.source_type)).toFixed(8),
+    (vectorScore + lexicalScore * LEXICAL_SCORE_WEIGHT + sourceBoost(row.source_type)).toFixed(8),
   );
   const entry: IndexEntry = {
     documentId: row.document_id,

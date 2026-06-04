@@ -146,6 +146,41 @@ describe('createPgVectorStore', () => {
     });
   });
 
+  it('includes token-overlap candidates for short feature questions', async () => {
+    const client = new FakePgClient();
+    client.rows = [
+      {
+        content: '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链。',
+        document_id: 'x_updates:xxyy-x-updates',
+        embedding_distance: 0.9,
+        file: 'docs/product-features/xxyy-x-updates.md',
+        heading_path: ['2026 年 3 月至 4 月'],
+        id: 'x_updates:xxyy-x-updates:chunk:0001',
+        module: 'X Updates',
+        order_index: null,
+        retrieved_at: null,
+        source_type: 'x_updates',
+        source_url: null,
+        title: 'XXYY X 历史推文产品更新汇总',
+        tokens: ['跟单功能上线', '跟', '跟单', '单', '功能', '上线'],
+      },
+    ];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 })]),
+      },
+    });
+
+    const results = await store.retrieve('XXYY支持跟单么', { topK: 1 });
+
+    const lastQuery = client.queries.at(-1);
+    expect(lastQuery?.sql).toContain('tokens && $3::text[]');
+    expect(lastQuery?.values[2]).toContain('跟单');
+    expect(results[0]?.id).toBe('x_updates:xxyy-x-updates:chunk:0001');
+    expect(results[0]?.lexicalScore).toBeGreaterThan(0);
+  });
+
   it('wraps pgvector query failures as vector store unavailability', async () => {
     const store = createPgVectorStore({
       client: {

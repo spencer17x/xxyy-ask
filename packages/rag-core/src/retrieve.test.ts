@@ -101,4 +101,25 @@ describe('retrieve', () => {
 
     expect(results[0]?.id).toBe('official_docs:swap:chunk:0001');
   });
+
+  it('prioritizes exact feature mentions from X updates for short Chinese feature questions', () => {
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:orders:chunk:0001',
+        title: '挂单交易',
+        sourceType: 'official_docs',
+        text: 'XXYY 提供挂单买卖功能，一键设置，按理想价格买入或卖出代币。',
+      },
+      {
+        id: 'x_updates:copy-trading:chunk:0001',
+        title: 'XXYY X 历史推文产品更新汇总',
+        sourceType: 'x_updates',
+        text: '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链。',
+      },
+    ]);
+
+    const results = retrieve('XXYY支持跟单么', index);
+
+    expect(results[0]?.id).toBe('x_updates:copy-trading:chunk:0001');
+  });
 });
