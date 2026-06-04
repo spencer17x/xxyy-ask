@@ -48,7 +48,7 @@ RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
 ```
 
-`pnpm rag:*` 命令会自动读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
+`pnpm rag:*` 和 `pnpm start` 会通过 `dotenv` 读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
 
 ## 常用验证
 

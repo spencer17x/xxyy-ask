@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { Readable } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
@@ -5,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatResponse } from '@xxyy/shared';
 import { LlmConfigurationError, VectorStoreUnavailableError } from '@xxyy/rag-core';
 
-import { createRequestHandler, type ApiRequestHandler } from './index.js';
+import { createDefaultApiEnv, createRequestHandler, type ApiRequestHandler } from './index.js';
 
 interface CapturedResponse {
   statusCode: number;
@@ -55,6 +58,33 @@ async function callHandler(
 }
 
 describe('createRequestHandler', () => {
+  it('loads workspace .env values for the default API environment', async () => {
+    const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-api-env-'));
+    await writeFile(path.join(workspaceRoot, 'pnpm-workspace.yaml'), 'packages: []\n');
+    await writeFile(
+      path.join(workspaceRoot, '.env'),
+      [
+        'POSTGRES_DB=xxyy_ask',
+        'POSTGRES_HOST=localhost',
+        'POSTGRES_PORT=5432',
+        'POSTGRES_USER=xxyy',
+        'POSTGRES_PASSWORD=from_file',
+        'OPENAI_MODEL=openrouter/free',
+      ].join('\n'),
+    );
+
+    const env = createDefaultApiEnv({
+      cwd: workspaceRoot,
+      env: {
+        POSTGRES_PASSWORD: 'from_shell',
+      },
+    });
+
+    expect(env.POSTGRES_DB).toBe('xxyy_ask');
+    expect(env.POSTGRES_PASSWORD).toBe('from_shell');
+    expect(env.OPENAI_MODEL).toBe('openrouter/free');
+  });
+
   it('returns JSON health status', async () => {
     const handler = createRequestHandler();
 

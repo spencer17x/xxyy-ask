@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -18,6 +17,8 @@ import {
   createPgVectorStore,
   evaluateCases,
   loadRagConfig,
+  loadWorkspaceEnv,
+  resolveWorkspaceCwd,
 } from '@xxyy/rag-core';
 import type { ChatResponse, ChatRequest } from '@xxyy/shared';
 import type {
@@ -27,6 +28,8 @@ import type {
   EvaluationReport,
   RagEnv,
 } from '@xxyy/rag-core';
+
+export { resolveWorkspaceCwd } from '@xxyy/rag-core';
 
 type CliEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
 
@@ -165,7 +168,7 @@ export function createDefaultCliIo(options: DefaultCliIoOptions = {}): CliIo {
 
   return {
     cwd,
-    env: mergeEnv(loadDotEnvFile(path.join(workspaceCwd, '.env')), shellEnv),
+    env: loadWorkspaceEnv({ cwd: workspaceCwd, env: shellEnv }),
     stderr: options.stderr ?? process.stderr,
     stdout: options.stdout ?? process.stdout,
   };
@@ -222,19 +225,6 @@ export async function runCli(
     }
     throw error;
   }
-}
-
-export function resolveWorkspaceCwd(cwd: string, env: CliEnv): string {
-  const initCwd = env.INIT_CWD;
-  if (initCwd !== undefined && hasWorkspaceEvidence(initCwd)) {
-    return path.resolve(initCwd);
-  }
-
-  if (hasWorkspaceEvidence(cwd)) {
-    return path.resolve(cwd);
-  }
-
-  return findWorkspaceRoot(cwd) ?? path.resolve(cwd);
 }
 
 async function ingest(io: CliIo): Promise<IngestSummary> {
@@ -337,86 +327,6 @@ function writeConfigurationError(io: CliIo, error: unknown): boolean {
   }
 
   return false;
-}
-
-function loadDotEnvFile(filePath: string): CliEnv {
-  if (!existsSync(filePath)) {
-    return {};
-  }
-
-  const values: Record<string, string> = {};
-  for (const rawLine of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (line.length === 0 || line.startsWith('#')) {
-      continue;
-    }
-
-    const withoutExport = line.startsWith('export ') ? line.slice('export '.length).trim() : line;
-    const separatorIndex = withoutExport.indexOf('=');
-    if (separatorIndex <= 0) {
-      continue;
-    }
-
-    const key = withoutExport.slice(0, separatorIndex).trim();
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
-      continue;
-    }
-
-    values[key] = parseDotEnvValue(withoutExport.slice(separatorIndex + 1).trim());
-  }
-
-  return values;
-}
-
-function parseDotEnvValue(value: string): string {
-  const quote = value[0];
-  if ((quote === '"' || quote === "'") && value.length >= 2 && value[value.length - 1] === quote) {
-    const unquoted = value.slice(1, -1);
-    return quote === '"' ? unquoted.replaceAll('\\n', '\n').replaceAll('\\"', '"') : unquoted;
-  }
-
-  return value;
-}
-
-function mergeEnv(fileEnv: CliEnv, shellEnv: CliEnv): CliEnv {
-  const merged: Record<string, string> = {};
-
-  for (const [key, value] of Object.entries(fileEnv)) {
-    if (value !== undefined) {
-      merged[key] = value;
-    }
-  }
-
-  for (const [key, value] of Object.entries(shellEnv)) {
-    if (value !== undefined) {
-      merged[key] = value;
-    }
-  }
-
-  return merged;
-}
-
-function hasWorkspaceEvidence(candidatePath: string): boolean {
-  return (
-    existsSync(path.join(candidatePath, 'pnpm-workspace.yaml')) ||
-    existsSync(path.join(candidatePath, 'docs', 'product-features'))
-  );
-}
-
-function findWorkspaceRoot(startPath: string): string | undefined {
-  let currentPath = path.resolve(startPath);
-
-  while (true) {
-    if (hasWorkspaceEvidence(currentPath)) {
-      return currentPath;
-    }
-
-    const parentPath = path.dirname(currentPath);
-    if (parentPath === currentPath) {
-      return undefined;
-    }
-    currentPath = parentPath;
-  }
 }
 
 function isDirectRun(): boolean {

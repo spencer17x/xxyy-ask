@@ -11,6 +11,7 @@ import {
   createPgVectorStore,
   LlmConfigurationError,
   loadRagConfig,
+  loadWorkspaceEnv,
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
@@ -19,7 +20,7 @@ import { supportedChannels } from '@xxyy/shared';
 import type { ChatService, RagEnv } from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
 
-type ApiEnv = RagEnv;
+type ApiEnv = RagEnv & Partial<Record<'PORT', string>>;
 
 export interface ApiRequestLike {
   method?: string;
@@ -40,9 +41,14 @@ export type ApiRequestHandler = (
 ) => Promise<void>;
 
 export interface CreateRequestHandlerOptions {
+  cwd?: string;
   env?: ApiEnv;
   getChatService?: () => Promise<ChatService>;
   renderHtml?: () => string;
+}
+
+export interface StartServerOptions extends CreateRequestHandlerOptions {
+  port?: number;
 }
 
 interface ChatPayload {
@@ -53,7 +59,7 @@ interface ChatPayload {
 }
 
 export function createRequestHandler(options: CreateRequestHandlerOptions = {}): ApiRequestHandler {
-  const env = options.env ?? process.env;
+  const env = options.env ?? createDefaultApiEnv(options);
   const config = loadRagConfig(env);
   const renderHtml = options.renderHtml ?? renderChatPage;
   const getChatService = options.getChatService ?? createCachedChatServiceLoader(config);
@@ -128,11 +134,19 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   };
 }
 
-export function startServer(
-  options: CreateRequestHandlerOptions = {},
-): ReturnType<typeof createServer> {
-  const port = Number(process.env.PORT ?? 3000);
-  const handler = createRequestHandler(options);
+export function createDefaultApiEnv(
+  options: Pick<CreateRequestHandlerOptions, 'cwd' | 'env'> = {},
+): ApiEnv {
+  return loadWorkspaceEnv({
+    cwd: options.cwd ?? process.cwd(),
+    env: options.env ?? process.env,
+  });
+}
+
+export function startServer(options: StartServerOptions = {}): ReturnType<typeof createServer> {
+  const env = options.env ?? createDefaultApiEnv(options);
+  const port = Number(options.port ?? env.PORT ?? 3000);
+  const handler = createRequestHandler({ ...options, env });
   const server = createServer((request, response) => {
     void handler(request as ApiRequestLike, response);
   });

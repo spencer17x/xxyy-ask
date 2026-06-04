@@ -26,7 +26,7 @@ pnpm install
 cp .env.example .env
 ```
 
-`pnpm rag:*` 命令会自动读取项目根目录 `.env`。如果同名变量已经在 shell 里导出，则 shell 里的值优先。
+`pnpm rag:*` 和 `pnpm start` 会通过 `dotenv` 读取项目根目录 `.env`。如果同名变量已经在 shell 里导出，则 shell 里的值优先。
 
 ## 正式运行：Postgres + pgvector
 

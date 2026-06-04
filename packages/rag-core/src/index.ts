@@ -3,6 +3,7 @@ export const workspacePackageName = '@xxyy/rag-core';
 export { createGroundedAnswer } from './answer.js';
 export { classifyQuestion } from './classify.js';
 export { loadRagConfig } from './config.js';
+export { loadWorkspaceEnv, resolveWorkspaceCwd } from './env.js';
 export { evaluateCases } from './evaluate.js';
 export { createOpenAiAnswerProvider, LlmConfigurationError } from './openai-answer-provider.js';
 export {
@@ -19,6 +20,7 @@ export { createChatService } from './chat-service.js';
 export type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
 export type { ChatService, CreateChatServiceOptions } from './chat-service.js';
 export type { RagConfig, RagEnv } from './config.js';
+export type { EnvRecord, LoadWorkspaceEnvOptions, WorkspaceEnv } from './env.js';
 export type { EvaluationCase, EvaluationReport, EvaluationResult } from './evaluate.js';
 export type { OpenAiAnswerProviderOptions } from './openai-answer-provider.js';
 export type {
