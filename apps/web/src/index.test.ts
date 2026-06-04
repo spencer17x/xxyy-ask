@@ -9,7 +9,8 @@ describe('renderChatPage', () => {
 
     expect(html).toContain('<form id="chat-form"');
     expect(html).toContain('<textarea id="message"');
-    expect(html).toContain('fetch("/api/chat"');
+    expect(html).toContain('fetch("/api/chat/stream"');
+    expect(html).toContain('body.getReader()');
     expect(html).toContain('id="answer"');
     expect(html).toContain('id="citations"');
   });

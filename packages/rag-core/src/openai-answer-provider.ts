@@ -1,4 +1,4 @@
-import type { ChatResponse } from '@xxyy/shared';
+import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 
 import { createBoundaryAnswer, createCitationsFromChunks } from './answer.js';
 import type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
@@ -13,6 +13,14 @@ export interface OpenAiAnswerProviderOptions {
 interface ChatCompletionResponse {
   choices?: Array<{
     message?: {
+      content?: string;
+    };
+  }>;
+}
+
+interface ChatCompletionStreamResponse {
+  choices?: Array<{
+    delta?: {
       content?: string;
     };
   }>;
@@ -91,7 +99,137 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
         intent: input.classification.intent,
       };
     },
+
+    async *stream(input: AnswerProviderInput): AsyncIterable<ChatStreamEvent> {
+      if (!GROUNDED_INTENTS.has(input.classification.intent)) {
+        yield* streamStaticAnswer(createBoundaryAnswer(input.classification));
+        return;
+      }
+
+      if (input.retrievedChunks.length === 0) {
+        yield* streamStaticAnswer({
+          answer: `当前知识库没有找到与「${input.question}」直接相关的资料。为了避免误导，我不能编造产品细节。`,
+          citations: [],
+          confidence: 0.25,
+          intent: input.classification.intent,
+        });
+        return;
+      }
+
+      const citations = createCitationsFromChunks(input.retrievedChunks);
+      const response = await fetchImpl(endpoint, {
+        body: JSON.stringify({
+          messages: [
+            {
+              content: systemPrompt(),
+              role: 'system',
+            },
+            {
+              content: userPrompt(input, citations.length),
+              role: 'user',
+            },
+          ],
+          model,
+          stream: true,
+          temperature: 0.2,
+        }),
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error(`LLM request failed with status ${response.status}`);
+      }
+
+      if (response.body === null) {
+        throw new Error('LLM streaming response did not include a body.');
+      }
+
+      for await (const delta of parseChatCompletionStream(response.body)) {
+        yield { type: 'answer_delta', delta };
+      }
+
+      yield {
+        type: 'metadata',
+        citations,
+        confidence: calculateLlmConfidence(input.classification.confidence),
+        intent: input.classification.intent,
+      };
+    },
   };
+}
+
+function streamStaticAnswer(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
+  return toAsyncIterable([
+    ...(response.answer.length > 0
+      ? [{ type: 'answer_delta' as const, delta: response.answer }]
+      : []),
+    {
+      type: 'metadata',
+      citations: response.citations,
+      confidence: response.confidence,
+      intent: response.intent,
+    },
+  ]);
+}
+
+async function* toAsyncIterable<T>(items: Iterable<T>): AsyncIterable<T> {
+  for (const item of items) {
+    await Promise.resolve();
+    yield item;
+  }
+}
+
+async function* parseChatCompletionStream(body: ReadableStream<Uint8Array>): AsyncIterable<string> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() ?? '';
+
+      for (const part of parts) {
+        yield* parseStreamPart(part);
+      }
+    }
+
+    buffer += decoder.decode();
+    if (buffer.trim().length > 0) {
+      yield* parseStreamPart(buffer);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function* parseStreamPart(part: string): Iterable<string> {
+  const data = part
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice('data:'.length).trim())
+    .join('\n');
+
+  if (data.length === 0 || data === '[DONE]') {
+    return;
+  }
+
+  const payload = JSON.parse(data) as ChatCompletionStreamResponse;
+  const delta = payload.choices?.[0]?.delta?.content;
+  if (delta !== undefined && delta.length > 0) {
+    yield delta;
+  }
 }
 
 function systemPrompt(): string {

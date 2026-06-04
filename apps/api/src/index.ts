@@ -15,7 +15,7 @@ import {
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
-import type { ChatRequest, ChatChannel } from '@xxyy/shared';
+import type { ChatRequest, ChatChannel, ChatStreamEvent } from '@xxyy/shared';
 import { supportedChannels } from '@xxyy/shared';
 import type { ChatService, RagEnv } from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
@@ -32,6 +32,7 @@ export interface ApiRequestLike {
 export interface ApiResponseLike {
   statusCode: number;
   setHeader(name: string, value: string): void;
+  write(body: string): void;
   end(body?: string): void;
 }
 
@@ -84,6 +85,14 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
         const chatRequest = toChatRequest(payload);
         const chatResponse = await service.ask(chatRequest);
         sendJson(response, 200, chatResponse);
+        return;
+      }
+
+      if (request.method === 'POST' && requestUrl.pathname === '/api/chat/stream') {
+        const payload = parseChatPayload(await readJsonBody(request));
+        const service = await getChatService();
+        const chatRequest = toChatRequest(payload);
+        await sendChatStream(response, service.stream(chatRequest));
         return;
       }
 
@@ -277,6 +286,52 @@ function sendJson(response: ApiResponseLike, statusCode: number, payload: unknow
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
   response.end(`${JSON.stringify(payload)}\n`);
+}
+
+async function sendChatStream(
+  response: ApiResponseLike,
+  events: AsyncIterable<ChatStreamEvent>,
+): Promise<void> {
+  response.statusCode = 200;
+  response.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  response.setHeader('Cache-Control', 'no-cache');
+  response.setHeader('Connection', 'keep-alive');
+
+  try {
+    for await (const event of events) {
+      writeSseEvent(response, event.type, event);
+    }
+  } catch (error) {
+    writeSseEvent(response, 'error', createStreamErrorPayload(error));
+  } finally {
+    response.end();
+  }
+}
+
+function writeSseEvent(response: ApiResponseLike, eventName: string, payload: unknown): void {
+  response.write(`event: ${eventName}\n`);
+  response.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function createStreamErrorPayload(error: unknown): { error: string; message: string } {
+  if (error instanceof LlmConfigurationError) {
+    return { error: 'llm_configuration_missing', message: error.message };
+  }
+
+  if (error instanceof EmbeddingConfigurationError) {
+    return { error: 'embedding_configuration_missing', message: error.message };
+  }
+
+  if (error instanceof VectorStoreConfigurationError) {
+    return { error: 'vector_store_configuration_missing', message: error.message };
+  }
+
+  if (error instanceof VectorStoreUnavailableError) {
+    return { error: 'vector_store_unavailable', message: error.message };
+  }
+
+  const message = error instanceof Error ? error.message : 'Unable to process request.';
+  return { error: 'internal_error', message };
 }
 
 function sendHtml(response: ApiResponseLike, statusCode: number, html: string): void {

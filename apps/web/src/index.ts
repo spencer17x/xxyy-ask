@@ -194,49 +194,24 @@ export function renderChatPage(): string {
 
         send.disabled = true;
         status.textContent = "Sending";
+        answer.textContent = "";
         citations.replaceChildren();
 
         try {
-          const response = await fetch("/api/chat", {
+          const response = await fetch("/api/chat/stream", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: text, channel: "web" }),
           });
-          const payload = await response.json();
           if (!response.ok) {
+            const payload = await response.json();
             throw new Error(payload.message || "Request failed.");
           }
-          answer.textContent = payload.answer;
-          citations.replaceChildren(
-            ...(payload.citations || []).map((citation, index) => {
-              const article = document.createElement("article");
-              article.className = "citation";
+          if (!response.body) {
+            throw new Error("Streaming response is unavailable.");
+          }
 
-              const title = document.createElement("div");
-              title.className = "citation-title";
-              title.textContent = "[" + (index + 1) + "] " + citation.title;
-
-              const meta = document.createElement("div");
-              meta.className = "citation-meta";
-              if (citation.sourceUrl) {
-                const link = document.createElement("a");
-                link.href = citation.sourceUrl;
-                link.target = "_blank";
-                link.rel = "noreferrer";
-                link.textContent = citation.file;
-                meta.append(link);
-              } else {
-                meta.textContent = citation.file;
-              }
-
-              const excerpt = document.createElement("div");
-              excerpt.textContent = citation.excerpt;
-
-              article.append(title, meta, excerpt);
-              return article;
-            }),
-          );
-          status.textContent = payload.intent + " · " + Number(payload.confidence).toFixed(2);
+          await readChatStream(response.body);
         } catch (error) {
           answer.textContent = error instanceof Error ? error.message : String(error);
           status.textContent = "Error";
@@ -244,6 +219,95 @@ export function renderChatPage(): string {
           send.disabled = false;
         }
       });
+
+      async function readChatStream(body) {
+        const reader = body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const result = await reader.read();
+          if (result.done) break;
+
+          buffer += decoder.decode(result.value, { stream: true });
+          const blocks = buffer.split("\\n\\n");
+          buffer = blocks.pop() || "";
+          for (const block of blocks) {
+            handleSseBlock(block);
+          }
+        }
+
+        buffer += decoder.decode();
+        if (buffer.trim()) {
+          handleSseBlock(buffer);
+        }
+      }
+
+      function handleSseBlock(block) {
+        const lines = block.split(/\\r?\\n/);
+        let eventName = "message";
+        const data = [];
+
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventName = line.slice("event:".length).trim();
+          }
+          if (line.startsWith("data:")) {
+            data.push(line.slice("data:".length).trim());
+          }
+        }
+
+        if (!data.length) return;
+
+        const payload = JSON.parse(data.join("\\n"));
+        if (eventName === "answer_delta") {
+          answer.textContent += payload.delta || "";
+          status.textContent = "Receiving";
+          return;
+        }
+
+        if (eventName === "metadata") {
+          renderCitations(payload.citations || []);
+          status.textContent = payload.intent + " · " + Number(payload.confidence).toFixed(2);
+          return;
+        }
+
+        if (eventName === "error") {
+          throw new Error(payload.message || "Request failed.");
+        }
+      }
+
+      function renderCitations(nextCitations) {
+        citations.replaceChildren(
+          ...nextCitations.map((citation, index) => {
+            const article = document.createElement("article");
+            article.className = "citation";
+
+            const title = document.createElement("div");
+            title.className = "citation-title";
+            title.textContent = "[" + (index + 1) + "] " + citation.title;
+
+            const meta = document.createElement("div");
+            meta.className = "citation-meta";
+            if (citation.sourceUrl) {
+              const link = document.createElement("a");
+              link.href = citation.sourceUrl;
+              link.target = "_blank";
+              link.rel = "noreferrer";
+              link.textContent = citation.file;
+              meta.append(link);
+            } else {
+              meta.textContent = citation.file;
+            }
+
+            const excerpt = document.createElement("div");
+            excerpt.textContent = citation.excerpt;
+
+            article.append(title, meta, excerpt);
+            return article;
+          }),
+        );
+      }
     </script>
   </body>
 </html>`;

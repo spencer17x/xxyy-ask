@@ -1,4 +1,4 @@
-import type { ChatResponse, Classification } from '@xxyy/shared';
+import type { ChatResponse, ChatStreamEvent, Classification } from '@xxyy/shared';
 
 import type { RetrievedChunk } from './retrieve.js';
 
@@ -10,4 +10,5 @@ export interface AnswerProviderInput {
 
 export interface AnswerProvider {
   answer(input: AnswerProviderInput): Promise<ChatResponse>;
+  stream?(input: AnswerProviderInput): AsyncIterable<ChatStreamEvent>;
 }

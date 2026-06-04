@@ -1,4 +1,4 @@
-import type { ChatRequest, ChatResponse, RagIndex } from '@xxyy/shared';
+import type { ChatRequest, ChatResponse, ChatStreamEvent, RagIndex } from '@xxyy/shared';
 
 import { createBoundaryAnswer } from './answer.js';
 import type { AnswerProvider } from './answer-provider.js';
@@ -9,6 +9,7 @@ import { createLocalRetriever, type Retriever } from './retriever.js';
 
 export interface ChatService {
   ask(request: ChatRequest): Promise<ChatResponse>;
+  stream(request: ChatRequest): AsyncIterable<ChatStreamEvent>;
 }
 
 export interface CreateChatServiceOptions {
@@ -41,6 +42,29 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
         retrievedChunks,
       });
     },
+
+    async *stream(request: ChatRequest): AsyncIterable<ChatStreamEvent> {
+      const classification = classifyQuestion(request.message);
+      if (!shouldRetrieve(classification.intent)) {
+        yield* streamChatResponse(createBoundaryAnswer(classification));
+        return;
+      }
+
+      const retrievedChunks = await retriever.retrieve(request.message, { topK: config.topK });
+      const answerProvider = options.answerProvider ?? createConfiguredAnswerProvider(config);
+      const input = {
+        classification,
+        question: request.message,
+        retrievedChunks,
+      };
+
+      if (answerProvider.stream !== undefined) {
+        yield* answerProvider.stream(input);
+        return;
+      }
+
+      yield* streamChatResponse(await answerProvider.answer(input));
+    },
   };
 }
 
@@ -70,4 +94,25 @@ function createConfiguredAnswerProvider(config: RagConfig): AnswerProvider {
     baseUrl: config.openAiBaseUrl,
     model: config.openAiModel,
   });
+}
+
+function streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
+  return toAsyncIterable([
+    ...(response.answer.length > 0
+      ? [{ type: 'answer_delta' as const, delta: response.answer }]
+      : []),
+    {
+      type: 'metadata',
+      citations: response.citations,
+      confidence: response.confidence,
+      intent: response.intent,
+    },
+  ]);
+}
+
+async function* toAsyncIterable<T>(items: Iterable<T>): AsyncIterable<T> {
+  for (const item of items) {
+    await Promise.resolve();
+    yield item;
+  }
 }

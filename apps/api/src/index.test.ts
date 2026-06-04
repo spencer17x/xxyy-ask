@@ -5,7 +5,7 @@ import { Readable } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 
-import type { ChatResponse } from '@xxyy/shared';
+import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import { LlmConfigurationError, VectorStoreUnavailableError } from '@xxyy/rag-core';
 
 import { createDefaultApiEnv, createRequestHandler, type ApiRequestHandler } from './index.js';
@@ -49,8 +49,12 @@ async function callHandler(
     setHeader(name: string, value: string) {
       response.headers[name] = value;
     },
+    write(body: string) {
+      response.body += body;
+      return true;
+    },
     end(body?: string) {
-      response.body = body ?? '';
+      response.body += body ?? '';
     },
   });
 
@@ -114,6 +118,9 @@ describe('createRequestHandler', () => {
             });
             return Promise.resolve(chatResponse);
           },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
         }),
     });
 
@@ -132,6 +139,53 @@ describe('createRequestHandler', () => {
     expect(JSON.parse(response.body)).toEqual(chatResponse);
   });
 
+  it('streams chat responses as server-sent events', async () => {
+    const streamEvents: ChatStreamEvent[] = [
+      { type: 'answer_delta', delta: 'XXYY Pro' },
+      { type: 'answer_delta', delta: ' 有长期权益。' },
+      {
+        type: 'metadata',
+        citations: [],
+        confidence: 0.8,
+        intent: 'product_qa',
+      },
+    ];
+    const handler = createRequestHandler({
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            throw new Error('ask should not be used for stream requests');
+          },
+          async *stream(request) {
+            await Promise.resolve();
+            expect(request).toEqual({
+              channel: 'web',
+              message: 'XXYY Pro 有哪些权益？',
+            });
+            yield* streamEvents;
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat/stream',
+      body: {
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['Content-Type']).toBe('text/event-stream; charset=utf-8');
+    expect(response.body).toContain('event: answer_delta\n');
+    expect(response.body).toContain('data: {"type":"answer_delta","delta":"XXYY Pro"}\n\n');
+    expect(response.body).toContain('event: metadata\n');
+    expect(response.body).toContain(
+      'data: {"type":"metadata","citations":[],"confidence":0.8,"intent":"product_qa"}\n\n',
+    );
+  });
+
   it('returns a useful 503 when LLM configuration is missing', async () => {
     const handler = createRequestHandler({
       getChatService: () =>
@@ -140,6 +194,9 @@ describe('createRequestHandler', () => {
             return Promise.reject(
               new LlmConfigurationError('OPENAI_API_KEY is required for LLM answer generation.'),
             );
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
           },
         }),
     });
@@ -221,6 +278,9 @@ describe('createRequestHandler', () => {
         Promise.resolve({
           ask() {
             return Promise.reject(new VectorStoreUnavailableError(new Error('connect refused')));
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
           },
         }),
     });

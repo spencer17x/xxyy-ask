@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ChatResponse } from '@xxyy/shared';
+import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 
 import type { AnswerProvider } from './answer-provider.js';
 import { createChatService } from './chat-service.js';
@@ -128,6 +128,92 @@ describe('createChatService', () => {
 
     expect(response.citations).toHaveLength(1);
     expect(retrievedQuestions).toEqual(['XXYY Pro 支持什么？']);
+  });
+
+  it('streams grounded product questions through the answer provider', async () => {
+    const streamedQuestions: string[] = [];
+    const answerProvider: AnswerProvider = {
+      answer() {
+        throw new Error('answer should not be used for streamed requests');
+      },
+      async *stream({ question, retrievedChunks }) {
+        await Promise.resolve();
+        streamedQuestions.push(question);
+        yield { type: 'answer_delta', delta: 'XXYY Pro' };
+        yield { type: 'answer_delta', delta: ' 支持提醒。' };
+        yield {
+          type: 'metadata',
+          citations: retrievedChunks.map((chunk) => ({
+            excerpt: chunk.text,
+            file: chunk.metadata.file,
+            title: chunk.metadata.title,
+          })),
+          confidence: 0.9,
+          intent: 'product_qa',
+        };
+      },
+    };
+    const service = createChatService({
+      answerProvider,
+      index: createFixtureIndex([
+        {
+          id: 'official_docs:pro:chunk:0001',
+          title: 'XXYY Pro 权益',
+          sourceType: 'official_docs',
+          file: 'docs/pro.md',
+          text: 'XXYY Pro 支持 Telegram 钱包监控。',
+        },
+      ]),
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.stream({
+      channel: 'web',
+      message: 'XXYY Pro 支持什么？',
+    })) {
+      events.push(event);
+    }
+
+    expect(streamedQuestions).toEqual(['XXYY Pro 支持什么？']);
+    expect(events.slice(0, 2)).toEqual([
+      { type: 'answer_delta', delta: 'XXYY Pro' },
+      { type: 'answer_delta', delta: ' 支持提醒。' },
+    ]);
+    const metadata = events[2];
+    expect(metadata?.type).toBe('metadata');
+    if (metadata?.type !== 'metadata') {
+      throw new Error('Expected metadata event');
+    }
+    expect(metadata.citations).toHaveLength(1);
+    expect(metadata.confidence).toBe(0.9);
+    expect(metadata.intent).toBe('product_qa');
+  });
+
+  it('streams fixed boundary responses without retrieval', async () => {
+    const service = createChatService({
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.stream({
+      channel: 'web',
+      message: '帮我查一下钱包余额',
+    })) {
+      events.push(event);
+    }
+
+    expect(events[0]).toMatchObject({
+      type: 'answer_delta',
+    });
+    expect(events.at(-1)).toMatchObject({
+      citations: [],
+      intent: 'realtime_account_query',
+      type: 'metadata',
+    });
   });
 
   it('does not call the async retriever for boundary questions', async () => {

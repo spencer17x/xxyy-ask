@@ -38,6 +38,18 @@ export interface ChatResponse {
   confidence: number;
 }
 
+export type ChatStreamEvent =
+  | {
+      type: 'answer_delta';
+      delta: string;
+    }
+  | {
+      type: 'metadata';
+      intent: Intent;
+      citations: Citation[];
+      confidence: number;
+    };
+
 export interface SourceDocument {
   id: string;
   title: string;
