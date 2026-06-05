@@ -27,6 +27,7 @@ venv/
 
 # Local data
 .rag/
+.superpowers/
 data/
 storage/
 *.sqlite

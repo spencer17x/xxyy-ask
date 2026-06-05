@@ -15,8 +15,21 @@ export function renderChatPage(): string {
         font-family:
           Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
           sans-serif;
-        background: #f7f8fa;
-        color: #18212f;
+        background: #f3f6f8;
+        color: #17202e;
+        --bg: #f3f6f8;
+        --panel: #ffffff;
+        --panel-soft: #f8fafb;
+        --line: #dbe3ec;
+        --line-soft: #edf1f5;
+        --text: #17202e;
+        --muted: #647083;
+        --accent: #176b5b;
+        --accent-strong: #105247;
+        --accent-soft: #e4f3ee;
+        --blue-soft: #e9f0fb;
+        --amber-soft: #fbf1db;
+        --danger: #a73939;
       }
 
       * {
@@ -25,177 +38,632 @@ export function renderChatPage(): string {
 
       body {
         margin: 0;
+        overflow: hidden;
+        overflow-x: hidden;
         min-height: 100vh;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(243, 246, 248, 0.96)),
+          var(--bg);
+        color: var(--text);
       }
 
-      main {
-        width: min(960px, calc(100vw - 32px));
-        margin: 0 auto;
-        padding: 32px 0;
+      button,
+      textarea {
+        font: inherit;
       }
 
-      header {
+      button {
+        cursor: pointer;
+      }
+
+      .app-shell {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        width: 100vw;
+        height: 100vh;
+        min-width: 0;
+      }
+
+      .sidebar {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 24px;
+        min-width: 0;
+        min-height: 0;
+        padding: 24px;
+        border-right: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.86);
+      }
+
+      .brand {
+        display: grid;
+        grid-template-columns: 42px 1fr;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .brand-name {
+        font-size: 17px;
+        font-weight: 750;
+      }
+
+      .brand-subtitle {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .sidebar-section {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        grid-auto-rows: max-content;
+      }
+
+      .section-label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .quick-prompt {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: center;
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--text);
+        padding: 10px 12px;
+        text-align: left;
+        transition:
+          border-color 140ms ease,
+          background 140ms ease,
+          transform 140ms ease;
+      }
+
+      .quick-prompt:hover {
+        border-color: #8fbcb2;
+        background: #fbfefd;
+        transform: translateY(-1px);
+      }
+
+      .quick-prompt span {
+        color: var(--muted);
+      }
+
+      .scope-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .scope-list li {
         display: flex;
-        align-items: baseline;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 99px;
+        background: var(--accent);
+      }
+
+      .dot.warn {
+        background: #c48a27;
+      }
+
+      .chat-workbench {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        min-width: 0;
+        min-height: 0;
+      }
+
+      .chat-header {
+        display: flex;
+        align-items: center;
         justify-content: space-between;
         gap: 16px;
-        border-bottom: 1px solid #d9dee8;
-        padding-bottom: 16px;
+        min-height: 74px;
+        padding: 18px 28px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
       }
 
       h1 {
         margin: 0;
-        font-size: 22px;
-        font-weight: 650;
+        color: var(--text);
+        font-size: 20px;
+        font-weight: 760;
         letter-spacing: 0;
       }
 
-      .status {
-        min-height: 22px;
-        color: #556170;
-        font-size: 14px;
+      .header-subtitle {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
       }
 
-      .conversation {
+      .status-group {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .status-pill {
+        min-height: 28px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel);
+        color: var(--muted);
+        padding: 5px 10px;
+        font-size: 12px;
+      }
+
+      .status-pill.strong {
+        border-color: #c7e3da;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+      }
+
+      .messages {
         display: grid;
-        grid-template-columns: 1fr;
-        gap: 16px;
-        margin-top: 24px;
+        align-content: start;
+        gap: 18px;
+        min-height: 0;
+        overflow: auto;
+        padding: 28px;
+        scroll-behavior: smooth;
       }
 
-      .panel {
-        border: 1px solid #d9dee8;
+      .message {
+        display: grid;
+        grid-template-columns: 36px minmax(0, 740px);
+        gap: 12px;
+        align-items: start;
+        width: 100%;
+        min-width: 0;
+      }
+
+      .message.user {
+        grid-template-columns: minmax(0, 740px) 36px;
+        justify-content: end;
+      }
+
+      .avatar {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
         border-radius: 8px;
-        background: #ffffff;
+        background: var(--blue-soft);
+        color: #29405f;
+        font-size: 12px;
+        font-weight: 800;
       }
 
-      .answer {
-        min-height: 220px;
-        padding: 20px;
+      .user .avatar {
+        grid-column: 2;
+        background: var(--accent);
+        color: white;
+      }
+
+      .bubble {
+        max-width: 100%;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: 0 12px 28px rgba(28, 39, 52, 0.06);
+      }
+
+      .user .bubble {
+        grid-column: 1;
+        justify-self: end;
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #fff;
+        box-shadow: none;
+      }
+
+      .bubble-content {
+        padding: 14px 16px;
         line-height: 1.7;
         white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
 
-      .citations {
+      .message-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 0 16px 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .thinking {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+      }
+
+      .thinking::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 99px;
+        background: var(--accent);
+        animation: pulse 1s ease-in-out infinite;
+      }
+
+      .citation-list {
         display: grid;
         gap: 8px;
         margin: 0;
-        padding: 16px 20px 20px;
-        border-top: 1px solid #eef1f5;
+        padding: 0 16px 16px;
       }
 
       .citation {
         display: grid;
-        gap: 4px;
-        padding: 10px 0;
-        border-bottom: 1px solid #eef1f5;
-      }
-
-      .citation:last-child {
-        border-bottom: 0;
+        gap: 5px;
+        border: 1px solid var(--line-soft);
+        border-radius: 8px;
+        background: var(--panel-soft);
+        padding: 10px 12px;
       }
 
       .citation-title {
-        color: #18212f;
-        font-size: 14px;
+        color: var(--text);
+        font-size: 13px;
         font-weight: 650;
       }
 
       .citation-meta {
         overflow-wrap: anywhere;
-        color: #556170;
+        color: var(--muted);
         font-size: 12px;
       }
 
-      form {
+      .citation-excerpt {
+        color: #354154;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .composer-wrap {
+        padding: 18px 28px 24px;
+        border-top: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.78);
+      }
+
+      .composer {
         display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 12px;
-        margin-top: 16px;
+        grid-template-columns: 1fr 44px;
+        gap: 10px;
+        align-items: end;
+        max-width: 920px;
+        margin: 0 auto;
       }
 
       textarea {
-        min-height: 88px;
+        width: 100%;
+        min-height: 52px;
+        max-height: 180px;
         resize: vertical;
-        border: 1px solid #c8d0dc;
+        border: 1px solid #cbd5e1;
         border-radius: 8px;
-        padding: 12px;
-        color: #18212f;
-        font: inherit;
+        background: var(--panel);
+        color: var(--text);
+        padding: 13px 14px;
         line-height: 1.5;
+        outline: none;
       }
 
-      button {
-        min-width: 96px;
+      textarea:focus {
+        border-color: #78aaa0;
+        box-shadow: 0 0 0 3px rgba(23, 107, 91, 0.12);
+      }
+
+      .send-button,
+      .clear-button {
+        display: inline-grid;
+        place-items: center;
         border: 0;
         border-radius: 8px;
-        background: #176b5b;
-        color: white;
-        cursor: pointer;
-        font: inherit;
-        font-weight: 650;
+        font-weight: 700;
       }
 
-      button:disabled {
+      .send-button {
+        width: 44px;
+        height: 52px;
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .clear-button {
+        min-height: 28px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--muted);
+        padding: 0 10px;
+        font-size: 12px;
+      }
+
+      .send-button:disabled,
+      .quick-prompt:disabled {
         cursor: progress;
         opacity: 0.65;
       }
 
-      @media (max-width: 640px) {
-        main {
-          width: min(100vw - 20px, 960px);
-          padding: 16px 0;
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+      }
+
+      .is-error .bubble {
+        border-color: #e0b1b1;
+        background: #fff8f8;
+      }
+
+      .is-error .avatar {
+        background: #f8dddd;
+        color: var(--danger);
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.35;
+          transform: scale(0.8);
         }
 
-        header,
-        form {
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      @media (max-width: 860px) {
+        body {
+          overflow-x: hidden;
+          overflow-y: auto;
+        }
+
+        .app-shell {
+          grid-template-columns: 1fr;
+          width: 100%;
+          height: auto;
+          min-height: 100vh;
+        }
+
+        .sidebar {
+          grid-template-rows: auto;
+          gap: 18px;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          padding: 18px;
+        }
+
+        .sidebar-section.secondary {
+          display: none;
+        }
+
+        .chat-workbench {
+          width: 100vw;
+          max-width: 100vw;
+          overflow: hidden;
+          min-height: 72vh;
+        }
+
+        .chat-header,
+        .messages,
+        .composer-wrap {
+          width: 100vw;
+          max-width: 100vw;
+          padding-left: 18px;
+          padding-right: 18px;
+        }
+
+        .chat-header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .status-group {
+          justify-content: flex-start;
+        }
+
+        .message,
+        .message.user {
+          grid-template-columns: 1fr;
+          width: min(100%, calc(100vw - 36px));
+          max-width: calc(100vw - 36px);
+        }
+
+        .avatar,
+        .user .avatar {
+          display: none;
+        }
+
+        .bubble,
+        .user .bubble {
+          grid-column: 1;
+          justify-self: stretch;
+          width: calc(100vw - 36px);
+          max-width: calc(100vw - 36px);
+        }
+      }
+
+      @media (max-width: 560px) {
+        .messages {
+          gap: 14px;
+          padding-top: 18px;
+          padding-bottom: 18px;
+        }
+
+        .composer {
           grid-template-columns: 1fr;
         }
 
-        header {
-          display: grid;
-        }
-
-        button {
-          min-height: 44px;
+        .send-button {
+          width: 100%;
+          height: 44px;
         }
       }
     </style>
   </head>
   <body>
-    <main>
-      <header>
-        <h1>XXYY Ask</h1>
-        <div id="status" class="status" role="status" aria-live="polite"></div>
-      </header>
-      <section class="conversation" aria-label="chat">
-        <div class="panel">
-          <div id="answer" class="answer">Ready.</div>
-          <div id="citations" class="citations" aria-label="citations"></div>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="workspace">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">XY</div>
+          <div>
+            <div class="brand-name">XXYY Ask</div>
+            <div class="brand-subtitle">产品客服 Agent</div>
+          </div>
         </div>
-        <form id="chat-form">
-          <textarea id="message" name="message" placeholder="XXYY Pro 有哪些权益？" required></textarea>
-          <button id="send" type="submit">Send</button>
+
+        <section class="sidebar-section" aria-label="quick questions">
+          <div class="section-label">快捷问题</div>
+          <button class="quick-prompt" type="button" data-prompt="XXYY Pro 有哪些权益？">
+            XXYY Pro 有哪些权益？<span>→</span>
+          </button>
+          <button class="quick-prompt" type="button" data-prompt="XXYY 支持跟单么？">
+            XXYY 支持跟单么？<span>→</span>
+          </button>
+          <button class="quick-prompt" type="button" data-prompt="如何设置 Telegram 钱包监控？">
+            如何设置钱包监控？<span>→</span>
+          </button>
+          <button class="quick-prompt" type="button" data-prompt="XXYY 怎么设置挂单交易？">
+            怎么设置挂单交易？<span>→</span>
+          </button>
+        </section>
+
+        <section class="sidebar-section secondary" aria-label="scope">
+          <div class="section-label">回答边界</div>
+          <ul class="scope-list">
+            <li><span class="dot"></span>产品功能与配置</li>
+            <li><span class="dot"></span>Pro 权益与更新日志</li>
+            <li><span class="dot warn"></span>不查询账户或交易记录</li>
+            <li><span class="dot warn"></span>不提供投资建议</li>
+          </ul>
+        </section>
+      </aside>
+
+      <section class="chat-workbench" aria-label="chat">
+        <header class="chat-header">
+          <div>
+            <h1>产品问答</h1>
+            <div class="header-subtitle">基于 XXYY 文档和更新日志回答</div>
+          </div>
+          <div class="status-group">
+            <button id="clear" class="clear-button" type="button">New chat</button>
+            <div id="intent" class="status-pill">intent pending</div>
+            <div id="status" class="status-pill strong" role="status" aria-live="polite">Ready</div>
+          </div>
+        </header>
+
+        <div id="messages" class="messages" aria-live="polite">
+          <article class="message assistant" data-welcome-message>
+            <div class="avatar" aria-hidden="true">AI</div>
+            <div class="bubble">
+              <div class="bubble-content">你好，我可以回答 XXYY 产品功能、Pro 权益、交易设置、钱包监控和更新日志相关问题。</div>
+              <div class="message-meta">
+                <span>客服模式</span>
+                <span>RAG 检索</span>
+                <span>流式输出</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <form id="chat-form" class="composer-wrap">
+          <div class="composer">
+            <label class="sr-only" for="message">Message</label>
+            <textarea id="message" name="message" placeholder="例如：XXYY Pro 有哪些权益？" required></textarea>
+            <button id="send" class="send-button" type="submit" aria-label="发送">↑</button>
+          </div>
         </form>
       </section>
     </main>
     <script>
       const form = document.querySelector("#chat-form");
       const message = document.querySelector("#message");
-      const answer = document.querySelector("#answer");
-      const citations = document.querySelector("#citations");
+      const messages = document.querySelector("#messages");
       const status = document.querySelector("#status");
+      const intent = document.querySelector("#intent");
       const send = document.querySelector("#send");
+      const clear = document.querySelector("#clear");
+      const quickPrompts = Array.from(document.querySelectorAll(".quick-prompt"));
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const text = message.value.trim();
-        if (!text) return;
+        await submitPrompt(message.value);
+      });
 
-        send.disabled = true;
+      message.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          form.requestSubmit();
+        }
+      });
+
+      clear.addEventListener("click", () => {
+        messages.replaceChildren();
+        intent.textContent = "intent pending";
+        status.textContent = "Ready";
+        message.value = "";
+        message.focus();
+      });
+
+      for (const prompt of quickPrompts) {
+        prompt.addEventListener("click", async () => {
+          await submitPrompt(prompt.dataset.prompt || prompt.textContent || "");
+        });
+      }
+
+      async function submitPrompt(rawText) {
+        const text = rawText.trim();
+        if (!text || send.disabled) return;
+
+        removeWelcomeMessage();
+        appendMessage("user", { text });
+        const assistantMessage = appendMessage("assistant", { text: "", streaming: true });
+
+        message.value = "";
+        setBusy(true);
         status.textContent = "Sending";
-        answer.textContent = "";
-        citations.replaceChildren();
+        intent.textContent = "retrieving";
 
         try {
           const response = await fetch("/api/chat/stream", {
@@ -211,16 +679,18 @@ export function renderChatPage(): string {
             throw new Error("Streaming response is unavailable.");
           }
 
-          await readChatStream(response.body);
+          await readChatStream(response.body, assistantMessage);
         } catch (error) {
-          answer.textContent = error instanceof Error ? error.message : String(error);
+          assistantMessage.node.classList.add("is-error");
+          assistantMessage.answer.textContent = error instanceof Error ? error.message : String(error);
           status.textContent = "Error";
         } finally {
-          send.disabled = false;
+          assistantMessage.node.classList.remove("is-streaming");
+          setBusy(false);
         }
-      });
+      }
 
-      async function readChatStream(body) {
+      async function readChatStream(body, assistantMessage) {
         const reader = body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -233,17 +703,17 @@ export function renderChatPage(): string {
           const blocks = buffer.split("\\n\\n");
           buffer = blocks.pop() || "";
           for (const block of blocks) {
-            handleSseBlock(block);
+            handleSseBlock(block, assistantMessage);
           }
         }
 
         buffer += decoder.decode();
         if (buffer.trim()) {
-          handleSseBlock(buffer);
+          handleSseBlock(buffer, assistantMessage);
         }
       }
 
-      function handleSseBlock(block) {
+      function handleSseBlock(block, assistantMessage) {
         const lines = block.split(/\\r?\\n/);
         let eventName = "message";
         const data = [];
@@ -261,14 +731,23 @@ export function renderChatPage(): string {
 
         const payload = JSON.parse(data.join("\\n"));
         if (eventName === "answer_delta") {
-          answer.textContent += payload.delta || "";
+          if (!assistantMessage.hasContent) {
+            assistantMessage.answer.textContent = "";
+            assistantMessage.hasContent = true;
+          }
+          assistantMessage.answer.textContent += payload.delta || "";
           status.textContent = "Receiving";
+          scrollMessagesToBottom();
           return;
         }
 
         if (eventName === "metadata") {
-          renderCitations(payload.citations || []);
+          assistantMessage.meta.textContent =
+            payload.intent + " · confidence " + Number(payload.confidence).toFixed(2);
+          renderCitations(assistantMessage.citations, payload.citations || []);
           status.textContent = payload.intent + " · " + Number(payload.confidence).toFixed(2);
+          intent.textContent = payload.intent;
+          scrollMessagesToBottom();
           return;
         }
 
@@ -277,8 +756,49 @@ export function renderChatPage(): string {
         }
       }
 
-      function renderCitations(nextCitations) {
-        citations.replaceChildren(
+      function appendMessage(role, options) {
+        const node = document.createElement("article");
+        node.className = "message " + role + (options.streaming ? " is-streaming" : "");
+
+        const avatar = document.createElement("div");
+        avatar.className = "avatar";
+        avatar.setAttribute("aria-hidden", "true");
+        avatar.textContent = role === "user" ? "You" : "AI";
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+
+        const answer = document.createElement("div");
+        answer.className = "bubble-content";
+        if (options.streaming) {
+          const thinking = document.createElement("span");
+          thinking.className = "thinking";
+          thinking.textContent = "Thinking";
+          answer.append(thinking);
+        } else {
+          answer.textContent = options.text;
+        }
+
+        const meta = document.createElement("div");
+        meta.className = "message-meta";
+        meta.textContent = role === "assistant" ? "waiting for citations" : "web";
+
+        const citations = document.createElement("div");
+        citations.className = "citation-list";
+
+        bubble.append(answer);
+        if (role === "assistant") {
+          bubble.append(meta, citations);
+        }
+        node.append(avatar, bubble);
+        messages.append(node);
+        scrollMessagesToBottom();
+
+        return { answer, citations, hasContent: !options.streaming, meta, node };
+      }
+
+      function renderCitations(target, nextCitations) {
+        target.replaceChildren(
           ...nextCitations.map((citation, index) => {
             const article = document.createElement("article");
             article.className = "citation";
@@ -301,12 +821,31 @@ export function renderChatPage(): string {
             }
 
             const excerpt = document.createElement("div");
+            excerpt.className = "citation-excerpt";
             excerpt.textContent = citation.excerpt;
 
             article.append(title, meta, excerpt);
             return article;
           }),
         );
+      }
+
+      function removeWelcomeMessage() {
+        const welcome = document.querySelector("[data-welcome-message]");
+        if (welcome) {
+          welcome.remove();
+        }
+      }
+
+      function setBusy(isBusy) {
+        send.disabled = isBusy;
+        for (const prompt of quickPrompts) {
+          prompt.disabled = isBusy;
+        }
+      }
+
+      function scrollMessagesToBottom() {
+        messages.scrollTop = messages.scrollHeight;
       }
     </script>
   </body>

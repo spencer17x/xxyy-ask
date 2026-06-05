@@ -4,15 +4,19 @@ import { request } from 'node:http';
 import { renderChatPage, startStaticWebServer } from './index.js';
 
 describe('renderChatPage', () => {
-  it('renders a static chat UI that calls the API and shows citations', () => {
+  it('renders a polished support workbench that streams chat and shows citations', () => {
     const html = renderChatPage();
 
+    expect(html).toContain('class="app-shell"');
+    expect(html).toContain('class="sidebar"');
+    expect(html).toContain('class="quick-prompt"');
+    expect(html).toContain('id="messages"');
     expect(html).toContain('<form id="chat-form"');
     expect(html).toContain('<textarea id="message"');
     expect(html).toContain('fetch("/api/chat/stream"');
     expect(html).toContain('body.getReader()');
-    expect(html).toContain('id="answer"');
-    expect(html).toContain('id="citations"');
+    expect(html).toContain('appendMessage("assistant"');
+    expect(html).toContain('renderCitations(assistantMessage.citations');
   });
 
   it('does not render citation payloads with innerHTML', () => {
