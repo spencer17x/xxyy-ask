@@ -91,6 +91,8 @@ pnpm check
 
 `pnpm ops:refresh` 是知识库更新流水线，默认执行 `x:scrape`、`rag:ingest`、`ops:check:rag`，最后导出负反馈 JSON 队列。用 `pnpm ops:refresh -- --skip-scrape` 跳过 X 抓取，用 `pnpm ops:refresh -- --full` 加跑完整 LLM eval。
 
+`pnpm ops:smoke` 用于检查已经启动的 API 服务，默认检查 `/health` 和 `/health/deep`。线上检查可传 `--base-url` 和 `--ops-token`，加 `--chat` 会额外调用一次 `/api/chat` 并校验回答和 citations。
+
 `pnpm rag:evaluate -- --fast` 使用 embedding + pgvector 检索，但回答阶段走本地 grounded answer，不调用 chat LLM；用来快速定位检索、引用和边界分类问题。`pnpm rag:evaluate` 会调用配置的大模型，用于发布前验证最终回答质量。
 
 聚焦测试可以按文件运行：
