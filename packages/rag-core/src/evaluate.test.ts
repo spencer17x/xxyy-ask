@@ -67,4 +67,86 @@ describe('evaluateCases', () => {
       citationCount: 0,
     });
   });
+
+  it('checks answer content and required citation sources', async () => {
+    const answerProvider: AnswerProvider = {
+      answer({ classification, question, retrievedChunks }) {
+        const isBadAnswer = question.includes('错误示例');
+        return Promise.resolve({
+          answer: isBadAnswer
+            ? 'XXYY Pro 可以帮你判断今天买哪个币，这是投资建议。'
+            : 'XXYY Pro 权益包括独享服务器和节点、监控2000个钱包、收藏1000个代币。',
+          citations: isBadAnswer
+            ? []
+            : retrievedChunks.map((chunk) => ({
+                excerpt: chunk.text,
+                file: chunk.metadata.file,
+                title: chunk.metadata.title,
+                ...(chunk.metadata.sourceUrl === undefined
+                  ? {}
+                  : { sourceUrl: chunk.metadata.sourceUrl }),
+              })),
+          confidence: classification.confidence,
+          intent: classification.intent,
+        });
+      },
+    };
+    const service = createChatService({
+      answerProvider,
+      index: createFixtureIndex([
+        {
+          id: 'official_docs:pro:chunk:0001',
+          title: 'XXYY Pro 权益',
+          sourceType: 'official_docs',
+          sourceUrl: 'https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi',
+          file: '/docs/pro.md',
+          text: 'XXYY Pro 权益包括独享服务器和节点、监控2000个钱包、收藏1000个代币。',
+        },
+      ]),
+    });
+
+    const report = await evaluateCases(
+      [
+        {
+          name: 'pro answer quality',
+          request: { channel: 'web', message: 'XXYY Pro 权益有哪些？' },
+          expectedIntent: 'product_qa',
+          minCitations: 1,
+          requiredAnswerIncludes: ['独享服务器和节点', '监控2000个钱包'],
+          forbiddenAnswerIncludes: ['投资建议'],
+          requiredCitationTitles: ['XXYY Pro 权益'],
+          requiredSourceUrls: ['https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi'],
+        },
+        {
+          name: 'bad pro answer quality',
+          request: { channel: 'web', message: 'XXYY Pro 权益错误示例？' },
+          expectedIntent: 'product_qa',
+          minCitations: 1,
+          requiredAnswerIncludes: ['独享服务器和节点'],
+          forbiddenAnswerIncludes: ['投资建议'],
+          requiredCitationTitles: ['XXYY Pro 权益'],
+          requiredSourceUrls: ['https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi'],
+        },
+      ],
+      service,
+    );
+
+    expect(report.passed).toBe(1);
+    expect(report.results[0]).toMatchObject({
+      name: 'pro answer quality',
+      passed: true,
+      failureReasons: [],
+    });
+    expect(report.results[1]).toMatchObject({
+      name: 'bad pro answer quality',
+      passed: false,
+      failureReasons: [
+        'citations 0/1',
+        'answer missing required text: 独享服务器和节点',
+        'answer contains forbidden text: 投资建议',
+        'missing citation title: XXYY Pro 权益',
+        'missing source URL: https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi',
+      ],
+    });
+  });
 });

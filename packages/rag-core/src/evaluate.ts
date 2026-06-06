@@ -7,6 +7,10 @@ export interface EvaluationCase {
   request: ChatRequest;
   expectedIntent: Intent;
   minCitations?: number;
+  requiredAnswerIncludes?: string[];
+  forbiddenAnswerIncludes?: string[];
+  requiredCitationTitles?: string[];
+  requiredSourceUrls?: string[];
 }
 
 export interface EvaluationResult {
@@ -16,6 +20,7 @@ export interface EvaluationResult {
   actualIntent: Intent;
   minCitations: number;
   citationCount: number;
+  failureReasons: string[];
 }
 
 export interface EvaluationReport {
@@ -34,15 +39,26 @@ export async function evaluateCases(
     const response = await service.ask(testCase.request);
     const minCitations = testCase.minCitations ?? 0;
     const citationCount = response.citations.length;
-    const passed = response.intent === testCase.expectedIntent && citationCount >= minCitations;
+    const failureReasons = collectFailureReasons({
+      actualIntent: response.intent,
+      answer: response.answer,
+      citationCount,
+      citationTitles: response.citations.map((citation) => citation.title),
+      minCitations,
+      sourceUrls: response.citations.flatMap((citation) =>
+        citation.sourceUrl === undefined ? [] : [citation.sourceUrl],
+      ),
+      testCase,
+    });
 
     results.push({
       name: testCase.name,
-      passed,
+      passed: failureReasons.length === 0,
       expectedIntent: testCase.expectedIntent,
       actualIntent: response.intent,
       minCitations,
       citationCount,
+      failureReasons,
     });
   }
 
@@ -51,4 +67,50 @@ export async function evaluateCases(
     passed: results.filter((result) => result.passed).length,
     results,
   };
+}
+
+function collectFailureReasons(input: {
+  actualIntent: Intent;
+  answer: string;
+  citationCount: number;
+  citationTitles: string[];
+  minCitations: number;
+  sourceUrls: string[];
+  testCase: EvaluationCase;
+}): string[] {
+  const failures: string[] = [];
+
+  if (input.actualIntent !== input.testCase.expectedIntent) {
+    failures.push(`intent ${input.actualIntent} != ${input.testCase.expectedIntent}`);
+  }
+
+  if (input.citationCount < input.minCitations) {
+    failures.push(`citations ${input.citationCount}/${input.minCitations}`);
+  }
+
+  for (const requiredText of input.testCase.requiredAnswerIncludes ?? []) {
+    if (!input.answer.includes(requiredText)) {
+      failures.push(`answer missing required text: ${requiredText}`);
+    }
+  }
+
+  for (const forbiddenText of input.testCase.forbiddenAnswerIncludes ?? []) {
+    if (input.answer.includes(forbiddenText)) {
+      failures.push(`answer contains forbidden text: ${forbiddenText}`);
+    }
+  }
+
+  for (const requiredTitle of input.testCase.requiredCitationTitles ?? []) {
+    if (!input.citationTitles.includes(requiredTitle)) {
+      failures.push(`missing citation title: ${requiredTitle}`);
+    }
+  }
+
+  for (const requiredSourceUrl of input.testCase.requiredSourceUrls ?? []) {
+    if (!input.sourceUrls.includes(requiredSourceUrl)) {
+      failures.push(`missing source URL: ${requiredSourceUrl}`);
+    }
+  }
+
+  return failures;
 }

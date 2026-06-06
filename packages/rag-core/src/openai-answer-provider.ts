@@ -46,6 +46,18 @@ class LlmRequestTimeoutError extends Error {
   }
 }
 
+class LlmRetryableRequestError extends Error {
+  constructor(public readonly status: number) {
+    super(`LLM request failed with retryable status ${status}.`);
+  }
+}
+
+class LlmRequestStatusError extends Error {
+  constructor(public readonly status: number) {
+    super(`LLM request failed with status ${status}.`);
+  }
+}
+
 export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions): AnswerProvider {
   if (options.apiKey === undefined || options.apiKey.trim().length === 0) {
     throw new LlmConfigurationError('OPENAI_API_KEY is required for LLM answer generation.');
@@ -90,7 +102,11 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
           requestTimeoutMs,
         });
       } catch (error) {
-        if (error instanceof LlmRequestTimeoutError) {
+        if (
+          error instanceof LlmRequestTimeoutError ||
+          error instanceof LlmRetryableRequestError ||
+          error instanceof LlmRequestStatusError
+        ) {
           return createGroundedAnswer(input.question, input.classification, input.retrievedChunks);
         }
         throw error;
@@ -140,7 +156,11 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
           requestTimeoutMs,
         });
       } catch (error) {
-        if (error instanceof LlmRequestTimeoutError) {
+        if (
+          error instanceof LlmRequestTimeoutError ||
+          error instanceof LlmRetryableRequestError ||
+          error instanceof LlmRequestStatusError
+        ) {
           yield* streamStaticAnswer(
             createGroundedAnswer(input.question, input.classification, input.retrievedChunks),
           );
@@ -218,13 +238,23 @@ async function fetchChatCompletion(
     }
 
     if (!response.ok) {
-      throw new Error(`LLM request failed with status ${response.status}`);
+      if (isRetryableStatus(response.status)) {
+        if (attempt < options.maxRetries) {
+          continue;
+        }
+        throw new LlmRetryableRequestError(response.status);
+      }
+      throw new LlmRequestStatusError(response.status);
     }
 
     return response;
   }
 
   throw new LlmRequestTimeoutError(options.requestTimeoutMs);
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status < 600);
 }
 
 async function fetchWithTimeout(

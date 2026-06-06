@@ -37,6 +37,35 @@ describe('parseCliArgs', () => {
 });
 
 describe('BUILT_IN_EVALUATION_CASES', () => {
+  it('contains a product support regression suite with quality assertions', () => {
+    expect(BUILT_IN_EVALUATION_CASES.length).toBeGreaterThanOrEqual(30);
+    const groundedCases = BUILT_IN_EVALUATION_CASES.filter(
+      (item) => item.expectedIntent === 'product_qa' || item.expectedIntent === 'how_to',
+    );
+    expect(groundedCases.length).toBeGreaterThan(0);
+
+    for (const testCase of groundedCases) {
+      expect(testCase.minCitations ?? 0).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('covers core product, source tracing, and boundary topics', () => {
+    expect(BUILT_IN_EVALUATION_CASES).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'pro benefits' }),
+        expect.objectContaining({ name: 'mobile app desktop shortcut' }),
+        expect.objectContaining({ name: 'copy trading support' }),
+        expect.objectContaining({ name: 'wallet monitoring limit updates' }),
+        expect.objectContaining({
+          name: 'wallet note x source',
+          requiredSourceUrls: ['https://x.com/useXXYYio/status/2030954722350575916'],
+        }),
+        expect.objectContaining({ name: 'investment advice boundary' }),
+        expect.objectContaining({ name: 'mev detection boundary' }),
+      ]),
+    );
+  });
+
   it('covers sourceable X update questions', () => {
     expect(BUILT_IN_EVALUATION_CASES).toEqual(
       expect.arrayContaining([
@@ -158,6 +187,7 @@ describe('CLI output formatting', () => {
             actualIntent: 'product_qa',
             citationCount: 2,
             expectedIntent: 'product_qa',
+            failureReasons: [],
             minCitations: 1,
             name: 'pro benefits',
             passed: true,
@@ -166,6 +196,7 @@ describe('CLI output formatting', () => {
             actualIntent: 'unknown',
             citationCount: 0,
             expectedIntent: 'how_to',
+            failureReasons: ['intent unknown != how_to', 'citations 0/1'],
             minCitations: 1,
             name: 'telegram setup',
             passed: false,
@@ -173,6 +204,23 @@ describe('CLI output formatting', () => {
         ],
       }),
     ).toContain('Evaluation: 1/2 passed');
+    expect(
+      formatEvaluationReport({
+        passed: 0,
+        total: 1,
+        results: [
+          {
+            actualIntent: 'product_qa',
+            citationCount: 0,
+            expectedIntent: 'product_qa',
+            failureReasons: ['answer missing required text: 独享服务器和节点'],
+            minCitations: 1,
+            name: 'pro quality',
+            passed: false,
+          },
+        ],
+      }),
+    ).toContain('reasons: answer missing required text: 独享服务器和节点');
   });
 
   it('formats pgvector ingest summaries', () => {

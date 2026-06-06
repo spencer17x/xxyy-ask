@@ -258,6 +258,138 @@ describe('createOpenAiAnswerProvider', () => {
     expect(response.answer).toBe('第二次请求成功返回 Pro 权益。');
   });
 
+  it('falls back to grounded context when the LLM request is rate limited', async () => {
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: { message: 'rate limited' } }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      maxRetries: 0,
+      model: 'gpt-test',
+    });
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:pro:chunk:0001',
+        title: 'XXYY Pro 权益',
+        sourceType: 'official_docs',
+        file: '/docs/pro.md',
+        text: '标准客服回答：XXYY Pro 权益包括独享服务器和节点、监控2000个钱包、收藏1000个代币。',
+      },
+    ]);
+    const retrieved = retrieve('XXYY Pro 有哪些权益？', index);
+
+    const response = await provider.answer({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: 'XXYY Pro 有哪些权益？',
+      retrievedChunks: retrieved,
+    });
+
+    expect(response.answer).toContain('独享服务器和节点');
+    expect(response.answer).toContain('监控2000个钱包');
+  });
+
+  it('falls back to grounded context when the LLM model route is unavailable', async () => {
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: { message: 'model not found' } }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      maxRetries: 0,
+      model: 'gpt-test',
+    });
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:pro:chunk:0001',
+        title: 'XXYY Pro 权益',
+        sourceType: 'official_docs',
+        file: '/docs/pro.md',
+        text: '标准客服回答：XXYY Pro 权益包括独享服务器和节点、监控2000个钱包、收藏1000个代币。',
+      },
+    ]);
+    const retrieved = retrieve('XXYY Pro 有哪些权益？', index);
+
+    const response = await provider.answer({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: 'XXYY Pro 有哪些权益？',
+      retrievedChunks: retrieved,
+    });
+
+    expect(response.answer).toContain('独享服务器和节点');
+    expect(response.answer).toContain('监控2000个钱包');
+  });
+
+  it('retries a retryable LLM status before falling back', async () => {
+    let attempts = 0;
+    const fetchImpl: typeof fetch = () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return Promise.resolve(new Response('rate limited', { status: 429 }));
+      }
+
+      return Promise.resolve(
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                content: '第二次限流重试成功。',
+              },
+            },
+          ],
+        }),
+      );
+    };
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      maxRetries: 1,
+      model: 'gpt-test',
+    });
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:pro:chunk:0001',
+        title: 'XXYY Pro 权益',
+        sourceType: 'official_docs',
+        file: '/docs/pro.md',
+        text: '标准客服回答：XXYY Pro 权益包括独享服务器和节点、监控2000个钱包、收藏1000个代币。',
+      },
+    ]);
+    const retrieved = retrieve('XXYY Pro 有哪些权益？', index);
+
+    const response = await provider.answer({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: 'XXYY Pro 有哪些权益？',
+      retrievedChunks: retrieved,
+    });
+
+    expect(attempts).toBe(2);
+    expect(response.answer).toBe('第二次限流重试成功。');
+  });
+
   it('streams grounded answer deltas through an OpenAI-compatible chat completion API', async () => {
     const requests: unknown[] = [];
     const fetchImpl: typeof fetch = (_input, init) => {
@@ -392,6 +524,56 @@ describe('createOpenAiAnswerProvider', () => {
       fetchImpl,
       model: 'gpt-test',
       requestTimeoutMs: 1,
+    });
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:pro:chunk:0001',
+        title: 'XXYY Pro 权益',
+        sourceType: 'official_docs',
+        file: '/docs/pro.md',
+        text: '标准客服回答：XXYY Pro 权益包括独享服务器和节点、监控2000个钱包、收藏1000个代币。',
+      },
+    ]);
+    const retrieved = retrieve('XXYY Pro 有哪些权益？', index);
+
+    if (provider.stream === undefined) {
+      throw new Error('Expected provider to support streaming');
+    }
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of provider.stream({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: 'XXYY Pro 有哪些权益？',
+      retrievedChunks: retrieved,
+    })) {
+      events.push(event);
+    }
+
+    const answer = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: 'answer_delta' }> => {
+        return event.type === 'answer_delta';
+      })
+      .map((event) => event.delta)
+      .join('');
+
+    expect(answer).toContain('独享服务器和节点');
+    expect(answer).toContain('监控2000个钱包');
+    expect(events.at(-1)?.type).toBe('metadata');
+  });
+
+  it('falls back to grounded stream events when the streaming LLM request is rate limited', async () => {
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(new Response('rate limited', { status: 429 }));
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      maxRetries: 0,
+      model: 'gpt-test',
     });
     const index = createFixtureIndex([
       {

@@ -119,4 +119,12 @@ pnpm rag:evaluate
 pnpm start
 ```
 
+更新产品文档或 X 推文后，建议按这个顺序做质量门禁：
+
+```bash
+pnpm rag:ingest
+pnpm rag:evaluate
+pnpm check
+```
+
 更多产品知识库和运行说明见 [docs/README.md](docs/README.md)。

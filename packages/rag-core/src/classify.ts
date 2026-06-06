@@ -27,7 +27,7 @@ const unsafeOperationPatterns = [
 
 const productOperationPatterns = [
   /如何.*(买入|卖出|交易|挂单|swap|设置)/u,
-  /怎么.*(买入|卖出|交易|挂单|swap|设置|操作)/u,
+  /怎么.*(买入|卖出|交易|挂单|swap|设置|操作|登录|导出|导入|生成|升级)/u,
   /(swap|挂单|交易).*怎么操作/u,
   /操作.*(买入|卖出|交易|挂单|swap)/u,
 ];
@@ -81,6 +81,7 @@ const rules: IntentRule[] = [
       /\bxxyy\b|\bpro\b|\bproduct\b|\bfeature(s)?\b|\bupdate(s)?\b/u,
       /产品|功能|更新|权益|版本|提醒|监控|telegram/u,
       /钱包备注|监控上限|监控数量|历史更新|更新记录|推特|推文|tweet|x\.com/u,
+      /扫链|打满|趋势|收藏|持仓管理|收益统计|快捷交易|自动交易|钱包管理|关注钱包|移动端/u,
     ],
   },
 ];
