@@ -75,6 +75,84 @@ describe('createPgVectorStore', () => {
     ]);
   });
 
+  it('records chat feedback for answer quality operations', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await store.recordFeedback({
+      answer: '根据知识库，XXYY Pro 提供更多权益。',
+      channel: 'web',
+      citationCount: 2,
+      comment: '没有讲清楚监控数量上限',
+      intent: 'product_qa',
+      question: 'XXYY Pro 有哪些权益？',
+      rating: 'negative',
+      sessionId: 'session-1',
+    });
+
+    expect(client.queries[0]?.sql).toContain('insert into rag_feedback');
+    expect(client.queries[0]?.values).toEqual([
+      'web',
+      'session-1',
+      'negative',
+      'XXYY Pro 有哪些权益？',
+      '根据知识库，XXYY Pro 提供更多权益。',
+      'product_qa',
+      2,
+      '没有讲清楚监控数量上限',
+    ]);
+  });
+
+  it('returns feedback stats for quality operations', async () => {
+    const client = new FakePgClient();
+    client.queuedRows = [
+      [{ negative_count: 1, positive_count: 2, total_count: 3 }],
+      [
+        {
+          answer: '根据知识库，XXYY Pro 提供更多权益。',
+          channel: 'web',
+          citation_count: 2,
+          comment: '没有讲清楚监控数量上限',
+          created_at: '2026-06-06T02:03:04.000Z',
+          intent: 'product_qa',
+          question: 'XXYY Pro 有哪些权益？',
+          rating: 'negative',
+          session_id: 'session-1',
+        },
+      ],
+    ];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    const stats = await store.getFeedbackStats({ limit: 5 });
+
+    expect(stats).toEqual({
+      latest: [
+        {
+          answer: '根据知识库，XXYY Pro 提供更多权益。',
+          channel: 'web',
+          citationCount: 2,
+          comment: '没有讲清楚监控数量上限',
+          createdAt: '2026-06-06T02:03:04.000Z',
+          intent: 'product_qa',
+          question: 'XXYY Pro 有哪些权益？',
+          rating: 'negative',
+          sessionId: 'session-1',
+        },
+      ],
+      negativeCount: 1,
+      positiveCount: 2,
+      totalCount: 3,
+    });
+    expect(client.queries[1]?.sql).toContain('from rag_feedback');
+    expect(client.queries[1]?.values).toEqual([5]);
+  });
+
   it('returns knowledge stats for operations visibility', async () => {
     const client = new FakePgClient();
     client.queuedRows = [

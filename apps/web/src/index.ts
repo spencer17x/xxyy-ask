@@ -330,6 +330,40 @@ export function renderChatPage(): string {
         padding: 0 16px 16px;
       }
 
+      .feedback-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 0 16px 16px;
+      }
+
+      .feedback-button {
+        min-height: 30px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--muted);
+        padding: 5px 10px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .feedback-button:hover {
+        border-color: #8fbcb2;
+        color: var(--accent-strong);
+      }
+
+      .feedback-button:disabled {
+        cursor: default;
+        opacity: 0.65;
+      }
+
+      .feedback-status {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
       .citation,
       .attachment {
         display: grid;
@@ -639,6 +673,7 @@ export function renderChatPage(): string {
       const send = document.querySelector("#send");
       const clear = document.querySelector("#clear");
       const quickPrompts = Array.from(document.querySelectorAll(".quick-prompt"));
+      const sessionId = getSessionId();
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -672,7 +707,11 @@ export function renderChatPage(): string {
 
         removeWelcomeMessage();
         appendMessage("user", { text });
-        const assistantMessage = appendMessage("assistant", { text: "", streaming: true });
+        const assistantMessage = appendMessage("assistant", {
+          question: text,
+          streaming: true,
+          text: "",
+        });
 
         message.value = "";
         setBusy(true);
@@ -683,7 +722,7 @@ export function renderChatPage(): string {
           const response = await fetch("/api/chat/stream", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: text, channel: "web" }),
+            body: JSON.stringify({ message: text, channel: "web", sessionId }),
           });
           if (!response.ok) {
             const payload = await response.json();
@@ -760,6 +799,9 @@ export function renderChatPage(): string {
             payload.intent + " · confidence " + Number(payload.confidence).toFixed(2);
           renderCitations(assistantMessage.citations, payload.citations || []);
           renderAttachments(assistantMessage.attachments, payload.attachments || []);
+          assistantMessage.intentValue = payload.intent;
+          assistantMessage.citationCount = (payload.citations || []).length;
+          assistantMessage.feedback.hidden = false;
           status.textContent = payload.intent + " · " + Number(payload.confidence).toFixed(2);
           intent.textContent = payload.intent;
           scrollMessagesToBottom();
@@ -804,15 +846,97 @@ export function renderChatPage(): string {
         const attachments = document.createElement("div");
         attachments.className = "attachment-list";
 
+        const feedback = document.createElement("div");
+        feedback.className = "feedback-actions";
+        feedback.hidden = true;
+
+        const feedbackStatus = document.createElement("span");
+        feedbackStatus.className = "feedback-status";
+
         bubble.append(answer);
+        const messageRecord = {
+          answer,
+          attachments,
+          citationCount: 0,
+          citations,
+          feedback,
+          feedbackStatus,
+          hasContent: !options.streaming,
+          intentValue: "unknown",
+          meta,
+          node,
+          question: options.question || options.text || "",
+        };
         if (role === "assistant") {
-          bubble.append(meta, citations, attachments);
+          setupFeedbackActions(messageRecord);
+          bubble.append(meta, citations, attachments, feedback);
         }
         node.append(avatar, bubble);
         messages.append(node);
         scrollMessagesToBottom();
 
-        return { answer, attachments, citations, hasContent: !options.streaming, meta, node };
+        return messageRecord;
+      }
+
+      function setupFeedbackActions(assistantMessage) {
+        const positive = document.createElement("button");
+        positive.className = "feedback-button";
+        positive.type = "button";
+        positive.textContent = "Good";
+        positive.setAttribute("aria-label", "Mark answer as helpful");
+
+        const negative = document.createElement("button");
+        negative.className = "feedback-button";
+        negative.type = "button";
+        negative.textContent = "Improve";
+        negative.setAttribute("aria-label", "Mark answer as needing improvement");
+
+        positive.addEventListener("click", () => {
+          void submitFeedback(assistantMessage, "positive");
+        });
+        negative.addEventListener("click", () => {
+          void submitFeedback(assistantMessage, "negative");
+        });
+
+        assistantMessage.feedback.append(positive, negative, assistantMessage.feedbackStatus);
+      }
+
+      async function submitFeedback(assistantMessage, rating) {
+        if (assistantMessage.feedbackSent) return;
+
+        const buttons = Array.from(assistantMessage.feedback.querySelectorAll("button"));
+        for (const button of buttons) {
+          button.disabled = true;
+        }
+        assistantMessage.feedbackStatus.textContent = "Sending";
+
+        try {
+          const response = await fetch("/api/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              answer: assistantMessage.answer.textContent || "",
+              channel: "web",
+              citationCount: assistantMessage.citationCount,
+              intent: assistantMessage.intentValue,
+              question: assistantMessage.question,
+              rating,
+              sessionId,
+            }),
+          });
+          if (!response.ok) {
+            const payload = await response.json();
+            throw new Error(payload.message || "Feedback failed.");
+          }
+          assistantMessage.feedbackSent = true;
+          assistantMessage.feedbackStatus.textContent = "Saved";
+        } catch (error) {
+          assistantMessage.feedbackStatus.textContent =
+            error instanceof Error ? error.message : "Feedback failed.";
+          for (const button of buttons) {
+            button.disabled = false;
+          }
+        }
       }
 
       function renderCitations(target, nextCitations) {
@@ -890,6 +1014,22 @@ export function renderChatPage(): string {
 
       function scrollMessagesToBottom() {
         messages.scrollTop = messages.scrollHeight;
+      }
+
+      function getSessionId() {
+        const key = "xxyy.ask.sessionId";
+        try {
+          const existing = window.localStorage.getItem(key);
+          if (existing) return existing;
+          const next =
+            window.crypto && typeof window.crypto.randomUUID === "function"
+              ? window.crypto.randomUUID()
+              : "session-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+          window.localStorage.setItem(key, next);
+          return next;
+        } catch (_error) {
+          return "session-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+        }
       }
     </script>
   </body>

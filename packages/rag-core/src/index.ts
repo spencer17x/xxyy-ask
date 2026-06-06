@@ -7,6 +7,7 @@ export { loadWorkspaceEnv, resolveWorkspaceCwd } from './env.js';
 export { evaluateCases } from './evaluate.js';
 export { createOpenAiAnswerProvider, LlmConfigurationError } from './openai-answer-provider.js';
 export {
+  createPgFeedbackStore,
   createPgPool,
   createPgVectorStore,
   toPgVectorLiteral,
@@ -30,12 +31,19 @@ export type {
 export type { OpenAiAnswerProviderOptions } from './openai-answer-provider.js';
 export type {
   EmbeddedKnowledgeChunk,
+  FeedbackRecord,
+  FeedbackRating,
+  FeedbackStats,
+  GetFeedbackStatsOptions,
   KnowledgeIngestionRun,
   KnowledgeSourceStats,
   KnowledgeStats,
+  PgFeedbackStore,
+  PgFeedbackStoreOptions,
   PgClientLike,
   PgVectorStore,
   PgVectorStoreOptions,
+  RecordFeedbackInput,
   RecordIngestionRunInput,
 } from './pgvector-store.js';
 export type { RetrieveOptions, RetrievedChunk } from './retrieve.js';

@@ -11,6 +11,7 @@ import type {
   EvaluationCase,
   EvaluationReport,
   EvaluationResult,
+  FeedbackStats,
   KnowledgeStats,
 } from '@xxyy/rag-core';
 import type { SourceDocument } from '@xxyy/shared';
@@ -21,8 +22,10 @@ import {
   formatChatResponse,
   formatEvaluationReport,
   formatEvaluationProgress,
+  formatFeedbackStats,
   formatIngestSummary,
   formatKnowledgeStats,
+  formatMigrationSummary,
   parseCliArgs,
   resolveWorkspaceCwd,
   runCli,
@@ -42,7 +45,9 @@ describe('parseCliArgs', () => {
 
   it('parses commands that do not require extra arguments', () => {
     expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
+    expect(parseCliArgs(['migrate'])).toEqual({ command: 'migrate' });
     expect(parseCliArgs(['stats'])).toEqual({ command: 'stats' });
+    expect(parseCliArgs(['feedback'])).toEqual({ command: 'feedback' });
     expect(parseCliArgs(['evaluate'])).toEqual({ command: 'evaluate', fast: false });
     expect(parseCliArgs(['evaluate', '--fast'])).toEqual({ command: 'evaluate', fast: true });
     expect(parseCliArgs(['evaluate', '--', '--fast'])).toEqual({
@@ -280,6 +285,10 @@ describe('CLI output formatting', () => {
     ).toContain('Run ID: ingest_20260606T010203Z_abcd1234');
   });
 
+  it('formats migration summaries', () => {
+    expect(formatMigrationSummary()).toBe('Database migrations applied.');
+  });
+
   it('formats knowledge stats for operations checks', () => {
     const stats: KnowledgeStats = {
       chunkCount: 64,
@@ -315,6 +324,34 @@ describe('CLI output formatting', () => {
     );
     expect(formatKnowledgeStats(stats)).toContain('official_docs: 48 chunks, 10 documents');
     expect(formatKnowledgeStats(stats)).toContain('Content hash: content-hash-1');
+  });
+
+  it('formats feedback stats for answer quality operations', () => {
+    const stats: FeedbackStats = {
+      latest: [
+        {
+          answer: '根据知识库，XXYY Pro 提供更多权益。',
+          channel: 'web',
+          citationCount: 2,
+          comment: '没有讲清楚监控数量上限',
+          createdAt: '2026-06-06T02:03:04.000Z',
+          intent: 'product_qa',
+          question: 'XXYY Pro 有哪些权益？',
+          rating: 'negative',
+          sessionId: 'session-1',
+        },
+      ],
+      negativeCount: 1,
+      positiveCount: 2,
+      totalCount: 3,
+    };
+
+    expect(formatFeedbackStats(stats)).toContain(
+      ['Feedback stats:', 'Total: 3', 'Positive: 2', 'Negative: 1'].join('\n'),
+    );
+    expect(formatFeedbackStats(stats)).toContain('[1] negative product_qa citations 2 web');
+    expect(formatFeedbackStats(stats)).toContain('Question: XXYY Pro 有哪些权益？');
+    expect(formatFeedbackStats(stats)).toContain('Comment: 没有讲清楚监控数量上限');
   });
 });
 
@@ -570,6 +607,73 @@ describe('runCli', () => {
     }
   });
 
+  it('runs database migrations without generating embeddings', async () => {
+    vi.resetModules();
+
+    const events: string[] = [];
+    const migrate = vi.fn(() => {
+      events.push('migrate');
+      return Promise.resolve();
+    });
+    const end = vi.fn(() => {
+      events.push('pool.end');
+      return Promise.resolve();
+    });
+
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgPool: vi.fn(() => ({ end })),
+        createPgVectorStore: vi.fn(() => ({
+          getFeedbackStats: vi.fn(),
+          getStats: vi.fn(),
+          migrate,
+          recordFeedback: vi.fn(),
+          recordIngestionRun: vi.fn(),
+          replaceChunks: vi.fn(),
+          retrieve: vi.fn(),
+          upsertChunks: vi.fn(),
+        })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: undefined,
+          openAiApiKeyPresent: false,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: undefined,
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+        })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+
+      const stdout: string[] = [];
+      const exitCode = await runCliWithMocks(['migrate'], {
+        cwd: process.cwd(),
+        env: {},
+        stderr: { write: () => true },
+        stdout: {
+          write: (message: string) => {
+            stdout.push(message);
+            return true;
+          },
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(events).toEqual(['migrate', 'pool.end']);
+      expect(stdout.join('')).toContain('Database migrations applied.');
+    } finally {
+      vi.doUnmock('@xxyy/rag-core');
+    }
+  });
+
   it('prints pgvector knowledge stats', async () => {
     vi.resetModules();
 
@@ -654,6 +758,78 @@ describe('runCli', () => {
       expect(stdout.join('')).toContain('Run ID: ingest_20260606T010203Z_abcd1234');
     } finally {
       vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+    }
+  });
+
+  it('prints feedback stats for quality operations', async () => {
+    vi.resetModules();
+
+    const stdout: string[] = [];
+    const getFeedbackStats = vi.fn(() =>
+      Promise.resolve({
+        latest: [
+          {
+            answer: '根据知识库，XXYY Pro 提供更多权益。',
+            channel: 'web',
+            citationCount: 2,
+            comment: '没有讲清楚监控数量上限',
+            createdAt: '2026-06-06T02:03:04.000Z',
+            intent: 'product_qa',
+            question: 'XXYY Pro 有哪些权益？',
+            rating: 'negative',
+            sessionId: 'session-1',
+          },
+        ],
+        negativeCount: 1,
+        positiveCount: 2,
+        totalCount: 3,
+      } satisfies FeedbackStats),
+    );
+    const end = vi.fn(() => Promise.resolve());
+
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgFeedbackStore: vi.fn(() => ({ getFeedbackStats })),
+        createPgPool: vi.fn(() => ({ end })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+        })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+
+      const exitCode = await runCliWithMocks(['feedback'], {
+        cwd: process.cwd(),
+        env: {},
+        stderr: { write: () => true },
+        stdout: {
+          write: (message: string) => {
+            stdout.push(message);
+            return true;
+          },
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(getFeedbackStats).toHaveBeenCalledWith({ limit: 10 });
+      expect(end).toHaveBeenCalledTimes(1);
+      expect(stdout.join('')).toContain('Feedback stats:');
+      expect(stdout.join('')).toContain('negative product_qa citations 2 web');
+    } finally {
       vi.doUnmock('@xxyy/rag-core');
     }
   });

@@ -26,6 +26,11 @@ describe('createOpsCheckPlan', () => {
         label: 'knowledge stats',
       },
       {
+        args: ['rag:feedback'],
+        command: 'pnpm',
+        label: 'feedback stats',
+      },
+      {
         args: ['rag:evaluate', '--', '--fast'],
         command: 'pnpm',
         label: 'fast RAG evaluation',
@@ -44,6 +49,11 @@ describe('createOpsCheckPlan', () => {
         args: ['rag:stats'],
         command: 'pnpm',
         label: 'knowledge stats',
+      },
+      {
+        args: ['rag:feedback'],
+        command: 'pnpm',
+        label: 'feedback stats',
       },
       {
         args: ['rag:evaluate', '--', '--fast'],

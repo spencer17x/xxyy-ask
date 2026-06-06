@@ -8,6 +8,7 @@ import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxy
 import {
   createChatService,
   createLazyRetriever,
+  createPgFeedbackStore,
   createPgPool,
   createPgVectorStore,
   LlmConfigurationError,
@@ -17,9 +18,10 @@ import {
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
-import type { ChatRequest, ChatChannel, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
-import { supportedChannels } from '@xxyy/shared';
-import type { ChatService, RagEnv } from '@xxyy/rag-core';
+import type { ChatRequest, ChatChannel, ChatResponse, ChatStreamEvent, Intent } from '@xxyy/shared';
+import { supportedChannels, supportedIntents } from '@xxyy/shared';
+import type { ChatService, PgFeedbackStore, RagEnv } from '@xxyy/rag-core';
+import type { RecordFeedbackInput } from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
 
 type ApiEnv = RagEnv &
@@ -60,6 +62,7 @@ export interface CreateRequestHandlerOptions {
   getHealthStatus?: () => Promise<DeepHealthStatus>;
   logger?: ApiLogger;
   now?: () => number;
+  recordFeedback?: (input: RecordFeedbackInput) => Promise<void>;
   renderHtml?: () => string;
   staticAssetsDir?: string;
 }
@@ -80,6 +83,17 @@ interface ChatPayload {
   channel?: ChatChannel;
   sessionId?: string;
   userId?: string;
+}
+
+interface FeedbackPayload {
+  answer: string;
+  channel?: ChatChannel;
+  citationCount: number;
+  comment?: string;
+  intent: Intent;
+  question: string;
+  rating: 'positive' | 'negative';
+  sessionId?: string;
 }
 
 export interface ApiLogEntry {
@@ -122,6 +136,11 @@ interface DeepHealthStatus {
   };
 }
 
+const MAX_FEEDBACK_QUESTION_CHARS = 2000;
+const MAX_FEEDBACK_ANSWER_CHARS = 4000;
+const MAX_FEEDBACK_COMMENT_CHARS = 1000;
+const MAX_FEEDBACK_SESSION_CHARS = 200;
+
 export function createRequestHandler(options: CreateRequestHandlerOptions = {}): ApiRequestHandler {
   const env = options.env ?? createDefaultApiEnv(options);
   const config = loadRagConfig(env);
@@ -131,6 +150,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
   const logger = options.logger ?? noopLogger;
   const now = options.now ?? Date.now;
+  const recordFeedback = options.recordFeedback ?? createCachedFeedbackRecorder(config);
   const rateLimiter = createRateLimiter(apiConfig, Date.now);
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
 
@@ -201,6 +221,16 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
         return;
       }
 
+      if (request.method === 'POST' && requestUrl.pathname === '/api/feedback') {
+        await handleFeedbackRequest({
+          maxBodyBytes: apiConfig.maxBodyBytes,
+          recordFeedback,
+          request,
+          response,
+        });
+        return;
+      }
+
       sendJson(response, 404, { error: 'not_found', message: 'Route not found.' });
     } catch (error) {
       const apiError = createApiErrorResponse(error);
@@ -264,6 +294,19 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
     );
     throw error;
   }
+}
+
+interface HandleFeedbackRequestOptions {
+  maxBodyBytes: number;
+  recordFeedback: (input: RecordFeedbackInput) => Promise<void>;
+  request: ApiRequestLike;
+  response: ApiResponseLike;
+}
+
+async function handleFeedbackRequest(options: HandleFeedbackRequestOptions): Promise<void> {
+  const payload = parseFeedbackPayload(await readJsonBody(options.request, options.maxBodyBytes));
+  await options.recordFeedback(toRecordFeedbackInput(payload));
+  sendJson(options.response, 201, { status: 'recorded' });
 }
 
 function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
@@ -784,6 +827,20 @@ function createCachedChatServiceLoader(
   };
 }
 
+function createCachedFeedbackRecorder(
+  config: ReturnType<typeof loadRagConfig>,
+): (input: RecordFeedbackInput) => Promise<void> {
+  let cachedStore: PgFeedbackStore | undefined;
+
+  return async (input) => {
+    if (cachedStore === undefined) {
+      cachedStore = createPgFeedbackStore({ client: createPgPool(config.databaseUrl) });
+    }
+
+    await cachedStore.recordFeedback(input);
+  };
+}
+
 async function readJsonBody(request: ApiRequestLike, maxBodyBytes: number): Promise<unknown> {
   let body = '';
   let byteLength = 0;
@@ -807,6 +864,28 @@ async function readJsonBody(request: ApiRequestLike, maxBodyBytes: number): Prom
   }
 }
 
+function parseFeedbackPayload(value: unknown): FeedbackPayload {
+  if (typeof value !== 'object' || value === null) {
+    throw new BadRequestError('Request body must be a JSON object.');
+  }
+
+  const record = value as Record<string, unknown>;
+  const channel = parseOptionalChannel(record.channel);
+  const comment = parseOptionalText(record.comment, 'comment', MAX_FEEDBACK_COMMENT_CHARS);
+  const sessionId = parseOptionalText(record.sessionId, 'sessionId', MAX_FEEDBACK_SESSION_CHARS);
+
+  return {
+    answer: parseRequiredText(record.answer, 'answer', MAX_FEEDBACK_ANSWER_CHARS),
+    citationCount: parseNonNegativeInteger(record.citationCount, 'citationCount'),
+    intent: parseIntent(record.intent),
+    question: parseRequiredText(record.question, 'question', MAX_FEEDBACK_QUESTION_CHARS),
+    rating: parseFeedbackRating(record.rating),
+    ...(channel === undefined ? {} : { channel }),
+    ...(comment === undefined ? {} : { comment }),
+    ...(sessionId === undefined ? {} : { sessionId }),
+  };
+}
+
 function parseChatPayload(value: unknown): ChatPayload {
   if (typeof value !== 'object' || value === null) {
     throw new BadRequestError('Request body must be a JSON object.');
@@ -826,6 +905,55 @@ function parseChatPayload(value: unknown): ChatPayload {
     },
     record,
   );
+}
+
+function parseFeedbackRating(value: unknown): 'positive' | 'negative' {
+  if (value !== 'positive' && value !== 'negative') {
+    throw new BadRequestError('rating must be one of: positive, negative.');
+  }
+
+  return value;
+}
+
+function parseIntent(value: unknown): Intent {
+  if (typeof value !== 'string' || !supportedIntents.includes(value as Intent)) {
+    throw new BadRequestError(`intent must be one of: ${supportedIntents.join(', ')}.`);
+  }
+
+  return value as Intent;
+}
+
+function parseRequiredText(value: unknown, fieldName: string, maxLength: number): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new BadRequestError(`${fieldName} must be a non-empty string.`);
+  }
+
+  return truncateText(value.trim(), maxLength);
+}
+
+function parseOptionalText(
+  value: unknown,
+  fieldName: string,
+  maxLength: number,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    throw new BadRequestError(`${fieldName} must be a string.`);
+  }
+
+  const normalized = value.trim();
+  return normalized.length === 0 ? undefined : truncateText(normalized, maxLength);
+}
+
+function parseNonNegativeInteger(value: unknown, fieldName: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new BadRequestError(`${fieldName} must be a non-negative integer.`);
+  }
+
+  return value;
 }
 
 function withOptionalFields(
@@ -873,6 +1001,23 @@ function toChatRequest(payload: ChatPayload): ChatRequest {
     ...(payload.sessionId === undefined ? {} : { sessionId: payload.sessionId }),
     ...(payload.userId === undefined ? {} : { userId: payload.userId }),
   };
+}
+
+function toRecordFeedbackInput(payload: FeedbackPayload): RecordFeedbackInput {
+  return {
+    answer: payload.answer,
+    channel: payload.channel ?? 'web',
+    citationCount: payload.citationCount,
+    intent: payload.intent,
+    question: payload.question,
+    rating: payload.rating,
+    ...(payload.comment === undefined ? {} : { comment: payload.comment }),
+    ...(payload.sessionId === undefined ? {} : { sessionId: payload.sessionId }),
+  };
+}
+
+function truncateText(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : value.slice(0, maxLength);
 }
 
 function sendJson(response: ApiResponseLike, statusCode: number, payload: unknown): void {

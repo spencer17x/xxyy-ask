@@ -18,6 +18,11 @@ const COMMANDS = {
     command: 'pnpm',
     label: 'knowledge stats',
   },
+  ragFeedback: {
+    args: ['rag:feedback'],
+    command: 'pnpm',
+    label: 'feedback stats',
+  },
   ragEvaluationFast: {
     args: ['rag:evaluate', '--', '--fast'],
     command: 'pnpm',
@@ -30,7 +35,7 @@ export function createOpsCheckPlan(args) {
   const plan = [COMMANDS.check];
 
   if (flags.has('--rag')) {
-    plan.push(COMMANDS.ragStats, COMMANDS.ragEvaluationFast);
+    plan.push(COMMANDS.ragStats, COMMANDS.ragFeedback, COMMANDS.ragEvaluationFast);
   }
 
   if (flags.has('--full')) {

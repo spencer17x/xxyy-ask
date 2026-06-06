@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 
 import type { BatchEmbeddingProvider, PreparedKnowledgeChunk } from '@xxyy/knowledge';
 import { tokenize } from '@xxyy/knowledge';
-import type { ChunkMetadata, IndexEntry, SourceType } from '@xxyy/shared';
+import type { ChatChannel, ChunkMetadata, IndexEntry, Intent, SourceType } from '@xxyy/shared';
 
 import type { RetrieveOptions, RetrievedChunk } from './retrieve.js';
 import type { Retriever } from './retriever.js';
@@ -21,8 +21,10 @@ export interface EmbeddedKnowledgeChunk extends Omit<PreparedKnowledgeChunk, 'me
 }
 
 export interface PgVectorStore extends Retriever {
+  getFeedbackStats(options?: GetFeedbackStatsOptions): Promise<FeedbackStats>;
   getStats(): Promise<KnowledgeStats>;
   migrate(): Promise<void>;
+  recordFeedback(input: RecordFeedbackInput): Promise<void>;
   recordIngestionRun(input: RecordIngestionRunInput): Promise<void>;
   replaceChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void>;
   upsertChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void>;
@@ -31,6 +33,15 @@ export interface PgVectorStore extends Retriever {
 export interface PgVectorStoreOptions {
   client: PgClientLike;
   embeddingProvider: BatchEmbeddingProvider;
+}
+
+export interface PgFeedbackStore {
+  getFeedbackStats(options?: GetFeedbackStatsOptions): Promise<FeedbackStats>;
+  recordFeedback(input: RecordFeedbackInput): Promise<void>;
+}
+
+export interface PgFeedbackStoreOptions {
+  client: PgClientLike;
 }
 
 interface KnowledgeChunkRow {
@@ -56,6 +67,42 @@ export interface RecordIngestionRunInput {
   chunkCount: number;
   sourceCounts: Partial<Record<SourceType, number>>;
   contentHash: string;
+}
+
+export type FeedbackRating = 'positive' | 'negative';
+
+export interface RecordFeedbackInput {
+  answer: string;
+  channel: ChatChannel;
+  citationCount: number;
+  intent: Intent;
+  question: string;
+  rating: FeedbackRating;
+  comment?: string;
+  sessionId?: string;
+}
+
+export interface GetFeedbackStatsOptions {
+  limit?: number;
+}
+
+export interface FeedbackStats {
+  totalCount: number;
+  positiveCount: number;
+  negativeCount: number;
+  latest: FeedbackRecord[];
+}
+
+export interface FeedbackRecord {
+  answer: string;
+  channel: ChatChannel;
+  citationCount: number;
+  createdAt: string;
+  intent: Intent;
+  question: string;
+  rating: FeedbackRating;
+  comment?: string;
+  sessionId?: string;
 }
 
 export interface KnowledgeSourceStats {
@@ -106,6 +153,24 @@ interface KnowledgeIngestionRunRow {
   created_at: string;
 }
 
+interface FeedbackStatsRow {
+  total_count: number;
+  positive_count: number;
+  negative_count: number;
+}
+
+interface FeedbackRecordRow {
+  answer: string;
+  channel: ChatChannel;
+  citation_count: number;
+  comment: string | null;
+  created_at: string;
+  intent: Intent;
+  question: string;
+  rating: FeedbackRating;
+  session_id: string | null;
+}
+
 const PGVECTOR_EMBEDDING_DIMENSION = 1536;
 const DEFAULT_TOP_K = 6;
 const LEXICAL_SCORE_WEIGHT = 0.5;
@@ -125,6 +190,18 @@ export function createPgPool(databaseUrl: string | undefined): Pool {
   }
 
   return new Pool({ connectionString: databaseUrl });
+}
+
+export function createPgFeedbackStore(options: PgFeedbackStoreOptions): PgFeedbackStore {
+  return {
+    async getFeedbackStats(input: GetFeedbackStatsOptions = {}): Promise<FeedbackStats> {
+      return getFeedbackStats(options.client, input);
+    },
+
+    async recordFeedback(input: RecordFeedbackInput): Promise<void> {
+      await recordFeedback(options.client, input);
+    },
+  };
 }
 
 export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStore {
@@ -178,6 +255,10 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
   };
 
   return {
+    async getFeedbackStats(input: GetFeedbackStatsOptions = {}): Promise<FeedbackStats> {
+      return getFeedbackStats(options.client, input);
+    },
+
     async getStats(): Promise<KnowledgeStats> {
       const [totals, sourceStats, latestIngestionRun] = await Promise.all([
         getKnowledgeTotals(options.client),
@@ -265,6 +346,58 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           on rag_ingestion_runs (created_at desc)
       `,
       );
+      await queryDatabase(
+        options.client,
+        `
+        create table if not exists rag_feedback (
+          id bigserial primary key,
+          channel text not null check (channel in ('cli', 'web', 'telegram')),
+          session_id text,
+          rating text not null check (rating in ('positive', 'negative')),
+          question text not null,
+          answer text not null,
+          intent text not null check (
+            intent in (
+              'product_qa',
+              'how_to',
+              'realtime_account_query',
+              'mev_or_chain_forensics',
+              'investment_advice',
+              'unknown'
+            )
+          ),
+          citation_count integer not null check (citation_count >= 0),
+          comment text,
+          created_at timestamptz not null default now()
+        )
+      `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        create index if not exists rag_feedback_created_at_idx
+          on rag_feedback (created_at desc)
+      `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        create index if not exists rag_feedback_rating_idx
+          on rag_feedback (rating)
+      `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        create index if not exists rag_feedback_session_id_idx
+          on rag_feedback (session_id)
+          where session_id is not null
+      `,
+      );
+    },
+
+    async recordFeedback(input: RecordFeedbackInput): Promise<void> {
+      await recordFeedback(options.client, input);
     },
 
     async recordIngestionRun(input: RecordIngestionRunInput): Promise<void> {
@@ -359,6 +492,104 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         .map((chunk, index) => ({ ...chunk, rank: index + 1 }));
     },
   };
+}
+
+async function getFeedbackStats(
+  client: PgClientLike,
+  options: GetFeedbackStatsOptions,
+): Promise<FeedbackStats> {
+  const [totals, latest] = await Promise.all([
+    getFeedbackTotals(client),
+    getLatestFeedback(client, options.limit),
+  ]);
+
+  return {
+    latest,
+    negativeCount: totals.negative_count,
+    positiveCount: totals.positive_count,
+    totalCount: totals.total_count,
+  };
+}
+
+async function getFeedbackTotals(client: PgClientLike): Promise<FeedbackStatsRow> {
+  const response = await queryDatabase<FeedbackStatsRow>(
+    client,
+    `
+    select
+      count(*)::integer as total_count,
+      count(*) filter (where rating = 'positive')::integer as positive_count,
+      count(*) filter (where rating = 'negative')::integer as negative_count
+    from rag_feedback
+    `,
+  );
+
+  return (
+    response.rows[0] ?? {
+      negative_count: 0,
+      positive_count: 0,
+      total_count: 0,
+    }
+  );
+}
+
+async function getLatestFeedback(
+  client: PgClientLike,
+  limit: number | undefined,
+): Promise<FeedbackRecord[]> {
+  const normalizedLimit = normalizeFeedbackLimit(limit);
+  const response = await queryDatabase<FeedbackRecordRow>(
+    client,
+    `
+    select
+      answer,
+      channel,
+      citation_count,
+      comment,
+      created_at::text as created_at,
+      intent,
+      question,
+      rating,
+      session_id
+    from rag_feedback
+    order by created_at desc
+    limit $1
+    `,
+    [normalizedLimit],
+  );
+
+  return response.rows.map((row) => ({
+    answer: row.answer,
+    channel: row.channel,
+    citationCount: row.citation_count,
+    createdAt: row.created_at,
+    intent: row.intent,
+    question: row.question,
+    rating: row.rating,
+    ...(row.comment === null ? {} : { comment: row.comment }),
+    ...(row.session_id === null ? {} : { sessionId: row.session_id }),
+  }));
+}
+
+async function recordFeedback(client: PgClientLike, input: RecordFeedbackInput): Promise<void> {
+  await queryDatabase(
+    client,
+    `
+    insert into rag_feedback (
+      channel, session_id, rating, question, answer, intent, citation_count, comment
+    )
+    values ($1, $2, $3, $4, $5, $6, $7, $8)
+    `,
+    [
+      input.channel,
+      input.sessionId ?? null,
+      input.rating,
+      input.question,
+      input.answer,
+      input.intent,
+      input.citationCount,
+      input.comment ?? null,
+    ],
+  );
 }
 
 async function getKnowledgeTotals(client: PgClientLike): Promise<KnowledgeStatsRow> {
@@ -491,6 +722,18 @@ function normalizeTopK(topK: number | undefined): number {
   }
 
   return topK;
+}
+
+function normalizeFeedbackLimit(limit: number | undefined): number {
+  if (limit === undefined) {
+    return 10;
+  }
+
+  if (!Number.isInteger(limit) || limit <= 0) {
+    return 10;
+  }
+
+  return Math.min(limit, 100);
 }
 
 function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[]): RetrievedChunk {

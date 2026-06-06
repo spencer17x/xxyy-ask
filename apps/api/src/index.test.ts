@@ -299,6 +299,73 @@ describe('createRequestHandler', () => {
     });
   });
 
+  it('records answer feedback for production quality loops', async () => {
+    const feedback: unknown[] = [];
+    const handler = createRequestHandler({
+      recordFeedback(input: unknown) {
+        feedback.push(input);
+        return Promise.resolve();
+      },
+    });
+
+    const response = await callHandler(handler, {
+      body: {
+        answer: '根据知识库，XXYY Pro 提供更多权益。',
+        channel: 'web',
+        citationCount: 2,
+        comment: '没有讲清楚监控数量上限',
+        intent: 'product_qa',
+        question: 'XXYY Pro 有哪些权益？',
+        rating: 'negative',
+        sessionId: 'session-1',
+        userId: 'user-1',
+      },
+      method: 'POST',
+      url: '/api/feedback',
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(JSON.parse(response.body)).toEqual({ status: 'recorded' });
+    expect(feedback).toEqual([
+      {
+        answer: '根据知识库，XXYY Pro 提供更多权益。',
+        channel: 'web',
+        citationCount: 2,
+        comment: '没有讲清楚监控数量上限',
+        intent: 'product_qa',
+        question: 'XXYY Pro 有哪些权益？',
+        rating: 'negative',
+        sessionId: 'session-1',
+      },
+    ]);
+  });
+
+  it('rejects malformed feedback payloads before writing', async () => {
+    const handler = createRequestHandler({
+      recordFeedback() {
+        throw new Error('recordFeedback should not be called for invalid payloads');
+      },
+    });
+
+    const response = await callHandler(handler, {
+      body: {
+        answer: '根据知识库，XXYY Pro 提供更多权益。',
+        citationCount: 2,
+        intent: 'product_qa',
+        question: 'XXYY Pro 有哪些权益？',
+        rating: 'maybe',
+      },
+      method: 'POST',
+      url: '/api/feedback',
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'bad_request',
+      message: 'rating must be one of: positive, negative.',
+    });
+  });
+
   it('serves product media assets for chat attachments', async () => {
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-api-assets-'));
     const assetsDir = path.join(workspaceRoot, 'docs', 'product-features', 'assets');

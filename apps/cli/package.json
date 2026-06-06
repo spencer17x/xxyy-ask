@@ -14,7 +14,9 @@
   "scripts": {
     "rag:ask": "tsx src/index.ts ask",
     "rag:evaluate": "tsx src/index.ts evaluate",
+    "rag:feedback": "tsx src/index.ts feedback",
     "rag:ingest": "tsx src/index.ts ingest",
+    "rag:migrate": "tsx src/index.ts migrate",
     "rag:stats": "tsx src/index.ts stats",
     "start": "tsx src/index.ts",
     "test": "vitest run src",

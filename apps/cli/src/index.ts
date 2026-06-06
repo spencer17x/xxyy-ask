@@ -15,6 +15,7 @@ import {
   createChatService,
   createGroundedAnswer,
   createLazyRetriever,
+  createPgFeedbackStore,
   createPgPool,
   createPgVectorStore,
   evaluateCases,
@@ -30,6 +31,7 @@ import type {
   EvaluationCase,
   EvaluationReport,
   EvaluationResult,
+  FeedbackStats,
   KnowledgeStats,
   RagEnv,
 } from '@xxyy/rag-core';
@@ -41,7 +43,9 @@ type CliEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
 type CliCommand =
   | { command: 'ask'; question: string }
   | { command: 'evaluate'; fast: boolean }
+  | { command: 'feedback' }
   | { command: 'ingest' }
+  | { command: 'migrate' }
   | { command: 'stats' }
   | { command: 'help'; error?: string };
 
@@ -74,7 +78,9 @@ interface CliChatRuntime {
 const HELP_TEXT = [
   'Usage:',
   '  pnpm rag:ingest',
+  '  pnpm rag:migrate',
   '  pnpm rag:stats',
+  '  pnpm rag:feedback',
   '  pnpm rag:ask -- "question"',
   '  pnpm rag:evaluate [-- --fast]',
 ].join('\n');
@@ -338,7 +344,12 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     return { command: 'help' };
   }
 
-  if (command === 'ingest' || command === 'stats') {
+  if (
+    command === 'ingest' ||
+    command === 'migrate' ||
+    command === 'stats' ||
+    command === 'feedback'
+  ) {
     return { command };
   }
 
@@ -379,6 +390,10 @@ export function formatIngestSummary(summary: IngestSummary): string {
   }
 
   return lines.join('\n');
+}
+
+export function formatMigrationSummary(): string {
+  return 'Database migrations applied.';
 }
 
 export function formatChatResponse(response: ChatResponse): string {
@@ -475,6 +490,36 @@ export function formatKnowledgeStats(stats: KnowledgeStats): string {
   return lines.join('\n');
 }
 
+export function formatFeedbackStats(stats: FeedbackStats): string {
+  const lines = [
+    'Feedback stats:',
+    `Total: ${stats.totalCount}`,
+    `Positive: ${stats.positiveCount}`,
+    `Negative: ${stats.negativeCount}`,
+    '',
+    'Latest feedback:',
+  ];
+
+  if (stats.latest.length === 0) {
+    lines.push('none');
+    return lines.join('\n');
+  }
+
+  stats.latest.forEach((item, index) => {
+    lines.push(
+      `[${index + 1}] ${item.rating} ${item.intent} citations ${item.citationCount} ${item.channel}`,
+      `    Created at: ${item.createdAt}`,
+      `    Question: ${item.question}`,
+      `    Answer: ${item.answer}`,
+    );
+    if (item.comment !== undefined) {
+      lines.push(`    Comment: ${item.comment}`);
+    }
+  });
+
+  return lines.join('\n');
+}
+
 export function createDefaultCliIo(options: DefaultCliIoOptions = {}): CliIo {
   const cwd = options.cwd ?? process.cwd();
   const shellEnv = options.env ?? process.env;
@@ -515,10 +560,36 @@ export async function runCli(
 
   const config = loadRagConfig(io.env);
 
+  if (parsed.command === 'migrate') {
+    try {
+      await migrateDatabase(config);
+      writeLine(io.stdout, formatMigrationSummary());
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
   if (parsed.command === 'stats') {
     try {
       const statsSummary = await stats(config);
       writeLine(io.stdout, formatKnowledgeStats(statsSummary));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'feedback') {
+    try {
+      const feedbackSummary = await feedbackStats(config);
+      writeLine(io.stdout, formatFeedbackStats(feedbackSummary));
       return 0;
     } catch (error) {
       if (writeConfigurationError(io, error)) {
@@ -594,6 +665,21 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
   }
 }
 
+async function migrateDatabase(config: ReturnType<typeof loadRagConfig>): Promise<void> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgVectorStore({
+      client: pool,
+      embeddingProvider: {
+        embedTexts: () => Promise.reject(new Error('rag:migrate does not generate embeddings.')),
+      },
+    });
+    await store.migrate();
+  } finally {
+    await pool.end();
+  }
+}
+
 async function stats(config: ReturnType<typeof loadRagConfig>): Promise<KnowledgeStats> {
   const pool = createPgPool(config.databaseUrl);
   try {
@@ -604,6 +690,16 @@ async function stats(config: ReturnType<typeof loadRagConfig>): Promise<Knowledg
       },
     });
     return await store.getStats();
+  } finally {
+    await pool.end();
+  }
+}
+
+async function feedbackStats(config: ReturnType<typeof loadRagConfig>): Promise<FeedbackStats> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgFeedbackStore({ client: pool });
+    return await store.getFeedbackStats({ limit: 10 });
   } finally {
     await pool.end();
   }
