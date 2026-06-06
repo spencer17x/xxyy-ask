@@ -262,7 +262,9 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
     const embeddingProvider = createOpenAiEmbeddingProvider({
       apiKey: config.openAiApiKey,
       baseUrl: config.openAiBaseUrl,
+      maxRetries: config.openAiMaxRetries,
       model: config.openAiEmbeddingModel,
+      requestTimeoutMs: config.openAiRequestTimeoutMs,
     });
     const store = createPgVectorStore({ client: pool, embeddingProvider });
     await store.migrate();
@@ -311,7 +313,9 @@ function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChat
       const embeddingProvider = createOpenAiEmbeddingProvider({
         apiKey: config.openAiApiKey,
         baseUrl: config.openAiBaseUrl,
+        maxRetries: config.openAiMaxRetries,
         model: config.openAiEmbeddingModel,
+        requestTimeoutMs: config.openAiRequestTimeoutMs,
       });
       pool = nextPool;
       return createPgVectorStore({ client: nextPool, embeddingProvider });

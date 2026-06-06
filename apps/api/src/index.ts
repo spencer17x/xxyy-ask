@@ -193,7 +193,9 @@ function createCachedChatServiceLoader(
         const embeddingProvider = createOpenAiEmbeddingProvider({
           apiKey: config.openAiApiKey,
           baseUrl: config.openAiBaseUrl,
+          maxRetries: config.openAiMaxRetries,
           model: config.openAiEmbeddingModel,
+          requestTimeoutMs: config.openAiRequestTimeoutMs,
         });
         return createPgVectorStore({ client: pool, embeddingProvider });
       } catch (error) {

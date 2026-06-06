@@ -49,11 +49,14 @@ OPENAI_API_KEY=你的_API_Key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=你的回答模型
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_REQUEST_TIMEOUT_MS=30000
+OPENAI_MAX_RETRIES=1
 RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
 ```
 
 应用会从 `POSTGRES_*` 自动组装数据库连接串。使用外部托管数据库时，也可以只配置 `DATABASE_URL` 覆盖。
+`OPENAI_REQUEST_TIMEOUT_MS` 和 `OPENAI_MAX_RETRIES` 是可选项；默认 30 秒超时、重试 1 次。
 
 写入知识库：
 

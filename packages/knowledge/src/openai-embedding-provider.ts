@@ -6,7 +6,9 @@ export interface OpenAiEmbeddingProviderOptions {
   apiKey: string | undefined;
   baseUrl: string;
   fetchImpl?: typeof fetch;
+  maxRetries?: number;
   model: string | undefined;
+  requestTimeoutMs?: number;
 }
 
 interface EmbeddingResponse {
@@ -17,6 +19,15 @@ interface EmbeddingResponse {
 }
 
 export class EmbeddingConfigurationError extends Error {}
+
+class EmbeddingRequestTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Embedding request timed out after ${timeoutMs}ms.`);
+  }
+}
+
+const DEFAULT_MAX_RETRIES = 1;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
 function isNumericEmbedding(embedding: unknown): embedding is number[] {
   return (
@@ -41,6 +52,11 @@ export function createOpenAiEmbeddingProvider(
   const model = options.model;
   const fetchImpl = options.fetchImpl ?? fetch;
   const endpoint = `${options.baseUrl.replace(/\/+$/u, '')}/embeddings`;
+  const maxRetries = normalizeNonNegativeInteger(options.maxRetries, DEFAULT_MAX_RETRIES);
+  const requestTimeoutMs = normalizePositiveInteger(
+    options.requestTimeoutMs,
+    DEFAULT_REQUEST_TIMEOUT_MS,
+  );
 
   return {
     async embedTexts(texts: string[]): Promise<number[][]> {
@@ -48,13 +64,13 @@ export function createOpenAiEmbeddingProvider(
         return [];
       }
 
-      const response = await fetchImpl(endpoint, {
-        body: JSON.stringify({ input: texts, model }),
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
+      const response = await fetchEmbedding(endpoint, {
+        apiKey,
+        fetchImpl,
+        input: texts,
+        maxRetries,
+        model,
+        requestTimeoutMs,
       });
 
       if (!response.ok) {
@@ -96,6 +112,70 @@ export function createOpenAiEmbeddingProvider(
   };
 }
 
+async function fetchEmbedding(
+  endpoint: string,
+  options: {
+    apiKey: string;
+    fetchImpl: typeof fetch;
+    input: string[];
+    maxRetries: number;
+    model: string;
+    requestTimeoutMs: number;
+  },
+): Promise<Response> {
+  for (let attempt = 0; attempt <= options.maxRetries; attempt += 1) {
+    const response = await fetchWithTimeout(
+      options.fetchImpl,
+      endpoint,
+      {
+        body: JSON.stringify({ input: options.input, model: options.model }),
+        headers: {
+          Authorization: `Bearer ${options.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      },
+      options.requestTimeoutMs,
+    ).catch((error: unknown) => {
+      if (error instanceof EmbeddingRequestTimeoutError && attempt < options.maxRetries) {
+        return undefined;
+      }
+      throw error;
+    });
+
+    if (response !== undefined) {
+      return response;
+    }
+  }
+
+  throw new EmbeddingRequestTimeoutError(options.requestTimeoutMs);
+}
+
+async function fetchWithTimeout(
+  fetchImpl: typeof fetch,
+  endpoint: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetchImpl(endpoint, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) {
+      throw new EmbeddingRequestTimeoutError(timeoutMs);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function readJsonResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get('content-type') ?? '';
   if (contentType.length > 0 && !contentType.toLowerCase().includes('json')) {
@@ -133,4 +213,20 @@ async function readErrorDetail(response: Response): Promise<string> {
 
 function truncateErrorDetail(text: string): string {
   return text.replace(/\s+/gu, ' ').trim().slice(0, 300);
+}
+
+function normalizePositiveInteger(value: number | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function normalizeNonNegativeInteger(value: number | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
 }

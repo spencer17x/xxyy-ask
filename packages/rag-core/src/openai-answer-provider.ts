@@ -13,6 +13,8 @@ export interface OpenAiAnswerProviderOptions {
   model: string | undefined;
   baseUrl: string;
   fetchImpl?: typeof fetch;
+  maxRetries?: number;
+  requestTimeoutMs?: number;
 }
 
 interface ChatCompletionResponse {
@@ -33,8 +35,16 @@ interface ChatCompletionStreamResponse {
 
 const GROUNDED_INTENTS = new Set(['product_qa', 'how_to']);
 const MAX_CONTEXT_CHARS = 4000;
+const DEFAULT_MAX_RETRIES = 1;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
 export class LlmConfigurationError extends Error {}
+
+class LlmRequestTimeoutError extends Error {
+  constructor(public readonly timeoutMs: number) {
+    super(`LLM request timed out after ${timeoutMs}ms.`);
+  }
+}
 
 export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions): AnswerProvider {
   if (options.apiKey === undefined || options.apiKey.trim().length === 0) {
@@ -48,6 +58,11 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
   const apiKey = options.apiKey;
   const model = options.model;
   const endpoint = `${options.baseUrl.replace(/\/+$/u, '')}/chat/completions`;
+  const requestTimeoutMs = normalizePositiveInteger(
+    options.requestTimeoutMs,
+    DEFAULT_REQUEST_TIMEOUT_MS,
+  );
+  const maxRetries = normalizeNonNegativeInteger(options.maxRetries, DEFAULT_MAX_RETRIES);
 
   return {
     async answer(input: AnswerProviderInput): Promise<ChatResponse> {
@@ -66,30 +81,19 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
 
       const citations = createCitationsFromChunks(input.retrievedChunks);
       const attachments = createAttachmentsFromChunks(input.retrievedChunks);
-      const response = await fetchImpl(endpoint, {
-        body: JSON.stringify({
-          messages: [
-            {
-              content: systemPrompt(),
-              role: 'system',
-            },
-            {
-              content: userPrompt(input, citations.length),
-              role: 'user',
-            },
-          ],
-          model,
-          temperature: 0.2,
-        }),
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        throw new Error(`LLM request failed with status ${response.status}`);
+      let response: Response;
+      try {
+        response = await fetchChatCompletion(fetchImpl, endpoint, {
+          apiKey,
+          body: createChatCompletionBody(input, citations.length, model, false),
+          maxRetries,
+          requestTimeoutMs,
+        });
+      } catch (error) {
+        if (error instanceof LlmRequestTimeoutError) {
+          return createGroundedAnswer(input.question, input.classification, input.retrievedChunks);
+        }
+        throw error;
       }
 
       const payload = (await response.json()) as ChatCompletionResponse;
@@ -127,31 +131,22 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
 
       const citations = createCitationsFromChunks(input.retrievedChunks);
       const attachments = createAttachmentsFromChunks(input.retrievedChunks);
-      const response = await fetchImpl(endpoint, {
-        body: JSON.stringify({
-          messages: [
-            {
-              content: systemPrompt(),
-              role: 'system',
-            },
-            {
-              content: userPrompt(input, citations.length),
-              role: 'user',
-            },
-          ],
-          model,
-          stream: true,
-          temperature: 0.2,
-        }),
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        throw new Error(`LLM request failed with status ${response.status}`);
+      let response: Response;
+      try {
+        response = await fetchChatCompletion(fetchImpl, endpoint, {
+          apiKey,
+          body: createChatCompletionBody(input, citations.length, model, true),
+          maxRetries,
+          requestTimeoutMs,
+        });
+      } catch (error) {
+        if (error instanceof LlmRequestTimeoutError) {
+          yield* streamStaticAnswer(
+            createGroundedAnswer(input.question, input.classification, input.retrievedChunks),
+          );
+          return;
+        }
+        throw error;
       }
 
       if (response.body === null) {
@@ -185,6 +180,98 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
         attachments,
       );
     },
+  };
+}
+
+async function fetchChatCompletion(
+  fetchImpl: typeof fetch,
+  endpoint: string,
+  options: {
+    apiKey: string;
+    body: Record<string, unknown>;
+    maxRetries: number;
+    requestTimeoutMs: number;
+  },
+): Promise<Response> {
+  for (let attempt = 0; attempt <= options.maxRetries; attempt += 1) {
+    const response = await fetchWithTimeout(
+      fetchImpl,
+      endpoint,
+      {
+        body: JSON.stringify(options.body),
+        headers: {
+          Authorization: `Bearer ${options.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      },
+      options.requestTimeoutMs,
+    ).catch((error: unknown) => {
+      if (error instanceof LlmRequestTimeoutError && attempt < options.maxRetries) {
+        return undefined;
+      }
+      throw error;
+    });
+
+    if (response === undefined) {
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new Error(`LLM request failed with status ${response.status}`);
+    }
+
+    return response;
+  }
+
+  throw new LlmRequestTimeoutError(options.requestTimeoutMs);
+}
+
+async function fetchWithTimeout(
+  fetchImpl: typeof fetch,
+  endpoint: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetchImpl(endpoint, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) {
+      throw new LlmRequestTimeoutError(timeoutMs);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function createChatCompletionBody(
+  input: AnswerProviderInput,
+  citationCount: number,
+  model: string,
+  stream: boolean,
+): Record<string, unknown> {
+  return {
+    messages: [
+      {
+        content: systemPrompt(),
+        role: 'system',
+      },
+      {
+        content: userPrompt(input, citationCount),
+        role: 'user',
+      },
+    ],
+    model,
+    ...(stream ? { stream: true } : {}),
+    temperature: 0.2,
   };
 }
 
@@ -333,4 +420,20 @@ function truncateContext(context: string): string {
 
 function calculateLlmConfidence(classificationConfidence: number): number {
   return Number(Math.min(0.92, Math.max(0.55, classificationConfidence)).toFixed(2));
+}
+
+function normalizePositiveInteger(value: number | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function normalizeNonNegativeInteger(value: number | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
 }

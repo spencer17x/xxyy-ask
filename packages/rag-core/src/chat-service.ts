@@ -92,7 +92,9 @@ function createConfiguredAnswerProvider(config: RagConfig): AnswerProvider {
   return createOpenAiAnswerProvider({
     apiKey: config.openAiApiKey,
     baseUrl: config.openAiBaseUrl,
+    maxRetries: config.openAiMaxRetries,
     model: config.openAiModel,
+    requestTimeoutMs: config.openAiRequestTimeoutMs,
   });
 }
 

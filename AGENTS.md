@@ -44,11 +44,14 @@ POSTGRES_PASSWORD=replace_me_with_a_strong_password
 OPENAI_API_KEY=...
 OPENAI_MODEL=...
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_REQUEST_TIMEOUT_MS=30000
+OPENAI_MAX_RETRIES=1
 RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
 ```
 
 `pnpm rag:*` 和 `pnpm start` 会通过 `dotenv` 读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
+OpenAI-compatible 请求默认 30 秒超时、重试 1 次；需要调整时再配置 `OPENAI_REQUEST_TIMEOUT_MS` 和 `OPENAI_MAX_RETRIES`。
 
 ## 常用验证
 

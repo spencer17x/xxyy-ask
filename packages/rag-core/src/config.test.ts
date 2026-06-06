@@ -13,6 +13,8 @@ describe('loadRagConfig', () => {
       openAiApiKeyPresent: false,
       openAiModel: undefined,
       openAiEmbeddingModel: 'text-embedding-3-small',
+      openAiMaxRetries: 1,
+      openAiRequestTimeoutMs: 30000,
     });
   });
 
@@ -33,7 +35,9 @@ describe('loadRagConfig', () => {
         RAG_ANSWER_PROVIDER: 'future-provider',
         RAG_TOP_K: '3',
         OPENAI_BASE_URL: 'https://llm.example/v1',
+        OPENAI_MAX_RETRIES: '2',
         OPENAI_MODEL: 'gpt-test',
+        OPENAI_REQUEST_TIMEOUT_MS: '12000',
       }),
     ).toEqual({
       topK: 3,
@@ -44,6 +48,8 @@ describe('loadRagConfig', () => {
       openAiApiKeyPresent: true,
       openAiModel: 'gpt-test',
       openAiEmbeddingModel: 'text-embedding-3-small',
+      openAiMaxRetries: 2,
+      openAiRequestTimeoutMs: 12000,
     });
   });
 
@@ -74,5 +80,15 @@ describe('loadRagConfig', () => {
   it('keeps a safe topK default for invalid numeric overrides', () => {
     expect(loadRagConfig({ RAG_TOP_K: 'not-a-number' }).topK).toBe(6);
     expect(loadRagConfig({ RAG_TOP_K: '0' }).topK).toBe(6);
+  });
+
+  it('keeps safe OpenAI request defaults for invalid numeric overrides', () => {
+    const config = loadRagConfig({
+      OPENAI_MAX_RETRIES: '-1',
+      OPENAI_REQUEST_TIMEOUT_MS: 'not-a-number',
+    });
+
+    expect(config.openAiMaxRetries).toBe(1);
+    expect(config.openAiRequestTimeoutMs).toBe(30000);
   });
 });

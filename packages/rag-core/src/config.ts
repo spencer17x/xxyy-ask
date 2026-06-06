@@ -7,6 +7,8 @@ export interface RagConfig {
   openAiBaseUrl: string;
   openAiModel: string | undefined;
   openAiEmbeddingModel: string;
+  openAiMaxRetries: number;
+  openAiRequestTimeoutMs: number;
 }
 
 export type RagEnv = Partial<
@@ -15,7 +17,9 @@ export type RagEnv = Partial<
     | 'OPENAI_API_KEY'
     | 'OPENAI_BASE_URL'
     | 'OPENAI_EMBEDDING_MODEL'
+    | 'OPENAI_MAX_RETRIES'
     | 'OPENAI_MODEL'
+    | 'OPENAI_REQUEST_TIMEOUT_MS'
     | 'POSTGRES_DB'
     | 'POSTGRES_HOST'
     | 'POSTGRES_PASSWORD'
@@ -30,6 +34,8 @@ export type RagEnv = Partial<
 const DEFAULT_TOP_K = 6;
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+const DEFAULT_OPENAI_MAX_RETRIES = 1;
+const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_POSTGRES_HOST = 'localhost';
 const DEFAULT_POSTGRES_PORT = '5432';
 
@@ -43,6 +49,11 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
     openAiBaseUrl: env.OPENAI_BASE_URL ?? DEFAULT_OPENAI_BASE_URL,
     openAiModel: env.OPENAI_MODEL,
     openAiEmbeddingModel: env.OPENAI_EMBEDDING_MODEL ?? DEFAULT_OPENAI_EMBEDDING_MODEL,
+    openAiMaxRetries: parseNonNegativeInteger(env.OPENAI_MAX_RETRIES, DEFAULT_OPENAI_MAX_RETRIES),
+    openAiRequestTimeoutMs: parsePositiveInteger(
+      env.OPENAI_REQUEST_TIMEOUT_MS,
+      DEFAULT_OPENAI_REQUEST_TIMEOUT_MS,
+    ),
   };
 
   return config;
@@ -74,13 +85,30 @@ function buildPostgresUrl(env: RagEnv): string | undefined {
 }
 
 function parseTopK(value: string | undefined): number {
+  return parsePositiveInteger(value, DEFAULT_TOP_K);
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
   if (value === undefined) {
-    return DEFAULT_TOP_K;
+    return fallback;
   }
 
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    return DEFAULT_TOP_K;
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function parseNonNegativeInteger(value: string | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return fallback;
   }
 
   return parsed;

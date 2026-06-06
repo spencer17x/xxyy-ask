@@ -143,6 +143,64 @@ describe('createOpenAiEmbeddingProvider', () => {
     );
   });
 
+  it('fails with a clear error when an embedding request times out', async () => {
+    const fetchImpl: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new Error('aborted by test signal'));
+        });
+      });
+
+    const provider = createOpenAiEmbeddingProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'text-embedding-3-small',
+      requestTimeoutMs: 1,
+    });
+
+    await expect(provider.embedTexts(['ping'])).rejects.toThrow(
+      'Embedding request timed out after 1ms',
+    );
+  });
+
+  it('retries a timed-out embedding request before failing', async () => {
+    let attempts = 0;
+    const fetchImpl: typeof fetch = (_input, init) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new Error('aborted by test signal'));
+          });
+        });
+      }
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ embedding: [0.1, 0.2, 0.3], index: 0 }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const provider = createOpenAiEmbeddingProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      maxRetries: 1,
+      model: 'text-embedding-3-small',
+      requestTimeoutMs: 1,
+    });
+
+    const embeddings = await provider.embedTexts(['ping']);
+
+    expect(attempts).toBe(2);
+    expect(embeddings).toEqual([[0.1, 0.2, 0.3]]);
+  });
+
   it('rejects non-JSON embedding responses with a configuration hint', async () => {
     const fetchImpl: typeof fetch = () =>
       Promise.resolve(
