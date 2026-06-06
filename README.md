@@ -94,6 +94,14 @@ pnpm start
 http://localhost:3000
 ```
 
+运维页面：
+
+```text
+http://localhost:3000/ops
+```
+
+`/ops` 页面不会内置 token，需要手动输入 `API_OPS_TOKEN` 后才会调用受保护的 `/api/ops/summary`。
+
 ## API
 
 轻量存活检查：
@@ -121,6 +129,12 @@ GET /api/ops/summary
 ```
 
 请求需要带 `Authorization: Bearer <API_OPS_TOKEN>` 或 `x-ops-token: <API_OPS_TOKEN>`。响应会聚合 `/health/deep`、知识库 stats 和反馈 stats，用于生产监控、后台页或告警系统；不要把 token 暴露到公开前端。
+
+同源 Web 运维页：
+
+```http
+GET /ops
+```
 
 聊天接口：
 

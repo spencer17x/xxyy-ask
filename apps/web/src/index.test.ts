@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { request } from 'node:http';
 
-import { renderChatPage, startStaticWebServer } from './index.js';
+import { renderChatPage, renderOpsPage, startStaticWebServer } from './index.js';
 
 describe('renderChatPage', () => {
   it('renders a polished support workbench that streams chat and shows citations', () => {
@@ -52,6 +52,27 @@ describe('renderChatPage', () => {
         });
       });
     }
+  });
+});
+
+describe('renderOpsPage', () => {
+  it('renders an ops dashboard that fetches protected summary data', () => {
+    const html = renderOpsPage();
+
+    expect(html).toContain('XXYY Ops');
+    expect(html).toContain('id="ops-token"');
+    expect(html).toContain('fetch("/api/ops/summary"');
+    expect(html).toContain('Authorization: "Bearer " + token');
+    expect(html).toContain('renderHealth(summary.health)');
+    expect(html).toContain('renderKnowledge(summary.knowledge)');
+    expect(html).toContain('renderFeedback(summary.feedback)');
+  });
+
+  it('does not hardcode an ops token in the page', () => {
+    const html = renderOpsPage();
+
+    expect(html).not.toContain('API_OPS_TOKEN');
+    expect(html).not.toContain('secret-token');
   });
 });
 

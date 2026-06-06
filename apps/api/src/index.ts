@@ -28,7 +28,7 @@ import type {
   RagEnv,
 } from '@xxyy/rag-core';
 import type { RecordFeedbackInput } from '@xxyy/rag-core';
-import { renderChatPage } from '@xxyy/web';
+import { renderChatPage, renderOpsPage } from '@xxyy/web';
 
 type ApiEnv = RagEnv &
   Partial<
@@ -72,6 +72,7 @@ export interface CreateRequestHandlerOptions {
   now?: () => number;
   recordFeedback?: (input: RecordFeedbackInput) => Promise<void>;
   renderHtml?: () => string;
+  renderOpsHtml?: () => string;
   staticAssetsDir?: string;
 }
 
@@ -162,6 +163,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const config = loadRagConfig(env);
   const apiConfig = loadApiRuntimeConfig(env);
   const renderHtml = options.renderHtml ?? renderChatPage;
+  const renderOpsHtml = options.renderOpsHtml ?? renderOpsPage;
   const getChatService = options.getChatService ?? createCachedChatServiceLoader(config);
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
   const logger = options.logger ?? noopLogger;
@@ -215,6 +217,11 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
 
       if (request.method === 'GET' && requestUrl.pathname === '/') {
         sendHtml(response, 200, renderHtml());
+        return;
+      }
+
+      if (request.method === 'GET' && requestUrl.pathname === '/ops') {
+        sendHtml(response, 200, renderOpsHtml());
         return;
       }
 

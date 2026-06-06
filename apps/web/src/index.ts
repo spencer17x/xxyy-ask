@@ -1036,12 +1036,430 @@ export function renderChatPage(): string {
 </html>`;
 }
 
+export function renderOpsPage(): string {
+  return `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XXYY Ops</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        background: #f3f6f8;
+        color: #17202e;
+        --bg: #f3f6f8;
+        --panel: #ffffff;
+        --panel-soft: #f8fafb;
+        --line: #dbe3ec;
+        --text: #17202e;
+        --muted: #647083;
+        --accent: #176b5b;
+        --accent-strong: #105247;
+        --accent-soft: #e4f3ee;
+        --danger: #a73939;
+        --warn: #a15c09;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .ops-shell {
+        display: grid;
+        gap: 18px;
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 24px 0 36px;
+      }
+
+      .ops-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+
+      .subtitle {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .token-form {
+        display: grid;
+        grid-template-columns: minmax(220px, 360px) auto;
+        gap: 10px;
+        align-items: center;
+      }
+
+      input {
+        min-height: 40px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--text);
+        padding: 8px 10px;
+      }
+
+      button {
+        min-height: 40px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 750;
+        padding: 8px 14px;
+      }
+
+      button:disabled {
+        cursor: progress;
+        opacity: 0.7;
+      }
+
+      .status-line {
+        min-height: 22px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .metric,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .metric {
+        display: grid;
+        gap: 6px;
+        padding: 14px;
+      }
+
+      .metric-label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .metric-value {
+        font-size: 24px;
+        font-weight: 800;
+      }
+
+      .metric.ok .metric-value {
+        color: var(--accent-strong);
+      }
+
+      .metric.warn .metric-value {
+        color: var(--warn);
+      }
+
+      .metric.error .metric-value {
+        color: var(--danger);
+      }
+
+      .panel-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .panel {
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .panel h2 {
+        margin: 0;
+        border-bottom: 1px solid var(--line);
+        padding: 13px 14px;
+        font-size: 15px;
+      }
+
+      .panel-body {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+      }
+
+      .check,
+      .feedback-item,
+      .source-row {
+        display: grid;
+        gap: 4px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-soft);
+        padding: 10px;
+      }
+
+      .row-title {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .row-meta {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+
+      .empty {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+      }
+
+      @media (max-width: 860px) {
+        .token-form,
+        .summary-grid,
+        .panel-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .ops-header {
+          align-items: stretch;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="ops-shell">
+      <header class="ops-header">
+        <div>
+          <h1>XXYY Ops</h1>
+          <div class="subtitle">RAG production health, knowledge, and feedback summary</div>
+        </div>
+        <form id="token-form" class="token-form">
+          <label class="sr-only" for="ops-token">Ops token</label>
+          <input id="ops-token" name="ops-token" type="password" autocomplete="current-password" placeholder="Ops token" />
+          <button id="refresh" type="submit">Refresh</button>
+        </form>
+      </header>
+
+      <div id="status" class="status-line" role="status" aria-live="polite">Enter token to load summary.</div>
+      <section id="summary" class="summary-grid" aria-label="summary"></section>
+      <section class="panel-grid">
+        <article class="panel">
+          <h2>Health</h2>
+          <div id="health" class="panel-body"></div>
+        </article>
+        <article class="panel">
+          <h2>Knowledge</h2>
+          <div id="knowledge" class="panel-body"></div>
+        </article>
+        <article class="panel">
+          <h2>Feedback</h2>
+          <div id="feedback" class="panel-body"></div>
+        </article>
+        <article class="panel">
+          <h2>Latest Feedback</h2>
+          <div id="latest-feedback" class="panel-body"></div>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const form = document.querySelector("#token-form");
+      const tokenInput = document.querySelector("#ops-token");
+      const refresh = document.querySelector("#refresh");
+      const status = document.querySelector("#status");
+      const summaryTarget = document.querySelector("#summary");
+      const healthTarget = document.querySelector("#health");
+      const knowledgeTarget = document.querySelector("#knowledge");
+      const feedbackTarget = document.querySelector("#feedback");
+      const latestFeedbackTarget = document.querySelector("#latest-feedback");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await loadSummary();
+      });
+
+      async function loadSummary() {
+        const token = tokenInput.value.trim();
+        if (!token) {
+          status.textContent = "Ops token is required.";
+          tokenInput.focus();
+          return;
+        }
+
+        refresh.disabled = true;
+        status.textContent = "Loading";
+
+        try {
+          const response = await fetch("/api/ops/summary", {
+            headers: { Authorization: "Bearer " + token },
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.message || "Unable to load ops summary.");
+          }
+
+          const summary = payload;
+          renderSummary(summary);
+          renderHealth(summary.health);
+          renderKnowledge(summary.knowledge);
+          renderFeedback(summary.feedback);
+          status.textContent = "Updated " + summary.generatedAt;
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : String(error);
+        } finally {
+          refresh.disabled = false;
+        }
+      }
+
+      function renderSummary(summary) {
+        summaryTarget.replaceChildren(
+          metric("Health", summary.health.status, summary.health.status),
+          metric("Documents", summary.knowledge.documentCount, "ok"),
+          metric("Chunks", summary.knowledge.chunkCount, "ok"),
+          metric("Negative", summary.feedback.negativeCount, summary.feedback.negativeCount > 0 ? "warn" : "ok"),
+        );
+      }
+
+      function renderHealth(summary) {
+        const checks = summary.checks || {};
+        healthTarget.replaceChildren(
+          ...Object.keys(checks).map((name) => {
+            const check = checks[name];
+            return row("check " + check.status, name, check.status, check.message || check.model || "");
+          }),
+        );
+      }
+
+      function renderKnowledge(summary) {
+        const sourceRows = (summary.sourceStats || []).map((source) =>
+          row("source-row", source.sourceType, source.chunkCount + " chunks", source.documentCount + " documents"),
+        );
+        knowledgeTarget.replaceChildren(
+          row("source-row", "Source URLs", String(summary.sourceUrlCount), ""),
+          row("source-row", "Latest chunk update", summary.latestChunkUpdatedAt || "none", ""),
+          ...sourceRows,
+        );
+      }
+
+      function renderFeedback(summary) {
+        feedbackTarget.replaceChildren(
+          row("feedback-item", "Total", String(summary.totalCount), ""),
+          row("feedback-item", "Positive", String(summary.positiveCount), ""),
+          row("feedback-item", "Negative", String(summary.negativeCount), ""),
+        );
+
+        const latest = summary.latest || [];
+        if (latest.length === 0) {
+          latestFeedbackTarget.replaceChildren(empty("No feedback yet."));
+          return;
+        }
+
+        latestFeedbackTarget.replaceChildren(
+          ...latest.map((item) =>
+            row(
+              "feedback-item",
+              item.rating + " · " + item.intent,
+              item.question,
+              item.comment || item.answer || item.createdAt,
+            ),
+          ),
+        );
+      }
+
+      function metric(label, value, state) {
+        const item = document.createElement("article");
+        item.className = "metric " + state;
+
+        const labelNode = document.createElement("div");
+        labelNode.className = "metric-label";
+        labelNode.textContent = label;
+
+        const valueNode = document.createElement("div");
+        valueNode.className = "metric-value";
+        valueNode.textContent = String(value);
+
+        item.append(labelNode, valueNode);
+        return item;
+      }
+
+      function row(className, title, value, meta) {
+        const item = document.createElement("article");
+        item.className = className;
+
+        const titleNode = document.createElement("div");
+        titleNode.className = "row-title";
+        const titleText = document.createElement("span");
+        titleText.textContent = title;
+        const valueText = document.createElement("span");
+        valueText.textContent = value;
+        titleNode.append(titleText, valueText);
+
+        const metaNode = document.createElement("div");
+        metaNode.className = "row-meta";
+        metaNode.textContent = meta;
+
+        item.append(titleNode, metaNode);
+        return item;
+      }
+
+      function empty(text) {
+        const item = document.createElement("div");
+        item.className = "empty";
+        item.textContent = text;
+        return item;
+      }
+    </script>
+  </body>
+</html>`;
+}
+
 export function startStaticWebServer(
   port = Number(process.env.PORT ?? 3001),
 ): ReturnType<typeof createServer> {
   const server = createServer((request, response) => {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
-    if (request.method !== 'GET' || requestUrl.pathname !== '/') {
+    if (request.method !== 'GET' || !['/', '/ops'].includes(requestUrl.pathname)) {
       response.statusCode = 404;
       response.setHeader('Content-Type', 'application/json; charset=utf-8');
       response.end(`${JSON.stringify({ error: 'not_found' })}\n`);
@@ -1050,7 +1468,7 @@ export function startStaticWebServer(
 
     response.statusCode = 200;
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
-    response.end(renderChatPage());
+    response.end(requestUrl.pathname === '/ops' ? renderOpsPage() : renderChatPage());
   });
 
   server.listen(port, () => {

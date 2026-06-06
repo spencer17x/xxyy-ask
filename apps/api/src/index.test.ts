@@ -111,6 +111,18 @@ describe('createRequestHandler', () => {
     expect(JSON.parse(response.body)).toEqual({ status: 'ok' });
   });
 
+  it('serves the ops dashboard page', async () => {
+    const handler = createRequestHandler({
+      renderOpsHtml: () => '<!doctype html><title>XXYY Ops</title>',
+    });
+
+    const response = await callHandler(handler, { method: 'GET', url: '/ops' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['Content-Type']).toBe('text/html; charset=utf-8');
+    expect(response.body).toContain('XXYY Ops');
+  });
+
   it('returns deep health status with dependency details', async () => {
     const handler = createRequestHandler({
       getHealthStatus: () =>
