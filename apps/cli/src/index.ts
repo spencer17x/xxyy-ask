@@ -12,6 +12,7 @@ import {
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
   createChatService,
+  createGroundedAnswer,
   createLazyRetriever,
   createPgPool,
   createPgVectorStore,
@@ -22,10 +23,12 @@ import {
 } from '@xxyy/rag-core';
 import type { ChatResponse, ChatRequest } from '@xxyy/shared';
 import type {
+  AnswerProvider,
   ChatService,
   EmbeddedKnowledgeChunk,
   EvaluationCase,
   EvaluationReport,
+  EvaluationResult,
   RagEnv,
 } from '@xxyy/rag-core';
 
@@ -35,7 +38,7 @@ type CliEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
 
 type CliCommand =
   | { command: 'ask'; question: string }
-  | { command: 'evaluate' }
+  | { command: 'evaluate'; fast: boolean }
   | { command: 'ingest' }
   | { command: 'help'; error?: string };
 
@@ -68,7 +71,7 @@ const HELP_TEXT = [
   'Usage:',
   '  pnpm rag:ingest',
   '  pnpm rag:ask -- "question"',
-  '  pnpm rag:evaluate',
+  '  pnpm rag:evaluate [-- --fast]',
 ].join('\n');
 
 const EMBEDDING_BATCH_SIZE = 64;
@@ -330,8 +333,22 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     return { command: 'help' };
   }
 
-  if (command === 'ingest' || command === 'evaluate') {
+  if (command === 'ingest') {
     return { command };
+  }
+
+  if (command === 'evaluate') {
+    const rest = rawRest[0] === '--' ? rawRest.slice(1) : rawRest;
+    if (rest.length === 0) {
+      return { command: 'evaluate', fast: false };
+    }
+    if (rest.length === 1 && rest[0] === '--fast') {
+      return { command: 'evaluate', fast: true };
+    }
+    return {
+      command: 'help',
+      error: `Unknown option for rag:evaluate: ${rest.join(' ')}`,
+    };
   }
 
   if (command === 'ask') {
@@ -395,16 +412,18 @@ export function formatEvaluationReport(report: EvaluationReport): string {
   const lines = [`Evaluation: ${report.passed}/${report.total} passed`];
 
   for (const result of report.results) {
-    const status = result.passed ? 'PASS' : 'FAIL';
-    lines.push(
-      `${status} ${result.name}: expected ${result.expectedIntent}, got ${result.actualIntent}, citations ${result.citationCount}/${result.minCitations}`,
-    );
-    if (!result.passed && result.failureReasons.length > 0) {
-      lines.push(`    reasons: ${result.failureReasons.join('; ')}`);
-    }
+    lines.push(formatEvaluationResult(result));
   }
 
   return lines.join('\n');
+}
+
+export function formatEvaluationProgress(
+  result: EvaluationResult,
+  index: number,
+  total: number,
+): string {
+  return `[${index}/${total}] ${formatEvaluationResult(result)}`;
 }
 
 export function createDefaultCliIo(options: DefaultCliIoOptions = {}): CliIo {
@@ -448,7 +467,9 @@ export async function runCli(
   const config = loadRagConfig(io.env);
 
   try {
-    const runtime = createCliChatRuntime(config);
+    const runtime = createCliChatRuntime(config, {
+      fastAnswers: parsed.command === 'evaluate' && parsed.fast,
+    });
     try {
       const service = runtime.service;
 
@@ -459,8 +480,12 @@ export async function runCli(
         return 0;
       }
 
-      const report = await evaluateCases(BUILT_IN_EVALUATION_CASES, service);
-      writeLine(io.stdout, formatEvaluationReport(report));
+      const report = await evaluateCases(BUILT_IN_EVALUATION_CASES, service, {
+        onResult: (result, index, total) => {
+          writeLine(io.stdout, formatEvaluationProgress(result, index, total));
+        },
+      });
+      writeLine(io.stdout, formatEvaluationSummary(report));
       return report.passed === report.total ? 0 : 1;
     } finally {
       await runtime.close();
@@ -525,7 +550,14 @@ async function embedPreparedChunks(
   return embeddedChunks;
 }
 
-function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChatRuntime {
+interface CliChatRuntimeOptions {
+  fastAnswers?: boolean;
+}
+
+function createCliChatRuntime(
+  config: ReturnType<typeof loadRagConfig>,
+  options: CliChatRuntimeOptions = {},
+): CliChatRuntime {
   let pool: ReturnType<typeof createPgPool> | undefined;
   const retriever = createLazyRetriever(async () => {
     const nextPool = createPgPool(config.databaseUrl);
@@ -547,13 +579,43 @@ function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChat
   });
 
   return {
-    service: createChatService({ config, retriever }),
+    service: createChatService({
+      config,
+      retriever,
+      ...(options.fastAnswers === true
+        ? { answerProvider: createFastEvaluationAnswerProvider() }
+        : {}),
+    }),
     close: async () => {
       const currentPool = pool;
       pool = undefined;
       await currentPool?.end();
     },
   };
+}
+
+function createFastEvaluationAnswerProvider(): AnswerProvider {
+  return {
+    answer: ({ classification, question, retrievedChunks }) =>
+      Promise.resolve(createGroundedAnswer(question, classification, retrievedChunks)),
+  };
+}
+
+function formatEvaluationResult(result: EvaluationResult): string {
+  const status = result.passed ? 'PASS' : 'FAIL';
+  const lines = [
+    `${status} ${result.name}: expected ${result.expectedIntent}, got ${result.actualIntent}, citations ${result.citationCount}/${result.minCitations}`,
+  ];
+
+  if (!result.passed && result.failureReasons.length > 0) {
+    lines.push(`    reasons: ${result.failureReasons.join('; ')}`);
+  }
+
+  return lines.join('\n');
+}
+
+function formatEvaluationSummary(report: EvaluationReport): string {
+  return `Evaluation: ${report.passed}/${report.total} passed`;
 }
 
 function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): void {

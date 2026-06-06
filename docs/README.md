@@ -36,9 +36,12 @@ export OPENAI_MODEL="你的模型名"
 ```bash
 pnpm rag:ingest
 pnpm rag:ask -- "XXYY Pro 有哪些权益？"
+pnpm rag:evaluate -- --fast
 pnpm rag:evaluate
 pnpm start
 ```
+
+`pnpm rag:evaluate -- --fast` 只跳过 chat LLM 回答生成，仍会调用 embedding 模型并查询 pgvector；它用于快速检查检索、引用和边界分类。`pnpm rag:evaluate` 会调用配置的大模型，用于检查最终客服回答质量。
 
 正式知识库写入 Postgres + pgvector。启动 API 前先运行 `pnpm rag:ingest` 完成迁移和写库。产品问答会检索知识库片段，再调用 LLM 生成客服回答；如果缺少 `OPENAI_API_KEY` 或 `OPENAI_MODEL`，CLI 会直接报错，API 会返回对应配置错误。Web UI 由 `apps/api` 在 `/` 提供，因此本地体验直接运行 `pnpm start` 后打开 API 地址即可。
 

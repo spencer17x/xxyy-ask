@@ -65,9 +65,12 @@ pnpm check
 
 ```bash
 pnpm rag:ingest
+pnpm rag:evaluate -- --fast
 pnpm rag:evaluate
 pnpm check
 ```
+
+`pnpm rag:evaluate -- --fast` 使用 embedding + pgvector 检索，但回答阶段走本地 grounded answer，不调用 chat LLM；用来快速定位检索、引用和边界分类问题。`pnpm rag:evaluate` 会调用配置的大模型，用于发布前验证最终回答质量。
 
 聚焦测试可以按文件运行：
 

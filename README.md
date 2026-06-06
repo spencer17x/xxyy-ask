@@ -116,6 +116,7 @@ pnpm test
 pnpm rag:ingest
 pnpm rag:ask -- "问题"
 pnpm rag:evaluate
+pnpm rag:evaluate -- --fast
 pnpm start
 ```
 
@@ -123,8 +124,11 @@ pnpm start
 
 ```bash
 pnpm rag:ingest
+pnpm rag:evaluate -- --fast
 pnpm rag:evaluate
 pnpm check
 ```
+
+`pnpm rag:evaluate -- --fast` 仍会使用 embedding + pgvector 检索，但回答阶段使用本地 grounded answer，不调用 chat LLM；适合快速检查检索、引用和边界分类。`pnpm rag:evaluate` 会调用配置的大模型，适合发布前确认最终客服回答质量。
 
 更多产品知识库和运行说明见 [docs/README.md](docs/README.md)。

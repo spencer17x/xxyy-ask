@@ -68,6 +68,60 @@ describe('evaluateCases', () => {
     });
   });
 
+  it('reports progress after each evaluated case', async () => {
+    const answerProvider: AnswerProvider = {
+      answer({ classification, retrievedChunks }) {
+        return Promise.resolve({
+          answer: 'XXYY Pro 支持 Telegram 钱包监控。',
+          citations: retrievedChunks.map((chunk) => ({
+            excerpt: chunk.text,
+            file: chunk.metadata.file,
+            title: chunk.metadata.title,
+          })),
+          confidence: classification.confidence,
+          intent: classification.intent,
+        });
+      },
+    };
+    const service = createChatService({
+      answerProvider,
+      index: createFixtureIndex([
+        {
+          id: 'official_docs:pro:chunk:0001',
+          title: 'XXYY Pro 权益',
+          sourceType: 'official_docs',
+          file: '/docs/pro.md',
+          text: 'XXYY Pro 支持 Telegram 钱包监控。',
+        },
+      ]),
+    });
+    const progress: string[] = [];
+
+    await evaluateCases(
+      [
+        {
+          name: 'pro citations',
+          request: { channel: 'web', message: 'XXYY Pro 支持什么？' },
+          expectedIntent: 'product_qa',
+          minCitations: 1,
+        },
+        {
+          name: 'account boundary',
+          request: { channel: 'web', message: '帮我查一下钱包余额' },
+          expectedIntent: 'realtime_account_query',
+        },
+      ],
+      service,
+      {
+        onResult(result, index, total) {
+          progress.push(`${index}/${total}:${result.name}:${result.passed ? 'PASS' : 'FAIL'}`);
+        },
+      },
+    );
+
+    expect(progress).toEqual(['1/2:pro citations:PASS', '2/2:account boundary:PASS']);
+  });
+
   it('checks answer content and required citation sources', async () => {
     const answerProvider: AnswerProvider = {
       answer({ classification, question, retrievedChunks }) {

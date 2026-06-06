@@ -29,9 +29,14 @@ export interface EvaluationReport {
   results: EvaluationResult[];
 }
 
+export interface EvaluateCasesOptions {
+  onResult?(result: EvaluationResult, index: number, total: number): void;
+}
+
 export async function evaluateCases(
   cases: EvaluationCase[],
   service: ChatService,
+  options: EvaluateCasesOptions = {},
 ): Promise<EvaluationReport> {
   const results: EvaluationResult[] = [];
 
@@ -51,7 +56,7 @@ export async function evaluateCases(
       testCase,
     });
 
-    results.push({
+    const result = {
       name: testCase.name,
       passed: failureReasons.length === 0,
       expectedIntent: testCase.expectedIntent,
@@ -59,7 +64,9 @@ export async function evaluateCases(
       minCitations,
       citationCount,
       failureReasons,
-    });
+    };
+    results.push(result);
+    options.onResult?.(result, results.length, cases.length);
   }
 
   return {

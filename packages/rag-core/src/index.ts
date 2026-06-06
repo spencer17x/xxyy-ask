@@ -21,7 +21,12 @@ export type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
 export type { ChatService, CreateChatServiceOptions } from './chat-service.js';
 export type { RagConfig, RagEnv } from './config.js';
 export type { EnvRecord, LoadWorkspaceEnvOptions, WorkspaceEnv } from './env.js';
-export type { EvaluationCase, EvaluationReport, EvaluationResult } from './evaluate.js';
+export type {
+  EvaluateCasesOptions,
+  EvaluationCase,
+  EvaluationReport,
+  EvaluationResult,
+} from './evaluate.js';
 export type { OpenAiAnswerProviderOptions } from './openai-answer-provider.js';
 export type {
   EmbeddedKnowledgeChunk,

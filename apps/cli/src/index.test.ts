@@ -5,6 +5,13 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PreparedKnowledgeChunk } from '@xxyy/knowledge';
+import type {
+  CreateChatServiceOptions,
+  EvaluateCasesOptions,
+  EvaluationCase,
+  EvaluationReport,
+  EvaluationResult,
+} from '@xxyy/rag-core';
 import type { SourceDocument } from '@xxyy/shared';
 
 import {
@@ -12,6 +19,7 @@ import {
   createDefaultCliIo,
   formatChatResponse,
   formatEvaluationReport,
+  formatEvaluationProgress,
   formatIngestSummary,
   parseCliArgs,
   resolveWorkspaceCwd,
@@ -32,7 +40,12 @@ describe('parseCliArgs', () => {
 
   it('parses commands that do not require extra arguments', () => {
     expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
-    expect(parseCliArgs(['evaluate'])).toEqual({ command: 'evaluate' });
+    expect(parseCliArgs(['evaluate'])).toEqual({ command: 'evaluate', fast: false });
+    expect(parseCliArgs(['evaluate', '--fast'])).toEqual({ command: 'evaluate', fast: true });
+    expect(parseCliArgs(['evaluate', '--', '--fast'])).toEqual({
+      command: 'evaluate',
+      fast: true,
+    });
   });
 });
 
@@ -221,6 +234,36 @@ describe('CLI output formatting', () => {
         ],
       }),
     ).toContain('reasons: answer missing required text: 独享服务器和节点');
+    expect(
+      formatEvaluationProgress(
+        {
+          actualIntent: 'product_qa',
+          citationCount: 2,
+          expectedIntent: 'product_qa',
+          failureReasons: [],
+          minCitations: 1,
+          name: 'pro benefits',
+          passed: true,
+        },
+        3,
+        37,
+      ),
+    ).toBe('[3/37] PASS pro benefits: expected product_qa, got product_qa, citations 2/1');
+    expect(
+      formatEvaluationProgress(
+        {
+          actualIntent: 'unknown',
+          citationCount: 0,
+          expectedIntent: 'how_to',
+          failureReasons: ['intent unknown != how_to'],
+          minCitations: 1,
+          name: 'telegram setup',
+          passed: false,
+        },
+        4,
+        37,
+      ),
+    ).toContain('reasons: intent unknown != how_to');
   });
 
   it('formats pgvector ingest summaries', () => {
@@ -279,6 +322,98 @@ describe('runCli', () => {
 
     expect(exitCode).toBe(1);
     expect(stderr.join('')).toContain('DATABASE_URL is required for pgvector retrieval');
+  });
+
+  it('runs fast evaluation with progress output and a local answer provider', async () => {
+    vi.resetModules();
+
+    const stdout: string[] = [];
+    const createChatService = vi.fn((_options: CreateChatServiceOptions) => ({
+      ask: vi.fn(),
+      stream: vi.fn(),
+    }));
+    const evaluateCases = vi.fn(
+      (
+        _cases: EvaluationCase[],
+        _service: unknown,
+        options?: EvaluateCasesOptions,
+      ): Promise<EvaluationReport> => {
+        const result: EvaluationResult = {
+          actualIntent: 'product_qa',
+          citationCount: 1,
+          expectedIntent: 'product_qa',
+          failureReasons: [],
+          minCitations: 1,
+          name: 'pro benefits',
+          passed: true,
+        };
+        options?.onResult?.(result, 1, 1);
+        return Promise.resolve({
+          passed: 1,
+          total: 1,
+          results: [result],
+        });
+      },
+    );
+
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createChatService,
+        createLazyRetriever: vi.fn(() => ({ retrieve: vi.fn() })),
+        createPgPool: vi.fn(() => ({ end: vi.fn() })),
+        createPgVectorStore: vi.fn(() => ({ retrieve: vi.fn() })),
+        evaluateCases,
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+        })),
+      };
+    });
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createOpenAiEmbeddingProvider: vi.fn(() => ({ embedTexts: vi.fn() })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+
+      const exitCode = await runCliWithMocks(['evaluate', '--fast'], {
+        cwd: process.cwd(),
+        env: {},
+        stderr: { write: () => true },
+        stdout: {
+          write: (message: string) => {
+            stdout.push(message);
+            return true;
+          },
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(createChatService).toHaveBeenCalledTimes(1);
+      expect(typeof createChatService.mock.calls[0]?.[0].answerProvider?.answer).toBe('function');
+      expect(evaluateCases).toHaveBeenCalledTimes(1);
+      expect(typeof evaluateCases.mock.calls[0]?.[2]?.onResult).toBe('function');
+      expect(stdout.join('')).toContain('[1/1] PASS pro benefits');
+      expect(stdout.join('')).toContain('Evaluation: 1/1 passed');
+      expect(stdout.join('').match(/PASS pro benefits/gu)).toHaveLength(1);
+    } finally {
+      vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+    }
   });
 
   it('migrates pgvector storage before replacing prepared chunks', async () => {

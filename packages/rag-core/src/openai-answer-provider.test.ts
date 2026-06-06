@@ -67,6 +67,59 @@ describe('createOpenAiAnswerProvider', () => {
     expect(JSON.stringify(requests[0])).toContain('XXYY 支持一键买卖代币');
   });
 
+  it('asks the LLM to preserve relevant option lists deterministically', async () => {
+    interface CapturedRequest {
+      messages?: Array<{ content?: string }>;
+      temperature?: number;
+    }
+
+    const requests: CapturedRequest[] = [];
+    const fetchImpl: typeof fetch = (_input, init) => {
+      if (typeof init?.body !== 'string') {
+        throw new Error('Expected JSON string request body');
+      }
+      requests.push(JSON.parse(init.body) as CapturedRequest);
+      return Promise.resolve(
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                content: '挂单支持价格上涨、价格下跌和有效时间。',
+              },
+            },
+          ],
+        }),
+      );
+    };
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'gpt-test',
+    });
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:limit-order:chunk:0001',
+        title: '挂单交易',
+        sourceType: 'official_docs',
+        file: '/docs/limit-order.md',
+        text: '挂单设置包括价格上涨、价格下跌、市值上涨、市值下跌、价格到达和有效时间。',
+      },
+    ]);
+    const retrieved = retrieve('如何设置挂单买入或卖出？', index);
+
+    await provider.answer({
+      classification,
+      question: '如何设置挂单买入或卖出？',
+      retrievedChunks: retrieved,
+    });
+
+    const request = requests[0];
+    const prompt = request?.messages?.map((message) => message.content).join('\n') ?? '';
+    expect(request?.temperature).toBe(0);
+    expect(prompt).toContain('不要遗漏与用户问题直接相关的配置项、限制、数量、条件或步骤');
+  });
+
   it('returns video attachments discovered in retrieved context', async () => {
     const fetchImpl: typeof fetch = () =>
       Promise.resolve(
