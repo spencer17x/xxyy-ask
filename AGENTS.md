@@ -59,7 +59,7 @@ API 的 `GET /health` 是轻量存活检查；`GET /health/deep` 是生产依赖
 修改代码后优先跑：
 
 ```bash
-pnpm check
+pnpm ops:check
 ```
 
 更新产品文档、X 推文或检索/回答逻辑后，优先跑完整质量门禁：
@@ -73,6 +73,8 @@ pnpm check
 ```
 
 `pnpm rag:ingest` 会记录 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:stats` 用于查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
+
+`pnpm ops:check` 是 CI 基础门禁，只跑不依赖 DB/LLM 的代码检查。`pnpm ops:check:rag` 适合有 `.env`、数据库和模型的生产检查环境，会追加 `rag:stats` 和 fast eval。`pnpm ops:check:full` 会再追加完整 LLM eval，适合发布前人工确认。
 
 `pnpm rag:evaluate -- --fast` 使用 embedding + pgvector 检索，但回答阶段走本地 grounded answer，不调用 chat LLM；用来快速定位检索、引用和边界分类问题。`pnpm rag:evaluate` 会调用配置的大模型，用于发布前验证最终回答质量。
 

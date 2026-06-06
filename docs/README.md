@@ -39,10 +39,15 @@ pnpm rag:stats
 pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 pnpm rag:evaluate -- --fast
 pnpm rag:evaluate
+pnpm ops:check
+pnpm ops:check:rag
+pnpm ops:check:full
 pnpm start
 ```
 
 `pnpm rag:ingest` 会记录一次 ingestion run，包含 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:stats` 可以查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
+
+`pnpm ops:check` 是 CI 基础门禁，只跑不依赖 DB/LLM 的代码检查。`pnpm ops:check:rag` 适合有 `.env`、数据库和模型的生产检查环境，会追加 `rag:stats` 和 fast eval。`pnpm ops:check:full` 会再追加完整 LLM eval，适合发布前人工确认。
 
 `pnpm rag:evaluate -- --fast` 只跳过 chat LLM 回答生成，仍会调用 embedding 模型并查询 pgvector；它用于快速检查检索、引用和边界分类。`pnpm rag:evaluate` 会调用配置的大模型，用于检查最终客服回答质量。
 
