@@ -48,12 +48,17 @@ OPENAI_REQUEST_TIMEOUT_MS=30000
 OPENAI_MAX_RETRIES=1
 RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
+API_CORS_ORIGIN=
+API_MAX_BODY_BYTES=65536
+API_RATE_LIMIT_MAX=60
+API_RATE_LIMIT_WINDOW_MS=60000
 ```
 
 `pnpm rag:*` 和 `pnpm start` 会通过 `dotenv` 读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
 OpenAI-compatible 请求默认 30 秒超时、重试 1 次；需要调整时再配置 `OPENAI_REQUEST_TIMEOUT_MS` 和 `OPENAI_MAX_RETRIES`。
 API 的 `GET /health` 是轻量存活检查；`GET /health/deep` 是生产依赖自检，会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM，失败时返回 503 和分项原因。
 通过 `pnpm start` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、引用数、耗时、状态码和错误码；只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文。
+API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 
 ## 常用验证
 

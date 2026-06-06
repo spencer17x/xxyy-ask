@@ -22,7 +22,17 @@ import { supportedChannels } from '@xxyy/shared';
 import type { ChatService, RagEnv } from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
 
-type ApiEnv = RagEnv & Partial<Record<'PORT', string>>;
+type ApiEnv = RagEnv &
+  Partial<
+    Record<
+      | 'API_CORS_ORIGIN'
+      | 'API_MAX_BODY_BYTES'
+      | 'API_RATE_LIMIT_MAX'
+      | 'API_RATE_LIMIT_WINDOW_MS'
+      | 'PORT',
+      string
+    >
+  >;
 
 export interface ApiRequestLike {
   method?: string;
@@ -56,6 +66,13 @@ export interface CreateRequestHandlerOptions {
 
 export interface StartServerOptions extends CreateRequestHandlerOptions {
   port?: number;
+}
+
+interface ApiRuntimeConfig {
+  corsOrigins: string[];
+  maxBodyBytes: number;
+  rateLimitMax: number;
+  rateLimitWindowMs: number;
 }
 
 interface ChatPayload {
@@ -108,15 +125,33 @@ interface DeepHealthStatus {
 export function createRequestHandler(options: CreateRequestHandlerOptions = {}): ApiRequestHandler {
   const env = options.env ?? createDefaultApiEnv(options);
   const config = loadRagConfig(env);
+  const apiConfig = loadApiRuntimeConfig(env);
   const renderHtml = options.renderHtml ?? renderChatPage;
   const getChatService = options.getChatService ?? createCachedChatServiceLoader(config);
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
   const logger = options.logger ?? noopLogger;
   const now = options.now ?? Date.now;
+  const rateLimiter = createRateLimiter(apiConfig, Date.now);
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
 
   return async function handleRequest(request, response): Promise<void> {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
+    const corsResult = applyCors(request, response, requestUrl, apiConfig);
+    if (corsResult === 'handled') {
+      return;
+    }
+
+    if (isChatApiRoute(requestUrl.pathname) && request.method === 'POST') {
+      const rateLimitResult = rateLimiter.check(clientAddress(request));
+      if (!rateLimitResult.allowed) {
+        response.setHeader('Retry-After', String(Math.ceil(rateLimitResult.retryAfterMs / 1000)));
+        sendJson(response, 429, {
+          error: 'rate_limited',
+          message: 'Too many requests. Please try again later.',
+        });
+        return;
+      }
+    }
 
     try {
       if (request.method === 'GET' && requestUrl.pathname === '/health') {
@@ -144,6 +179,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
         await handleChatRequest({
           getChatService,
           logger,
+          maxBodyBytes: apiConfig.maxBodyBytes,
           now,
           request,
           response,
@@ -156,6 +192,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
         await handleChatRequest({
           getChatService,
           logger,
+          maxBodyBytes: apiConfig.maxBodyBytes,
           now,
           request,
           response,
@@ -175,6 +212,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
 interface HandleChatRequestOptions {
   getChatService: () => Promise<ChatService>;
   logger: ApiLogger;
+  maxBodyBytes: number;
   now: () => number;
   request: ApiRequestLike;
   response: ApiResponseLike;
@@ -182,7 +220,7 @@ interface HandleChatRequestOptions {
 }
 
 async function handleChatRequest(options: HandleChatRequestOptions): Promise<void> {
-  const payload = parseChatPayload(await readJsonBody(options.request));
+  const payload = parseChatPayload(await readJsonBody(options.request, options.maxBodyBytes));
   const startedAt = options.now();
   const chatRequest = toChatRequest(payload);
 
@@ -226,6 +264,147 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
     );
     throw error;
   }
+}
+
+function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
+  return {
+    corsOrigins: parseCsv(env.API_CORS_ORIGIN),
+    maxBodyBytes: parsePositiveInteger(env.API_MAX_BODY_BYTES, 64 * 1024),
+    rateLimitMax: parsePositiveInteger(env.API_RATE_LIMIT_MAX, 60),
+    rateLimitWindowMs: parsePositiveInteger(env.API_RATE_LIMIT_WINDOW_MS, 60_000),
+  };
+}
+
+function parseCsv(value: string | undefined): string[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+type CorsResult = 'continue' | 'handled';
+
+function applyCors(
+  request: ApiRequestLike,
+  response: ApiResponseLike,
+  requestUrl: URL,
+  config: ApiRuntimeConfig,
+): CorsResult {
+  if (!isApiRoute(requestUrl.pathname)) {
+    return 'continue';
+  }
+
+  const origin = headerValue(request.headers.origin);
+  if (origin !== undefined && isCorsOriginAllowed(origin, config.corsOrigins)) {
+    const allowedOrigin = config.corsOrigins.includes('*') ? '*' : origin;
+    response.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+    response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    response.setHeader(
+      'Access-Control-Allow-Headers',
+      headerValue(request.headers['access-control-request-headers']) ?? 'Content-Type',
+    );
+    response.setHeader('Access-Control-Max-Age', '600');
+    if (allowedOrigin !== '*') {
+      response.setHeader('Vary', 'Origin');
+    }
+  }
+
+  if (request.method === 'OPTIONS') {
+    if (origin !== undefined && !isCorsOriginAllowed(origin, config.corsOrigins)) {
+      sendJson(response, 403, {
+        error: 'cors_origin_forbidden',
+        message: 'CORS origin is not allowed.',
+      });
+      return 'handled';
+    }
+    response.statusCode = 204;
+    response.end();
+    return 'handled';
+  }
+
+  return 'continue';
+}
+
+function isCorsOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
+  return allowedOrigins.includes('*') || allowedOrigins.includes(origin);
+}
+
+function isApiRoute(pathname: string): boolean {
+  return pathname.startsWith('/api/');
+}
+
+function isChatApiRoute(pathname: string): boolean {
+  return pathname === '/api/chat' || pathname === '/api/chat/stream';
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value;
+}
+
+interface RateLimitResult {
+  allowed: boolean;
+  retryAfterMs: number;
+}
+
+function createRateLimiter(
+  config: Pick<ApiRuntimeConfig, 'rateLimitMax' | 'rateLimitWindowMs'>,
+  now: () => number,
+): { check(key: string): RateLimitResult } {
+  const buckets = new Map<string, { count: number; resetAt: number }>();
+
+  return {
+    check(key) {
+      const currentTime = now();
+      const currentBucket = buckets.get(key);
+      if (currentBucket === undefined || currentBucket.resetAt <= currentTime) {
+        buckets.set(key, {
+          count: 1,
+          resetAt: currentTime + config.rateLimitWindowMs,
+        });
+        return { allowed: true, retryAfterMs: 0 };
+      }
+
+      if (currentBucket.count >= config.rateLimitMax) {
+        return {
+          allowed: false,
+          retryAfterMs: Math.max(1, currentBucket.resetAt - currentTime),
+        };
+      }
+
+      currentBucket.count += 1;
+      return { allowed: true, retryAfterMs: 0 };
+    },
+  };
+}
+
+function clientAddress(request: ApiRequestLike): string {
+  const forwardedFor = headerValue(request.headers['x-forwarded-for']);
+  if (forwardedFor !== undefined && forwardedFor.trim().length > 0) {
+    return forwardedFor.split(',')[0]?.trim() ?? 'unknown';
+  }
+
+  const realIp = headerValue(request.headers['x-real-ip']);
+  if (realIp !== undefined && realIp.trim().length > 0) {
+    return realIp.trim();
+  }
+
+  return 'unknown';
 }
 
 function createChatSuccessLogEntry(input: {
@@ -605,10 +784,16 @@ function createCachedChatServiceLoader(
   };
 }
 
-async function readJsonBody(request: ApiRequestLike): Promise<unknown> {
+async function readJsonBody(request: ApiRequestLike, maxBodyBytes: number): Promise<unknown> {
   let body = '';
+  let byteLength = 0;
   for await (const chunk of request) {
-    body += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    byteLength += Buffer.byteLength(text, 'utf8');
+    if (byteLength > maxBodyBytes) {
+      throw new PayloadTooLargeError();
+    }
+    body += text;
   }
 
   if (body.trim().length === 0) {
@@ -812,6 +997,16 @@ function createApiErrorResponse(error: unknown): {
     };
   }
 
+  if (error instanceof PayloadTooLargeError) {
+    return {
+      body: {
+        error: 'payload_too_large',
+        message: 'Request body exceeds the configured size limit.',
+      },
+      statusCode: 413,
+    };
+  }
+
   if (error instanceof LlmConfigurationError) {
     return {
       body: { error: 'llm_configuration_missing', message: error.message },
@@ -861,6 +1056,8 @@ function sendHtml(response: ApiResponseLike, statusCode: number, html: string): 
 }
 
 class BadRequestError extends Error {}
+
+class PayloadTooLargeError extends Error {}
 
 function isDirectRun(): boolean {
   const invokedPath = process.argv[1];

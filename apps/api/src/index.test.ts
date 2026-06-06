@@ -24,13 +24,14 @@ async function callHandler(
     method: string;
     url: string;
     body?: unknown;
+    headers?: Record<string, string>;
   },
 ): Promise<CapturedResponse> {
   const chunks = input.body === undefined ? [] : [Buffer.from(JSON.stringify(input.body), 'utf8')];
   const request = {
     method: input.method,
     url: input.url,
-    headers: {},
+    headers: input.headers ?? {},
     [Symbol.asyncIterator]() {
       return Readable.from(chunks)[Symbol.asyncIterator]();
     },
@@ -167,6 +168,135 @@ describe('createRequestHandler', () => {
     expect(payload.checks.llm.message).toBe(
       'OPENAI_API_KEY and OPENAI_MODEL are required for LLM answer generation.',
     );
+  });
+
+  it('handles allowed CORS preflight requests for chat APIs', async () => {
+    const handler = createRequestHandler({
+      env: {
+        API_CORS_ORIGIN: 'https://app.example',
+      },
+    });
+
+    const response = await callHandler(handler, {
+      headers: {
+        'access-control-request-headers': 'Content-Type',
+        origin: 'https://app.example',
+      },
+      method: 'OPTIONS',
+      url: '/api/chat',
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['Access-Control-Allow-Origin']).toBe('https://app.example');
+    expect(response.headers['Access-Control-Allow-Methods']).toBe('POST, OPTIONS');
+    expect(response.headers['Access-Control-Allow-Headers']).toBe('Content-Type');
+    expect(response.body).toBe('');
+  });
+
+  it('adds CORS headers to allowed chat responses', async () => {
+    const handler = createRequestHandler({
+      env: {
+        API_CORS_ORIGIN: 'https://app.example',
+      },
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.resolve({
+              answer: '根据知识库，XXYY Pro 提供更多权益。',
+              citations: [],
+              confidence: 0.8,
+              intent: 'product_qa',
+            });
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      headers: { origin: 'https://app.example' },
+      method: 'POST',
+      url: '/api/chat',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['Access-Control-Allow-Origin']).toBe('https://app.example');
+  });
+
+  it('rejects oversized JSON request bodies before invoking chat service', async () => {
+    const handler = createRequestHandler({
+      env: {
+        API_MAX_BODY_BYTES: '32',
+      },
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            throw new Error('ask should not be called for oversized bodies');
+          },
+          stream() {
+            throw new Error('stream should not be called for oversized bodies');
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      body: { message: '这个请求体会超过三十二个字节' },
+      method: 'POST',
+      url: '/api/chat',
+    });
+
+    expect(response.statusCode).toBe(413);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'payload_too_large',
+      message: 'Request body exceeds the configured size limit.',
+    });
+  });
+
+  it('rate limits chat requests by client address', async () => {
+    const handler = createRequestHandler({
+      env: {
+        API_RATE_LIMIT_MAX: '1',
+        API_RATE_LIMIT_WINDOW_MS: '1000',
+      },
+      now: () => 100,
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.resolve({
+              answer: '根据知识库，XXYY Pro 提供更多权益。',
+              citations: [],
+              confidence: 0.8,
+              intent: 'product_qa',
+            });
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
+        }),
+    });
+
+    const first = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      headers: { 'x-forwarded-for': '203.0.113.1' },
+      method: 'POST',
+      url: '/api/chat',
+    });
+    const second = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      headers: { 'x-forwarded-for': '203.0.113.1' },
+      method: 'POST',
+      url: '/api/chat',
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(429);
+    expect(second.headers['Retry-After']).toBe('1');
+    expect(JSON.parse(second.body)).toEqual({
+      error: 'rate_limited',
+      message: 'Too many requests. Please try again later.',
+    });
   });
 
   it('serves product media assets for chat attachments', async () => {
