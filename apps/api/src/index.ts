@@ -17,7 +17,7 @@ import {
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
-import type { ChatRequest, ChatChannel, ChatStreamEvent } from '@xxyy/shared';
+import type { ChatRequest, ChatChannel, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import { supportedChannels } from '@xxyy/shared';
 import type { ChatService, RagEnv } from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
@@ -48,6 +48,8 @@ export interface CreateRequestHandlerOptions {
   env?: ApiEnv;
   getChatService?: () => Promise<ChatService>;
   getHealthStatus?: () => Promise<DeepHealthStatus>;
+  logger?: ApiLogger;
+  now?: () => number;
   renderHtml?: () => string;
   staticAssetsDir?: string;
 }
@@ -62,6 +64,26 @@ interface ChatPayload {
   sessionId?: string;
   userId?: string;
 }
+
+export interface ApiLogEntry {
+  event: 'chat_request';
+  route: '/api/chat' | '/api/chat/stream';
+  channel: ChatChannel;
+  durationMs: number;
+  messageLength: number;
+  messagePreview: string;
+  outcome: 'success' | 'error';
+  sessionIdPresent: boolean;
+  statusCode: number;
+  userIdPresent: boolean;
+  attachmentCount?: number;
+  citationCount?: number;
+  confidence?: number;
+  error?: string;
+  intent?: ChatResponse['intent'];
+}
+
+export type ApiLogger = (entry: ApiLogEntry) => void;
 
 interface HealthCheck {
   status: 'ok' | 'error';
@@ -89,6 +111,8 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const renderHtml = options.renderHtml ?? renderChatPage;
   const getChatService = options.getChatService ?? createCachedChatServiceLoader(config);
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
+  const logger = options.logger ?? noopLogger;
+  const now = options.now ?? Date.now;
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
 
   return async function handleRequest(request, response): Promise<void> {
@@ -117,67 +141,180 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       }
 
       if (request.method === 'POST' && requestUrl.pathname === '/api/chat') {
-        const payload = parseChatPayload(await readJsonBody(request));
-        const service = await getChatService();
-        const chatRequest = toChatRequest(payload);
-        const chatResponse = await service.ask(chatRequest);
-        sendJson(response, 200, chatResponse);
+        await handleChatRequest({
+          getChatService,
+          logger,
+          now,
+          request,
+          response,
+          route: '/api/chat',
+        });
         return;
       }
 
       if (request.method === 'POST' && requestUrl.pathname === '/api/chat/stream') {
-        const payload = parseChatPayload(await readJsonBody(request));
-        const service = await getChatService();
-        const chatRequest = toChatRequest(payload);
-        await sendChatStream(response, service.stream(chatRequest));
+        await handleChatRequest({
+          getChatService,
+          logger,
+          now,
+          request,
+          response,
+          route: '/api/chat/stream',
+        });
         return;
       }
 
       sendJson(response, 404, { error: 'not_found', message: 'Route not found.' });
     } catch (error) {
-      if (error instanceof BadRequestError) {
-        sendJson(response, 400, { error: 'bad_request', message: error.message });
-        return;
-      }
-
-      if (error instanceof LlmConfigurationError) {
-        sendJson(response, 503, {
-          error: 'llm_configuration_missing',
-          message: error.message,
-        });
-        return;
-      }
-
-      if (error instanceof EmbeddingConfigurationError) {
-        sendJson(response, 503, {
-          error: 'embedding_configuration_missing',
-          message: error.message,
-        });
-        return;
-      }
-
-      if (error instanceof VectorStoreConfigurationError) {
-        sendJson(response, 503, {
-          error: 'vector_store_configuration_missing',
-          message: error.message,
-        });
-        return;
-      }
-
-      if (error instanceof VectorStoreUnavailableError) {
-        sendJson(response, 503, {
-          error: 'vector_store_unavailable',
-          message: error.message,
-        });
-        return;
-      }
-
-      sendJson(response, 500, {
-        error: 'internal_error',
-        message: 'Unable to process request.',
-      });
+      const apiError = createApiErrorResponse(error);
+      sendJson(response, apiError.statusCode, apiError.body);
     }
   };
+}
+
+interface HandleChatRequestOptions {
+  getChatService: () => Promise<ChatService>;
+  logger: ApiLogger;
+  now: () => number;
+  request: ApiRequestLike;
+  response: ApiResponseLike;
+  route: ApiLogEntry['route'];
+}
+
+async function handleChatRequest(options: HandleChatRequestOptions): Promise<void> {
+  const payload = parseChatPayload(await readJsonBody(options.request));
+  const startedAt = options.now();
+  const chatRequest = toChatRequest(payload);
+
+  try {
+    const service = await options.getChatService();
+
+    if (options.route === '/api/chat') {
+      const chatResponse = await service.ask(chatRequest);
+      sendJson(options.response, 200, chatResponse);
+      options.logger(
+        createChatSuccessLogEntry({
+          durationMs: options.now() - startedAt,
+          payload,
+          response: chatResponse,
+          route: options.route,
+          statusCode: 200,
+        }),
+      );
+      return;
+    }
+
+    const summary = await sendChatStream(options.response, service.stream(chatRequest));
+    options.logger(
+      createChatStreamLogEntry({
+        durationMs: options.now() - startedAt,
+        payload,
+        route: options.route,
+        summary,
+      }),
+    );
+  } catch (error) {
+    const apiError = createApiErrorResponse(error);
+    options.logger(
+      createChatErrorLogEntry({
+        durationMs: options.now() - startedAt,
+        error: apiError.body.error,
+        payload,
+        route: options.route,
+        statusCode: apiError.statusCode,
+      }),
+    );
+    throw error;
+  }
+}
+
+function createChatSuccessLogEntry(input: {
+  durationMs: number;
+  payload: ChatPayload;
+  response: ChatResponse;
+  route: ApiLogEntry['route'];
+  statusCode: number;
+}): ApiLogEntry {
+  return {
+    ...createChatLogBase(input.payload, input.route, input.durationMs, input.statusCode),
+    attachmentCount: input.response.attachments?.length ?? 0,
+    citationCount: input.response.citations.length,
+    confidence: input.response.confidence,
+    intent: input.response.intent,
+    outcome: 'success',
+  };
+}
+
+function createChatStreamLogEntry(input: {
+  durationMs: number;
+  payload: ChatPayload;
+  route: ApiLogEntry['route'];
+  summary: ChatStreamSummary;
+}): ApiLogEntry {
+  const base = createChatLogBase(
+    input.payload,
+    input.route,
+    input.durationMs,
+    input.summary.statusCode,
+  );
+
+  if (input.summary.outcome === 'error') {
+    return {
+      ...base,
+      error: input.summary.error ?? 'internal_error',
+      outcome: 'error',
+    };
+  }
+
+  return {
+    ...base,
+    attachmentCount: input.summary.attachmentCount ?? 0,
+    citationCount: input.summary.citationCount ?? 0,
+    ...(input.summary.confidence === undefined ? {} : { confidence: input.summary.confidence }),
+    ...(input.summary.intent === undefined ? {} : { intent: input.summary.intent }),
+    outcome: 'success',
+  };
+}
+
+function createChatErrorLogEntry(input: {
+  durationMs: number;
+  error: string;
+  payload: ChatPayload;
+  route: ApiLogEntry['route'];
+  statusCode: number;
+}): ApiLogEntry {
+  return {
+    ...createChatLogBase(input.payload, input.route, input.durationMs, input.statusCode),
+    error: input.error,
+    outcome: 'error',
+  };
+}
+
+function createChatLogBase(
+  payload: ChatPayload,
+  route: ApiLogEntry['route'],
+  durationMs: number,
+  statusCode: number,
+): Omit<ApiLogEntry, 'outcome'> {
+  return {
+    channel: payload.channel ?? 'web',
+    durationMs,
+    event: 'chat_request',
+    messageLength: payload.message.length,
+    messagePreview: createMessagePreview(payload.message),
+    route,
+    sessionIdPresent: payload.sessionId !== undefined,
+    statusCode,
+    userIdPresent: payload.userId !== undefined,
+  };
+}
+
+function createMessagePreview(message: string): string {
+  const normalized = message.replace(/\s+/gu, ' ').trim();
+  if (normalized.length <= 160) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 159)}…`;
 }
 
 async function createDeepHealthStatus(
@@ -420,7 +557,11 @@ export function createDefaultApiEnv(
 export function startServer(options: StartServerOptions = {}): ReturnType<typeof createServer> {
   const env = options.env ?? createDefaultApiEnv(options);
   const port = Number(options.port ?? env.PORT ?? 3000);
-  const handler = createRequestHandler({ ...options, env });
+  const handler = createRequestHandler({
+    ...options,
+    env,
+    logger: options.logger ?? createConsoleApiLogger(),
+  });
   const server = createServer((request, response) => {
     void handler(request as ApiRequestLike, response);
   });
@@ -606,21 +747,50 @@ function isMissingFileError(error: unknown): boolean {
   );
 }
 
+interface ChatStreamSummary {
+  outcome: 'success' | 'error';
+  statusCode: number;
+  attachmentCount?: number;
+  citationCount?: number;
+  confidence?: number;
+  error?: string;
+  intent?: ChatResponse['intent'];
+}
+
 async function sendChatStream(
   response: ApiResponseLike,
   events: AsyncIterable<ChatStreamEvent>,
-): Promise<void> {
+): Promise<ChatStreamSummary> {
   response.statusCode = 200;
   response.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   response.setHeader('Cache-Control', 'no-cache');
   response.setHeader('Connection', 'keep-alive');
 
+  let metadata: Extract<ChatStreamEvent, { type: 'metadata' }> | undefined;
+
   try {
     for await (const event of events) {
       writeSseEvent(response, event.type, event);
+      if (event.type === 'metadata') {
+        metadata = event;
+      }
     }
+    return {
+      attachmentCount: metadata?.attachments?.length ?? 0,
+      citationCount: metadata?.citations.length ?? 0,
+      ...(metadata?.confidence === undefined ? {} : { confidence: metadata.confidence }),
+      ...(metadata?.intent === undefined ? {} : { intent: metadata.intent }),
+      outcome: 'success',
+      statusCode: 200,
+    };
   } catch (error) {
-    writeSseEvent(response, 'error', createStreamErrorPayload(error));
+    const payload = createApiErrorResponse(error).body;
+    writeSseEvent(response, 'error', payload);
+    return {
+      error: payload.error,
+      outcome: 'error',
+      statusCode: 200,
+    };
   } finally {
     response.end();
   }
@@ -631,25 +801,57 @@ function writeSseEvent(response: ApiResponseLike, eventName: string, payload: un
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-function createStreamErrorPayload(error: unknown): { error: string; message: string } {
+function createApiErrorResponse(error: unknown): {
+  body: { error: string; message: string };
+  statusCode: number;
+} {
+  if (error instanceof BadRequestError) {
+    return {
+      body: { error: 'bad_request', message: error.message },
+      statusCode: 400,
+    };
+  }
+
   if (error instanceof LlmConfigurationError) {
-    return { error: 'llm_configuration_missing', message: error.message };
+    return {
+      body: { error: 'llm_configuration_missing', message: error.message },
+      statusCode: 503,
+    };
   }
 
   if (error instanceof EmbeddingConfigurationError) {
-    return { error: 'embedding_configuration_missing', message: error.message };
+    return {
+      body: { error: 'embedding_configuration_missing', message: error.message },
+      statusCode: 503,
+    };
   }
 
   if (error instanceof VectorStoreConfigurationError) {
-    return { error: 'vector_store_configuration_missing', message: error.message };
+    return {
+      body: { error: 'vector_store_configuration_missing', message: error.message },
+      statusCode: 503,
+    };
   }
 
   if (error instanceof VectorStoreUnavailableError) {
-    return { error: 'vector_store_unavailable', message: error.message };
+    return {
+      body: { error: 'vector_store_unavailable', message: error.message },
+      statusCode: 503,
+    };
   }
 
-  const message = error instanceof Error ? error.message : 'Unable to process request.';
-  return { error: 'internal_error', message };
+  return {
+    body: { error: 'internal_error', message: 'Unable to process request.' },
+    statusCode: 500,
+  };
+}
+
+function noopLogger(_entry: ApiLogEntry): void {}
+
+function createConsoleApiLogger(): ApiLogger {
+  return (entry) => {
+    process.stdout.write(`${JSON.stringify({ ...entry, timestamp: new Date().toISOString() })}\n`);
+  };
 }
 
 function sendHtml(response: ApiResponseLike, statusCode: number, html: string): void {

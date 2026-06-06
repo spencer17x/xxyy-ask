@@ -53,6 +53,7 @@ RAG_ANSWER_PROVIDER=openai
 `pnpm rag:*` 和 `pnpm start` 会通过 `dotenv` 读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
 OpenAI-compatible 请求默认 30 秒超时、重试 1 次；需要调整时再配置 `OPENAI_REQUEST_TIMEOUT_MS` 和 `OPENAI_MAX_RETRIES`。
 API 的 `GET /health` 是轻量存活检查；`GET /health/deep` 是生产依赖自检，会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM，失败时返回 503 和分项原因。
+通过 `pnpm start` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、引用数、耗时、状态码和错误码；只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文。
 
 ## 常用验证
 

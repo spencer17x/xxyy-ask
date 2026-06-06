@@ -9,6 +9,7 @@ import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import { LlmConfigurationError, VectorStoreUnavailableError } from '@xxyy/rag-core';
 
 import { createDefaultApiEnv, createRequestHandler, type ApiRequestHandler } from './index.js';
+import type { ApiLogEntry } from './index.js';
 
 interface CapturedResponse {
   statusCode: number;
@@ -225,6 +226,67 @@ describe('createRequestHandler', () => {
     expect(JSON.parse(response.body)).toEqual(chatResponse);
   });
 
+  it('logs completed chat requests with RAG response metrics', async () => {
+    const logs: ApiLogEntry[] = [];
+    const nowValues = [100, 145];
+    const handler = createRequestHandler({
+      logger: (entry) => {
+        logs.push(entry);
+      },
+      now: () => nowValues.shift() ?? 145,
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.resolve({
+              answer: '根据知识库，XXYY Pro 提供更多权益。',
+              citations: [
+                {
+                  excerpt: 'Pro 用户可以使用更多产品权益。',
+                  file: 'docs/pro.md',
+                  title: 'XXYY Pro 权益',
+                },
+              ],
+              confidence: 0.8,
+              intent: 'product_qa',
+            });
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
+        }),
+    });
+
+    await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat',
+      body: {
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？',
+        sessionId: 'session-1',
+        userId: 'user-1',
+      },
+    });
+
+    expect(logs).toEqual([
+      {
+        attachmentCount: 0,
+        channel: 'web',
+        citationCount: 1,
+        confidence: 0.8,
+        durationMs: 45,
+        event: 'chat_request',
+        intent: 'product_qa',
+        messageLength: 15,
+        messagePreview: 'XXYY Pro 有哪些权益？',
+        outcome: 'success',
+        route: '/api/chat',
+        sessionIdPresent: true,
+        statusCode: 200,
+        userIdPresent: true,
+      },
+    ]);
+  });
+
   it('streams chat responses as server-sent events', async () => {
     const streamEvents: ChatStreamEvent[] = [
       { type: 'answer_delta', delta: 'XXYY Pro' },
@@ -272,6 +334,67 @@ describe('createRequestHandler', () => {
     );
   });
 
+  it('logs streamed chat requests when metadata is emitted', async () => {
+    const logs: ApiLogEntry[] = [];
+    const nowValues = [200, 260];
+    const streamEvents: ChatStreamEvent[] = [
+      { type: 'answer_delta', delta: 'XXYY Pro' },
+      {
+        type: 'metadata',
+        citations: [
+          {
+            excerpt: 'Pro 用户可以使用更多产品权益。',
+            file: 'docs/pro.md',
+            title: 'XXYY Pro 权益',
+          },
+        ],
+        confidence: 0.8,
+        intent: 'product_qa',
+      },
+    ];
+    const handler = createRequestHandler({
+      logger: (entry) => {
+        logs.push(entry);
+      },
+      now: () => nowValues.shift() ?? 260,
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            throw new Error('ask should not be used for stream requests');
+          },
+          async *stream() {
+            await Promise.resolve();
+            yield* streamEvents;
+          },
+        }),
+    });
+
+    await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat/stream',
+      body: { message: 'XXYY Pro 有哪些权益？' },
+    });
+
+    expect(logs).toEqual([
+      {
+        attachmentCount: 0,
+        channel: 'web',
+        citationCount: 1,
+        confidence: 0.8,
+        durationMs: 60,
+        event: 'chat_request',
+        intent: 'product_qa',
+        messageLength: 15,
+        messagePreview: 'XXYY Pro 有哪些权益？',
+        outcome: 'success',
+        route: '/api/chat/stream',
+        sessionIdPresent: false,
+        statusCode: 200,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('returns a useful 503 when LLM configuration is missing', async () => {
     const handler = createRequestHandler({
       getChatService: () =>
@@ -298,6 +421,50 @@ describe('createRequestHandler', () => {
       error: 'llm_configuration_missing',
       message: 'OPENAI_API_KEY is required for LLM answer generation.',
     });
+  });
+
+  it('logs chat request errors with the public API error code', async () => {
+    const logs: ApiLogEntry[] = [];
+    const nowValues = [300, 325];
+    const handler = createRequestHandler({
+      logger: (entry) => {
+        logs.push(entry);
+      },
+      now: () => nowValues.shift() ?? 325,
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.reject(
+              new LlmConfigurationError('OPENAI_API_KEY is required for LLM answer generation.'),
+            );
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
+        }),
+    });
+
+    await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat',
+      body: { message: 'XXYY Pro 有哪些权益？' },
+    });
+
+    expect(logs).toEqual([
+      {
+        channel: 'web',
+        durationMs: 25,
+        error: 'llm_configuration_missing',
+        event: 'chat_request',
+        messageLength: 15,
+        messagePreview: 'XXYY Pro 有哪些权益？',
+        outcome: 'error',
+        route: '/api/chat',
+        sessionIdPresent: false,
+        statusCode: 503,
+        userIdPresent: false,
+      },
+    ]);
   });
 
   it('answers boundary questions in pgvector mode before requiring vector configuration', async () => {
