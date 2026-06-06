@@ -31,6 +31,7 @@ import type {
   EvaluationCase,
   EvaluationReport,
   EvaluationResult,
+  FeedbackRating,
   FeedbackStats,
   KnowledgeStats,
   RagEnv,
@@ -43,7 +44,7 @@ type CliEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
 type CliCommand =
   | { command: 'ask'; question: string }
   | { command: 'evaluate'; fast: boolean }
-  | { command: 'feedback' }
+  | { command: 'feedback'; json: boolean; limit: number; rating?: FeedbackRating }
   | { command: 'ingest' }
   | { command: 'migrate' }
   | { command: 'stats' }
@@ -80,7 +81,7 @@ const HELP_TEXT = [
   '  pnpm rag:ingest',
   '  pnpm rag:migrate',
   '  pnpm rag:stats',
-  '  pnpm rag:feedback',
+  '  pnpm rag:feedback [-- --rating positive|negative] [--limit 25] [--json]',
   '  pnpm rag:ask -- "question"',
   '  pnpm rag:evaluate [-- --fast]',
 ].join('\n');
@@ -344,13 +345,12 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     return { command: 'help' };
   }
 
-  if (
-    command === 'ingest' ||
-    command === 'migrate' ||
-    command === 'stats' ||
-    command === 'feedback'
-  ) {
+  if (command === 'ingest' || command === 'migrate' || command === 'stats') {
     return { command };
+  }
+
+  if (command === 'feedback') {
+    return parseFeedbackArgs(rawRest);
   }
 
   if (command === 'evaluate') {
@@ -377,6 +377,57 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
   }
 
   return { command: 'help', error: `Unknown command: ${command}` };
+}
+
+function parseFeedbackArgs(rawArgs: readonly string[]): CliCommand {
+  const args = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs;
+  let json = false;
+  let limit = 10;
+  let rating: FeedbackRating | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const option = args[index];
+    if (option === '--json') {
+      json = true;
+      continue;
+    }
+
+    if (option === '--limit') {
+      const rawLimit = args[index + 1];
+      if (rawLimit === undefined) {
+        return { command: 'help', error: 'Missing value for feedback --limit.' };
+      }
+      const parsedLimit = Number(rawLimit);
+      if (!Number.isInteger(parsedLimit) || parsedLimit <= 0) {
+        return { command: 'help', error: `Invalid feedback limit: ${rawLimit}` };
+      }
+      limit = parsedLimit;
+      index += 1;
+      continue;
+    }
+
+    if (option === '--rating') {
+      const rawRating = args[index + 1];
+      if (rawRating === undefined) {
+        return { command: 'help', error: 'Missing value for feedback --rating.' };
+      }
+      if (rawRating !== 'positive' && rawRating !== 'negative') {
+        return { command: 'help', error: `Invalid feedback rating: ${rawRating}` };
+      }
+      rating = rawRating;
+      index += 1;
+      continue;
+    }
+
+    return { command: 'help', error: `Unknown option for rag:feedback: ${option}` };
+  }
+
+  return {
+    command: 'feedback',
+    json,
+    limit,
+    ...(rating === undefined ? {} : { rating }),
+  };
 }
 
 export function formatIngestSummary(summary: IngestSummary): string {
@@ -588,8 +639,16 @@ export async function runCli(
 
   if (parsed.command === 'feedback') {
     try {
-      const feedbackSummary = await feedbackStats(config);
-      writeLine(io.stdout, formatFeedbackStats(feedbackSummary));
+      const feedbackSummary = await feedbackStats(config, {
+        limit: parsed.limit,
+        ...(parsed.rating === undefined ? {} : { rating: parsed.rating }),
+      });
+      writeLine(
+        io.stdout,
+        parsed.json
+          ? JSON.stringify(feedbackSummary, null, 2)
+          : formatFeedbackStats(feedbackSummary),
+      );
       return 0;
     } catch (error) {
       if (writeConfigurationError(io, error)) {
@@ -695,11 +754,14 @@ async function stats(config: ReturnType<typeof loadRagConfig>): Promise<Knowledg
   }
 }
 
-async function feedbackStats(config: ReturnType<typeof loadRagConfig>): Promise<FeedbackStats> {
+async function feedbackStats(
+  config: ReturnType<typeof loadRagConfig>,
+  options: { limit: number; rating?: FeedbackRating },
+): Promise<FeedbackStats> {
   const pool = createPgPool(config.databaseUrl);
   try {
     const store = createPgFeedbackStore({ client: pool });
-    return await store.getFeedbackStats({ limit: 10 });
+    return await store.getFeedbackStats(options);
   } finally {
     await pool.end();
   }

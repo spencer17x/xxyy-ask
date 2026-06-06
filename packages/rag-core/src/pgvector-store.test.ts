@@ -153,6 +153,39 @@ describe('createPgVectorStore', () => {
     expect(client.queries[1]?.values).toEqual([5]);
   });
 
+  it('filters feedback stats by rating for operations review queues', async () => {
+    const client = new FakePgClient();
+    client.queuedRows = [
+      [{ negative_count: 1, positive_count: 0, total_count: 1 }],
+      [
+        {
+          answer: '根据知识库，XXYY Pro 提供更多权益。',
+          channel: 'web',
+          citation_count: 2,
+          comment: '没有讲清楚监控数量上限',
+          created_at: '2026-06-06T02:03:04.000Z',
+          intent: 'product_qa',
+          question: 'XXYY Pro 有哪些权益？',
+          rating: 'negative',
+          session_id: 'session-1',
+        },
+      ],
+    ];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    const stats = await store.getFeedbackStats({ limit: 25, rating: 'negative' });
+
+    expect(stats.negativeCount).toBe(1);
+    expect(stats.latest).toHaveLength(1);
+    expect(client.queries[0]?.sql).toContain('where rating = $1');
+    expect(client.queries[0]?.values).toEqual(['negative']);
+    expect(client.queries[1]?.sql).toContain('where rating = $1');
+    expect(client.queries[1]?.values).toEqual(['negative', 25]);
+  });
+
   it('returns knowledge stats for operations visibility', async () => {
     const client = new FakePgClient();
     client.queuedRows = [

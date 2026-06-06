@@ -84,6 +84,7 @@ export interface RecordFeedbackInput {
 
 export interface GetFeedbackStatsOptions {
   limit?: number;
+  rating?: FeedbackRating;
 }
 
 export interface FeedbackStats {
@@ -499,8 +500,8 @@ async function getFeedbackStats(
   options: GetFeedbackStatsOptions,
 ): Promise<FeedbackStats> {
   const [totals, latest] = await Promise.all([
-    getFeedbackTotals(client),
-    getLatestFeedback(client, options.limit),
+    getFeedbackTotals(client, options.rating),
+    getLatestFeedback(client, options.limit, options.rating),
   ]);
 
   return {
@@ -511,7 +512,12 @@ async function getFeedbackStats(
   };
 }
 
-async function getFeedbackTotals(client: PgClientLike): Promise<FeedbackStatsRow> {
+async function getFeedbackTotals(
+  client: PgClientLike,
+  rating: FeedbackRating | undefined,
+): Promise<FeedbackStatsRow> {
+  const whereClause = rating === undefined ? '' : 'where rating = $1';
+  const values = rating === undefined ? [] : [rating];
   const response = await queryDatabase<FeedbackStatsRow>(
     client,
     `
@@ -520,7 +526,9 @@ async function getFeedbackTotals(client: PgClientLike): Promise<FeedbackStatsRow
       count(*) filter (where rating = 'positive')::integer as positive_count,
       count(*) filter (where rating = 'negative')::integer as negative_count
     from rag_feedback
+    ${whereClause}
     `,
+    values,
   );
 
   return (
@@ -535,8 +543,11 @@ async function getFeedbackTotals(client: PgClientLike): Promise<FeedbackStatsRow
 async function getLatestFeedback(
   client: PgClientLike,
   limit: number | undefined,
+  rating: FeedbackRating | undefined,
 ): Promise<FeedbackRecord[]> {
   const normalizedLimit = normalizeFeedbackLimit(limit);
+  const whereClause = rating === undefined ? '' : 'where rating = $1';
+  const values = rating === undefined ? [normalizedLimit] : [rating, normalizedLimit];
   const response = await queryDatabase<FeedbackRecordRow>(
     client,
     `
@@ -551,10 +562,11 @@ async function getLatestFeedback(
       rating,
       session_id
     from rag_feedback
+    ${whereClause}
     order by created_at desc
-    limit $1
+    limit $${values.length}
     `,
-    [normalizedLimit],
+    values,
   );
 
   return response.rows.map((row) => ({

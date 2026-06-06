@@ -47,12 +47,39 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
     expect(parseCliArgs(['migrate'])).toEqual({ command: 'migrate' });
     expect(parseCliArgs(['stats'])).toEqual({ command: 'stats' });
-    expect(parseCliArgs(['feedback'])).toEqual({ command: 'feedback' });
+    expect(parseCliArgs(['feedback'])).toEqual({
+      command: 'feedback',
+      json: false,
+      limit: 10,
+    });
     expect(parseCliArgs(['evaluate'])).toEqual({ command: 'evaluate', fast: false });
     expect(parseCliArgs(['evaluate', '--fast'])).toEqual({ command: 'evaluate', fast: true });
     expect(parseCliArgs(['evaluate', '--', '--fast'])).toEqual({
       command: 'evaluate',
       fast: true,
+    });
+  });
+
+  it('parses feedback review filters for operations automation', () => {
+    expect(parseCliArgs(['feedback', '--rating', 'negative', '--limit', '25', '--json'])).toEqual({
+      command: 'feedback',
+      json: true,
+      limit: 25,
+      rating: 'negative',
+    });
+    expect(parseCliArgs(['feedback', '--', '--rating', 'positive'])).toEqual({
+      command: 'feedback',
+      json: false,
+      limit: 10,
+      rating: 'positive',
+    });
+    expect(parseCliArgs(['feedback', '--limit', '0'])).toEqual({
+      command: 'help',
+      error: 'Invalid feedback limit: 0',
+    });
+    expect(parseCliArgs(['feedback', '--rating', 'mixed'])).toEqual({
+      command: 'help',
+      error: 'Invalid feedback rating: mixed',
     });
   });
 });
@@ -829,6 +856,85 @@ describe('runCli', () => {
       expect(end).toHaveBeenCalledTimes(1);
       expect(stdout.join('')).toContain('Feedback stats:');
       expect(stdout.join('')).toContain('negative product_qa citations 2 web');
+    } finally {
+      vi.doUnmock('@xxyy/rag-core');
+    }
+  });
+
+  it('prints filtered feedback stats as JSON for operations automation', async () => {
+    vi.resetModules();
+
+    const stdout: string[] = [];
+    const getFeedbackStats = vi.fn(() =>
+      Promise.resolve({
+        latest: [
+          {
+            answer: '根据知识库，XXYY Pro 提供更多权益。',
+            channel: 'web',
+            citationCount: 2,
+            comment: '没有讲清楚监控数量上限',
+            createdAt: '2026-06-06T02:03:04.000Z',
+            intent: 'product_qa',
+            question: 'XXYY Pro 有哪些权益？',
+            rating: 'negative',
+            sessionId: 'session-1',
+          },
+        ],
+        negativeCount: 1,
+        positiveCount: 0,
+        totalCount: 1,
+      } satisfies FeedbackStats),
+    );
+    const end = vi.fn(() => Promise.resolve());
+
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgFeedbackStore: vi.fn(() => ({ getFeedbackStats })),
+        createPgPool: vi.fn(() => ({ end })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+        })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+
+      const exitCode = await runCliWithMocks(
+        ['feedback', '--rating', 'negative', '--limit', '25', '--json'],
+        {
+          cwd: process.cwd(),
+          env: {},
+          stderr: { write: () => true },
+          stdout: {
+            write: (message: string) => {
+              stdout.push(message);
+              return true;
+            },
+          },
+        },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(getFeedbackStats).toHaveBeenCalledWith({ limit: 25, rating: 'negative' });
+      expect(JSON.parse(stdout.join(''))).toEqual(
+        expect.objectContaining({
+          latest: [expect.objectContaining({ rating: 'negative' })],
+          negativeCount: 1,
+          totalCount: 1,
+        }),
+      );
     } finally {
       vi.doUnmock('@xxyy/rag-core');
     }
