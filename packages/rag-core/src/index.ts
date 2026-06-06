@@ -30,9 +30,13 @@ export type {
 export type { OpenAiAnswerProviderOptions } from './openai-answer-provider.js';
 export type {
   EmbeddedKnowledgeChunk,
+  KnowledgeIngestionRun,
+  KnowledgeSourceStats,
+  KnowledgeStats,
   PgClientLike,
   PgVectorStore,
   PgVectorStoreOptions,
+  RecordIngestionRunInput,
 } from './pgvector-store.js';
 export type { RetrieveOptions, RetrievedChunk } from './retrieve.js';
 export type { Retriever } from './retriever.js';

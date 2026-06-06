@@ -66,10 +66,13 @@ pnpm check
 
 ```bash
 pnpm rag:ingest
+pnpm rag:stats
 pnpm rag:evaluate -- --fast
 pnpm rag:evaluate
 pnpm check
 ```
+
+`pnpm rag:ingest` 会记录 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:stats` 用于查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 
 `pnpm rag:evaluate -- --fast` 使用 embedding + pgvector 检索，但回答阶段走本地 grounded answer，不调用 chat LLM；用来快速定位检索、引用和边界分类问题。`pnpm rag:evaluate` 会调用配置的大模型，用于发布前验证最终回答质量。
 

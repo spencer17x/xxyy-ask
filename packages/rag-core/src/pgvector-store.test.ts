@@ -8,12 +8,14 @@ import {
 } from './pgvector-store.js';
 
 class FakePgClient {
+  queuedRows: unknown[][] = [];
   queries: Array<{ sql: string; values: readonly unknown[] }> = [];
   rows: unknown[] = [];
 
   query<T>(sql: string, values: readonly unknown[] = []): Promise<{ rows: T[] }> {
     this.queries.push({ sql, values });
-    return Promise.resolve({ rows: this.rows as T[] });
+    const rows = this.queuedRows.length > 0 ? (this.queuedRows.shift() ?? []) : this.rows;
+    return Promise.resolve({ rows: rows as T[] });
   }
 }
 
@@ -38,6 +40,94 @@ describe('createPgVectorStore', () => {
     expect(client.queries.map((query) => query.sql).join('\n')).toContain(
       'create table if not exists knowledge_chunks',
     );
+    expect(client.queries.map((query) => query.sql).join('\n')).toContain(
+      'create table if not exists rag_ingestion_runs',
+    );
+  });
+
+  it('records ingestion runs for production knowledge versioning', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await store.recordIngestionRun({
+      chunkCount: 64,
+      contentHash: 'content-hash-1',
+      documentCount: 12,
+      runId: 'ingest_20260606T010203Z_abcd1234',
+      source: 'cli',
+      sourceCounts: {
+        official_docs: 48,
+        x_updates: 16,
+      },
+    });
+
+    expect(client.queries[0]?.sql).toContain('insert into rag_ingestion_runs');
+    expect(client.queries[0]?.values).toEqual([
+      'ingest_20260606T010203Z_abcd1234',
+      'cli',
+      12,
+      64,
+      JSON.stringify({ official_docs: 48, x_updates: 16 }),
+      'content-hash-1',
+    ]);
+  });
+
+  it('returns knowledge stats for operations visibility', async () => {
+    const client = new FakePgClient();
+    client.queuedRows = [
+      [
+        {
+          chunk_count: 64,
+          document_count: 12,
+          latest_chunk_updated_at: '2026-06-06T01:02:03.000Z',
+          source_url_count: 8,
+        },
+      ],
+      [
+        { chunk_count: 48, document_count: 10, source_type: 'official_docs' },
+        { chunk_count: 16, document_count: 2, source_type: 'x_updates' },
+      ],
+      [
+        {
+          chunk_count: 64,
+          content_hash: 'content-hash-1',
+          created_at: '2026-06-06T01:03:04.000Z',
+          document_count: 12,
+          run_id: 'ingest_20260606T010203Z_abcd1234',
+          source: 'cli',
+          source_counts: { official_docs: 48, x_updates: 16 },
+        },
+      ],
+    ];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    const stats = await store.getStats();
+
+    expect(stats).toEqual({
+      chunkCount: 64,
+      documentCount: 12,
+      latestChunkUpdatedAt: '2026-06-06T01:02:03.000Z',
+      latestIngestionRun: {
+        chunkCount: 64,
+        contentHash: 'content-hash-1',
+        createdAt: '2026-06-06T01:03:04.000Z',
+        documentCount: 12,
+        runId: 'ingest_20260606T010203Z_abcd1234',
+        source: 'cli',
+        sourceCounts: { official_docs: 48, x_updates: 16 },
+      },
+      sourceStats: [
+        { chunkCount: 48, documentCount: 10, sourceType: 'official_docs' },
+        { chunkCount: 16, documentCount: 2, sourceType: 'x_updates' },
+      ],
+      sourceUrlCount: 8,
+    });
   });
 
   it('upserts embedded chunks', async () => {

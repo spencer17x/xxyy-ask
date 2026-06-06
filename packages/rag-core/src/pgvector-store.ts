@@ -21,7 +21,9 @@ export interface EmbeddedKnowledgeChunk extends Omit<PreparedKnowledgeChunk, 'me
 }
 
 export interface PgVectorStore extends Retriever {
+  getStats(): Promise<KnowledgeStats>;
   migrate(): Promise<void>;
+  recordIngestionRun(input: RecordIngestionRunInput): Promise<void>;
   replaceChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void>;
   upsertChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void>;
 }
@@ -45,6 +47,63 @@ interface KnowledgeChunkRow {
   content: string;
   tokens: string[];
   embedding_distance: number;
+}
+
+export interface RecordIngestionRunInput {
+  runId: string;
+  source: string;
+  documentCount: number;
+  chunkCount: number;
+  sourceCounts: Partial<Record<SourceType, number>>;
+  contentHash: string;
+}
+
+export interface KnowledgeSourceStats {
+  sourceType: SourceType;
+  documentCount: number;
+  chunkCount: number;
+}
+
+export interface KnowledgeIngestionRun {
+  runId: string;
+  source: string;
+  documentCount: number;
+  chunkCount: number;
+  sourceCounts: Partial<Record<SourceType, number>>;
+  contentHash: string;
+  createdAt: string;
+}
+
+export interface KnowledgeStats {
+  documentCount: number;
+  chunkCount: number;
+  sourceUrlCount: number;
+  sourceStats: KnowledgeSourceStats[];
+  latestChunkUpdatedAt?: string;
+  latestIngestionRun?: KnowledgeIngestionRun;
+}
+
+interface KnowledgeStatsRow {
+  document_count: number;
+  chunk_count: number;
+  source_url_count: number;
+  latest_chunk_updated_at: string | null;
+}
+
+interface KnowledgeSourceStatsRow {
+  source_type: SourceType;
+  document_count: number;
+  chunk_count: number;
+}
+
+interface KnowledgeIngestionRunRow {
+  run_id: string;
+  source: string;
+  document_count: number;
+  chunk_count: number;
+  source_counts: Partial<Record<SourceType, number>>;
+  content_hash: string;
+  created_at: string;
 }
 
 const PGVECTOR_EMBEDDING_DIMENSION = 1536;
@@ -119,6 +178,25 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
   };
 
   return {
+    async getStats(): Promise<KnowledgeStats> {
+      const [totals, sourceStats, latestIngestionRun] = await Promise.all([
+        getKnowledgeTotals(options.client),
+        getKnowledgeSourceStats(options.client),
+        getLatestIngestionRun(options.client),
+      ]);
+
+      return {
+        chunkCount: totals.chunk_count,
+        documentCount: totals.document_count,
+        sourceStats,
+        sourceUrlCount: totals.source_url_count,
+        ...(totals.latest_chunk_updated_at === null
+          ? {}
+          : { latestChunkUpdatedAt: totals.latest_chunk_updated_at }),
+        ...(latestIngestionRun === undefined ? {} : { latestIngestionRun }),
+      };
+    },
+
     async migrate(): Promise<void> {
       await queryDatabase(options.client, 'create extension if not exists vector');
       await queryDatabase(
@@ -164,6 +242,49 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         create index if not exists knowledge_chunks_source_type_idx
           on knowledge_chunks (source_type)
       `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        create table if not exists rag_ingestion_runs (
+          id bigserial primary key,
+          run_id text not null unique,
+          source text not null,
+          document_count integer not null,
+          chunk_count integer not null,
+          source_counts jsonb not null,
+          content_hash text not null,
+          created_at timestamptz not null default now()
+        )
+      `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        create index if not exists rag_ingestion_runs_created_at_idx
+          on rag_ingestion_runs (created_at desc)
+      `,
+      );
+    },
+
+    async recordIngestionRun(input: RecordIngestionRunInput): Promise<void> {
+      await queryDatabase(
+        options.client,
+        `
+        insert into rag_ingestion_runs (
+          run_id, source, document_count, chunk_count, source_counts, content_hash
+        )
+        values ($1, $2, $3, $4, $5::jsonb, $6)
+        on conflict (run_id) do nothing
+        `,
+        [
+          input.runId,
+          input.source,
+          input.documentCount,
+          input.chunkCount,
+          JSON.stringify(input.sourceCounts),
+          input.contentHash,
+        ],
       );
     },
 
@@ -237,6 +358,85 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         .slice(0, topK)
         .map((chunk, index) => ({ ...chunk, rank: index + 1 }));
     },
+  };
+}
+
+async function getKnowledgeTotals(client: PgClientLike): Promise<KnowledgeStatsRow> {
+  const response = await queryDatabase<KnowledgeStatsRow>(
+    client,
+    `
+    select
+      count(distinct document_id)::integer as document_count,
+      count(*)::integer as chunk_count,
+      (count(distinct source_url) filter (where source_url is not null))::integer as source_url_count,
+      max(updated_at)::text as latest_chunk_updated_at
+    from knowledge_chunks
+    `,
+  );
+
+  return (
+    response.rows[0] ?? {
+      chunk_count: 0,
+      document_count: 0,
+      latest_chunk_updated_at: null,
+      source_url_count: 0,
+    }
+  );
+}
+
+async function getKnowledgeSourceStats(client: PgClientLike): Promise<KnowledgeSourceStats[]> {
+  const response = await queryDatabase<KnowledgeSourceStatsRow>(
+    client,
+    `
+    select
+      source_type,
+      count(distinct document_id)::integer as document_count,
+      count(*)::integer as chunk_count
+    from knowledge_chunks
+    group by source_type
+    order by source_type
+    `,
+  );
+
+  return response.rows.map((row) => ({
+    chunkCount: row.chunk_count,
+    documentCount: row.document_count,
+    sourceType: row.source_type,
+  }));
+}
+
+async function getLatestIngestionRun(
+  client: PgClientLike,
+): Promise<KnowledgeIngestionRun | undefined> {
+  const response = await queryDatabase<KnowledgeIngestionRunRow>(
+    client,
+    `
+    select
+      run_id,
+      source,
+      document_count,
+      chunk_count,
+      source_counts,
+      content_hash,
+      created_at::text as created_at
+    from rag_ingestion_runs
+    order by created_at desc
+    limit 1
+    `,
+  );
+  const row = response.rows[0];
+  if (row === undefined) {
+    return undefined;
+  }
+
+  return {
+    chunkCount: row.chunk_count,
+    contentHash: row.content_hash,
+    createdAt: row.created_at,
+    documentCount: row.document_count,
+    runId: row.run_id,
+    source: row.source,
+    sourceCounts: row.source_counts,
   };
 }
 

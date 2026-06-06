@@ -15,6 +15,7 @@
     "rag:ask": "pnpm --filter @xxyy/cli rag:ask",
     "rag:evaluate": "pnpm --filter @xxyy/cli rag:evaluate",
     "rag:ingest": "pnpm --filter @xxyy/cli rag:ingest",
+    "rag:stats": "pnpm --filter @xxyy/cli rag:stats",
     "start": "pnpm --filter @xxyy/api start",
     "test": "vitest run",
     "typecheck": "pnpm typecheck:root && pnpm -r --if-present --filter \"@xxyy/*\" typecheck",

@@ -11,6 +11,7 @@ import type {
   EvaluationCase,
   EvaluationReport,
   EvaluationResult,
+  KnowledgeStats,
 } from '@xxyy/rag-core';
 import type { SourceDocument } from '@xxyy/shared';
 
@@ -21,6 +22,7 @@ import {
   formatEvaluationReport,
   formatEvaluationProgress,
   formatIngestSummary,
+  formatKnowledgeStats,
   parseCliArgs,
   resolveWorkspaceCwd,
   runCli,
@@ -40,6 +42,7 @@ describe('parseCliArgs', () => {
 
   it('parses commands that do not require extra arguments', () => {
     expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
+    expect(parseCliArgs(['stats'])).toEqual({ command: 'stats' });
     expect(parseCliArgs(['evaluate'])).toEqual({ command: 'evaluate', fast: false });
     expect(parseCliArgs(['evaluate', '--fast'])).toEqual({ command: 'evaluate', fast: true });
     expect(parseCliArgs(['evaluate', '--', '--fast'])).toEqual({
@@ -272,8 +275,46 @@ describe('CLI output formatting', () => {
         chunkCount: 491,
         documentCount: 65,
         indexPath: 'pgvector',
+        runId: 'ingest_20260606T010203Z_abcd1234',
       }),
-    ).toContain('Saved index: pgvector');
+    ).toContain('Run ID: ingest_20260606T010203Z_abcd1234');
+  });
+
+  it('formats knowledge stats for operations checks', () => {
+    const stats: KnowledgeStats = {
+      chunkCount: 64,
+      documentCount: 12,
+      latestChunkUpdatedAt: '2026-06-06T01:02:03.000Z',
+      latestIngestionRun: {
+        chunkCount: 64,
+        contentHash: 'content-hash-1',
+        createdAt: '2026-06-06T01:03:04.000Z',
+        documentCount: 12,
+        runId: 'ingest_20260606T010203Z_abcd1234',
+        source: 'cli',
+        sourceCounts: { official_docs: 48, x_updates: 16 },
+      },
+      sourceStats: [
+        { chunkCount: 48, documentCount: 10, sourceType: 'official_docs' },
+        { chunkCount: 16, documentCount: 2, sourceType: 'x_updates' },
+      ],
+      sourceUrlCount: 8,
+    };
+
+    expect(formatKnowledgeStats(stats)).toContain(
+      [
+        'Knowledge stats:',
+        'Documents: 12',
+        'Chunks: 64',
+        'Source URLs: 8',
+        'Latest chunk update: 2026-06-06T01:02:03.000Z',
+        '',
+        'Latest ingest run:',
+        'Run ID: ingest_20260606T010203Z_abcd1234',
+      ].join('\n'),
+    );
+    expect(formatKnowledgeStats(stats)).toContain('official_docs: 48 chunks, 10 documents');
+    expect(formatKnowledgeStats(stats)).toContain('Content hash: content-hash-1');
   });
 });
 
@@ -459,6 +500,10 @@ describe('runCli', () => {
       events.push('replace');
       return Promise.resolve();
     });
+    const recordIngestionRun = vi.fn(() => {
+      events.push('record');
+      return Promise.resolve();
+    });
     const end = vi.fn(() => {
       events.push('pool.end');
       return Promise.resolve();
@@ -479,7 +524,9 @@ describe('runCli', () => {
         ...actual,
         createPgPool: vi.fn(() => ({ end })),
         createPgVectorStore: vi.fn(() => ({
+          getStats: vi.fn(),
           migrate,
+          recordIngestionRun,
           replaceChunks,
           retrieve: vi.fn(),
           upsertChunks: vi.fn(),
@@ -508,7 +555,103 @@ describe('runCli', () => {
       });
 
       expect(exitCode).toBe(0);
-      expect(events).toEqual(['migrate', 'embed', 'replace', 'pool.end']);
+      expect(events).toEqual(['migrate', 'embed', 'replace', 'record', 'pool.end']);
+      expect(recordIngestionRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chunkCount: 1,
+          documentCount: 1,
+          source: 'cli',
+          sourceCounts: { official_docs: 1 },
+        }),
+      );
+    } finally {
+      vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+    }
+  });
+
+  it('prints pgvector knowledge stats', async () => {
+    vi.resetModules();
+
+    const stdout: string[] = [];
+    const getStats = vi.fn(() =>
+      Promise.resolve({
+        chunkCount: 64,
+        documentCount: 12,
+        latestChunkUpdatedAt: '2026-06-06T01:02:03.000Z',
+        latestIngestionRun: {
+          chunkCount: 64,
+          contentHash: 'content-hash-1',
+          createdAt: '2026-06-06T01:03:04.000Z',
+          documentCount: 12,
+          runId: 'ingest_20260606T010203Z_abcd1234',
+          source: 'cli',
+          sourceCounts: { official_docs: 48, x_updates: 16 },
+        },
+        sourceStats: [
+          { chunkCount: 48, documentCount: 10, sourceType: 'official_docs' },
+          { chunkCount: 16, documentCount: 2, sourceType: 'x_updates' },
+        ],
+        sourceUrlCount: 8,
+      } satisfies KnowledgeStats),
+    );
+    const end = vi.fn(() => Promise.resolve());
+
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgPool: vi.fn(() => ({ end })),
+        createPgVectorStore: vi.fn(() => ({
+          getStats,
+          migrate: vi.fn(),
+          recordIngestionRun: vi.fn(),
+          replaceChunks: vi.fn(),
+          retrieve: vi.fn(),
+          upsertChunks: vi.fn(),
+        })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+        })),
+      };
+    });
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createOpenAiEmbeddingProvider: vi.fn(() => ({ embedTexts: vi.fn() })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+
+      const exitCode = await runCliWithMocks(['stats'], {
+        cwd: process.cwd(),
+        env: {},
+        stderr: { write: () => true },
+        stdout: {
+          write: (message: string) => {
+            stdout.push(message);
+            return true;
+          },
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(getStats).toHaveBeenCalledTimes(1);
+      expect(end).toHaveBeenCalledTimes(1);
+      expect(stdout.join('')).toContain('Knowledge stats:');
+      expect(stdout.join('')).toContain('Run ID: ingest_20260606T010203Z_abcd1234');
     } finally {
       vi.doUnmock('@xxyy/knowledge');
       vi.doUnmock('@xxyy/rag-core');

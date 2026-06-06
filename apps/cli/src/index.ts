@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 import {
@@ -29,6 +30,7 @@ import type {
   EvaluationCase,
   EvaluationReport,
   EvaluationResult,
+  KnowledgeStats,
   RagEnv,
 } from '@xxyy/rag-core';
 
@@ -40,12 +42,14 @@ type CliCommand =
   | { command: 'ask'; question: string }
   | { command: 'evaluate'; fast: boolean }
   | { command: 'ingest' }
+  | { command: 'stats' }
   | { command: 'help'; error?: string };
 
 interface IngestSummary {
   documentCount: number;
   chunkCount: number;
   indexPath: string;
+  runId?: string;
 }
 
 interface CliIo {
@@ -70,6 +74,7 @@ interface CliChatRuntime {
 const HELP_TEXT = [
   'Usage:',
   '  pnpm rag:ingest',
+  '  pnpm rag:stats',
   '  pnpm rag:ask -- "question"',
   '  pnpm rag:evaluate [-- --fast]',
 ].join('\n');
@@ -333,7 +338,7 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     return { command: 'help' };
   }
 
-  if (command === 'ingest') {
+  if (command === 'ingest' || command === 'stats') {
     return { command };
   }
 
@@ -364,10 +369,16 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
 }
 
 export function formatIngestSummary(summary: IngestSummary): string {
-  return [
+  const lines = [
     `Indexed ${summary.documentCount} documents into ${summary.chunkCount} chunks.`,
     `Saved index: ${summary.indexPath}`,
-  ].join('\n');
+  ];
+
+  if (summary.runId !== undefined) {
+    lines.push(`Run ID: ${summary.runId}`);
+  }
+
+  return lines.join('\n');
 }
 
 export function formatChatResponse(response: ChatResponse): string {
@@ -426,6 +437,44 @@ export function formatEvaluationProgress(
   return `[${index}/${total}] ${formatEvaluationResult(result)}`;
 }
 
+export function formatKnowledgeStats(stats: KnowledgeStats): string {
+  const lines = [
+    'Knowledge stats:',
+    `Documents: ${stats.documentCount}`,
+    `Chunks: ${stats.chunkCount}`,
+    `Source URLs: ${stats.sourceUrlCount}`,
+    `Latest chunk update: ${stats.latestChunkUpdatedAt ?? 'none'}`,
+    '',
+    'Latest ingest run:',
+  ];
+
+  if (stats.latestIngestionRun === undefined) {
+    lines.push('none');
+  } else {
+    lines.push(
+      `Run ID: ${stats.latestIngestionRun.runId}`,
+      `Source: ${stats.latestIngestionRun.source}`,
+      `Created at: ${stats.latestIngestionRun.createdAt}`,
+      `Documents: ${stats.latestIngestionRun.documentCount}`,
+      `Chunks: ${stats.latestIngestionRun.chunkCount}`,
+      `Content hash: ${stats.latestIngestionRun.contentHash}`,
+    );
+  }
+
+  lines.push('', 'Sources:');
+  if (stats.sourceStats.length === 0) {
+    lines.push('none');
+  } else {
+    for (const sourceStat of stats.sourceStats) {
+      lines.push(
+        `${sourceStat.sourceType}: ${sourceStat.chunkCount} chunks, ${sourceStat.documentCount} documents`,
+      );
+    }
+  }
+
+  return lines.join('\n');
+}
+
 export function createDefaultCliIo(options: DefaultCliIoOptions = {}): CliIo {
   const cwd = options.cwd ?? process.cwd();
   const shellEnv = options.env ?? process.env;
@@ -465,6 +514,19 @@ export async function runCli(
   }
 
   const config = loadRagConfig(io.env);
+
+  if (parsed.command === 'stats') {
+    try {
+      const statsSummary = await stats(config);
+      writeLine(io.stdout, formatKnowledgeStats(statsSummary));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
 
   try {
     const runtime = createCliChatRuntime(config, {
@@ -515,16 +577,36 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
     const store = createPgVectorStore({ client: pool, embeddingProvider });
     await store.migrate();
     const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
+    const ingestionRun = createIngestionRun({
+      chunks: embeddedChunks,
+      documentCount: documents.length,
+    });
     await store.replaceChunks(embeddedChunks);
+    await store.recordIngestionRun(ingestionRun);
+    return {
+      documentCount: documents.length,
+      chunkCount: chunks.length,
+      indexPath: 'pgvector',
+      runId: ingestionRun.runId,
+    };
   } finally {
     await pool.end();
   }
+}
 
-  return {
-    documentCount: documents.length,
-    chunkCount: chunks.length,
-    indexPath: 'pgvector',
-  };
+async function stats(config: ReturnType<typeof loadRagConfig>): Promise<KnowledgeStats> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgVectorStore({
+      client: pool,
+      embeddingProvider: {
+        embedTexts: () => Promise.reject(new Error('rag:stats does not generate embeddings.')),
+      },
+    });
+    return await store.getStats();
+  } finally {
+    await pool.end();
+  }
 }
 
 async function embedPreparedChunks(
@@ -599,6 +681,57 @@ function createFastEvaluationAnswerProvider(): AnswerProvider {
     answer: ({ classification, question, retrievedChunks }) =>
       Promise.resolve(createGroundedAnswer(question, classification, retrievedChunks)),
   };
+}
+
+function createIngestionRun(input: { chunks: EmbeddedKnowledgeChunk[]; documentCount: number }): {
+  chunkCount: number;
+  contentHash: string;
+  documentCount: number;
+  runId: string;
+  source: string;
+  sourceCounts: Partial<Record<EmbeddedKnowledgeChunk['metadata']['sourceType'], number>>;
+} {
+  const contentHash = createKnowledgeContentHash(input.chunks);
+
+  return {
+    chunkCount: input.chunks.length,
+    contentHash,
+    documentCount: input.documentCount,
+    runId: createIngestionRunId(contentHash),
+    source: 'cli',
+    sourceCounts: countChunksBySource(input.chunks),
+  };
+}
+
+function createKnowledgeContentHash(chunks: EmbeddedKnowledgeChunk[]): string {
+  const hash = createHash('sha256');
+  for (const chunk of [...chunks].sort((left, right) => left.id.localeCompare(right.id))) {
+    hash.update(chunk.id);
+    hash.update('\0');
+    hash.update(chunk.contentHash);
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+function createIngestionRunId(contentHash: string): string {
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[-:]/gu, '')
+    .replace(/\.\d{3}/u, '');
+  return `ingest_${timestamp}_${contentHash.slice(0, 8)}`;
+}
+
+function countChunksBySource(
+  chunks: EmbeddedKnowledgeChunk[],
+): Partial<Record<EmbeddedKnowledgeChunk['metadata']['sourceType'], number>> {
+  const counts: Partial<Record<EmbeddedKnowledgeChunk['metadata']['sourceType'], number>> = {};
+
+  for (const chunk of chunks) {
+    counts[chunk.metadata.sourceType] = (counts[chunk.metadata.sourceType] ?? 0) + 1;
+  }
+
+  return counts;
 }
 
 function formatEvaluationResult(result: EvaluationResult): string {

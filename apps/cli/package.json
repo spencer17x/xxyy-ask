@@ -15,6 +15,7 @@
     "rag:ask": "tsx src/index.ts ask",
     "rag:evaluate": "tsx src/index.ts evaluate",
     "rag:ingest": "tsx src/index.ts ingest",
+    "rag:stats": "tsx src/index.ts stats",
     "start": "tsx src/index.ts",
     "test": "vitest run src",
     "typecheck": "tsc --noEmit -p tsconfig.json"
