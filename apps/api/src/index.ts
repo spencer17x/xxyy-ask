@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import type { IncomingHttpHeaders } from 'node:http';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -12,6 +13,7 @@ import {
   LlmConfigurationError,
   loadRagConfig,
   loadWorkspaceEnv,
+  resolveWorkspaceCwd,
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
@@ -33,7 +35,7 @@ export interface ApiResponseLike {
   statusCode: number;
   setHeader(name: string, value: string): void;
   write(body: string): void;
-  end(body?: string): void;
+  end(body?: string | Uint8Array): void;
 }
 
 export type ApiRequestHandler = (
@@ -46,6 +48,7 @@ export interface CreateRequestHandlerOptions {
   env?: ApiEnv;
   getChatService?: () => Promise<ChatService>;
   renderHtml?: () => string;
+  staticAssetsDir?: string;
 }
 
 export interface StartServerOptions extends CreateRequestHandlerOptions {
@@ -64,6 +67,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const config = loadRagConfig(env);
   const renderHtml = options.renderHtml ?? renderChatPage;
   const getChatService = options.getChatService ?? createCachedChatServiceLoader(config);
+  const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
 
   return async function handleRequest(request, response): Promise<void> {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
@@ -76,6 +80,11 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
 
       if (request.method === 'GET' && requestUrl.pathname === '/') {
         sendHtml(response, 200, renderHtml());
+        return;
+      }
+
+      if (request.method === 'GET' && requestUrl.pathname.startsWith('/assets/')) {
+        await sendStaticAsset(response, staticAssetsDir, requestUrl.pathname);
         return;
       }
 
@@ -286,6 +295,57 @@ function sendJson(response: ApiResponseLike, statusCode: number, payload: unknow
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
   response.end(`${JSON.stringify(payload)}\n`);
+}
+
+function createDefaultStaticAssetsDir(
+  options: Pick<CreateRequestHandlerOptions, 'cwd'>,
+  env: ApiEnv,
+): string {
+  const workspaceCwd = resolveWorkspaceCwd(options.cwd ?? process.cwd(), env);
+  return path.join(workspaceCwd, 'docs', 'product-features', 'assets');
+}
+
+async function sendStaticAsset(
+  response: ApiResponseLike,
+  assetsDir: string,
+  pathname: string,
+): Promise<void> {
+  const assetName = decodeURIComponent(pathname.replace(/^\/assets\//u, ''));
+  if (!/^[A-Za-z0-9._-]+$/u.test(assetName)) {
+    sendJson(response, 404, { error: 'not_found', message: 'Asset not found.' });
+    return;
+  }
+
+  try {
+    const body = await readFile(path.join(assetsDir, assetName));
+    response.statusCode = 200;
+    response.setHeader('Content-Type', contentTypeForAsset(assetName));
+    response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    response.end(body);
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      sendJson(response, 404, { error: 'not_found', message: 'Asset not found.' });
+      return;
+    }
+    throw error;
+  }
+}
+
+function contentTypeForAsset(assetName: string): string {
+  if (assetName.toLowerCase().endsWith('.mp4')) {
+    return 'video/mp4';
+  }
+
+  return 'application/octet-stream';
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  );
 }
 
 async function sendChatStream(

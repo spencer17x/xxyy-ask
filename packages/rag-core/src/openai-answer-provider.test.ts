@@ -67,6 +67,101 @@ describe('createOpenAiAnswerProvider', () => {
     expect(JSON.stringify(requests[0])).toContain('XXYY 支持一键买卖代币');
   });
 
+  it('returns video attachments discovered in retrieved context', async () => {
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                content: 'XXYY 可以添加到桌面，体验和 App 差不多。',
+              },
+            },
+          ],
+        }),
+      );
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'gpt-test',
+    });
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:mobile-app:chunk:0001',
+        title: '移动端桌面入口',
+        sourceType: 'official_docs',
+        file: '/docs/mobile-app.md',
+        text: 'XXYY 可以添加到桌面，和 App 体验差不多。[添加到桌面演示](/assets/xxyy-add-to-home.mp4)',
+      },
+    ]);
+    const retrieved = retrieve('XXYY 有 APP 吗？', index);
+
+    const response = await provider.answer({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: 'XXYY 有 APP 吗？',
+      retrievedChunks: retrieved,
+    });
+
+    expect(response.attachments).toEqual([
+      {
+        kind: 'video',
+        mediaType: 'video/mp4',
+        title: '添加到桌面演示',
+        url: '/assets/xxyy-add-to-home.mp4',
+      },
+    ]);
+  });
+
+  it('falls back to grounded context when the LLM returns only a safety label', async () => {
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                content: 'User Safety: safe',
+              },
+            },
+          ],
+        }),
+      );
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'gpt-test',
+    });
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:pro:chunk:0001',
+        title: 'XXYY Pro 权益',
+        sourceType: 'official_docs',
+        file: '/docs/pro.md',
+        text: '标准客服回答：XXYY Pro 权益包括独享服务器和节点、监控2000个钱包、收藏1000个代币。',
+      },
+    ]);
+    const retrieved = retrieve('XXYY Pro 有哪些权益？', index);
+
+    const response = await provider.answer({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: 'XXYY Pro 有哪些权益？',
+      retrievedChunks: retrieved,
+    });
+
+    expect(response.answer).not.toContain('User Safety');
+    expect(response.answer).toContain('独享服务器和节点');
+    expect(response.answer).toContain('监控2000个钱包');
+  });
+
   it('streams grounded answer deltas through an OpenAI-compatible chat completion API', async () => {
     const requests: unknown[] = [];
     const fetchImpl: typeof fetch = (_input, init) => {
@@ -129,6 +224,63 @@ describe('createOpenAiAnswerProvider', () => {
     expect(metadata.citations).toHaveLength(1);
     expect(metadata.confidence).toBe(0.84);
     expect(metadata.intent).toBe('how_to');
+  });
+
+  it('falls back to grounded stream events when the streaming LLM returns only a safety label', async () => {
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(
+        streamResponse([
+          'data: {"choices":[{"delta":{"content":"User"}}]}\n\n',
+          'data: {"choices":[{"delta":{"content":" Safety"}}]}\n\n',
+          'data: {"choices":[{"delta":{"content":": safe"}}]}\n\n',
+          'data: [DONE]\n\n',
+        ]),
+      );
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'gpt-test',
+    });
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:pro:chunk:0001',
+        title: 'XXYY Pro 权益',
+        sourceType: 'official_docs',
+        file: '/docs/pro.md',
+        text: '标准客服回答：XXYY Pro 权益包括独享服务器和节点、监控2000个钱包、收藏1000个代币。',
+      },
+    ]);
+    const retrieved = retrieve('XXYY Pro 有哪些权益？', index);
+
+    if (provider.stream === undefined) {
+      throw new Error('Expected provider to support streaming');
+    }
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of provider.stream({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: 'XXYY Pro 有哪些权益？',
+      retrievedChunks: retrieved,
+    })) {
+      events.push(event);
+    }
+
+    const answer = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: 'answer_delta' }> => {
+        return event.type === 'answer_delta';
+      })
+      .map((event) => event.delta)
+      .join('');
+
+    expect(answer).not.toContain('User Safety');
+    expect(answer).toContain('独享服务器和节点');
+    expect(answer).toContain('监控2000个钱包');
+    expect(events.at(-1)?.type).toBe('metadata');
   });
 
   it('fails fast when LLM configuration is incomplete', () => {

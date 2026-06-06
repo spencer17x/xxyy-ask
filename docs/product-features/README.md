@@ -80,3 +80,4 @@
 - [Pro](pages/61-getting-started__xxyy-pro-quan-yi__pro.md) - https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/pro
 - [永久PRO](pages/62-getting-started__xxyy-pro-quan-yi__yong-jiu-pro.md) - https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/yong-jiu-pro
 - [如何升级为 Pro](pages/63-getting-started__xxyy-pro-quan-yi__ru-he-sheng-ji-wei-pro.md) - https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/ru-he-sheng-ji-wei-pro
+- [移动端桌面入口](pages/64-getting-started__mobile-app.md) - https://docs.xxyy.io/readme/yi-dong-duan-deng-lu

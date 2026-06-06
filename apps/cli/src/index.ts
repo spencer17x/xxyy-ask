@@ -132,7 +132,7 @@ export function formatChatResponse(response: ChatResponse): string {
   ];
 
   if (response.citations.length === 0) {
-    return [...lines, 'Citations: none'].join('\n');
+    return appendAttachments([...lines, 'Citations: none'], response).join('\n');
   }
 
   lines.push('Citations:');
@@ -145,7 +145,20 @@ export function formatChatResponse(response: ChatResponse): string {
     lines.push(`    ${citation.excerpt}`);
   });
 
-  return lines.join('\n');
+  return appendAttachments(lines, response).join('\n');
+}
+
+function appendAttachments(lines: string[], response: ChatResponse): string[] {
+  if (response.attachments === undefined || response.attachments.length === 0) {
+    return lines;
+  }
+
+  lines.push('', 'Attachments:');
+  response.attachments.forEach((attachment, index) => {
+    lines.push(`[${index + 1}] ${attachment.title}`);
+    lines.push(`    ${attachment.url}`);
+  });
+  return lines;
 }
 
 export function formatEvaluationReport(report: EvaluationReport): string {

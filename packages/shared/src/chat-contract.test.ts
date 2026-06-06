@@ -26,6 +26,14 @@ describe('chat contract', () => {
 
     const response: ChatResponse = {
       answer: '根据知识库，XXYY Pro 提供更多产品权益。',
+      attachments: [
+        {
+          kind: 'video',
+          mediaType: 'video/mp4',
+          title: '添加到桌面演示',
+          url: '/assets/xxyy-add-to-home.mp4',
+        },
+      ],
       citations: [
         {
           excerpt: 'Pro 权益',
@@ -39,5 +47,6 @@ describe('chat contract', () => {
 
     expect(request.channel).toBe('web');
     expect(response.citations[0]?.title).toBe('Pro');
+    expect(response.attachments?.[0]?.kind).toBe('video');
   });
 });

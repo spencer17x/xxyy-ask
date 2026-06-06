@@ -1,6 +1,11 @@
-import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
+import type { ChatAttachment, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 
-import { createBoundaryAnswer, createCitationsFromChunks } from './answer.js';
+import {
+  createAttachmentsFromChunks,
+  createBoundaryAnswer,
+  createCitationsFromChunks,
+  createGroundedAnswer,
+} from './answer.js';
 import type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
 
 export interface OpenAiAnswerProviderOptions {
@@ -60,6 +65,7 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
       }
 
       const citations = createCitationsFromChunks(input.retrievedChunks);
+      const attachments = createAttachmentsFromChunks(input.retrievedChunks);
       const response = await fetchImpl(endpoint, {
         body: JSON.stringify({
           messages: [
@@ -88,16 +94,19 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
 
       const payload = (await response.json()) as ChatCompletionResponse;
       const answer = payload.choices?.[0]?.message?.content?.trim();
-      if (answer === undefined || answer.length === 0) {
-        throw new Error('LLM response did not include an answer.');
+      if (answer === undefined || isUnusableModelAnswer(answer)) {
+        return createGroundedAnswer(input.question, input.classification, input.retrievedChunks);
       }
 
-      return {
-        answer,
-        citations,
-        confidence: calculateLlmConfidence(input.classification.confidence),
-        intent: input.classification.intent,
-      };
+      return withOptionalAttachments(
+        {
+          answer,
+          citations,
+          confidence: calculateLlmConfidence(input.classification.confidence),
+          intent: input.classification.intent,
+        },
+        attachments,
+      );
     },
 
     async *stream(input: AnswerProviderInput): AsyncIterable<ChatStreamEvent> {
@@ -117,6 +126,7 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
       }
 
       const citations = createCitationsFromChunks(input.retrievedChunks);
+      const attachments = createAttachmentsFromChunks(input.retrievedChunks);
       const response = await fetchImpl(endpoint, {
         body: JSON.stringify({
           messages: [
@@ -148,18 +158,61 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
         throw new Error('LLM streaming response did not include a body.');
       }
 
+      const deltas: string[] = [];
       for await (const delta of parseChatCompletionStream(response.body)) {
+        deltas.push(delta);
+      }
+
+      const streamedAnswer = deltas.join('');
+      if (isUnusableModelAnswer(streamedAnswer)) {
+        yield* streamStaticAnswer(
+          createGroundedAnswer(input.question, input.classification, input.retrievedChunks),
+        );
+        return;
+      }
+
+      for (const delta of deltas) {
         yield { type: 'answer_delta', delta };
       }
 
-      yield {
-        type: 'metadata',
-        citations,
-        confidence: calculateLlmConfidence(input.classification.confidence),
-        intent: input.classification.intent,
-      };
+      yield withOptionalMetadataAttachments(
+        {
+          type: 'metadata',
+          citations,
+          confidence: calculateLlmConfidence(input.classification.confidence),
+          intent: input.classification.intent,
+        },
+        attachments,
+      );
     },
   };
+}
+
+function isUnusableModelAnswer(answer: string): boolean {
+  const normalized = answer.replace(/\s+/gu, ' ').trim();
+  return normalized.length === 0 || /^user safety:\s*[a-z_-]+$/iu.test(normalized);
+}
+
+function withOptionalAttachments(
+  response: ChatResponse,
+  attachments: ChatAttachment[],
+): ChatResponse {
+  if (attachments.length === 0) {
+    return response;
+  }
+
+  return { ...response, attachments };
+}
+
+function withOptionalMetadataAttachments(
+  event: Extract<ChatStreamEvent, { type: 'metadata' }>,
+  attachments: ChatAttachment[],
+): Extract<ChatStreamEvent, { type: 'metadata' }> {
+  if (attachments.length === 0) {
+    return event;
+  }
+
+  return { ...event, attachments };
 }
 
 function streamStaticAnswer(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
@@ -169,6 +222,7 @@ function streamStaticAnswer(response: ChatResponse): AsyncIterable<ChatStreamEve
       : []),
     {
       type: 'metadata',
+      ...(response.attachments === undefined ? {} : { attachments: response.attachments }),
       citations: response.citations,
       confidence: response.confidence,
       intent: response.intent,
@@ -237,6 +291,7 @@ function systemPrompt(): string {
     '你是 XXYY 产品客服智能问答助手。',
     '只能基于提供的知识库片段回答，不要编造产品能力、实时账户数据、链上结论或投资建议。',
     '如果资料不足，直接说明当前知识库没有明确说明。',
+    '如果知识库片段提供“标准客服回答”，优先使用该标准回答，不要混入其他来源扩展步骤。',
     '回答使用简洁中文。操作类问题优先给步骤。',
     '不要在正文中伪造来源编号；来源由系统单独返回。',
   ].join('\n');

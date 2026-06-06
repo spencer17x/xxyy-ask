@@ -17,6 +17,8 @@ describe('renderChatPage', () => {
     expect(html).toContain('body.getReader()');
     expect(html).toContain('appendMessage("assistant"');
     expect(html).toContain('renderCitations(assistantMessage.citations');
+    expect(html).toContain('renderAttachments(assistantMessage.attachments');
+    expect(html).toContain('document.createElement("video")');
   });
 
   it('does not render citation payloads with innerHTML', () => {

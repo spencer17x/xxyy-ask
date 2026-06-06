@@ -56,6 +56,31 @@ describe('createGroundedAnswer', () => {
     expect(response.confidence).toBeLessThan(0.5);
   });
 
+  it('extracts video attachments from grounded product context', () => {
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:mobile-app:chunk:0001',
+        title: '移动端桌面入口',
+        sourceType: 'official_docs',
+        file: '/docs/product-features/pages/mobile-app.md',
+        text: 'XXYY 暂时没有独立 App，但可以添加到桌面，和 App 体验差不多。[添加到桌面演示](/assets/xxyy-add-to-home.mp4)',
+      },
+    ]);
+    const retrieved = retrieve('XXYY 有 APP 吗？', index);
+
+    const response = createGroundedAnswer('XXYY 有 APP 吗？', productClassification, retrieved);
+
+    expect(response.answer).toContain('添加到桌面');
+    expect(response.attachments).toEqual([
+      {
+        kind: 'video',
+        mediaType: 'video/mp4',
+        title: '添加到桌面演示',
+        url: '/assets/xxyy-add-to-home.mp4',
+      },
+    ]);
+  });
+
   it.each([
     ['realtime_account_query', '我不能直接查询你的钱包余额、订单、账户或交易记录'],
     ['mev_or_chain_forensics', '我不能仅凭当前问题判断某笔交易是否被夹或存在 MEV'],

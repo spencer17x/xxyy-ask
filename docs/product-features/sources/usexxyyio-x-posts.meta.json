@@ -1,0 +1,98 @@
+{
+  "account": {
+    "createdAt": "Mon Aug 26 21:07:42 +0000 2024",
+    "description": "交易快又省钱，最高50%返佣+30%返现 💰 All-in-one trading tool for degens ⚡️\n项目交流群 https://t.co/tLRgaI9Aht",
+    "name": "XXYY",
+    "restId": "1828177424242352132",
+    "screenName": "useXXYYio",
+    "url": "https://x.com/useXXYYio"
+  },
+  "coverage": {
+    "endpoint": "X web GraphQL UserTweets",
+    "note": "Covers public profile timeline posts visible to the anonymous X web client. Replies not shown in UserTweets are not included unless X exposes them in the profile timeline.",
+    "pageSize": 40,
+    "totalPosts": 273
+  },
+  "fetchedAt": "2026-06-06T04:40:24.279Z",
+  "mainJsUrl": "https://abs.twimg.com/responsive-web/client-web/main.7e48596a.js",
+  "operations": {
+    "userByScreenName": {
+      "queryId": "IGgvgiOx4QZndDHuD3x9TQ",
+      "operationName": "UserByScreenName",
+      "features": {
+        "hidden_profile_subscriptions_enabled": true,
+        "profile_label_improvements_pcf_label_in_post_enabled": true,
+        "responsive_web_profile_redirect_enabled": true,
+        "rweb_tipjar_consumption_enabled": true,
+        "verified_phone_label_enabled": true,
+        "subscriptions_verification_info_is_identity_verified_enabled": true,
+        "subscriptions_verification_info_verified_since_enabled": true,
+        "highlights_tweets_tab_ui_enabled": true,
+        "responsive_web_twitter_article_notes_tab_enabled": true,
+        "subscriptions_feature_can_gift_premium": true,
+        "creator_subscriptions_tweet_preview_api_enabled": true,
+        "responsive_web_graphql_skip_user_profile_image_extensions_enabled": true,
+        "responsive_web_graphql_timeline_navigation_enabled": true
+      },
+      "fieldToggles": {
+        "withPayments": true,
+        "withAuxiliaryUserLabels": true
+      }
+    },
+    "userTweets": {
+      "queryId": "54_zVtVXJlQtnIBrY2QSXQ",
+      "operationName": "UserTweets",
+      "features": {
+        "rweb_video_screen_enabled": true,
+        "rweb_cashtags_enabled": true,
+        "profile_label_improvements_pcf_label_in_post_enabled": true,
+        "responsive_web_profile_redirect_enabled": true,
+        "rweb_tipjar_consumption_enabled": true,
+        "verified_phone_label_enabled": true,
+        "creator_subscriptions_tweet_preview_api_enabled": true,
+        "responsive_web_graphql_timeline_navigation_enabled": true,
+        "responsive_web_graphql_skip_user_profile_image_extensions_enabled": true,
+        "premium_content_api_read_enabled": true,
+        "communities_web_enable_tweet_community_results_fetch": true,
+        "c9s_tweet_anatomy_moderator_badge_enabled": true,
+        "responsive_web_grok_analyze_button_fetch_trends_enabled": true,
+        "responsive_web_grok_analyze_post_followups_enabled": true,
+        "rweb_cashtags_composer_attachment_enabled": true,
+        "responsive_web_jetfuel_frame": true,
+        "responsive_web_grok_share_attachment_enabled": true,
+        "responsive_web_grok_annotations_enabled": true,
+        "articles_preview_enabled": true,
+        "responsive_web_edit_tweet_api_enabled": true,
+        "rweb_conversational_replies_downvote_enabled": true,
+        "graphql_is_translatable_rweb_tweet_is_translatable_enabled": true,
+        "view_counts_everywhere_api_enabled": true,
+        "longform_notetweets_consumption_enabled": true,
+        "responsive_web_twitter_article_tweet_consumption_enabled": true,
+        "content_disclosure_indicator_enabled": true,
+        "content_disclosure_ai_generated_indicator_enabled": true,
+        "responsive_web_grok_show_grok_translated_post": true,
+        "responsive_web_grok_analysis_button_from_backend": true,
+        "post_ctas_fetch_enabled": true,
+        "freedom_of_speech_not_reach_fetch_enabled": true,
+        "standardized_nudges_misinfo": true,
+        "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": true,
+        "longform_notetweets_rich_text_read_enabled": true,
+        "longform_notetweets_inline_media_enabled": true,
+        "responsive_web_grok_image_annotation_enabled": true,
+        "responsive_web_grok_imagine_annotation_enabled": true,
+        "responsive_web_grok_community_note_auto_translation_is_enabled": true,
+        "responsive_web_enhance_cards_enabled": true
+      },
+      "fieldToggles": {
+        "withPayments": true,
+        "withAuxiliaryUserLabels": true,
+        "withArticleRichContentState": true,
+        "withArticlePlainText": true,
+        "withArticleSummaryText": true,
+        "withArticleVoiceOver": true,
+        "withGrokAnalyze": true,
+        "withDisallowedReplyControls": true
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -14,6 +14,7 @@ interface CapturedResponse {
   statusCode: number;
   headers: Record<string, string>;
   body: string;
+  rawBody: Buffer;
 }
 
 async function callHandler(
@@ -37,7 +38,9 @@ async function callHandler(
     statusCode: 200,
     headers: {},
     body: '',
+    rawBody: Buffer.alloc(0),
   };
+  const bodyChunks: Buffer[] = [];
 
   await handler(request, {
     get statusCode() {
@@ -50,14 +53,21 @@ async function callHandler(
       response.headers[name] = value;
     },
     write(body: string) {
+      bodyChunks.push(Buffer.from(body, 'utf8'));
       response.body += body;
       return true;
     },
-    end(body?: string) {
-      response.body += body ?? '';
+    end(body?: string | Uint8Array) {
+      if (body === undefined) {
+        return;
+      }
+      const chunk = typeof body === 'string' ? Buffer.from(body, 'utf8') : Buffer.from(body);
+      bodyChunks.push(chunk);
+      response.body += typeof body === 'string' ? body : Buffer.from(body).toString('utf8');
     },
   });
 
+  response.rawBody = Buffer.concat(bodyChunks);
   return response;
 }
 
@@ -97,6 +107,23 @@ describe('createRequestHandler', () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers['Content-Type']).toBe('application/json; charset=utf-8');
     expect(JSON.parse(response.body)).toEqual({ status: 'ok' });
+  });
+
+  it('serves product media assets for chat attachments', async () => {
+    const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-api-assets-'));
+    const assetsDir = path.join(workspaceRoot, 'docs', 'product-features', 'assets');
+    await mkdir(assetsDir, { recursive: true });
+    await writeFile(path.join(assetsDir, 'xxyy-add-to-home.mp4'), Buffer.from('video-bytes'));
+    const handler = createRequestHandler({ cwd: workspaceRoot, staticAssetsDir: assetsDir });
+
+    const response = await callHandler(handler, {
+      method: 'GET',
+      url: '/assets/xxyy-add-to-home.mp4',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['Content-Type']).toBe('video/mp4');
+    expect(response.rawBody).toEqual(Buffer.from('video-bytes'));
   });
 
   it('passes chat requests through ChatService', async () => {

@@ -31,11 +31,19 @@ export interface Citation {
   sourceUrl?: string;
 }
 
+export interface ChatAttachment {
+  kind: 'video';
+  title: string;
+  url: string;
+  mediaType: 'video/mp4';
+}
+
 export interface ChatResponse {
   answer: string;
   intent: Intent;
   citations: Citation[];
   confidence: number;
+  attachments?: ChatAttachment[];
 }
 
 export type ChatStreamEvent =
@@ -48,6 +56,7 @@ export type ChatStreamEvent =
       intent: Intent;
       citations: Citation[];
       confidence: number;
+      attachments?: ChatAttachment[];
     };
 
 export interface SourceDocument {

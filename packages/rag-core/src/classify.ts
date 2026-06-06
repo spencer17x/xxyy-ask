@@ -80,6 +80,7 @@ const rules: IntentRule[] = [
     patterns: [
       /\bxxyy\b|\bpro\b|\bproduct\b|\bfeature(s)?\b|\bupdate(s)?\b/u,
       /产品|功能|更新|权益|版本|提醒|监控|telegram/u,
+      /钱包备注|监控上限|监控数量|历史更新|更新记录|推特|推文|tweet|x\.com/u,
     ],
   },
 ];

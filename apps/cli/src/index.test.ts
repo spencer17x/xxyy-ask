@@ -82,6 +82,14 @@ describe('CLI output formatting', () => {
     expect(
       formatChatResponse({
         answer: '根据知识库，XXYY Pro 提供更多权益。',
+        attachments: [
+          {
+            kind: 'video',
+            mediaType: 'video/mp4',
+            title: '添加到桌面演示',
+            url: '/assets/xxyy-add-to-home.mp4',
+          },
+        ],
         confidence: 0.82,
         intent: 'product_qa',
         citations: [
@@ -104,6 +112,10 @@ describe('CLI output formatting', () => {
         '    docs/product-features/pages/pro.md',
         '    https://docs.xxyy.io/pro',
         '    Pro 用户可以使用更多产品权益。',
+        '',
+        'Attachments:',
+        '[1] 添加到桌面演示',
+        '    /assets/xxyy-add-to-home.mp4',
       ].join('\n'),
     );
   });

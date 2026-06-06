@@ -322,14 +322,16 @@ export function renderChatPage(): string {
         animation: pulse 1s ease-in-out infinite;
       }
 
-      .citation-list {
+      .citation-list,
+      .attachment-list {
         display: grid;
         gap: 8px;
         margin: 0;
         padding: 0 16px 16px;
       }
 
-      .citation {
+      .citation,
+      .attachment {
         display: grid;
         gap: 5px;
         border: 1px solid var(--line-soft);
@@ -338,7 +340,8 @@ export function renderChatPage(): string {
         padding: 10px 12px;
       }
 
-      .citation-title {
+      .citation-title,
+      .attachment-title {
         color: var(--text);
         font-size: 13px;
         font-weight: 650;
@@ -354,6 +357,14 @@ export function renderChatPage(): string {
         color: #354154;
         font-size: 13px;
         line-height: 1.55;
+      }
+
+      .attachment video {
+        width: 100%;
+        max-height: 420px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #111827;
       }
 
       .composer-wrap {
@@ -555,6 +566,9 @@ export function renderChatPage(): string {
 
         <section class="sidebar-section" aria-label="quick questions">
           <div class="section-label">快捷问题</div>
+          <button class="quick-prompt" type="button" data-prompt="XXYY 有 APP 吗？">
+            XXYY 有 APP 吗？<span>→</span>
+          </button>
           <button class="quick-prompt" type="button" data-prompt="XXYY Pro 有哪些权益？">
             XXYY Pro 有哪些权益？<span>→</span>
           </button>
@@ -745,6 +759,7 @@ export function renderChatPage(): string {
           assistantMessage.meta.textContent =
             payload.intent + " · confidence " + Number(payload.confidence).toFixed(2);
           renderCitations(assistantMessage.citations, payload.citations || []);
+          renderAttachments(assistantMessage.attachments, payload.attachments || []);
           status.textContent = payload.intent + " · " + Number(payload.confidence).toFixed(2);
           intent.textContent = payload.intent;
           scrollMessagesToBottom();
@@ -786,15 +801,18 @@ export function renderChatPage(): string {
         const citations = document.createElement("div");
         citations.className = "citation-list";
 
+        const attachments = document.createElement("div");
+        attachments.className = "attachment-list";
+
         bubble.append(answer);
         if (role === "assistant") {
-          bubble.append(meta, citations);
+          bubble.append(meta, citations, attachments);
         }
         node.append(avatar, bubble);
         messages.append(node);
         scrollMessagesToBottom();
 
-        return { answer, citations, hasContent: !options.streaming, meta, node };
+        return { answer, attachments, citations, hasContent: !options.streaming, meta, node };
       }
 
       function renderCitations(target, nextCitations) {
@@ -825,6 +843,32 @@ export function renderChatPage(): string {
             excerpt.textContent = citation.excerpt;
 
             article.append(title, meta, excerpt);
+            return article;
+          }),
+        );
+      }
+
+      function renderAttachments(target, nextAttachments) {
+        target.replaceChildren(
+          ...nextAttachments.map((attachment) => {
+            const article = document.createElement("article");
+            article.className = "attachment";
+
+            const title = document.createElement("div");
+            title.className = "attachment-title";
+            title.textContent = attachment.title;
+
+            if (attachment.kind === "video") {
+              const video = document.createElement("video");
+              video.controls = true;
+              video.preload = "metadata";
+              video.src = attachment.url;
+              video.setAttribute("aria-label", attachment.title);
+              article.append(title, video);
+              return article;
+            }
+
+            article.append(title);
             return article;
           }),
         );

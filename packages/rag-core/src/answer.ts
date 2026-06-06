@@ -1,10 +1,11 @@
-import type { ChatResponse, Citation, Classification, Intent } from '@xxyy/shared';
+import type { ChatAttachment, ChatResponse, Citation, Classification, Intent } from '@xxyy/shared';
 
 import type { RetrievedChunk } from './retrieve.js';
 
 const GROUNDED_INTENTS = new Set<Intent>(['product_qa', 'how_to']);
 const MAX_CITATIONS = 3;
 const MAX_EXCERPT_LENGTH = 220;
+const VIDEO_LINK_PATTERN = /\[([^\]]+)\]\((\/assets\/[^)\s]+\.mp4)\)/giu;
 
 export function createGroundedAnswer(
   question: string,
@@ -29,15 +30,66 @@ export function createGroundedAnswer(
   const answerPrefix =
     classification.intent === 'how_to' ? '根据知识库，可以按这些信息操作：' : '根据知识库，';
 
+  return withOptionalAttachments(
+    {
+      answer: `${answerPrefix}${excerpts.join(' ')}`,
+      intent: classification.intent,
+      citations,
+      confidence: calculateGroundedConfidence(
+        classification.confidence,
+        retrievedChunks[0]?.score ?? 0,
+      ),
+    },
+    createAttachmentsFromChunks(retrievedChunks),
+  );
+}
+
+function withOptionalAttachments(
+  response: ChatResponse,
+  attachments: ChatAttachment[],
+): ChatResponse {
+  if (attachments.length === 0) {
+    return response;
+  }
+
   return {
-    answer: `${answerPrefix}${excerpts.join(' ')}`,
-    intent: classification.intent,
-    citations,
-    confidence: calculateGroundedConfidence(
-      classification.confidence,
-      retrievedChunks[0]?.score ?? 0,
-    ),
+    ...response,
+    attachments,
   };
+}
+
+export function createAttachmentsFromChunks(retrievedChunks: RetrievedChunk[]): ChatAttachment[] {
+  const byUrl = new Map<string, ChatAttachment>();
+
+  for (const chunk of retrievedChunks) {
+    for (const attachment of extractVideoAttachments(chunk.text)) {
+      if (!byUrl.has(attachment.url)) {
+        byUrl.set(attachment.url, attachment);
+      }
+    }
+  }
+
+  return Array.from(byUrl.values());
+}
+
+function extractVideoAttachments(text: string): ChatAttachment[] {
+  const attachments: ChatAttachment[] = [];
+
+  for (const match of text.matchAll(VIDEO_LINK_PATTERN)) {
+    const title = match[1]?.trim();
+    const url = match[2]?.trim();
+    if (title === undefined || title.length === 0 || url === undefined || url.length === 0) {
+      continue;
+    }
+    attachments.push({
+      kind: 'video',
+      mediaType: 'video/mp4',
+      title,
+      url,
+    });
+  }
+
+  return attachments;
 }
 
 export function createBoundaryAnswer(classification: Classification): ChatResponse {

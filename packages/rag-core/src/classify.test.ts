@@ -5,6 +5,9 @@ import { classifyQuestion } from './classify.js';
 describe('classifyQuestion', () => {
   it.each([
     ['XXYY Pro 有哪些权益和功能更新？', 'product_qa'],
+    ['XXYY 有 APP 吗？', 'product_qa'],
+    ['钱包备注上限提升到 1 万条在哪条推特里？', 'product_qa'],
+    ['钱包监控上限历史更新记录在哪里？', 'product_qa'],
     ['如何设置 Telegram 钱包监控？', 'how_to'],
     ['怎么操作订单查询？', 'how_to'],
     ['如何在 XXYY 买入代币？', 'how_to'],

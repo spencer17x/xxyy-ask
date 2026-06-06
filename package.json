@@ -18,7 +18,8 @@
     "start": "pnpm --filter @xxyy/api start",
     "test": "vitest run",
     "typecheck": "pnpm typecheck:root && pnpm -r --if-present --filter \"@xxyy/*\" typecheck",
-    "typecheck:root": "tsc --noEmit -p tsconfig.json"
+    "typecheck:root": "tsc --noEmit -p tsconfig.json",
+    "x:scrape": "node scripts/fetch-usexxyy-posts.mjs"
   },
   "keywords": [],
   "author": "",
