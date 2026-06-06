@@ -8,6 +8,7 @@ import type { PreparedKnowledgeChunk } from '@xxyy/knowledge';
 import type { SourceDocument } from '@xxyy/shared';
 
 import {
+  BUILT_IN_EVALUATION_CASES,
   createDefaultCliIo,
   formatChatResponse,
   formatEvaluationReport,
@@ -32,6 +33,25 @@ describe('parseCliArgs', () => {
   it('parses commands that do not require extra arguments', () => {
     expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
     expect(parseCliArgs(['evaluate'])).toEqual({ command: 'evaluate' });
+  });
+});
+
+describe('BUILT_IN_EVALUATION_CASES', () => {
+  it('covers sourceable X update questions', () => {
+    expect(BUILT_IN_EVALUATION_CASES).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'wallet note x source',
+          expectedIntent: 'product_qa',
+          minCitations: 1,
+        }),
+        expect.objectContaining({
+          name: 'wallet monitoring limit updates',
+          expectedIntent: 'product_qa',
+          minCitations: 1,
+        }),
+      ]),
+    );
   });
 });
 
@@ -213,7 +233,7 @@ describe('runCli', () => {
     expect(stderr.join('')).toContain('DATABASE_URL is required for pgvector retrieval');
   });
 
-  it('migrates pgvector storage before embedding prepared chunks', async () => {
+  it('migrates pgvector storage before replacing prepared chunks', async () => {
     vi.resetModules();
 
     const events: string[] = [];
@@ -252,8 +272,8 @@ describe('runCli', () => {
       events.push('migrate');
       return Promise.resolve();
     });
-    const upsertChunks = vi.fn(() => {
-      events.push('upsert');
+    const replaceChunks = vi.fn(() => {
+      events.push('replace');
       return Promise.resolve();
     });
     const end = vi.fn(() => {
@@ -277,8 +297,9 @@ describe('runCli', () => {
         createPgPool: vi.fn(() => ({ end })),
         createPgVectorStore: vi.fn(() => ({
           migrate,
+          replaceChunks,
           retrieve: vi.fn(),
-          upsertChunks,
+          upsertChunks: vi.fn(),
         })),
         loadRagConfig: vi.fn(() => ({
           answerProvider: 'openai',
@@ -304,7 +325,7 @@ describe('runCli', () => {
       });
 
       expect(exitCode).toBe(0);
-      expect(events).toEqual(['migrate', 'embed', 'upsert', 'pool.end']);
+      expect(events).toEqual(['migrate', 'embed', 'replace', 'pool.end']);
     } finally {
       vi.doUnmock('@xxyy/knowledge');
       vi.doUnmock('@xxyy/rag-core');

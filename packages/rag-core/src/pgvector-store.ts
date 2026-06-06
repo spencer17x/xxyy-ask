@@ -22,6 +22,7 @@ export interface EmbeddedKnowledgeChunk extends Omit<PreparedKnowledgeChunk, 'me
 
 export interface PgVectorStore extends Retriever {
   migrate(): Promise<void>;
+  replaceChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void>;
   upsertChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void>;
 }
 
@@ -49,6 +50,7 @@ interface KnowledgeChunkRow {
 const PGVECTOR_EMBEDDING_DIMENSION = 1536;
 const DEFAULT_TOP_K = 6;
 const LEXICAL_SCORE_WEIGHT = 0.5;
+const DIRECT_X_POST_SOURCE_BOOST = 6;
 
 export class VectorStoreConfigurationError extends Error {}
 
@@ -67,6 +69,55 @@ export function createPgPool(databaseUrl: string | undefined): Pool {
 }
 
 export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStore {
+  const upsertChunks = async (chunks: EmbeddedKnowledgeChunk[]): Promise<void> => {
+    for (const chunk of chunks) {
+      validateEmbedding(chunk.embedding);
+
+      await queryDatabase(
+        options.client,
+        `
+        insert into knowledge_chunks (
+          id, document_id, title, module, source_type, source_url, file,
+          heading_path, order_index, retrieved_at, content, tokens, embedding, content_hash,
+          updated_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13::vector, $14, now())
+        on conflict (id) do update set
+          document_id = excluded.document_id,
+          title = excluded.title,
+          module = excluded.module,
+          source_type = excluded.source_type,
+          source_url = excluded.source_url,
+          file = excluded.file,
+          heading_path = excluded.heading_path,
+          order_index = excluded.order_index,
+          retrieved_at = coalesce(excluded.retrieved_at, knowledge_chunks.retrieved_at),
+          content = excluded.content,
+          tokens = excluded.tokens,
+          embedding = excluded.embedding,
+          content_hash = excluded.content_hash,
+          updated_at = now()
+        `,
+        [
+          chunk.id,
+          chunk.documentId,
+          chunk.metadata.title,
+          chunk.metadata.module,
+          chunk.metadata.sourceType,
+          chunk.metadata.sourceUrl,
+          chunk.metadata.file,
+          JSON.stringify(chunk.metadata.headingPath),
+          chunk.metadata.order,
+          chunk.metadata.retrievedAt ?? null,
+          chunk.text,
+          chunk.tokens,
+          toPgVectorLiteral(chunk.embedding),
+          chunk.contentHash,
+        ],
+      );
+    }
+  };
+
   return {
     async migrate(): Promise<void> {
       await queryDatabase(options.client, 'create extension if not exists vector');
@@ -116,54 +167,15 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
       );
     },
 
-    async upsertChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void> {
-      for (const chunk of chunks) {
-        validateEmbedding(chunk.embedding);
-
-        await queryDatabase(
-          options.client,
-          `
-          insert into knowledge_chunks (
-            id, document_id, title, module, source_type, source_url, file,
-            heading_path, order_index, retrieved_at, content, tokens, embedding, content_hash,
-            updated_at
-          )
-          values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13::vector, $14, now())
-          on conflict (id) do update set
-            document_id = excluded.document_id,
-            title = excluded.title,
-            module = excluded.module,
-            source_type = excluded.source_type,
-            source_url = excluded.source_url,
-            file = excluded.file,
-            heading_path = excluded.heading_path,
-            order_index = excluded.order_index,
-            retrieved_at = coalesce(excluded.retrieved_at, knowledge_chunks.retrieved_at),
-            content = excluded.content,
-            tokens = excluded.tokens,
-            embedding = excluded.embedding,
-            content_hash = excluded.content_hash,
-            updated_at = now()
-          `,
-          [
-            chunk.id,
-            chunk.documentId,
-            chunk.metadata.title,
-            chunk.metadata.module,
-            chunk.metadata.sourceType,
-            chunk.metadata.sourceUrl,
-            chunk.metadata.file,
-            JSON.stringify(chunk.metadata.headingPath),
-            chunk.metadata.order,
-            chunk.metadata.retrievedAt ?? null,
-            chunk.text,
-            chunk.tokens,
-            toPgVectorLiteral(chunk.embedding),
-            chunk.contentHash,
-          ],
-        );
-      }
+    async replaceChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void> {
+      await upsertChunks(chunks);
+      await pruneStaleChunks(
+        options.client,
+        chunks.map((chunk) => chunk.id),
+      );
     },
+
+    upsertChunks,
 
     async retrieve(question: string, retrieveOptions: RetrieveOptions): Promise<RetrievedChunk[]> {
       const [queryEmbedding] = await options.embeddingProvider.embedTexts([question]);
@@ -220,12 +232,23 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
       );
 
       return response.rows
-        .map((row) => mapRow(row, queryTokens))
+        .map((row) => mapRow(row, question, queryTokens))
         .sort(compareRetrievedChunks)
         .slice(0, topK)
         .map((chunk, index) => ({ ...chunk, rank: index + 1 }));
     },
   };
+}
+
+async function pruneStaleChunks(client: PgClientLike, retainedChunkIds: string[]): Promise<void> {
+  await queryDatabase(
+    client,
+    `
+    delete from knowledge_chunks
+    where not (id = any($1::text[]))
+    `,
+    [retainedChunkIds],
+  );
 }
 
 async function queryDatabase<T>(
@@ -270,11 +293,16 @@ function normalizeTopK(topK: number | undefined): number {
   return topK;
 }
 
-function mapRow(row: KnowledgeChunkRow, queryTokens: string[]): RetrievedChunk {
+function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[]): RetrievedChunk {
   const lexicalScore = queryTokens.filter((token) => row.tokens.includes(token)).length;
   const vectorScore = Math.max(0, 1 - row.embedding_distance);
   const score = Number(
-    (vectorScore + lexicalScore * LEXICAL_SCORE_WEIGHT + sourceBoost(row.source_type)).toFixed(8),
+    (
+      vectorScore +
+      lexicalScore * LEXICAL_SCORE_WEIGHT +
+      sourceBoost(row.source_type) +
+      directXPostSourceBoost(question, row)
+    ).toFixed(8),
   );
   const entry: IndexEntry = {
     documentId: row.document_id,
@@ -305,6 +333,24 @@ function mapRow(row: KnowledgeChunkRow, queryTokens: string[]): RetrievedChunk {
 
 function sourceBoost(sourceType: SourceType): number {
   return sourceType === 'official_docs' ? 0.05 : 0;
+}
+
+function directXPostSourceBoost(question: string, row: KnowledgeChunkRow): number {
+  const normalizedQuestion = question.normalize('NFKC').toLowerCase();
+  if (!/哪条推文|哪条推特|推文|推特|tweet|x\s*post/u.test(normalizedQuestion)) {
+    return 0;
+  }
+
+  if (
+    row.source_type === 'x_updates' &&
+    row.title.startsWith('X Post ') &&
+    row.source_url !== null &&
+    /^https:\/\/x\.com\/useXXYYio\/status\/\d+$/iu.test(row.source_url)
+  ) {
+    return DIRECT_X_POST_SOURCE_BOOST;
+  }
+
+  return 0;
 }
 
 function compareRetrievedChunks(left: RetrievedChunk, right: RetrievedChunk): number {

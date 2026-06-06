@@ -76,6 +76,31 @@ describe('createPgVectorStore', () => {
     expect(client.queries[1]?.values[9]).toBeNull();
   });
 
+  it('replaces stale chunks after upserting the current index', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await store.replaceChunks([
+      createChunk({
+        id: 'official_docs:pro:chunk:0001',
+      }),
+      createChunk({
+        contentHash: 'hash-2',
+        id: 'official_docs:pro:chunk:0002',
+      }),
+    ]);
+
+    expect(client.queries[0]?.sql).toContain('insert into knowledge_chunks');
+    expect(client.queries[1]?.sql).toContain('insert into knowledge_chunks');
+    expect(client.queries[2]?.sql).toContain('delete from knowledge_chunks');
+    expect(client.queries[2]?.values).toEqual([
+      ['official_docs:pro:chunk:0001', 'official_docs:pro:chunk:0002'],
+    ]);
+  });
+
   it('rejects upsert chunk embeddings with the wrong dimension', async () => {
     const client = new FakePgClient();
     const store = createPgVectorStore({
@@ -179,6 +204,57 @@ describe('createPgVectorStore', () => {
     expect(lastQuery?.values[2]).toContain('跟单');
     expect(results[0]?.id).toBe('x_updates:xxyy-x-updates:chunk:0001');
     expect(results[0]?.lexicalScore).toBeGreaterThan(0);
+  });
+
+  it('prioritizes direct X post source rows for tweet-source questions', async () => {
+    const client = new FakePgClient();
+    client.rows = [
+      {
+        content: '钱包备注支持最多 1 万条（来源：2030954722350575916）。',
+        document_id: 'x_updates:xxyy-x-updates',
+        embedding_distance: 0.1,
+        file: 'docs/product-features/xxyy-x-updates.md',
+        heading_path: ['2026 年 3 月至 4 月'],
+        id: 'x_updates:xxyy-x-updates:chunk:0013',
+        module: 'X Updates',
+        order_index: null,
+        retrieved_at: null,
+        source_type: 'x_updates',
+        source_url: null,
+        title: 'XXYY X 历史推文产品更新汇总',
+        tokens: ['钱包', '备注', '支持', '最多', '1', '万条'],
+      },
+      {
+        content: '钱包备注支持最多 1 万条，快速捕捉前排地址。',
+        document_id: 'x_updates:sources/usexxyyio-x-posts/2030954722350575916',
+        embedding_distance: 0.4,
+        file: 'docs/product-features/sources/usexxyyio-x-posts.jsonl',
+        heading_path: ['X Post 2030954722350575916', 'Text'],
+        id: 'x_updates:sources/usexxyyio-x-posts/2030954722350575916:chunk:0003',
+        module: 'X / @useXXYYio / 2026-03',
+        order_index: null,
+        retrieved_at: null,
+        source_type: 'x_updates',
+        source_url: 'https://x.com/useXXYYio/status/2030954722350575916',
+        title: 'X Post 2030954722350575916',
+        tokens: ['钱包', '备注', '支持', '最多', '1', '万条'],
+      },
+    ];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 })]),
+      },
+    });
+
+    const results = await store.retrieve('钱包备注支持最多 1 万条是哪条推文？', { topK: 2 });
+
+    expect(results[0]?.id).toBe(
+      'x_updates:sources/usexxyyio-x-posts/2030954722350575916:chunk:0003',
+    );
+    expect(results[0]?.metadata.sourceUrl).toBe(
+      'https://x.com/useXXYYio/status/2030954722350575916',
+    );
   });
 
   it('wraps pgvector query failures as vector store unavailability', async () => {

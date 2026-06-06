@@ -5,6 +5,7 @@ import type { SourceDocument, SourceType } from '@xxyy/shared';
 
 const PRODUCT_FUNCTIONS_FILE = 'xxyy-product-functions.md';
 const X_UPDATES_FILE = 'xxyy-x-updates.md';
+const X_POSTS_FILE = path.posix.join('sources', 'usexxyyio-x-posts.jsonl');
 const MANIFEST_FILE = 'manifest.jsonl';
 
 export interface LoadProductDocumentsOptions {
@@ -28,6 +29,15 @@ interface ManifestEntry {
   section?: string;
   category?: string;
   retrieved_at?: string;
+}
+
+interface XPostEntry {
+  account?: string;
+  createdAtIso?: string;
+  fetchedAt?: string;
+  id: string;
+  text: string;
+  url: string;
 }
 
 export async function loadProductDocuments(
@@ -60,6 +70,7 @@ export async function loadProductDocuments(
       manifest,
     }),
   );
+  documents.push(...(await readXPostDocuments(productFeaturesDir)));
 
   for (const pageFile of await listPageFiles(productFeaturesDir)) {
     documents.push(
@@ -75,6 +86,87 @@ export async function loadProductDocuments(
   }
 
   return documents;
+}
+
+async function readXPostDocuments(productFeaturesDir: string): Promise<SourceDocument[]> {
+  const relativeFile = X_POSTS_FILE;
+  const file = path.join(productFeaturesDir, relativeFile);
+  let rawContent: string;
+  try {
+    rawContent = await readFile(file, 'utf8');
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return [];
+    }
+    throw error;
+  }
+
+  const documents: SourceDocument[] = [];
+  rawContent.split(/\r?\n/).forEach((line, index) => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!isXPostEntry(parsed)) {
+      throw new Error(`Invalid X post source entry on line ${index + 1}`);
+    }
+
+    documents.push(createXPostDocument(parsed, file));
+  });
+
+  return documents.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function isXPostEntry(value: unknown): value is XPostEntry {
+  if (!isObject(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.id === 'string' &&
+    typeof value.url === 'string' &&
+    typeof value.text === 'string' &&
+    (value.account === undefined || typeof value.account === 'string') &&
+    (value.createdAtIso === undefined || typeof value.createdAtIso === 'string') &&
+    (value.fetchedAt === undefined || typeof value.fetchedAt === 'string')
+  );
+}
+
+function createXPostDocument(post: XPostEntry, file: string): SourceDocument {
+  const account = post.account ?? 'useXXYYio';
+  const createdMonth =
+    typeof post.createdAtIso === 'string' && post.createdAtIso.length >= 7
+      ? post.createdAtIso.slice(0, 7)
+      : 'unknown';
+  const document: SourceDocument = {
+    id: `x_updates:${withoutKnownExtension(X_POSTS_FILE)}/${post.id}`,
+    title: `X Post ${post.id}`,
+    module: `X / @${account} / ${createdMonth}`,
+    sourceType: 'x_updates',
+    file,
+    content: [
+      `# X Post ${post.id}`,
+      '',
+      `- Account: @${account}`,
+      `- Tweet ID: ${post.id}`,
+      `- URL: ${post.url}`,
+      ...(post.createdAtIso === undefined ? [] : [`- Published at: ${post.createdAtIso}`]),
+      '',
+      '## Text',
+      '',
+      post.text,
+      '',
+    ].join('\n'),
+    sourceUrl: post.url,
+  };
+
+  if (post.fetchedAt !== undefined) {
+    document.retrievedAt = post.fetchedAt;
+  }
+
+  return document;
 }
 
 async function listPageFiles(productFeaturesDir: string): Promise<string[]> {
@@ -97,7 +189,10 @@ async function readDocument(args: {
 }): Promise<SourceDocument> {
   const file = path.join(args.productFeaturesDir, args.relativeFile);
   const rawContent = await readFile(file, 'utf8');
-  const { content, metadata } = parseMarkdownMetadata(rawContent);
+  const parsed = parseMarkdownMetadata(rawContent);
+  const content =
+    args.relativeFile === X_UPDATES_FILE ? stripRawXPostIndex(parsed.content) : parsed.content;
+  const { metadata } = parsed;
   const manifestEntry = findManifestEntry(args.manifest, args.relativeFile);
   const title =
     manifestEntry?.title ?? metadata.title ?? firstHeading(content) ?? args.fallbackTitle;
@@ -224,6 +319,15 @@ function firstHeading(content: string): string | undefined {
   return headingMatch?.[1]?.trim();
 }
 
+function stripRawXPostIndex(content: string): string {
+  const match = /\n## 可溯源原始消息索引\s*\n/u.exec(content);
+  if (match === null) {
+    return content;
+  }
+
+  return `${content.slice(0, match.index).trimEnd()}\n`;
+}
+
 function titleFromFilename(filename: string): string {
   return withoutMarkdownExtension(filename)
     .replace(/^\d+-/, '')
@@ -233,6 +337,10 @@ function titleFromFilename(filename: string): string {
 
 function withoutMarkdownExtension(file: string): string {
   return normalizeRelativePath(file).replace(/\.md$/u, '');
+}
+
+function withoutKnownExtension(file: string): string {
+  return normalizeRelativePath(file).replace(/\.(?:jsonl|md)$/u, '');
 }
 
 function normalizeRelativePath(file: string): string {
@@ -247,6 +355,10 @@ function compareStrings(left: string, right: string): number {
     return 1;
   }
   return 0;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function unquote(value: string): string {

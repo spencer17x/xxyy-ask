@@ -73,7 +73,7 @@ const HELP_TEXT = [
 
 const EMBEDDING_BATCH_SIZE = 64;
 
-const BUILT_IN_EVALUATION_CASES: EvaluationCase[] = [
+export const BUILT_IN_EVALUATION_CASES: EvaluationCase[] = [
   {
     name: 'pro benefits',
     request: { channel: 'cli', message: 'XXYY Pro 有哪些权益？' },
@@ -84,6 +84,18 @@ const BUILT_IN_EVALUATION_CASES: EvaluationCase[] = [
     name: 'telegram wallet monitoring setup',
     request: { channel: 'cli', message: '如何设置 Telegram 钱包监控？' },
     expectedIntent: 'how_to',
+    minCitations: 1,
+  },
+  {
+    name: 'wallet note x source',
+    request: { channel: 'cli', message: '钱包备注支持最多 1 万条是哪条推文？' },
+    expectedIntent: 'product_qa',
+    minCitations: 1,
+  },
+  {
+    name: 'wallet monitoring limit updates',
+    request: { channel: 'cli', message: '钱包监控上限历史更新记录有哪些？' },
+    expectedIntent: 'product_qa',
     minCitations: 1,
   },
   {
@@ -255,7 +267,7 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
     const store = createPgVectorStore({ client: pool, embeddingProvider });
     await store.migrate();
     const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
-    await store.upsertChunks(embeddedChunks);
+    await store.replaceChunks(embeddedChunks);
   } finally {
     await pool.end();
   }

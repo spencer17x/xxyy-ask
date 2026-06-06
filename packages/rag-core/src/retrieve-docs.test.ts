@@ -39,4 +39,17 @@ describe('retrieve over product docs', () => {
     expect(results[0]?.text).toContain('监控2000个钱包');
     expect(results[0]?.text).toContain('收藏1000个代币');
   });
+
+  it('retrieves individual X posts with direct tweet source URLs', async () => {
+    const documents = await loadProductDocuments({ cwd: workspaceRoot });
+    const index = await buildKnowledgeIndex(documents);
+
+    const results = retrieve('钱包备注支持最多 1 万条是哪条推文？', index, { topK: 3 });
+
+    expect(results[0]?.metadata.title).toBe('X Post 2030954722350575916');
+    expect(results[0]?.metadata.sourceUrl).toBe(
+      'https://x.com/useXXYYio/status/2030954722350575916',
+    );
+    expect(results[0]?.text).toContain('钱包备注支持最多 1 万条');
+  });
 });
