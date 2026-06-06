@@ -28,6 +28,7 @@ describe('createApiSmokeChecks', () => {
     expect(
       createApiSmokeChecks(
         [
+          '--',
           '--base-url',
           'https://ask.example.com',
           '--ops-token',

@@ -29,7 +29,9 @@ describe('createRagRefreshPlan', () => {
   });
 
   it('supports full evaluation and source refresh overrides', () => {
-    expect(createRagRefreshPlan(['--skip-scrape', '--full', '--feedback-limit', '50'])).toEqual([
+    expect(
+      createRagRefreshPlan(['--', '--skip-scrape', '--full', '--feedback-limit', '50']),
+    ).toEqual([
       {
         args: ['rag:ingest'],
         command: 'pnpm',

@@ -73,12 +73,13 @@ export async function runRagRefresh(options = {}) {
 }
 
 function parseRagRefreshArgs(args) {
+  const normalizedArgs = args[0] === '--' ? args.slice(1) : args;
   let feedbackLimit = 25;
   let full = false;
   let skipScrape = false;
 
-  for (let index = 0; index < args.length; index += 1) {
-    const option = args[index];
+  for (let index = 0; index < normalizedArgs.length; index += 1) {
+    const option = normalizedArgs[index];
 
     if (option === '--full') {
       full = true;
@@ -91,7 +92,7 @@ function parseRagRefreshArgs(args) {
     }
 
     if (option === '--feedback-limit') {
-      const rawLimit = args[index + 1];
+      const rawLimit = normalizedArgs[index + 1];
       if (rawLimit === undefined) {
         throw new Error('Missing value for --feedback-limit.');
       }

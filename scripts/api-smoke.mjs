@@ -69,13 +69,14 @@ export async function runApiSmoke(options = {}) {
 }
 
 function parseApiSmokeArgs(args, env) {
+  const normalizedArgs = args[0] === '--' ? args.slice(1) : args;
   let baseUrl = normalizeBaseUrl(env.API_BASE_URL ?? DEFAULT_BASE_URL);
   let chat = false;
   let opsToken = normalizeOptionalText(env.API_OPS_TOKEN);
   let question = DEFAULT_CHAT_QUESTION;
 
-  for (let index = 0; index < args.length; index += 1) {
-    const option = args[index];
+  for (let index = 0; index < normalizedArgs.length; index += 1) {
+    const option = normalizedArgs[index];
 
     if (option === '--chat') {
       chat = true;
@@ -83,7 +84,7 @@ function parseApiSmokeArgs(args, env) {
     }
 
     if (option === '--base-url') {
-      const rawBaseUrl = args[index + 1];
+      const rawBaseUrl = normalizedArgs[index + 1];
       if (rawBaseUrl === undefined) {
         throw new Error('Missing value for --base-url.');
       }
@@ -93,7 +94,7 @@ function parseApiSmokeArgs(args, env) {
     }
 
     if (option === '--ops-token') {
-      const rawOpsToken = args[index + 1];
+      const rawOpsToken = normalizedArgs[index + 1];
       if (rawOpsToken === undefined) {
         throw new Error('Missing value for --ops-token.');
       }
@@ -103,7 +104,7 @@ function parseApiSmokeArgs(args, env) {
     }
 
     if (option === '--question') {
-      const rawQuestion = args[index + 1];
+      const rawQuestion = normalizedArgs[index + 1];
       if (rawQuestion === undefined) {
         throw new Error('Missing value for --question.');
       }
