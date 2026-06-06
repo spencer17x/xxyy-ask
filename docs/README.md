@@ -47,6 +47,7 @@ pnpm rag:evaluate
 pnpm ops:check
 pnpm ops:check:rag
 pnpm ops:check:full
+pnpm ops:refresh
 pnpm start
 ```
 
@@ -55,6 +56,8 @@ pnpm start
 Web UI 会在每条回答后提供正负反馈入口，写入 Postgres `rag_feedback` 表，不记录明文 `userId`。`pnpm rag:feedback` 可以查看用户反馈总数、正负反馈数量和最近反馈明细，用于补知识库或扩展评测集；生产 triage 可以用 `pnpm rag:feedback -- --rating negative --limit 25 --json` 导出负反馈队列。
 
 `pnpm ops:check` 是 CI 基础门禁，只跑不依赖 DB/LLM 的代码检查。`pnpm ops:check:rag` 适合有 `.env`、数据库和模型的生产检查环境，会追加 `rag:stats`、`rag:feedback` 和 fast eval。`pnpm ops:check:full` 会再追加完整 LLM eval，适合发布前人工确认。
+
+`pnpm ops:refresh` 用于定时或人工刷新知识库，默认会抓取 X 更新、重新 ingest、跑 RAG 生产门禁，并导出负反馈 JSON 队列。只刷新本地/已更新文档时可以用 `pnpm ops:refresh -- --skip-scrape`，发布前可用 `pnpm ops:refresh -- --full` 加跑完整 LLM eval。
 
 `pnpm rag:evaluate -- --fast` 只跳过 chat LLM 回答生成，仍会调用 embedding 模型并查询 pgvector；它用于快速检查检索、引用和边界分类。`pnpm rag:evaluate` 会调用配置的大模型，用于检查最终客服回答质量。
 
