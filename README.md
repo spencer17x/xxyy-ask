@@ -56,6 +56,7 @@ RAG_ANSWER_PROVIDER=openai
 
 API_CORS_ORIGIN=
 API_MAX_BODY_BYTES=65536
+API_OPS_TOKEN=
 API_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_WINDOW_MS=60000
 ```
@@ -112,6 +113,14 @@ GET /health/deep
 通过 `pnpm start` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、引用数、耗时、状态码和错误码。日志只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文。
 
 API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。需要跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
+
+运维摘要接口默认关闭。配置 `API_OPS_TOKEN` 后可以访问：
+
+```http
+GET /api/ops/summary
+```
+
+请求需要带 `Authorization: Bearer <API_OPS_TOKEN>` 或 `x-ops-token: <API_OPS_TOKEN>`。响应会聚合 `/health/deep`、知识库 stats 和反馈 stats，用于生产监控、后台页或告警系统；不要把 token 暴露到公开前端。
 
 聊天接口：
 

@@ -20,7 +20,13 @@ import {
 } from '@xxyy/rag-core';
 import type { ChatRequest, ChatChannel, ChatResponse, ChatStreamEvent, Intent } from '@xxyy/shared';
 import { supportedChannels, supportedIntents } from '@xxyy/shared';
-import type { ChatService, PgFeedbackStore, RagEnv } from '@xxyy/rag-core';
+import type {
+  ChatService,
+  FeedbackStats,
+  KnowledgeStats,
+  PgFeedbackStore,
+  RagEnv,
+} from '@xxyy/rag-core';
 import type { RecordFeedbackInput } from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
 
@@ -29,6 +35,7 @@ type ApiEnv = RagEnv &
     Record<
       | 'API_CORS_ORIGIN'
       | 'API_MAX_BODY_BYTES'
+      | 'API_OPS_TOKEN'
       | 'API_RATE_LIMIT_MAX'
       | 'API_RATE_LIMIT_WINDOW_MS'
       | 'PORT',
@@ -60,6 +67,7 @@ export interface CreateRequestHandlerOptions {
   env?: ApiEnv;
   getChatService?: () => Promise<ChatService>;
   getHealthStatus?: () => Promise<DeepHealthStatus>;
+  getOpsSummary?: () => Promise<OpsSummary>;
   logger?: ApiLogger;
   now?: () => number;
   recordFeedback?: (input: RecordFeedbackInput) => Promise<void>;
@@ -74,6 +82,7 @@ export interface StartServerOptions extends CreateRequestHandlerOptions {
 interface ApiRuntimeConfig {
   corsOrigins: string[];
   maxBodyBytes: number;
+  opsToken?: string;
   rateLimitMax: number;
   rateLimitWindowMs: number;
 }
@@ -136,6 +145,13 @@ interface DeepHealthStatus {
   };
 }
 
+interface OpsSummary {
+  feedback: FeedbackStats;
+  generatedAt: string;
+  health: DeepHealthStatus;
+  knowledge: KnowledgeStats;
+}
+
 const MAX_FEEDBACK_QUESTION_CHARS = 2000;
 const MAX_FEEDBACK_ANSWER_CHARS = 4000;
 const MAX_FEEDBACK_COMMENT_CHARS = 1000;
@@ -150,6 +166,8 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
   const logger = options.logger ?? noopLogger;
   const now = options.now ?? Date.now;
+  const getOpsSummary =
+    options.getOpsSummary ?? (() => createOpsSummary(config, getHealthStatus, now));
   const recordFeedback = options.recordFeedback ?? createCachedFeedbackRecorder(config);
   const rateLimiter = createRateLimiter(apiConfig, Date.now);
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
@@ -182,6 +200,16 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       if (request.method === 'GET' && requestUrl.pathname === '/health/deep') {
         const healthStatus = await getHealthStatus();
         sendJson(response, healthStatus.status === 'ok' ? 200 : 503, healthStatus);
+        return;
+      }
+
+      if (request.method === 'GET' && requestUrl.pathname === '/api/ops/summary') {
+        await handleOpsSummaryRequest({
+          getOpsSummary,
+          request,
+          response,
+          ...(apiConfig.opsToken === undefined ? {} : { opsToken: apiConfig.opsToken }),
+        });
         return;
       }
 
@@ -303,6 +331,33 @@ interface HandleFeedbackRequestOptions {
   response: ApiResponseLike;
 }
 
+interface HandleOpsSummaryRequestOptions {
+  getOpsSummary: () => Promise<OpsSummary>;
+  opsToken?: string;
+  request: ApiRequestLike;
+  response: ApiResponseLike;
+}
+
+async function handleOpsSummaryRequest(options: HandleOpsSummaryRequestOptions): Promise<void> {
+  if (options.opsToken === undefined) {
+    sendJson(options.response, 404, {
+      error: 'ops_disabled',
+      message: 'Ops summary API is disabled.',
+    });
+    return;
+  }
+
+  if (!isOpsRequestAuthorized(options.request, options.opsToken)) {
+    sendJson(options.response, 401, {
+      error: 'ops_unauthorized',
+      message: 'A valid ops token is required.',
+    });
+    return;
+  }
+
+  sendJson(options.response, 200, await options.getOpsSummary());
+}
+
 async function handleFeedbackRequest(options: HandleFeedbackRequestOptions): Promise<void> {
   const payload = parseFeedbackPayload(await readJsonBody(options.request, options.maxBodyBytes));
   await options.recordFeedback(toRecordFeedbackInput(payload));
@@ -310,9 +365,11 @@ async function handleFeedbackRequest(options: HandleFeedbackRequestOptions): Pro
 }
 
 function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
+  const opsToken = parseOptionalEnvText(env.API_OPS_TOKEN);
   return {
     corsOrigins: parseCsv(env.API_CORS_ORIGIN),
     maxBodyBytes: parsePositiveInteger(env.API_MAX_BODY_BYTES, 64 * 1024),
+    ...(opsToken === undefined ? {} : { opsToken }),
     rateLimitMax: parsePositiveInteger(env.API_RATE_LIMIT_MAX, 60),
     rateLimitWindowMs: parsePositiveInteger(env.API_RATE_LIMIT_WINDOW_MS, 60_000),
   };
@@ -336,6 +393,15 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseOptionalEnvText(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized.length === 0 ? undefined : normalized;
 }
 
 type CorsResult = 'continue' | 'handled';
@@ -450,6 +516,37 @@ function clientAddress(request: ApiRequestLike): string {
   return 'unknown';
 }
 
+function isOpsRequestAuthorized(request: ApiRequestLike, opsToken: string): boolean {
+  const directToken = requestHeaderValue(request.headers, 'x-ops-token');
+  if (directToken !== undefined && directToken.trim() === opsToken) {
+    return true;
+  }
+
+  const authorization = requestHeaderValue(request.headers, 'authorization');
+  const bearerPrefix = 'Bearer ';
+  if (authorization !== undefined && authorization.startsWith(bearerPrefix)) {
+    return authorization.slice(bearerPrefix.length).trim() === opsToken;
+  }
+
+  return false;
+}
+
+function requestHeaderValue(headers: IncomingHttpHeaders, name: string): string | undefined {
+  const direct = headerValue(headers[name]);
+  if (direct !== undefined) {
+    return direct;
+  }
+
+  const lowerName = name.toLowerCase();
+  for (const [headerName, value] of Object.entries(headers)) {
+    if (headerName.toLowerCase() === lowerName) {
+      return headerValue(value);
+    }
+  }
+
+  return undefined;
+}
+
 function createChatSuccessLogEntry(input: {
   durationMs: number;
   payload: ChatPayload;
@@ -553,6 +650,37 @@ async function createDeepHealthStatus(
     checks,
     status: Object.values(checks).every((check) => check.status === 'ok') ? 'ok' : 'degraded',
   };
+}
+
+async function createOpsSummary(
+  config: ReturnType<typeof loadRagConfig>,
+  getHealthStatus: () => Promise<DeepHealthStatus>,
+  now: () => number,
+): Promise<OpsSummary> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const knowledgeStore = createPgVectorStore({
+      client: pool,
+      embeddingProvider: {
+        embedTexts: () => Promise.reject(new Error('ops summary does not generate embeddings.')),
+      },
+    });
+    const feedbackStore = createPgFeedbackStore({ client: pool });
+    const [health, knowledge, feedback] = await Promise.all([
+      getHealthStatus(),
+      knowledgeStore.getStats(),
+      feedbackStore.getFeedbackStats({ limit: 10 }),
+    ]);
+
+    return {
+      feedback,
+      generatedAt: new Date(now()).toISOString(),
+      health,
+      knowledge,
+    };
+  } finally {
+    await pool.end();
+  }
 }
 
 function checkRequiredConfig(config: ReturnType<typeof loadRagConfig>): HealthCheck {

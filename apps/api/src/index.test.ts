@@ -170,6 +170,101 @@ describe('createRequestHandler', () => {
     );
   });
 
+  it('keeps ops summary disabled until an ops token is configured', async () => {
+    const handler = createRequestHandler({
+      getOpsSummary() {
+        throw new Error('getOpsSummary should not be called when ops are disabled');
+      },
+    });
+
+    const response = await callHandler(handler, {
+      method: 'GET',
+      url: '/api/ops/summary',
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'ops_disabled',
+      message: 'Ops summary API is disabled.',
+    });
+  });
+
+  it('requires a valid ops token before returning production summary data', async () => {
+    const handler = createRequestHandler({
+      env: {
+        API_OPS_TOKEN: 'secret-token',
+      },
+      getOpsSummary() {
+        throw new Error('getOpsSummary should not be called for unauthorized requests');
+      },
+    });
+
+    const response = await callHandler(handler, {
+      method: 'GET',
+      url: '/api/ops/summary',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'ops_unauthorized',
+      message: 'A valid ops token is required.',
+    });
+  });
+
+  it('returns protected ops summary data for monitoring dashboards', async () => {
+    const summary = {
+      feedback: {
+        latest: [
+          {
+            answer: '根据知识库，XXYY Pro 提供更多权益。',
+            channel: 'web' as const,
+            citationCount: 2,
+            createdAt: '2026-06-06T02:03:04.000Z',
+            intent: 'product_qa' as const,
+            question: 'XXYY Pro 有哪些权益？',
+            rating: 'negative' as const,
+          },
+        ],
+        negativeCount: 1,
+        positiveCount: 2,
+        totalCount: 3,
+      },
+      generatedAt: '2026-06-06T02:04:05.000Z',
+      health: {
+        checks: {
+          config: { status: 'ok' as const },
+          embedding: { model: 'text-embedding-3-small', status: 'ok' as const },
+          llm: { model: 'gpt-test', status: 'ok' as const },
+          vectorStore: { chunkCount: 64, status: 'ok' as const, vectorExtension: true },
+        },
+        status: 'ok' as const,
+      },
+      knowledge: {
+        chunkCount: 64,
+        documentCount: 12,
+        sourceStats: [],
+        sourceUrlCount: 8,
+      },
+    };
+    const handler = createRequestHandler({
+      env: {
+        API_OPS_TOKEN: 'secret-token',
+      },
+      getOpsSummary: () => Promise.resolve(summary),
+    });
+
+    const response = await callHandler(handler, {
+      headers: {
+        Authorization: 'Bearer secret-token',
+      },
+      method: 'GET',
+      url: '/api/ops/summary',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual(summary);
+  });
+
   it('handles allowed CORS preflight requests for chat APIs', async () => {
     const handler = createRequestHandler({
       env: {
