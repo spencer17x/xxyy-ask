@@ -109,6 +109,65 @@ describe('createRequestHandler', () => {
     expect(JSON.parse(response.body)).toEqual({ status: 'ok' });
   });
 
+  it('returns deep health status with dependency details', async () => {
+    const handler = createRequestHandler({
+      getHealthStatus: () =>
+        Promise.resolve({
+          checks: {
+            config: { status: 'ok' },
+            embedding: { model: 'text-embedding-3-small', status: 'ok' },
+            llm: { model: 'gpt-test', status: 'ok' },
+            vectorStore: { chunkCount: 42, status: 'ok', vectorExtension: true },
+          },
+          status: 'ok',
+        }),
+    });
+
+    const response = await callHandler(handler, { method: 'GET', url: '/health/deep' });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      checks: {
+        config: { status: 'ok' },
+        embedding: { model: 'text-embedding-3-small', status: 'ok' },
+        llm: { model: 'gpt-test', status: 'ok' },
+        vectorStore: { chunkCount: 42, status: 'ok', vectorExtension: true },
+      },
+      status: 'ok',
+    });
+  });
+
+  it('reports missing production configuration in deep health status', async () => {
+    const handler = createRequestHandler({ env: {} });
+
+    const response = await callHandler(handler, { method: 'GET', url: '/health/deep' });
+    const payload = JSON.parse(response.body) as {
+      checks: {
+        config: { missing: string[]; status: string };
+        embedding: { message: string; status: string };
+        llm: { message: string; status: string };
+        vectorStore: { message: string; status: string };
+      };
+      status: string;
+    };
+
+    expect(response.statusCode).toBe(503);
+    expect(payload.status).toBe('degraded');
+    expect(payload.checks.config).toEqual({
+      missing: ['DATABASE_URL', 'OPENAI_API_KEY', 'OPENAI_MODEL'],
+      status: 'error',
+    });
+    expect(payload.checks.vectorStore.message).toBe(
+      'DATABASE_URL is required for pgvector retrieval.',
+    );
+    expect(payload.checks.embedding.message).toBe(
+      'OPENAI_API_KEY is required for embedding generation.',
+    );
+    expect(payload.checks.llm.message).toBe(
+      'OPENAI_API_KEY and OPENAI_MODEL are required for LLM answer generation.',
+    );
+  });
+
   it('serves product media assets for chat attachments', async () => {
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-api-assets-'));
     const assetsDir = path.join(workspaceRoot, 'docs', 'product-features', 'assets');

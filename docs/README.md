@@ -18,7 +18,7 @@
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、索引读写。
 - `packages/rag-core`：意图分类、混合检索、LLM 回答生成、边界回复、评测。
 - `apps/cli`：本地 `ingest` / `ask` / `evaluate`。
-- `apps/api`：`GET /health`、`POST /api/chat`，并在 `/` 提供 Web UI。
+- `apps/api`：`GET /health`、`GET /health/deep`、`POST /api/chat`，并在 `/` 提供 Web UI。
 - `apps/web`：静态聊天页，调用同源 `/api/chat`。
 
 LLM 配置：
@@ -46,6 +46,13 @@ pnpm start
 正式知识库写入 Postgres + pgvector。启动 API 前先运行 `pnpm rag:ingest` 完成迁移和写库。产品问答会检索知识库片段，再调用 LLM 生成客服回答；如果缺少 `OPENAI_API_KEY` 或 `OPENAI_MODEL`，CLI 会直接报错，API 会返回对应配置错误。Web UI 由 `apps/api` 在 `/` 提供，因此本地体验直接运行 `pnpm start` 后打开 API 地址即可。
 
 HTTP 交互：
+
+```http
+GET /health
+GET /health/deep
+```
+
+`/health` 是轻量存活检查。`/health/deep` 会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM；全部可用返回 `200`，任一项不可用返回 `503` 和分项原因。
 
 ```http
 POST /api/chat

@@ -84,11 +84,19 @@ http://localhost:3000
 
 ## API
 
-健康检查：
+轻量存活检查：
 
 ```http
 GET /health
 ```
+
+深度依赖自检：
+
+```http
+GET /health/deep
+```
+
+`/health/deep` 会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM。全部可用时返回 `200`；任一项不可用时返回 `503`，并在 `checks` 里给出具体原因，不返回 API key 或数据库密码。
 
 聊天接口：
 
