@@ -1,5 +1,10 @@
 # xxyy-ask 文档
 
+## 项目状态
+
+- [功能状态](feature-status.md)
+- [Roadmap](roadmap.md)
+
 ## 产品功能知识库
 
 - [XXYY 产品功能知识库](product-features/README.md)
