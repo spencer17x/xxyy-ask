@@ -37,35 +37,23 @@ API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/
 常用命令：
 
 ```bash
-pnpm rag:ingest
-pnpm rag:sync:x
-pnpm rag:migrate
-pnpm rag:stats
-pnpm rag:feedback
-pnpm rag:ask -- "XXYY Pro 有哪些权益？"
-pnpm rag:evaluate -- --fast
-pnpm rag:evaluate
-pnpm ops:check
-pnpm ops:check:rag
-pnpm ops:check:full
-pnpm ops:refresh
-pnpm ops:smoke
-pnpm start
+pnpm start           # 启动前检查/增量更新知识库，然后启动 API + Web
+pnpm sync            # 增量同步知识库，适合线上定时任务
+pnpm sync -- --full  # 全量重建知识库，适合发布前或文档结构大改
+pnpm check           # lint + format check + typecheck + tests
 ```
 
 `pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录一次 ingestion run，包含 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：按 DB 中已有 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧知识块。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 可以查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 
 Web UI 会在每条回答后提供正负反馈入口，写入 Postgres `rag_feedback` 表，不记录明文 `userId`。`pnpm rag:feedback` 可以查看用户反馈总数、正负反馈数量和最近反馈明细，用于补知识库或扩展评测集；生产 triage 可以用 `pnpm rag:feedback -- --rating negative --limit 25 --json` 导出负反馈队列。
 
-`pnpm ops:check` 是 CI 基础门禁，只跑不依赖 DB/LLM 的代码检查。`pnpm ops:check:rag` 适合有 `.env`、数据库和模型的生产检查环境，会追加 `rag:stats`、`rag:feedback` 和 fast eval。`pnpm ops:check:full` 会再追加完整 LLM eval，适合发布前人工确认。
-
-`pnpm x:scrape` 默认读取本地 X JSONL 的最新推文时间，只抓取该时间之后的 @useXXYYio 公开主页更新并合并写回；`pnpm x:scrape -- --full` 才会全量重抓。`pnpm ops:refresh` 用于定时或人工刷新知识库，默认会增量抓取 X 更新、执行 `rag:sync:x`、跑 RAG 生产门禁，并导出负反馈 JSON 队列。只刷新本地/已更新文档时可以用 `pnpm ops:refresh -- --skip-scrape`，发布前可用 `pnpm ops:refresh -- --full` 执行全量 scrape、全量 ingest 和完整 LLM eval。
+`pnpm sync` 是对底层刷新流程的主入口：默认会增量抓取 X 更新、执行 `rag:sync:x`、跑 RAG 生产检查，并导出负反馈 JSON 队列。只刷新本地/已更新文档时可以用 `pnpm sync -- --skip-scrape`，发布前可用 `pnpm sync -- --full` 执行全量 scrape、全量 ingest 和完整 LLM eval。
 
 `pnpm ops:smoke` 用于检查已经启动的 API 服务，默认检查 `http://localhost:3000/health` 和 `/health/deep`。线上可用 `pnpm ops:smoke -- --base-url https://你的域名 --ops-token "$API_OPS_TOKEN"` 检查受保护的 ops summary；加 `--chat` 会额外请求一次 `/api/chat` 并校验回答和 citations。
 
 `pnpm rag:evaluate -- --fast` 只跳过 chat LLM 回答生成，仍会调用 embedding 模型并查询 pgvector；它用于快速检查检索、引用和边界分类。`pnpm rag:evaluate` 会调用配置的大模型，用于检查最终客服回答质量。
 
-正式知识库写入 Postgres + pgvector。启动 API 前先运行 `pnpm rag:ingest` 完成迁移和写库。产品问答会检索知识库片段，再调用 LLM 生成客服回答；如果缺少 `OPENAI_API_KEY` 或 `OPENAI_MODEL`，CLI 会直接报错，API 会返回对应配置错误。Web UI 由 `apps/api` 在 `/` 提供，因此本地体验直接运行 `pnpm start` 后打开 API 地址即可。
+正式知识库写入 Postgres + pgvector。本地体验直接运行 `pnpm start`：启动脚本会尝试启动本地 pgvector、检查知识库，在知识库为空时先跑 ingest，然后执行增量 `x:scrape` 和 `rag:sync:x`，最后启动 API + Web。生产环境使用 `NODE_ENV=production pnpm start` 会跳过本地 Docker，但同样会做知识库检查和增量同步。完全跳过启动前同步的内部入口是 `pnpm start:service`。
 
 HTTP 交互：
 
@@ -94,12 +82,6 @@ POST /api/feedback
 
 ## 正式 RAG：Postgres + pgvector
 
-开发环境可以启动本地 pgvector：
-
-```bash
-docker compose up -d postgres
-```
-
 配置：
 
 ```bash
@@ -117,21 +99,20 @@ export RAG_ANSWER_PROVIDER=openai
 
 应用会从 `POSTGRES_*` 自动组装数据库连接串。使用外部托管数据库时，也可以只配置 `DATABASE_URL` 覆盖。
 
-写入知识库：
-
-```bash
-pnpm rag:ingest
-```
-
-同步 X 更新日志增量：
-
-```bash
-pnpm x:scrape
-pnpm rag:sync:x
-```
-
-运行 API：
+本地启动：
 
 ```bash
 pnpm start
+```
+
+线上启动：
+
+```bash
+NODE_ENV=production pnpm start
+```
+
+线上增量同步：
+
+```bash
+pnpm sync
 ```

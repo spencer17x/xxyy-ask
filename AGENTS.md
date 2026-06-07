@@ -55,7 +55,8 @@ API_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_WINDOW_MS=60000
 ```
 
-`pnpm rag:*` 和 `pnpm start` 会通过 `dotenv` 读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
+`pnpm start`、`pnpm sync` 和 `pnpm rag:*` 会读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
+主入口是 `pnpm start`、`pnpm sync` 和 `pnpm check`：本地 `pnpm start` 会尝试启动本地 pgvector、检查知识库并在空库时 ingest，然后执行增量 `x:scrape` 和 `rag:sync:x`，最后启动 API + Web；线上用 `NODE_ENV=production pnpm start` 会跳过本地 Docker，但同样会做知识库检查和增量同步；完全跳过启动前同步的内部入口是 `pnpm start:service`。线上定时增量更新用 `pnpm sync`，低频全量重建用 `pnpm sync -- --full`。
 OpenAI-compatible 请求默认 30 秒超时、重试 1 次；需要调整时再配置 `OPENAI_REQUEST_TIMEOUT_MS` 和 `OPENAI_MAX_RETRIES`。
 API 的 `GET /health` 是轻量存活检查；`GET /health/deep` 是生产依赖自检，会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM，失败时返回 503 和分项原因。
 通过 `pnpm start` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、引用数、耗时、状态码和错误码；只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文。
@@ -68,31 +69,25 @@ Web UI 会把每条回答后的正负反馈提交到 `POST /api/feedback`，API 
 修改代码后优先跑：
 
 ```bash
-pnpm ops:check
-```
-
-更新产品文档、X 推文或检索/回答逻辑后，优先跑完整质量门禁：
-
-```bash
-pnpm rag:ingest
-pnpm rag:sync:x
-pnpm rag:migrate
-pnpm rag:stats
-pnpm rag:feedback
-pnpm rag:evaluate -- --fast
-pnpm rag:evaluate
 pnpm check
 ```
+
+更新产品文档、X 推文或检索/回答逻辑后，优先跑：
+
+```bash
+pnpm sync
+pnpm check
+```
+
+如果改了正式文档结构、需要重建全部知识库，或要做发布前全量确认，再跑 `pnpm sync -- --full`。
 
 `pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：读取当前 X 文档和 JSONL，按 DB 里的 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧 chunk。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 用于查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 
 `pnpm rag:feedback -- --rating negative --limit 25 --json` 用于导出负反馈 triage 队列，方便把低质量回答补进知识库或评测集。不要在反馈记录里写入明文用户身份或密钥。
 
-`pnpm ops:check` 是 CI 基础门禁，只跑不依赖 DB/LLM 的代码检查。`pnpm ops:check:rag` 适合有 `.env`、数据库和模型的生产检查环境，会追加 `rag:stats`、`rag:feedback` 和 fast eval。`pnpm ops:check:full` 会再追加完整 LLM eval，适合发布前人工确认。
-
 `pnpm x:scrape` 默认是增量抓取：读取 `docs/product-features/sources/usexxyyio-x-posts.jsonl` 的最新推文时间，只获取该时间之后的 @useXXYYio 公开主页更新并合并写回；`pnpm x:scrape -- --full` 才会全量重抓。
 
-`pnpm ops:refresh` 是知识库更新流水线，默认执行增量 `x:scrape`、`rag:sync:x`、`ops:check:rag`，最后导出负反馈 JSON 队列。用 `pnpm ops:refresh -- --skip-scrape` 跳过 X 抓取，用 `pnpm ops:refresh -- --full` 才会执行全量 `x:scrape -- --full`、`rag:ingest` 和完整 LLM eval。
+`pnpm sync` 是知识库更新流水线，默认执行增量 `x:scrape`、`rag:sync:x`、RAG 生产检查，最后导出负反馈 JSON 队列。用 `pnpm sync -- --skip-scrape` 跳过 X 抓取，用 `pnpm sync -- --full` 才会执行全量 `x:scrape -- --full`、`rag:ingest` 和完整 LLM eval。
 
 `pnpm ops:smoke` 用于检查已经启动的 API 服务，默认检查 `/health` 和 `/health/deep`。线上检查可传 `--base-url` 和 `--ops-token`，加 `--chat` 会额外调用一次 `/api/chat` 并校验回答和 citations。
 
@@ -124,7 +119,7 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
 - 不要提交 `.rag/`、`.env`、数据库数据或密钥。
 - 不要在 `docker-compose.yml` 写死数据库密码；使用 `.env` 注入。
 - 不要把真实 API key 写入测试、README 或日志。
-- API 服务端不负责迁移，迁移和写库由 `pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成。
+- 生产 API 服务端不负责迁移，迁移和写库由 `pnpm sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成；本地 `pnpm start` 的启动脚本可以为空知识库做首次 bootstrap。
 - 新增行为需要加测试；风险较高的改动跑 `pnpm check`。
 - 对外错误信息应清晰区分：
   - LLM 配置缺失
