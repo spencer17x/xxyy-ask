@@ -2,6 +2,7 @@
 
 ## 项目状态
 
+- [业务架构](architecture.md)
 - [功能状态](feature-status.md)
 - [Roadmap](roadmap.md)
 
