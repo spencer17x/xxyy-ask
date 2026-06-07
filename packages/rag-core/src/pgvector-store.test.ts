@@ -277,6 +277,45 @@ describe('createPgVectorStore', () => {
     expect(client.queries[1]?.values[9]).toBeNull();
   });
 
+  it('returns content hashes for selected chunks', async () => {
+    const client = new FakePgClient();
+    client.rows = [
+      {
+        content_hash: 'hash-1',
+        id: 'x_updates:sources/usexxyyio-x-posts/1:chunk:0001',
+      },
+      {
+        content_hash: 'hash-2',
+        id: 'x_updates:sources/usexxyyio-x-posts/2:chunk:0001',
+      },
+    ];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    const hashes = await store.getChunkContentHashes([
+      'x_updates:sources/usexxyyio-x-posts/1:chunk:0001',
+      'x_updates:sources/usexxyyio-x-posts/2:chunk:0001',
+      'x_updates:sources/usexxyyio-x-posts/3:chunk:0001',
+    ]);
+
+    expect(client.queries[0]?.sql).toContain('select id, content_hash');
+    expect(client.queries[0]?.values).toEqual([
+      [
+        'x_updates:sources/usexxyyio-x-posts/1:chunk:0001',
+        'x_updates:sources/usexxyyio-x-posts/2:chunk:0001',
+        'x_updates:sources/usexxyyio-x-posts/3:chunk:0001',
+      ],
+    ]);
+    expect(hashes).toEqual(
+      new Map([
+        ['x_updates:sources/usexxyyio-x-posts/1:chunk:0001', 'hash-1'],
+        ['x_updates:sources/usexxyyio-x-posts/2:chunk:0001', 'hash-2'],
+      ]),
+    );
+  });
+
   it('replaces stale chunks after upserting the current index', async () => {
     const client = new FakePgClient();
     const store = createPgVectorStore({

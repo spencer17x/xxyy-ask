@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ACCOUNT = 'useXXYYio';
 const X_HOME_URL = 'https://x.com';
@@ -17,30 +18,41 @@ const REQUEST_DELAY_MS = Number(process.env.XXYY_X_REQUEST_DELAY_MS ?? 250);
 const USER_BY_SCREEN_NAME = 'UserByScreenName';
 const USER_TWEETS = 'UserTweets';
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
-
-async function main() {
+export async function main(args = process.argv.slice(2)) {
+  const options = parseScrapeArgs(args);
   const cwd = process.cwd();
   const fetchedAt = new Date().toISOString();
   const outputDir = path.join(cwd, OUTPUT_DIR);
+  const jsonlPath = path.join(outputDir, JSONL_FILE);
+  const existingPosts = options.full ? [] : await readExistingXPosts(jsonlPath);
+  const cutoff = options.full ? undefined : getLatestPostCutoff(existingPosts);
 
   const webConfig = await loadXWebConfig();
   const guestToken = await activateGuest(webConfig.bearerToken);
   const headers = createXHeaders(webConfig.bearerToken, guestToken);
   const account = await fetchAccount(webConfig, headers);
-  const posts = await fetchTimelinePosts(webConfig, headers, account.restId, fetchedAt);
+  const fetchedPosts = await fetchTimelinePosts(webConfig, headers, account.restId, {
+    cutoff,
+    fetchedAt,
+  });
+  const posts = options.full ? fetchedPosts : mergeXPosts(existingPosts, fetchedPosts);
 
   await mkdir(outputDir, { recursive: true });
-  await writeJsonl(path.join(outputDir, JSONL_FILE), posts);
+  await writeJsonl(jsonlPath, posts);
   await writeMeta(path.join(outputDir, META_FILE), {
     account,
     coverage: {
       endpoint: 'X web GraphQL UserTweets',
+      fetchedPosts: fetchedPosts.length,
+      mode: options.full ? 'full' : 'incremental',
       note: 'Covers public profile timeline posts visible to the anonymous X web client. Replies not shown in UserTweets are not included unless X exposes them in the profile timeline.',
       pageSize: PAGE_SIZE,
+      ...(cutoff === undefined
+        ? {}
+        : {
+            cutoffCreatedAtIso: cutoff.createdAtIso,
+            cutoffPostId: cutoff.id,
+          }),
       totalPosts: posts.length,
     },
     fetchedAt,
@@ -52,10 +64,33 @@ async function main() {
   });
   await updateRawIndexSection(path.join(cwd, UPDATES_FILE), posts, fetchedAt);
 
-  console.log(`Fetched ${posts.length} @${ACCOUNT} posts.`);
+  console.log(
+    options.full
+      ? `Fetched ${posts.length} @${ACCOUNT} posts.`
+      : `Fetched ${fetchedPosts.length} new @${ACCOUNT} posts after ${
+          cutoff?.createdAtIso ?? 'the local source start'
+        }.`,
+  );
+  console.log(`Wrote ${posts.length} total @${ACCOUNT} posts.`);
   console.log(`Wrote ${path.join(OUTPUT_DIR, JSONL_FILE)}`);
   console.log(`Wrote ${path.join(OUTPUT_DIR, META_FILE)}`);
   console.log(`Updated ${UPDATES_FILE}`);
+}
+
+export function parseScrapeArgs(args) {
+  const normalizedArgs = args[0] === '--' ? args.slice(1) : args;
+  let full = false;
+
+  for (const option of normalizedArgs) {
+    if (option === '--full') {
+      full = true;
+      continue;
+    }
+
+    throw new Error(`Unknown option: ${option}`);
+  }
+
+  return { full };
 }
 
 async function loadXWebConfig() {
@@ -173,7 +208,7 @@ async function fetchAccount(webConfig, headers) {
   };
 }
 
-async function fetchTimelinePosts(webConfig, headers, userId, fetchedAt) {
+async function fetchTimelinePosts(webConfig, headers, userId, options) {
   const operation = webConfig.operations[USER_TWEETS];
   const seen = new Map();
   let cursor;
@@ -189,17 +224,25 @@ async function fetchTimelinePosts(webConfig, headers, userId, fetchedAt) {
     };
     const payload = await fetchGraphql(operation, headers, variables);
     const { bottomCursor, tweets } = extractTimelinePage(payload);
+    let reachedCutoff = false;
     let newCount = 0;
 
     for (const tweet of tweets) {
-      const record = normalizeTweet(tweet, fetchedAt);
-      if (record.id !== undefined && !seen.has(record.id)) {
+      const record = normalizeTweet(tweet, options.fetchedAt);
+      if (record.id === undefined) {
+        continue;
+      }
+      if (!shouldKeepFetchedPost(record, options.cutoff)) {
+        reachedCutoff = true;
+        continue;
+      }
+      if (!seen.has(record.id)) {
         seen.set(record.id, record);
         newCount += 1;
       }
     }
 
-    if (bottomCursor === undefined || bottomCursor === cursor || newCount === 0) {
+    if (reachedCutoff || bottomCursor === undefined || bottomCursor === cursor || newCount === 0) {
       break;
     }
 
@@ -210,6 +253,84 @@ async function fetchTimelinePosts(webConfig, headers, userId, fetchedAt) {
   return Array.from(seen.values()).sort((left, right) =>
     right.createdAtIso.localeCompare(left.createdAtIso),
   );
+}
+
+async function readExistingXPosts(filePath) {
+  let rawContent;
+  try {
+    rawContent = await readFile(filePath, 'utf8');
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return [];
+    }
+    throw error;
+  }
+
+  return rawContent
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line, index) => {
+      try {
+        return JSON.parse(line);
+      } catch (error) {
+        throw new Error(`Invalid X post source entry on line ${index + 1}.`, { cause: error });
+      }
+    });
+}
+
+export function getLatestPostCutoff(posts) {
+  const latest = posts
+    .filter((post) => typeof post.createdAtIso === 'string' && post.createdAtIso.length > 0)
+    .sort((left, right) => right.createdAtIso.localeCompare(left.createdAtIso))[0];
+
+  if (latest?.createdAtIso === undefined) {
+    return undefined;
+  }
+
+  return {
+    createdAtIso: latest.createdAtIso,
+    id: latest.id,
+  };
+}
+
+export function shouldKeepFetchedPost(post, cutoff) {
+  if (cutoff === undefined) {
+    return true;
+  }
+  if (typeof post.createdAtIso !== 'string' || post.createdAtIso.length === 0) {
+    return true;
+  }
+
+  return post.createdAtIso > cutoff.createdAtIso;
+}
+
+export function mergeXPosts(existingPosts, fetchedPosts) {
+  const merged = new Map();
+
+  for (const post of existingPosts) {
+    if (typeof post.id === 'string') {
+      merged.set(post.id, post);
+    }
+  }
+  for (const post of fetchedPosts) {
+    if (typeof post.id === 'string') {
+      merged.set(post.id, post);
+    }
+  }
+
+  return Array.from(merged.values()).sort(comparePostsByCreatedAtDesc);
+}
+
+function comparePostsByCreatedAtDesc(left, right) {
+  const dateCompare = String(right.createdAtIso ?? '').localeCompare(
+    String(left.createdAtIso ?? ''),
+  );
+  if (dateCompare !== 0) {
+    return dateCompare;
+  }
+
+  return String(right.id ?? '').localeCompare(String(left.id ?? ''));
 }
 
 async function fetchGraphql(operation, headers, variables) {
@@ -509,5 +630,25 @@ function toMarkdownQuote(text) {
 function delay(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
+  });
+}
+
+function isMissingFileError(error) {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
+function isDirectRun() {
+  const invokedPath = process.argv[1];
+  if (invokedPath === undefined) {
+    return false;
+  }
+
+  return path.resolve(invokedPath) === fileURLToPath(import.meta.url);
+}
+
+if (isDirectRun()) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
   });
 }

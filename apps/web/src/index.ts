@@ -297,6 +297,71 @@ export function renderChatPage(): string {
         overflow-wrap: anywhere;
       }
 
+      .bubble-content.markdown-rendered {
+        white-space: normal;
+      }
+
+      .bubble-content.markdown-rendered > *:first-child {
+        margin-top: 0;
+      }
+
+      .bubble-content.markdown-rendered > *:last-child {
+        margin-bottom: 0;
+      }
+
+      .bubble-content.markdown-rendered p,
+      .bubble-content.markdown-rendered ul,
+      .bubble-content.markdown-rendered ol,
+      .bubble-content.markdown-rendered pre {
+        margin: 0 0 10px;
+      }
+
+      .bubble-content.markdown-rendered ul,
+      .bubble-content.markdown-rendered ol {
+        padding-left: 22px;
+      }
+
+      .bubble-content.markdown-rendered li {
+        margin: 3px 0;
+      }
+
+      .bubble-content.markdown-rendered h3 {
+        margin: 12px 0 8px;
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      .bubble-content.markdown-rendered code {
+        border: 1px solid var(--line-soft);
+        border-radius: 6px;
+        background: var(--panel-soft);
+        padding: 1px 5px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          monospace;
+        font-size: 0.92em;
+      }
+
+      .bubble-content.markdown-rendered pre {
+        overflow: auto;
+        border: 1px solid var(--line-soft);
+        border-radius: 8px;
+        background: #101827;
+        color: #f8fafc;
+        padding: 10px 12px;
+      }
+
+      .bubble-content.markdown-rendered pre code {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        padding: 0;
+      }
+
+      .bubble-content.markdown-rendered a {
+        color: var(--accent-strong);
+        font-weight: 650;
+      }
+
       .message-meta {
         display: flex;
         flex-wrap: wrap;
@@ -734,8 +799,10 @@ export function renderChatPage(): string {
 
           await readChatStream(response.body, assistantMessage);
         } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
           assistantMessage.node.classList.add("is-error");
-          assistantMessage.answer.textContent = error instanceof Error ? error.message : String(error);
+          assistantMessage.rawAnswer = errorMessage;
+          assistantMessage.answer.textContent = errorMessage;
           status.textContent = "Error";
         } finally {
           assistantMessage.node.classList.remove("is-streaming");
@@ -788,13 +855,15 @@ export function renderChatPage(): string {
             assistantMessage.answer.textContent = "";
             assistantMessage.hasContent = true;
           }
-          assistantMessage.answer.textContent += payload.delta || "";
+          assistantMessage.rawAnswer += payload.delta || "";
+          assistantMessage.answer.textContent = assistantMessage.rawAnswer;
           status.textContent = "Receiving";
           scrollMessagesToBottom();
           return;
         }
 
         if (eventName === "metadata") {
+          renderMarkdown(assistantMessage.answer, assistantMessage.rawAnswer);
           assistantMessage.meta.textContent =
             payload.intent + " · confidence " + Number(payload.confidence).toFixed(2);
           renderCitations(assistantMessage.citations, payload.citations || []);
@@ -866,6 +935,7 @@ export function renderChatPage(): string {
           meta,
           node,
           question: options.question || options.text || "",
+          rawAnswer: options.text || "",
         };
         if (role === "assistant") {
           setupFeedbackActions(messageRecord);
@@ -915,7 +985,7 @@ export function renderChatPage(): string {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              answer: assistantMessage.answer.textContent || "",
+              answer: assistantMessage.rawAnswer || assistantMessage.answer.textContent || "",
               channel: "web",
               citationCount: assistantMessage.citationCount,
               intent: assistantMessage.intentValue,
@@ -936,6 +1006,139 @@ export function renderChatPage(): string {
           for (const button of buttons) {
             button.disabled = false;
           }
+        }
+      }
+
+      function renderMarkdown(target, markdown) {
+        target.classList.add("markdown-rendered");
+        const blocks = [];
+        const lines = markdown.replace(/\\r\\n?/g, "\\n").split("\\n");
+        let paragraphLines = [];
+        let list = null;
+        let codeLines = [];
+        let inCodeBlock = false;
+
+        function flushParagraph() {
+          if (paragraphLines.length === 0) return;
+          const paragraph = document.createElement("p");
+          appendInlineMarkdown(paragraph, paragraphLines.join(" "));
+          blocks.push(paragraph);
+          paragraphLines = [];
+        }
+
+        function flushList() {
+          if (list === null) return;
+          blocks.push(list);
+          list = null;
+        }
+
+        function flushCodeBlock() {
+          const pre = document.createElement("pre");
+          const code = document.createElement("code");
+          code.textContent = codeLines.join("\\n");
+          pre.append(code);
+          blocks.push(pre);
+          codeLines = [];
+        }
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("\`\`\`")) {
+            if (inCodeBlock) {
+              flushCodeBlock();
+              inCodeBlock = false;
+              continue;
+            }
+            flushParagraph();
+            flushList();
+            codeLines = [];
+            inCodeBlock = true;
+            continue;
+          }
+
+          if (inCodeBlock) {
+            codeLines.push(line);
+            continue;
+          }
+
+          if (trimmed.length === 0) {
+            flushParagraph();
+            flushList();
+            continue;
+          }
+
+          const headingMatch = /^(#{1,4})\\s+(.+)$/u.exec(trimmed);
+          if (headingMatch !== null) {
+            flushParagraph();
+            flushList();
+            const heading = document.createElement("h3");
+            appendInlineMarkdown(heading, headingMatch[2]);
+            blocks.push(heading);
+            continue;
+          }
+
+          const unorderedMatch = /^[-*]\\s+(.+)$/u.exec(trimmed);
+          const orderedMatch = /^\\d+[.)]\\s+(.+)$/u.exec(trimmed);
+          if (unorderedMatch !== null || orderedMatch !== null) {
+            flushParagraph();
+            const listType = unorderedMatch !== null ? "ul" : "ol";
+            if (list === null || list.tagName.toLowerCase() !== listType) {
+              flushList();
+              list = document.createElement(listType);
+            }
+            const item = document.createElement("li");
+            appendInlineMarkdown(item, unorderedMatch?.[1] || orderedMatch?.[1] || "");
+            list.append(item);
+            continue;
+          }
+
+          flushList();
+          paragraphLines.push(trimmed);
+        }
+
+        if (inCodeBlock) {
+          flushCodeBlock();
+        }
+        flushParagraph();
+        flushList();
+
+        if (blocks.length === 0) {
+          target.textContent = markdown;
+          return;
+        }
+        target.replaceChildren(...blocks);
+      }
+
+      function appendInlineMarkdown(parent, text) {
+        const tokenPattern = /(\\*\\*([^*]+)\\*\\*|\\x60([^\\x60]+)\\x60|\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\))/gu;
+        let cursor = 0;
+        for (const match of text.matchAll(tokenPattern)) {
+          if (match.index > cursor) {
+            parent.append(document.createTextNode(text.slice(cursor, match.index)));
+          }
+
+          if (match[2] !== undefined) {
+            const strong = document.createElement("strong");
+            strong.textContent = match[2];
+            parent.append(strong);
+          } else if (match[3] !== undefined) {
+            const code = document.createElement("code");
+            code.textContent = match[3];
+            parent.append(code);
+          } else if (match[4] !== undefined && match[5] !== undefined) {
+            const link = document.createElement("a");
+            link.href = match[5];
+            link.target = "_blank";
+            link.rel = "noreferrer";
+            link.textContent = match[4];
+            parent.append(link);
+          }
+
+          cursor = match.index + match[0].length;
+        }
+
+        if (cursor < text.length) {
+          parent.append(document.createTextNode(text.slice(cursor)));
         }
       }
 

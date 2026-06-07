@@ -24,10 +24,15 @@ const COMMANDS = {
     command: 'pnpm',
     label: 'RAG production gate',
   },
-  refreshXUpdates: {
-    args: ['x:scrape'],
+  refreshXUpdates: (full) => ({
+    args: full ? ['x:scrape', '--', '--full'] : ['x:scrape'],
     command: 'pnpm',
     label: 'refresh X updates',
+  }),
+  syncXKnowledge: {
+    args: ['rag:sync:x'],
+    command: 'pnpm',
+    label: 'sync X knowledge',
   },
 };
 
@@ -36,11 +41,11 @@ export function createRagRefreshPlan(args) {
   const plan = [];
 
   if (!options.skipScrape) {
-    plan.push(COMMANDS.refreshXUpdates);
+    plan.push(COMMANDS.refreshXUpdates(options.full));
   }
 
   plan.push(
-    COMMANDS.ingestKnowledge,
+    options.full ? COMMANDS.ingestKnowledge : COMMANDS.syncXKnowledge,
     options.full ? COMMANDS.fullRagGate : COMMANDS.ragGate,
     COMMANDS.negativeFeedbackQueue(options.feedbackLimit),
   );

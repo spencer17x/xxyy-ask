@@ -21,6 +21,7 @@ export interface EmbeddedKnowledgeChunk extends Omit<PreparedKnowledgeChunk, 'me
 }
 
 export interface PgVectorStore extends Retriever {
+  getChunkContentHashes(chunkIds: readonly string[]): Promise<Map<string, string>>;
   getFeedbackStats(options?: GetFeedbackStatsOptions): Promise<FeedbackStats>;
   getStats(): Promise<KnowledgeStats>;
   migrate(): Promise<void>;
@@ -58,6 +59,11 @@ interface KnowledgeChunkRow {
   content: string;
   tokens: string[];
   embedding_distance: number;
+}
+
+interface KnowledgeChunkHashRow {
+  content_hash: string;
+  id: string;
 }
 
 export interface RecordIngestionRunInput {
@@ -256,6 +262,24 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
   };
 
   return {
+    async getChunkContentHashes(chunkIds: readonly string[]): Promise<Map<string, string>> {
+      if (chunkIds.length === 0) {
+        return new Map();
+      }
+
+      const response = await queryDatabase<KnowledgeChunkHashRow>(
+        options.client,
+        `
+        select id, content_hash
+        from knowledge_chunks
+        where id = any($1::text[])
+        `,
+        [chunkIds],
+      );
+
+      return new Map(response.rows.map((row) => [row.id, row.content_hash]));
+    },
+
     async getFeedbackStats(input: GetFeedbackStatsOptions = {}): Promise<FeedbackStats> {
       return getFeedbackStats(options.client, input);
     },

@@ -29,6 +29,25 @@ describe('renderChatPage', () => {
     expect(html).not.toContain('citations.innerHTML = (payload.citations || [])');
   });
 
+  it('renders streamed assistant markdown safely after metadata arrives', () => {
+    const html = renderChatPage();
+
+    expect(html).toContain('assistantMessage.rawAnswer += payload.delta || ""');
+    expect(html).toContain('renderMarkdown(assistantMessage.answer, assistantMessage.rawAnswer)');
+    expect(html).toContain('function renderMarkdown(target, markdown)');
+    expect(html).toContain('function appendInlineMarkdown(parent, text)');
+    expect(html).not.toContain('assistantMessage.answer.innerHTML');
+    expect(html).not.toContain('innerHTML =');
+  });
+
+  it('submits the raw assistant answer in feedback after markdown rendering', () => {
+    const html = renderChatPage();
+
+    expect(html).toContain(
+      'answer: assistantMessage.rawAnswer || assistantMessage.answer.textContent || ""',
+    );
+  });
+
   it('does not pretend to handle API routes in standalone mode', async () => {
     const server = startStaticWebServer(0);
     try {

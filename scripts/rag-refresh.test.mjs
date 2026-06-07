@@ -3,10 +3,35 @@ import { describe, expect, it } from 'vitest';
 import { createRagRefreshPlan, runRagRefresh } from './rag-refresh.mjs';
 
 describe('createRagRefreshPlan', () => {
-  it('refreshes sources, ingests knowledge, runs the RAG gate, and exports negative feedback', () => {
+  it('refreshes sources, syncs X knowledge, runs the RAG gate, and exports negative feedback', () => {
     expect(createRagRefreshPlan([])).toEqual([
       {
         args: ['x:scrape'],
+        command: 'pnpm',
+        label: 'refresh X updates',
+      },
+      {
+        args: ['rag:sync:x'],
+        command: 'pnpm',
+        label: 'sync X knowledge',
+      },
+      {
+        args: ['ops:check:rag'],
+        command: 'pnpm',
+        label: 'RAG production gate',
+      },
+      {
+        args: ['rag:feedback', '--', '--rating', 'negative', '--limit', '25', '--json'],
+        command: 'pnpm',
+        label: 'negative feedback triage queue',
+      },
+    ]);
+  });
+
+  it('uses full X scraping and full ingestion for explicit full refreshes', () => {
+    expect(createRagRefreshPlan(['--full'])).toEqual([
+      {
+        args: ['x:scrape', '--', '--full'],
         command: 'pnpm',
         label: 'refresh X updates',
       },
@@ -16,9 +41,9 @@ describe('createRagRefreshPlan', () => {
         label: 'ingest knowledge',
       },
       {
-        args: ['ops:check:rag'],
+        args: ['ops:check:full'],
         command: 'pnpm',
-        label: 'RAG production gate',
+        label: 'full RAG production gate',
       },
       {
         args: ['rag:feedback', '--', '--rating', 'negative', '--limit', '25', '--json'],
@@ -70,6 +95,6 @@ describe('runRagRefresh', () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(commands).toEqual(['ingest knowledge', 'RAG production gate']);
+    expect(commands).toEqual(['sync X knowledge', 'RAG production gate']);
   });
 });

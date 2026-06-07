@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PreparedKnowledgeChunk } from '@xxyy/knowledge';
 import type {
   CreateChatServiceOptions,
+  EmbeddedKnowledgeChunk,
   EvaluateCasesOptions,
   EvaluationCase,
   EvaluationReport,
@@ -47,6 +48,7 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
     expect(parseCliArgs(['migrate'])).toEqual({ command: 'migrate' });
     expect(parseCliArgs(['stats'])).toEqual({ command: 'stats' });
+    expect(parseCliArgs(['sync:x'])).toEqual({ command: 'sync:x' });
     expect(parseCliArgs(['feedback'])).toEqual({
       command: 'feedback',
       json: false,
@@ -83,6 +85,25 @@ describe('parseCliArgs', () => {
     });
   });
 });
+
+function xChunk(overrides: Partial<PreparedKnowledgeChunk> = {}): PreparedKnowledgeChunk {
+  return {
+    contentHash: 'hash-1',
+    documentId: 'x-doc',
+    id: 'x_updates:sources/usexxyyio-x-posts/1:chunk:0001',
+    metadata: {
+      file: 'docs/product-features/sources/usexxyyio-x-posts.jsonl',
+      headingPath: ['X Post 1', 'Text'],
+      module: 'X Updates',
+      sourceType: 'x_updates',
+      title: 'X Post 1',
+    },
+    searchableText: 'X Post 1\nXXYY update',
+    text: 'XXYY update',
+    tokens: ['xxyy', 'update'],
+    ...overrides,
+  };
+}
 
 describe('BUILT_IN_EVALUATION_CASES', () => {
   it('contains a product support regression suite with quality assertions', () => {
@@ -628,6 +649,166 @@ describe('runCli', () => {
           sourceCounts: { official_docs: 1 },
         }),
       );
+    } finally {
+      vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+    }
+  });
+
+  it('syncs only changed X update chunks without replacing the full index', async () => {
+    vi.resetModules();
+
+    const events: string[] = [];
+    const documents = [
+      {
+        id: 'official-doc',
+        title: 'Official Doc',
+        module: 'Product',
+        sourceType: 'official_docs',
+        file: 'docs/product-features/pages/pro.md',
+        content: 'Official content',
+      },
+      {
+        id: 'x-doc',
+        title: 'X Post 2',
+        module: 'X Updates',
+        sourceType: 'x_updates',
+        file: 'docs/product-features/sources/usexxyyio-x-posts.jsonl',
+        content: 'X update content',
+      },
+    ] satisfies SourceDocument[];
+    const chunks = [
+      xChunk({
+        contentHash: 'hash-unchanged',
+        id: 'x_updates:sources/usexxyyio-x-posts/1:chunk:0001',
+        searchableText: 'unchanged searchable text',
+      }),
+      xChunk({
+        contentHash: 'hash-changed',
+        id: 'x_updates:sources/usexxyyio-x-posts/2:chunk:0001',
+        searchableText: 'changed searchable text',
+      }),
+    ] satisfies PreparedKnowledgeChunk[];
+    const prepareKnowledgeChunks = vi.fn((inputDocuments: SourceDocument[]) => {
+      events.push(`prepare:${inputDocuments.map((document) => document.id).join(',')}`);
+      return chunks;
+    });
+    const embedTexts = vi.fn((texts: string[]) => {
+      events.push(`embed:${texts.join('|')}`);
+      return Promise.resolve(texts.map(() => [0.9, 0.8, 0.7]));
+    });
+    const migrate = vi.fn(() => {
+      events.push('migrate');
+      return Promise.resolve();
+    });
+    const getChunkContentHashes = vi.fn(() => {
+      events.push('hashes');
+      return Promise.resolve(
+        new Map([
+          ['x_updates:sources/usexxyyio-x-posts/1:chunk:0001', 'hash-unchanged'],
+          ['x_updates:sources/usexxyyio-x-posts/2:chunk:0001', 'old-hash'],
+        ]),
+      );
+    });
+    const replaceChunks = vi.fn(() => {
+      events.push('replace');
+      return Promise.resolve();
+    });
+    const upsertChunks = vi.fn((_chunks: EmbeddedKnowledgeChunk[]) => {
+      events.push('upsert');
+      return Promise.resolve();
+    });
+    const recordIngestionRun = vi.fn(() => {
+      events.push('record');
+      return Promise.resolve();
+    });
+    const end = vi.fn(() => {
+      events.push('pool.end');
+      return Promise.resolve();
+    });
+
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createOpenAiEmbeddingProvider: vi.fn(() => ({ embedTexts })),
+        loadProductDocuments: vi.fn(() => Promise.resolve(documents)),
+        prepareKnowledgeChunks,
+      };
+    });
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgPool: vi.fn(() => ({ end })),
+        createPgVectorStore: vi.fn(() => ({
+          getChunkContentHashes,
+          getStats: vi.fn(),
+          migrate,
+          recordIngestionRun,
+          replaceChunks,
+          retrieve: vi.fn(),
+          upsertChunks,
+        })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiModel: 'gpt-test',
+          topK: 6,
+        })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+      const stdout: string[] = [];
+
+      const exitCode = await runCliWithMocks(['sync:x'], {
+        cwd: process.cwd(),
+        env: {},
+        stderr: { write: () => true },
+        stdout: {
+          write: (message: string) => {
+            stdout.push(message);
+            return true;
+          },
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(events).toEqual([
+        'prepare:x-doc',
+        'migrate',
+        'hashes',
+        'embed:changed searchable text',
+        'upsert',
+        'record',
+        'pool.end',
+      ]);
+      expect(getChunkContentHashes).toHaveBeenCalledWith([
+        'x_updates:sources/usexxyyio-x-posts/1:chunk:0001',
+        'x_updates:sources/usexxyyio-x-posts/2:chunk:0001',
+      ]);
+      expect(upsertChunks).toHaveBeenCalledWith([
+        expect.objectContaining({
+          contentHash: 'hash-changed',
+          id: 'x_updates:sources/usexxyyio-x-posts/2:chunk:0001',
+        }),
+      ]);
+      expect(replaceChunks).not.toHaveBeenCalled();
+      expect(recordIngestionRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chunkCount: 1,
+          documentCount: 1,
+          source: 'cli:x_incremental',
+          sourceCounts: { x_updates: 1 },
+        }),
+      );
+      expect(stdout.join('')).toContain('Synced 1 changed X chunks (1 skipped).');
     } finally {
       vi.doUnmock('@xxyy/knowledge');
       vi.doUnmock('@xxyy/rag-core');

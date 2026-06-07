@@ -26,7 +26,7 @@
 - `packages/shared`：共享类型和聊天契约。
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、本地索引、OpenAI embedding provider。
 - `packages/rag-core`：意图分类、检索接口、pgvector store、反馈 store、LLM answer provider、评测。
-- `apps/cli`：`rag:ingest`、`rag:migrate`、`rag:stats`、`rag:feedback`、`rag:ask`、`rag:evaluate`。
+- `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:feedback`、`rag:ask`、`rag:evaluate`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/web`：静态聊天 UI。
 - `docs/product-features`：知识库种子文档。
@@ -75,6 +75,7 @@ pnpm ops:check
 
 ```bash
 pnpm rag:ingest
+pnpm rag:sync:x
 pnpm rag:migrate
 pnpm rag:stats
 pnpm rag:feedback
@@ -83,13 +84,15 @@ pnpm rag:evaluate
 pnpm check
 ```
 
-`pnpm rag:ingest` 会执行数据库迁移、重新生成 embeddings、写入 pgvector，并记录 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 用于查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
+`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：读取当前 X 文档和 JSONL，按 DB 里的 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧 chunk。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 用于查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 
 `pnpm rag:feedback -- --rating negative --limit 25 --json` 用于导出负反馈 triage 队列，方便把低质量回答补进知识库或评测集。不要在反馈记录里写入明文用户身份或密钥。
 
 `pnpm ops:check` 是 CI 基础门禁，只跑不依赖 DB/LLM 的代码检查。`pnpm ops:check:rag` 适合有 `.env`、数据库和模型的生产检查环境，会追加 `rag:stats`、`rag:feedback` 和 fast eval。`pnpm ops:check:full` 会再追加完整 LLM eval，适合发布前人工确认。
 
-`pnpm ops:refresh` 是知识库更新流水线，默认执行 `x:scrape`、`rag:ingest`、`ops:check:rag`，最后导出负反馈 JSON 队列。用 `pnpm ops:refresh -- --skip-scrape` 跳过 X 抓取，用 `pnpm ops:refresh -- --full` 加跑完整 LLM eval。
+`pnpm x:scrape` 默认是增量抓取：读取 `docs/product-features/sources/usexxyyio-x-posts.jsonl` 的最新推文时间，只获取该时间之后的 @useXXYYio 公开主页更新并合并写回；`pnpm x:scrape -- --full` 才会全量重抓。
+
+`pnpm ops:refresh` 是知识库更新流水线，默认执行增量 `x:scrape`、`rag:sync:x`、`ops:check:rag`，最后导出负反馈 JSON 队列。用 `pnpm ops:refresh -- --skip-scrape` 跳过 X 抓取，用 `pnpm ops:refresh -- --full` 才会执行全量 `x:scrape -- --full`、`rag:ingest` 和完整 LLM eval。
 
 `pnpm ops:smoke` 用于检查已经启动的 API 服务，默认检查 `/health` 和 `/health/deep`。线上检查可传 `--base-url` 和 `--ops-token`，加 `--chat` 会额外调用一次 `/api/chat` 并校验回答和 citations。
 
@@ -121,7 +124,7 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
 - 不要提交 `.rag/`、`.env`、数据库数据或密钥。
 - 不要在 `docker-compose.yml` 写死数据库密码；使用 `.env` 注入。
 - 不要把真实 API key 写入测试、README 或日志。
-- API 服务端不负责迁移，迁移和写库由 `pnpm rag:ingest` 完成。
+- API 服务端不负责迁移，迁移和写库由 `pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成。
 - 新增行为需要加测试；风险较高的改动跑 `pnpm check`。
 - 对外错误信息应清晰区分：
   - LLM 配置缺失

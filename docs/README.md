@@ -17,7 +17,7 @@
 - `packages/shared`：共享类型与聊天请求/响应契约。
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、索引读写。
 - `packages/rag-core`：意图分类、混合检索、LLM 回答生成、边界回复、反馈存储、评测。
-- `apps/cli`：本地 `ingest` / `migrate` / `stats` / `feedback` / `ask` / `evaluate`。
+- `apps/cli`：本地 `ingest` / `sync:x` / `migrate` / `stats` / `feedback` / `ask` / `evaluate`。
 - `apps/api`：`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/feedback`，并在 `/` 提供 Web UI。
 - `apps/web`：静态聊天页，调用同源 `/api/chat`。
 
@@ -38,6 +38,7 @@ API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/
 
 ```bash
 pnpm rag:ingest
+pnpm rag:sync:x
 pnpm rag:migrate
 pnpm rag:stats
 pnpm rag:feedback
@@ -52,13 +53,13 @@ pnpm ops:smoke
 pnpm start
 ```
 
-`pnpm rag:ingest` 会执行数据库迁移、重新生成 embeddings、写入 pgvector，并记录一次 ingestion run，包含 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 可以查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
+`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录一次 ingestion run，包含 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：按 DB 中已有 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧知识块。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 可以查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 
 Web UI 会在每条回答后提供正负反馈入口，写入 Postgres `rag_feedback` 表，不记录明文 `userId`。`pnpm rag:feedback` 可以查看用户反馈总数、正负反馈数量和最近反馈明细，用于补知识库或扩展评测集；生产 triage 可以用 `pnpm rag:feedback -- --rating negative --limit 25 --json` 导出负反馈队列。
 
 `pnpm ops:check` 是 CI 基础门禁，只跑不依赖 DB/LLM 的代码检查。`pnpm ops:check:rag` 适合有 `.env`、数据库和模型的生产检查环境，会追加 `rag:stats`、`rag:feedback` 和 fast eval。`pnpm ops:check:full` 会再追加完整 LLM eval，适合发布前人工确认。
 
-`pnpm ops:refresh` 用于定时或人工刷新知识库，默认会抓取 X 更新、重新 ingest、跑 RAG 生产门禁，并导出负反馈 JSON 队列。只刷新本地/已更新文档时可以用 `pnpm ops:refresh -- --skip-scrape`，发布前可用 `pnpm ops:refresh -- --full` 加跑完整 LLM eval。
+`pnpm x:scrape` 默认读取本地 X JSONL 的最新推文时间，只抓取该时间之后的 @useXXYYio 公开主页更新并合并写回；`pnpm x:scrape -- --full` 才会全量重抓。`pnpm ops:refresh` 用于定时或人工刷新知识库，默认会增量抓取 X 更新、执行 `rag:sync:x`、跑 RAG 生产门禁，并导出负反馈 JSON 队列。只刷新本地/已更新文档时可以用 `pnpm ops:refresh -- --skip-scrape`，发布前可用 `pnpm ops:refresh -- --full` 执行全量 scrape、全量 ingest 和完整 LLM eval。
 
 `pnpm ops:smoke` 用于检查已经启动的 API 服务，默认检查 `http://localhost:3000/health` 和 `/health/deep`。线上可用 `pnpm ops:smoke -- --base-url https://你的域名 --ops-token "$API_OPS_TOKEN"` 检查受保护的 ops summary；加 `--chat` 会额外请求一次 `/api/chat` 并校验回答和 citations。
 
@@ -120,6 +121,13 @@ export RAG_ANSWER_PROVIDER=openai
 
 ```bash
 pnpm rag:ingest
+```
+
+同步 X 更新日志增量：
+
+```bash
+pnpm x:scrape
+pnpm rag:sync:x
 ```
 
 运行 API：

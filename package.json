@@ -23,6 +23,7 @@
     "rag:ingest": "pnpm --filter @xxyy/cli rag:ingest",
     "rag:migrate": "pnpm --filter @xxyy/cli rag:migrate",
     "rag:stats": "pnpm --filter @xxyy/cli rag:stats",
+    "rag:sync:x": "pnpm --filter @xxyy/cli rag:sync:x",
     "start": "pnpm --filter @xxyy/api start",
     "test": "vitest run",
     "typecheck": "pnpm typecheck:root && pnpm -r --if-present --filter \"@xxyy/*\" typecheck",

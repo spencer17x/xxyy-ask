@@ -48,12 +48,22 @@ type CliCommand =
   | { command: 'ingest' }
   | { command: 'migrate' }
   | { command: 'stats' }
+  | { command: 'sync:x' }
   | { command: 'help'; error?: string };
 
 interface IngestSummary {
   documentCount: number;
   chunkCount: number;
   indexPath: string;
+  runId?: string;
+}
+
+interface SyncXUpdatesSummary {
+  changedChunkCount: number;
+  chunkCount: number;
+  documentCount: number;
+  indexPath: string;
+  skippedChunkCount: number;
   runId?: string;
 }
 
@@ -79,6 +89,7 @@ interface CliChatRuntime {
 const HELP_TEXT = [
   'Usage:',
   '  pnpm rag:ingest',
+  '  pnpm rag:sync:x',
   '  pnpm rag:migrate',
   '  pnpm rag:stats',
   '  pnpm rag:feedback [-- --rating positive|negative] [--limit 25] [--json]',
@@ -345,7 +356,12 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     return { command: 'help' };
   }
 
-  if (command === 'ingest' || command === 'migrate' || command === 'stats') {
+  if (
+    command === 'ingest' ||
+    command === 'migrate' ||
+    command === 'stats' ||
+    command === 'sync:x'
+  ) {
     return { command };
   }
 
@@ -433,6 +449,20 @@ function parseFeedbackArgs(rawArgs: readonly string[]): CliCommand {
 export function formatIngestSummary(summary: IngestSummary): string {
   const lines = [
     `Indexed ${summary.documentCount} documents into ${summary.chunkCount} chunks.`,
+    `Saved index: ${summary.indexPath}`,
+  ];
+
+  if (summary.runId !== undefined) {
+    lines.push(`Run ID: ${summary.runId}`);
+  }
+
+  return lines.join('\n');
+}
+
+export function formatSyncXUpdatesSummary(summary: SyncXUpdatesSummary): string {
+  const lines = [
+    `Synced ${summary.changedChunkCount} changed X chunks (${summary.skippedChunkCount} skipped).`,
+    `Scanned ${summary.documentCount} X documents into ${summary.chunkCount} chunks.`,
     `Saved index: ${summary.indexPath}`,
   ];
 
@@ -609,6 +639,19 @@ export async function runCli(
     }
   }
 
+  if (parsed.command === 'sync:x') {
+    try {
+      const summary = await syncXUpdates({ ...io, cwd: workspaceCwd });
+      writeLine(io.stdout, formatSyncXUpdatesSummary(summary));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
   const config = loadRagConfig(io.env);
 
   if (parsed.command === 'migrate') {
@@ -718,6 +761,53 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
       chunkCount: chunks.length,
       indexPath: 'pgvector',
       runId: ingestionRun.runId,
+    };
+  } finally {
+    await pool.end();
+  }
+}
+
+async function syncXUpdates(io: CliIo): Promise<SyncXUpdatesSummary> {
+  const config = loadRagConfig(io.env);
+  const documents = await loadProductDocuments({ cwd: io.cwd });
+  const xDocuments = documents.filter((document) => document.sourceType === 'x_updates');
+  const chunks = prepareKnowledgeChunks(xDocuments);
+  const pool = createPgPool(config.databaseUrl);
+
+  try {
+    const embeddingProvider = createOpenAiEmbeddingProvider({
+      apiKey: config.openAiApiKey,
+      baseUrl: config.openAiBaseUrl,
+      maxRetries: config.openAiMaxRetries,
+      model: config.openAiEmbeddingModel,
+      requestTimeoutMs: config.openAiRequestTimeoutMs,
+    });
+    const store = createPgVectorStore({ client: pool, embeddingProvider });
+    await store.migrate();
+    const existingHashes = await store.getChunkContentHashes(chunks.map((chunk) => chunk.id));
+    const changedChunks = chunks.filter(
+      (chunk) => existingHashes.get(chunk.id) !== chunk.contentHash,
+    );
+    const embeddedChunks = await embedPreparedChunks(changedChunks, embeddingProvider);
+    let ingestionRun: ReturnType<typeof createIngestionRun> | undefined;
+
+    if (embeddedChunks.length > 0) {
+      ingestionRun = createIngestionRun({
+        chunks: embeddedChunks,
+        documentCount: xDocuments.length,
+        source: 'cli:x_incremental',
+      });
+      await store.upsertChunks(embeddedChunks);
+      await store.recordIngestionRun(ingestionRun);
+    }
+
+    return {
+      changedChunkCount: changedChunks.length,
+      chunkCount: chunks.length,
+      documentCount: xDocuments.length,
+      indexPath: 'pgvector',
+      skippedChunkCount: chunks.length - changedChunks.length,
+      ...(ingestionRun === undefined ? {} : { runId: ingestionRun.runId }),
     };
   } finally {
     await pool.end();
@@ -841,7 +931,11 @@ function createFastEvaluationAnswerProvider(): AnswerProvider {
   };
 }
 
-function createIngestionRun(input: { chunks: EmbeddedKnowledgeChunk[]; documentCount: number }): {
+function createIngestionRun(input: {
+  chunks: EmbeddedKnowledgeChunk[];
+  documentCount: number;
+  source?: string;
+}): {
   chunkCount: number;
   contentHash: string;
   documentCount: number;
@@ -856,7 +950,7 @@ function createIngestionRun(input: { chunks: EmbeddedKnowledgeChunk[]; documentC
     contentHash,
     documentCount: input.documentCount,
     runId: createIngestionRunId(contentHash),
-    source: 'cli',
+    source: input.source ?? 'cli',
     sourceCounts: countChunksBySource(input.chunks),
   };
 }
