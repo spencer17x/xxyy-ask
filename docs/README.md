@@ -5,6 +5,7 @@
 - [业务架构](architecture.md)
 - [功能状态](feature-status.md)
 - [Roadmap](roadmap.md)
+- [交易哈希夹子检测设计](tx-hash-sandwich-detection-design.md)
 
 ## 产品功能知识库
 
