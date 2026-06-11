@@ -1,6 +1,6 @@
 # Architecture
 
-本文档描述当前 XXYY Ask 的业务架构。当前实现聚焦产品客服 RAG：基于产品文档和官方 X 更新回答产品问题；账户、订单、交易记录、MEV/夹子检测和投资建议等问题仍走边界回复。
+本文档描述当前 XXYY Ask 的业务架构。当前实现聚焦产品客服 RAG：基于产品文档和官方 X 更新回答产品问题；账户、订单、私有交易记录、泛 MEV/链上取证和投资建议等问题仍走边界回复。交易哈希夹子检测已有专用 MVP 路由，默认未接数据源时返回“暂未启用”，显式配置 mock provider 时只返回 fixture 演示结果，配置 browser provider 时会用本机 Chrome 查询 Solscan 和 XXYY Discover，当前先支持 Solana。
 
 ## 当前业务架构
 
@@ -22,6 +22,7 @@ flowchart LR
   subgraph Chat["ChatService"]
     Classifier["意图分类"]
     ProductRoute["产品问答 / 操作步骤"]
+    TxRoute["交易哈希检测 MVP"]
     BoundaryRoute["边界问题直接回复"]
   end
 
@@ -30,6 +31,16 @@ flowchart LR
     Llm["OpenAI-compatible LLM"]
     Fallback["Grounded Answer 降级"]
     Response["回答 + 引用 + 附件"]
+  end
+
+  subgraph TxAnalysis["交易分析 MVP"]
+    HashParser["交易哈希解析"]
+    TxProvider["TxAnalysisProvider"]
+    MockFixture["Mock Fixture 结果"]
+    BrowserProvider["Browser Provider"]
+    Solscan["Solscan 交易页"]
+    XxyyDiscover["XXYY Discover"]
+    ImageAttachment["图片附件"]
   end
 
   subgraph Knowledge["知识库与同步"]
@@ -50,8 +61,8 @@ flowchart LR
 
   subgraph Planned["未完成能力"]
     MultiTurn["多轮对话"]
-    TxHash["交易哈希夹子检测"]
-    Screenshot["夹子信息与截图"]
+    TxHash["真实链上夹子检测"]
+    Screenshot["真实截图生成"]
     Tickets["工单与人工接管"]
     Channels["多渠道接入"]
   end
@@ -64,6 +75,7 @@ flowchart LR
   ChatApi --> Classifier
   StreamApi --> Classifier
   Classifier --> ProductRoute
+  Classifier --> TxRoute
   Classifier --> BoundaryRoute
 
   ProductRoute --> Retriever
@@ -73,6 +85,15 @@ flowchart LR
   Llm -.->|超时 / 限流 / 不可用| Fallback
   Fallback --> Response
   BoundaryRoute --> Response
+  TxRoute --> HashParser
+  HashParser --> TxProvider
+  TxProvider --> MockFixture
+  TxProvider --> BrowserProvider
+  BrowserProvider --> Solscan
+  BrowserProvider --> XxyyDiscover
+  MockFixture --> ImageAttachment
+  XxyyDiscover --> ImageAttachment
+  ImageAttachment --> Response
   Response --> ChatApi
   Response --> StreamApi
   ChatApi --> Web
@@ -101,7 +122,8 @@ flowchart LR
 
 - `ChatService` 是当前问答编排核心：先做规则意图分类，再决定进入 RAG 检索或返回边界回复。
 - 产品问答和操作步骤会检索 `Postgres + pgvector`，再调用 OpenAI-compatible chat completion 生成回答。
+- 交易哈希夹子检测已经有专用 MVP 路由：解析交易哈希后调用 `TxAnalysisProvider`；默认无 provider 时不编造结论，`TX_ANALYSIS_PROVIDER=mock` 只返回 fixture 演示结果和截图，`TX_ANALYSIS_PROVIDER=browser` 使用本机 Chrome 查询 Solscan 和 XXYY Discover，当前先支持 Solana。
 - LLM 超时、限流、模型路由不可用或返回不可用答案时，会降级为本地 grounded answer。
 - 知识库由产品文档和官方 X 更新组成，支持全量入库和 X 增量同步。
-- Web UI 支持流式回答、引用展示、视频附件和正负反馈。
-- 交易哈希夹子检测、夹子截图、工单、人工接管、多轮对话和多渠道接入目前仍是未完成能力。
+- Web UI 支持流式回答、引用展示、视频/图片附件和正负反馈。
+- 稳定筛选目标交易前后各 5 笔、多链扩展、工单、人工接管、多轮对话和多渠道接入目前仍是未完成能力。

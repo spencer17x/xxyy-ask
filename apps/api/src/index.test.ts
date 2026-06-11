@@ -182,6 +182,23 @@ describe('createRequestHandler', () => {
     );
   });
 
+  it('reports unsupported transaction analysis provider configuration', async () => {
+    const handler = createRequestHandler({ env: { TX_ANALYSIS_PROVIDER: 'future-provider' } });
+
+    const response = await callHandler(handler, { method: 'GET', url: '/health/deep' });
+    const payload = JSON.parse(response.body) as {
+      checks: {
+        config: { message: string; status: string };
+      };
+    };
+
+    expect(response.statusCode).toBe(503);
+    expect(payload.checks.config).toMatchObject({
+      message: 'Unsupported TX_ANALYSIS_PROVIDER: future-provider',
+      status: 'error',
+    });
+  });
+
   it('keeps ops summary disabled until an ops token is configured', async () => {
     const handler = createRequestHandler({
       getOpsSummary() {
@@ -478,23 +495,41 @@ describe('createRequestHandler', () => {
     const assetsDir = path.join(workspaceRoot, 'docs', 'product-features', 'assets');
     await mkdir(assetsDir, { recursive: true });
     await writeFile(path.join(assetsDir, 'xxyy-add-to-home.mp4'), Buffer.from('video-bytes'));
+    await writeFile(path.join(assetsDir, 'tx-analysis-fixture.svg'), Buffer.from('<svg />'));
     const handler = createRequestHandler({ cwd: workspaceRoot, staticAssetsDir: assetsDir });
 
-    const response = await callHandler(handler, {
+    const videoResponse = await callHandler(handler, {
       method: 'GET',
       url: '/assets/xxyy-add-to-home.mp4',
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.headers['Content-Type']).toBe('video/mp4');
-    expect(response.rawBody).toEqual(Buffer.from('video-bytes'));
+    expect(videoResponse.statusCode).toBe(200);
+    expect(videoResponse.headers['Content-Type']).toBe('video/mp4');
+    expect(videoResponse.rawBody).toEqual(Buffer.from('video-bytes'));
+
+    const imageResponse = await callHandler(handler, {
+      method: 'GET',
+      url: '/assets/tx-analysis-fixture.svg',
+    });
+
+    expect(imageResponse.statusCode).toBe(200);
+    expect(imageResponse.headers['Content-Type']).toBe('image/svg+xml');
+    expect(imageResponse.rawBody).toEqual(Buffer.from('<svg />'));
   });
 
   it('passes chat requests through ChatService', async () => {
     const chatResponse: ChatResponse = {
-      answer: '根据知识库，XXYY Pro 提供更多权益。',
+      answer: '交易哈希分析截图如下。',
+      attachments: [
+        {
+          kind: 'image',
+          mediaType: 'image/svg+xml',
+          title: '交易分析截图',
+          url: '/assets/tx-analysis-fixture.svg',
+        },
+      ],
       confidence: 0.8,
-      intent: 'product_qa',
+      intent: 'tx_sandwich_detection',
       citations: [],
     };
     const handler = createRequestHandler({

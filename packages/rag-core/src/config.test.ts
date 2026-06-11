@@ -7,6 +7,13 @@ describe('loadRagConfig', () => {
     expect(loadRagConfig({})).toEqual({
       topK: 6,
       answerProvider: 'openai',
+      txAnalysisProvider: 'none',
+      txAnalysisBrowserHeadless: false,
+      txAnalysisBrowserTimeoutMs: 60000,
+      txAnalysisBrowserUserDataDir: undefined,
+      txAnalysisChromeExecutablePath: undefined,
+      txAnalysisScreenshotBaseUrl: '/assets',
+      txAnalysisScreenshotDir: undefined,
       databaseUrl: undefined,
       openAiApiKey: undefined,
       openAiBaseUrl: 'https://api.openai.com/v1',
@@ -38,10 +45,26 @@ describe('loadRagConfig', () => {
         OPENAI_MAX_RETRIES: '2',
         OPENAI_MODEL: 'gpt-test',
         OPENAI_REQUEST_TIMEOUT_MS: '12000',
+        TX_ANALYSIS_PROVIDER: 'mock',
+        TX_ANALYSIS_BROWSER_HEADLESS: 'true',
+        TX_ANALYSIS_BROWSER_TIMEOUT_MS: '90000',
+        TX_ANALYSIS_BROWSER_USER_DATA_DIR: '.browser-profile',
+        TX_ANALYSIS_CHROME_EXECUTABLE_PATH:
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        TX_ANALYSIS_SCREENSHOT_BASE_URL: '/analysis-assets',
+        TX_ANALYSIS_SCREENSHOT_DIR: '/tmp/xxyy-analysis-assets',
       }),
     ).toEqual({
       topK: 3,
       answerProvider: 'future-provider',
+      txAnalysisProvider: 'mock',
+      txAnalysisBrowserHeadless: true,
+      txAnalysisBrowserTimeoutMs: 90000,
+      txAnalysisBrowserUserDataDir: '.browser-profile',
+      txAnalysisChromeExecutablePath:
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      txAnalysisScreenshotBaseUrl: '/analysis-assets',
+      txAnalysisScreenshotDir: '/tmp/xxyy-analysis-assets',
       databaseUrl: undefined,
       openAiApiKey: 'sk-future-only',
       openAiBaseUrl: 'https://llm.example/v1',
@@ -90,5 +113,9 @@ describe('loadRagConfig', () => {
 
     expect(config.openAiMaxRetries).toBe(1);
     expect(config.openAiRequestTimeoutMs).toBe(30000);
+  });
+
+  it('accepts the browser transaction analysis provider for local Solana checks', () => {
+    expect(loadRagConfig({ TX_ANALYSIS_PROVIDER: 'browser' }).txAnalysisProvider).toBe('browser');
   });
 });

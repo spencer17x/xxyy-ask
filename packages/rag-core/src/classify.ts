@@ -1,5 +1,7 @@
 import type { Classification, Intent } from '@xxyy/shared';
 
+import { parseTransactionReference } from './tx-hash.js';
+
 type IntentRule = {
   intent: Intent;
   confidence: number;
@@ -30,6 +32,11 @@ const productOperationPatterns = [
   /怎么.*(买入|卖出|交易|挂单|swap|设置|操作|登录|导出|导入|生成|升级)/u,
   /(swap|挂单|交易).*怎么操作/u,
   /操作.*(买入|卖出|交易|挂单|swap)/u,
+];
+
+const transactionAnalysisPatterns = [
+  /\bmev\b|\bsandwich\b|\btx\s*hash\b|\btransaction hash\b|\btransaction\b|\btx\b/u,
+  /夹子|被夹|三明治|链上取证|交易哈希|交易|检测|分析|查一下/u,
 ];
 
 const rules: IntentRule[] = [
@@ -117,6 +124,18 @@ export function classifyQuestion(question: string): Classification {
     );
   }
 
+  const transactionReference = parseTransactionReference(question);
+  if (
+    transactionReference !== undefined &&
+    hasTransactionAnalysisSignal(normalized, transactionReference.txHash)
+  ) {
+    return createClassification(
+      'tx_sandwich_detection',
+      0.9,
+      'asks to analyze a concrete transaction hash for sandwich or MEV signals',
+    );
+  }
+
   if (productOperationPatterns.some((pattern) => pattern.test(normalized))) {
     return createClassification('how_to', 0.84, 'asks for product operation instructions');
   }
@@ -140,6 +159,19 @@ export function classifyQuestion(question: string): Classification {
 
 function matchesRule(rule: IntentRule, normalizedQuestion: string): boolean {
   return rule.patterns.some((pattern) => pattern.test(normalizedQuestion));
+}
+
+function hasTransactionAnalysisSignal(normalizedQuestion: string, txHash: string): boolean {
+  if (transactionAnalysisPatterns.some((pattern) => pattern.test(normalizedQuestion))) {
+    return true;
+  }
+
+  const normalizedHash = txHash.toLowerCase();
+  const withoutHash = normalizedQuestion
+    .replace(normalizedHash, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+
+  return withoutHash.length === 0;
 }
 
 function createClassification(intent: Intent, confidence: number, reason: string): Classification {

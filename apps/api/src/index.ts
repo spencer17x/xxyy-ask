@@ -710,6 +710,17 @@ function checkRequiredConfig(config: ReturnType<typeof loadRagConfig>): HealthCh
       status: 'error',
     };
   }
+  if (
+    config.txAnalysisProvider !== 'none' &&
+    config.txAnalysisProvider !== 'mock' &&
+    config.txAnalysisProvider !== 'browser'
+  ) {
+    return {
+      message: `Unsupported TX_ANALYSIS_PROVIDER: ${config.txAnalysisProvider}`,
+      missing,
+      status: 'error',
+    };
+  }
 
   if (missing.length > 0) {
     return { missing, status: 'error' };
@@ -1196,8 +1207,21 @@ async function sendStaticAsset(
 }
 
 function contentTypeForAsset(assetName: string): string {
-  if (assetName.toLowerCase().endsWith('.mp4')) {
+  const lower = assetName.toLowerCase();
+  if (lower.endsWith('.mp4')) {
     return 'video/mp4';
+  }
+  if (lower.endsWith('.png')) {
+    return 'image/png';
+  }
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+    return 'image/jpeg';
+  }
+  if (lower.endsWith('.webp')) {
+    return 'image/webp';
+  }
+  if (lower.endsWith('.svg')) {
+    return 'image/svg+xml';
   }
 
   return 'application/octet-stream';

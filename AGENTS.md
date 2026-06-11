@@ -8,7 +8,7 @@
 
 - 可以回答 XXYY 产品功能、配置步骤、权益说明、文档更新等问题。
 - 不直接查询用户账户、订单、钱包余额、交易记录。
-- 不做 MEV/夹子检测。
+- 不查询用户账户、余额、订单或私有交易记录。交易哈希夹子检测已有 MVP 路由：默认未接数据源时返回“暂未启用”，`TX_ANALYSIS_PROVIDER=mock` 只用于 fixture 演示，`TX_ANALYSIS_PROVIDER=browser` 使用本机 Chrome 查询 Solscan 和 XXYY Discover，当前先支持 Solana。
 - 不提供投资建议。
 - 对边界问题必须返回边界回复，不要编造实时数据。
 
@@ -48,6 +48,10 @@ OPENAI_REQUEST_TIMEOUT_MS=30000
 OPENAI_MAX_RETRIES=1
 RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
+TX_ANALYSIS_PROVIDER=none
+TX_ANALYSIS_BROWSER_HEADLESS=false
+TX_ANALYSIS_BROWSER_TIMEOUT_MS=60000
+TX_ANALYSIS_SCREENSHOT_BASE_URL=/assets
 API_CORS_ORIGIN=
 API_MAX_BODY_BYTES=65536
 API_OPS_TOKEN=

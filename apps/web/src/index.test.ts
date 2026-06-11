@@ -19,6 +19,8 @@ describe('renderChatPage', () => {
     expect(html).toContain('renderCitations(assistantMessage.citations');
     expect(html).toContain('renderAttachments(assistantMessage.attachments');
     expect(html).toContain('document.createElement("video")');
+    expect(html).toContain('document.createElement("img")');
+    expect(html).toContain('.attachment img');
     expect(html).toContain('className = "feedback-actions"');
     expect(html).toContain('fetch("/api/feedback"');
   });

@@ -24,6 +24,10 @@ describe('classifyQuestion', () => {
     ['收益统计展示哪些交易信息？', 'product_qa'],
     ['帮我查一下钱包余额和账户交易记录', 'realtime_account_query'],
     ['这个 tx hash 是不是被夹了，有 MEV sandwich 吗？', 'mev_or_chain_forensics'],
+    [
+      '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 这个交易是不是被夹了？',
+      'tx_sandwich_detection',
+    ],
     ['现在可以买 SOL 吗，推荐一个能保证盈利的 token', 'investment_advice'],
     ['嗯？', 'unknown'],
   ] as const)('classifies "%s" as %s', (question, expectedIntent) => {
@@ -40,6 +44,18 @@ describe('classifyQuestion', () => {
 
   it('prefers MEV forensics over generic transaction lookup when sandwich wording is present', () => {
     expect(classifyQuestion('我的交易是不是被夹子夹了？').intent).toBe('mev_or_chain_forensics');
+  });
+
+  it('keeps generic MEV questions on the boundary intent without a transaction hash', () => {
+    expect(classifyQuestion('什么是 MEV sandwich？').intent).toBe('mev_or_chain_forensics');
+  });
+
+  it('keeps investment advice higher priority than transaction analysis', () => {
+    expect(
+      classifyQuestion(
+        '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 可以买 SOL 保证盈利吗？',
+      ).intent,
+    ).toBe('investment_advice');
   });
 
   it.each([

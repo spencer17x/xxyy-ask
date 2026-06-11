@@ -1,6 +1,13 @@
 export interface RagConfig {
   topK: number;
   answerProvider: string;
+  txAnalysisProvider: string;
+  txAnalysisBrowserHeadless: boolean;
+  txAnalysisBrowserTimeoutMs: number;
+  txAnalysisScreenshotBaseUrl: string;
+  txAnalysisBrowserUserDataDir: string | undefined;
+  txAnalysisChromeExecutablePath: string | undefined;
+  txAnalysisScreenshotDir: string | undefined;
   databaseUrl: string | undefined;
   openAiApiKey: string | undefined;
   openAiApiKeyPresent: boolean;
@@ -26,7 +33,14 @@ export type RagEnv = Partial<
     | 'POSTGRES_PORT'
     | 'POSTGRES_USER'
     | 'RAG_ANSWER_PROVIDER'
-    | 'RAG_TOP_K',
+    | 'RAG_TOP_K'
+    | 'TX_ANALYSIS_BROWSER_HEADLESS'
+    | 'TX_ANALYSIS_BROWSER_TIMEOUT_MS'
+    | 'TX_ANALYSIS_BROWSER_USER_DATA_DIR'
+    | 'TX_ANALYSIS_CHROME_EXECUTABLE_PATH'
+    | 'TX_ANALYSIS_PROVIDER'
+    | 'TX_ANALYSIS_SCREENSHOT_BASE_URL'
+    | 'TX_ANALYSIS_SCREENSHOT_DIR',
     string
   >
 >;
@@ -38,11 +52,24 @@ const DEFAULT_OPENAI_MAX_RETRIES = 1;
 const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_POSTGRES_HOST = 'localhost';
 const DEFAULT_POSTGRES_PORT = '5432';
+const DEFAULT_TX_ANALYSIS_BROWSER_TIMEOUT_MS = 60000;
+const DEFAULT_TX_ANALYSIS_SCREENSHOT_BASE_URL = '/assets';
 
 export function loadRagConfig(env: RagEnv = process.env): RagConfig {
   const config: RagConfig = {
     topK: parseTopK(env.RAG_TOP_K),
     answerProvider: env.RAG_ANSWER_PROVIDER ?? 'openai',
+    txAnalysisProvider: env.TX_ANALYSIS_PROVIDER ?? 'none',
+    txAnalysisBrowserHeadless: parseBoolean(env.TX_ANALYSIS_BROWSER_HEADLESS, false),
+    txAnalysisBrowserTimeoutMs: parsePositiveInteger(
+      env.TX_ANALYSIS_BROWSER_TIMEOUT_MS,
+      DEFAULT_TX_ANALYSIS_BROWSER_TIMEOUT_MS,
+    ),
+    txAnalysisBrowserUserDataDir: env.TX_ANALYSIS_BROWSER_USER_DATA_DIR,
+    txAnalysisChromeExecutablePath: env.TX_ANALYSIS_CHROME_EXECUTABLE_PATH,
+    txAnalysisScreenshotBaseUrl:
+      env.TX_ANALYSIS_SCREENSHOT_BASE_URL ?? DEFAULT_TX_ANALYSIS_SCREENSHOT_BASE_URL,
+    txAnalysisScreenshotDir: env.TX_ANALYSIS_SCREENSHOT_DIR,
     databaseUrl: env.DATABASE_URL ?? buildPostgresUrl(env),
     openAiApiKey: env.OPENAI_API_KEY,
     openAiApiKeyPresent: Boolean(env.OPENAI_API_KEY),
@@ -112,4 +139,20 @@ function parseNonNegativeInteger(value: string | undefined, fallback: number): n
   }
 
   return parsed;
+}
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+    return false;
+  }
+
+  return fallback;
 }

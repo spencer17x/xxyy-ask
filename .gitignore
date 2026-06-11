@@ -28,10 +28,12 @@ venv/
 # Local data
 .rag/
 .superpowers/
+.tx-analysis-browser-profile/
 data/
 storage/
 *.sqlite
 *.sqlite3
+docs/product-features/assets/tx-analysis-*.png
 
 # OS / editors
 .DS_Store

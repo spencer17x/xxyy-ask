@@ -103,6 +103,8 @@ export function createBoundaryAnswer(classification: Classification): ChatRespon
 
 function boundaryText(intent: Intent): string {
   switch (intent) {
+    case 'tx_sandwich_detection':
+      return '交易哈希夹子检测功能暂未启用。当前不会编造链上分析结论；接入正式链上数据源后才能判断是否被夹并生成截图。';
     case 'realtime_account_query':
       return '我不能直接查询你的钱包余额、订单、账户或交易记录，也不会编造实时数据。请在已授权的 XXYY 产品界面查看；如果你想了解产品里如何找到这些入口，可以继续问我操作步骤。';
     case 'mev_or_chain_forensics':

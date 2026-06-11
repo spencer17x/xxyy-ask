@@ -458,12 +458,23 @@ export function renderChatPage(): string {
         line-height: 1.55;
       }
 
-      .attachment video {
+      .attachment video,
+      .attachment img {
         width: 100%;
         max-height: 420px;
         border: 1px solid var(--line);
         border-radius: 8px;
+      }
+
+      .attachment video {
         background: #111827;
+      }
+
+      .attachment img {
+        display: block;
+        height: auto;
+        background: #ffffff;
+        object-fit: contain;
       }
 
       .composer-wrap {
@@ -1192,6 +1203,16 @@ export function renderChatPage(): string {
               video.src = attachment.url;
               video.setAttribute("aria-label", attachment.title);
               article.append(title, video);
+              return article;
+            }
+
+            if (attachment.kind === "image") {
+              const image = document.createElement("img");
+              image.src = attachment.url;
+              image.alt = attachment.title;
+              image.loading = "lazy";
+              image.decoding = "async";
+              article.append(title, image);
               return article;
             }
 

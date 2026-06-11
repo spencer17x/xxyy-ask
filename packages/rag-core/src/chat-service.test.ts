@@ -5,6 +5,8 @@ import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import type { AnswerProvider } from './answer-provider.js';
 import { createChatService } from './chat-service.js';
 import { createFixtureIndex } from './test-fixtures.js';
+import type { TxAnalysisProvider } from './tx-analysis.js';
+import { TxAnalysisProviderUnavailableError } from './tx-analysis.js';
 
 describe('createChatService', () => {
   it('classifies, retrieves, and delegates grounded product questions to the answer provider', async () => {
@@ -72,6 +74,61 @@ describe('createChatService', () => {
     expect(response.intent).toBe('realtime_account_query');
     expect(response.answer).not.toContain('100 SOL');
     expect(response.citations).toEqual([]);
+  });
+
+  it('routes transaction hash sandwich detection to the transaction analysis provider', async () => {
+    const analyzedHashes: string[] = [];
+    const txAnalysisProvider: TxAnalysisProvider = {
+      analyze(reference) {
+        analyzedHashes.push(reference.txHash);
+        return Promise.resolve({
+          analyzedAt: '2026-06-10T00:00:00.000Z',
+          chain: reference.chain,
+          confidence: 0.77,
+          evidence: [
+            {
+              detail: '测试 provider 发现前后交易模式。',
+              label: '前后交易模式',
+              severity: 'warning',
+            },
+          ],
+          relatedTransactions: [],
+          screenshotUrl: '/assets/tx-analysis-fixture.svg',
+          summary: '测试 provider：疑似存在 sandwich 模式。',
+          txHash: reference.txHash,
+          verdict: 'sandwiched',
+        });
+      },
+    };
+    const service = createChatService({
+      answerProvider: {
+        answer() {
+          throw new Error('answer provider should not be called');
+        },
+      },
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
+      txAnalysisProvider,
+    });
+
+    const response = await service.ask({
+      channel: 'web',
+      message:
+        '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 这个交易是不是被夹了？',
+    });
+
+    expect(response.intent).toBe('tx_sandwich_detection');
+    expect(response.answer).toContain('疑似被夹');
+    expect(response.attachments?.[0]).toMatchObject({
+      kind: 'image',
+      url: '/assets/tx-analysis-fixture.svg',
+    });
+    expect(analyzedHashes).toEqual([
+      '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+    ]);
   });
 
   it('uses an async retriever for grounded product questions', async () => {
@@ -214,6 +271,121 @@ describe('createChatService', () => {
       intent: 'realtime_account_query',
       type: 'metadata',
     });
+  });
+
+  it('streams transaction analysis responses with metadata attachments', async () => {
+    const service = createChatService({
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
+      txAnalysisProvider: {
+        analyze(reference) {
+          return Promise.resolve({
+            analyzedAt: '2026-06-10T00:00:00.000Z',
+            chain: reference.chain,
+            confidence: 0.71,
+            evidence: [],
+            relatedTransactions: [],
+            screenshotUrl: '/assets/tx-analysis-fixture.svg',
+            summary: '演示数据：当前无法确认是否被夹。',
+            txHash: reference.txHash,
+            verdict: 'inconclusive',
+          });
+        },
+      },
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.stream({
+      channel: 'web',
+      message: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+    })) {
+      events.push(event);
+    }
+
+    expect(events[0]).toMatchObject({
+      type: 'answer_delta',
+    });
+    expect(events.at(-1)).toMatchObject({
+      attachments: [
+        {
+          kind: 'image',
+          url: '/assets/tx-analysis-fixture.svg',
+        },
+      ],
+      citations: [],
+      intent: 'tx_sandwich_detection',
+      type: 'metadata',
+    });
+  });
+
+  it('can enable the fixture transaction analysis provider through config', async () => {
+    const service = createChatService({
+      config: { txAnalysisProvider: 'mock' },
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
+    });
+
+    const response = await service.ask({
+      channel: 'web',
+      message: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 被夹了吗？',
+    });
+
+    expect(response.intent).toBe('tx_sandwich_detection');
+    expect(response.answer).toContain('演示数据');
+    expect(response.attachments?.[0]).toMatchObject({
+      kind: 'image',
+      url: '/assets/tx-analysis-fixture.svg',
+    });
+  });
+
+  it('returns a clear unavailable response when transaction analysis is not configured', async () => {
+    const service = createChatService({
+      config: { txAnalysisProvider: 'none' },
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
+    });
+
+    const response = await service.ask({
+      channel: 'web',
+      message: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 被夹了吗？',
+    });
+
+    expect(response.intent).toBe('tx_sandwich_detection');
+    expect(response.answer).toContain('暂未启用');
+    expect(response.citations).toEqual([]);
+  });
+
+  it('returns a clear unavailable response when the transaction analysis provider is down', async () => {
+    const service = createChatService({
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
+      txAnalysisProvider: {
+        analyze() {
+          throw new TxAnalysisProviderUnavailableError('chain source down');
+        },
+      },
+    });
+
+    const response = await service.ask({
+      channel: 'web',
+      message: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 被夹了吗？',
+    });
+
+    expect(response.intent).toBe('tx_sandwich_detection');
+    expect(response.answer).toContain('数据源暂时不可用');
+    expect(response.citations).toEqual([]);
   });
 
   it('does not call the async retriever for boundary questions', async () => {

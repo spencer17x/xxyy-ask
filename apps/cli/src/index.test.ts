@@ -238,6 +238,33 @@ describe('CLI output formatting', () => {
     );
   });
 
+  it('formats image attachments for transaction analysis responses', () => {
+    expect(
+      formatChatResponse({
+        answer: '交易哈希分析截图如下。',
+        attachments: [
+          {
+            kind: 'image',
+            mediaType: 'image/svg+xml',
+            title: '交易分析截图',
+            url: '/assets/tx-analysis-fixture.svg',
+          },
+        ],
+        citations: [],
+        confidence: 0.35,
+        intent: 'tx_sandwich_detection',
+      }),
+    ).toContain(
+      [
+        'Citations: none',
+        '',
+        'Attachments:',
+        '[1] 交易分析截图',
+        '    /assets/tx-analysis-fixture.svg',
+      ].join('\n'),
+    );
+  });
+
   it('formats ingest and evaluation summaries', () => {
     expect(
       formatIngestSummary({

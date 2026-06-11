@@ -7,6 +7,7 @@ export type ChatChannel = (typeof supportedChannels)[number];
 export const supportedIntents = [
   'product_qa',
   'how_to',
+  'tx_sandwich_detection',
   'realtime_account_query',
   'mev_or_chain_forensics',
   'investment_advice',
@@ -31,12 +32,55 @@ export interface Citation {
   sourceUrl?: string;
 }
 
-export interface ChatAttachment {
-  kind: 'video';
-  title: string;
-  url: string;
-  mediaType: 'video/mp4';
+export type TxAnalysisVerdict = 'sandwiched' | 'not_sandwiched' | 'inconclusive';
+
+export type TxAnalysisChain = 'solana' | 'base' | 'ethereum' | 'bsc' | 'unknown';
+
+export type TxAnalysisDataSource = 'fixture' | 'browser';
+
+export interface TxAnalysisRelatedTransaction {
+  role: 'front_run' | 'user' | 'back_run' | 'related';
+  hash: string;
+  summary: string;
+  timestamp?: string;
+  explorerUrl?: string;
 }
+
+export interface TxAnalysisEvidence {
+  label: string;
+  detail: string;
+  severity: 'info' | 'warning' | 'critical';
+}
+
+export interface TxAnalysisResult {
+  txHash: string;
+  chain: TxAnalysisChain;
+  dataSource?: TxAnalysisDataSource;
+  contractAddress?: string;
+  poolAddress?: string;
+  explorerUrl?: string;
+  verdict: TxAnalysisVerdict;
+  confidence: number;
+  summary: string;
+  evidence: TxAnalysisEvidence[];
+  relatedTransactions: TxAnalysisRelatedTransaction[];
+  analyzedAt: string;
+  screenshotUrl?: string;
+}
+
+export type ChatAttachment =
+  | {
+      kind: 'video';
+      title: string;
+      url: string;
+      mediaType: 'video/mp4';
+    }
+  | {
+      kind: 'image';
+      title: string;
+      url: string;
+      mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/svg+xml';
+    };
 
 export interface ChatResponse {
   answer: string;

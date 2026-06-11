@@ -153,6 +153,7 @@ export type ChatAttachment =
 - 按链查询交易详情、相邻交易、swap 路径、价格变化和地址信息。
 - 隔离真实数据源差异。
 - 支持 mock provider 和 fixture provider。
+- 支持 browser provider：本地用可见 Chrome 访问公开网页，不要求 RPC URL 或第三方 API key。
 
 接口草案：
 
@@ -170,6 +171,24 @@ export interface TxAnalysisProvider {
 - 判断是否存在典型 sandwich 模式。
 - 输出结构化证据。
 - 对证据不足返回 `inconclusive`。
+
+### BrowserTxAnalysisProvider
+
+当前先支持 Solana：
+
+- 打开 `https://solscan.io/tx/<signature>`，从交易详情页提取交易哈希、Signer、交易时间、token mint、pool/account、program 和交易方向。
+- 打开 `https://www.xxyy.io/discover`，在搜索框输入 token mint，优先匹配 Solscan 中对应的 pool/pair。
+- 进入或保留 XXYY 相关页面，截取当前交易分析上下文。
+- 如果能稳定定位目标交易前后交易窗口，则取前后各 5 笔并交给 analyzer；如果页面验证、页面结构变化、池子不唯一或交易窗口不足，则返回 `inconclusive`，不猜测。
+
+本地配置：
+
+```bash
+TX_ANALYSIS_PROVIDER=browser
+TX_ANALYSIS_BROWSER_HEADLESS=false
+```
+
+Solscan 可能触发浏览器安全验证；本地应使用可见 Chrome 和持久 profile，必要时用户手动通过验证后重试。
 
 ### ScreenshotRenderer
 

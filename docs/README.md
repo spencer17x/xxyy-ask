@@ -85,7 +85,7 @@ POST /api/feedback
 }
 ```
 
-第一期只做产品客服。涉及个人账户、订单、钱包余额、交易记录、MEV/夹子检测和投资建议的问题会走边界回复，不会假装查询实时数据。
+第一期仍以产品客服为主。涉及个人账户、订单、钱包余额、交易记录、泛 MEV/链上取证和投资建议的问题会走边界回复，不会假装查询实时数据。交易哈希夹子检测已有专用 MVP 路由；默认未接真实数据源时会提示暂未启用，`TX_ANALYSIS_PROVIDER=mock` 只返回 fixture 演示结果和截图，`TX_ANALYSIS_PROVIDER=browser` 会用本机 Chrome 查询 Solscan 和 XXYY Discover，当前先支持 Solana。
 
 ## 正式 RAG：Postgres + pgvector
 
@@ -102,6 +102,10 @@ export OPENAI_MODEL="你的回答模型"
 export OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
 export RAG_TOP_K=6
 export RAG_ANSWER_PROVIDER=openai
+export TX_ANALYSIS_PROVIDER=none
+export TX_ANALYSIS_BROWSER_HEADLESS=false
+export TX_ANALYSIS_BROWSER_TIMEOUT_MS=60000
+export TX_ANALYSIS_SCREENSHOT_BASE_URL=/assets
 ```
 
 应用会从 `POSTGRES_*` 自动组装数据库连接串。使用外部托管数据库时，也可以只配置 `DATABASE_URL` 覆盖。

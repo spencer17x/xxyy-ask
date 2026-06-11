@@ -14,6 +14,7 @@ describe('chat contract', () => {
 
   it('defines stable product support intents', () => {
     expect(supportedIntents).toContain('product_qa');
+    expect(supportedIntents).toContain('tx_sandwich_detection');
     expect(supportedIntents).toContain('mev_or_chain_forensics');
   });
 
@@ -48,5 +49,24 @@ describe('chat contract', () => {
     expect(request.channel).toBe('web');
     expect(response.citations[0]?.title).toBe('Pro');
     expect(response.attachments?.[0]?.kind).toBe('video');
+  });
+
+  it('allows image attachments for transaction analysis screenshots', () => {
+    const response: ChatResponse = {
+      answer: '交易哈希分析截图如下。',
+      attachments: [
+        {
+          kind: 'image',
+          mediaType: 'image/svg+xml',
+          title: '交易分析截图',
+          url: '/assets/tx-analysis-fixture.svg',
+        },
+      ],
+      citations: [],
+      confidence: 0.8,
+      intent: 'tx_sandwich_detection',
+    };
+
+    expect(response.attachments?.[0]?.kind).toBe('image');
   });
 });
