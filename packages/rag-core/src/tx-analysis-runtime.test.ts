@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { analyzeTransaction, createConfiguredTxAnalysisProvider } from './tx-analysis-runtime.js';
+import {
+  analyzeTransaction,
+  createConfiguredTxAnalysisProvider,
+  createConfiguredTxAnalysisReportReader,
+} from './tx-analysis-runtime.js';
 import {
   TxAnalysisProviderUnavailableError,
   TxAnalysisUnsupportedChainError,
@@ -197,6 +201,31 @@ describe('tx-analysis-runtime', () => {
     expect(() =>
       createConfiguredTxAnalysisProvider({
         txAnalysisProvider: 'browser',
+        txAnalysisReportStore: 'memory',
+      }),
+    ).toThrow('Unsupported TX_ANALYSIS_REPORT_STORE: memory');
+  });
+
+  it('creates a file report reader from config', () => {
+    const reader = createConfiguredTxAnalysisReportReader({
+      txAnalysisReportStore: 'file',
+      txAnalysisScreenshotDir: '/tmp/xxyy-tx-analysis-reports',
+    });
+
+    expect(typeof reader.findReports).toBe('function');
+    expect(typeof reader.summarizeReports).toBe('function');
+  });
+
+  it('defaults the report reader store to file for partial config', () => {
+    const reader = createConfiguredTxAnalysisReportReader({});
+
+    expect(typeof reader.findReports).toBe('function');
+    expect(typeof reader.summarizeReports).toBe('function');
+  });
+
+  it('preserves unsupported report reader store error messages', () => {
+    expect(() =>
+      createConfiguredTxAnalysisReportReader({
         txAnalysisReportStore: 'memory',
       }),
     ).toThrow('Unsupported TX_ANALYSIS_REPORT_STORE: memory');

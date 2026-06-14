@@ -1,3 +1,5 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,22 +10,25 @@ import {
 
 const evmTx = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
 
-interface RegisteredToolForTest {
-  handler: (
-    input: { chain?: 'base'; channel?: 'ops'; txHash: string },
-    extra: unknown,
-  ) => Promise<unknown>;
+interface RegisteredToolForTest<Input = unknown> {
+  handler: (input: Input, extra: unknown) => Promise<unknown>;
 }
 
-function getAnalyzeTransactionToolHandler(
+function getRegisteredTools(
   server: ReturnType<typeof createTxAnalysisMcpServer>,
-): RegisteredToolForTest['handler'] {
-  const registeredTools = (
+): Record<string, RegisteredToolForTest | undefined> {
+  return (
     server as unknown as { _registeredTools: Record<string, RegisteredToolForTest | undefined> }
   )._registeredTools;
-  const tool = registeredTools.analyze_transaction;
+}
+
+function getToolHandler<Input>(
+  server: ReturnType<typeof createTxAnalysisMcpServer>,
+  name: string,
+): RegisteredToolForTest<Input>['handler'] {
+  const tool = getRegisteredTools(server)[name] as RegisteredToolForTest<Input> | undefined;
   if (tool === undefined) {
-    throw new Error('analyze_transaction tool was not registered');
+    throw new Error(`${name} tool was not registered`);
   }
   return tool.handler;
 }
@@ -43,12 +48,38 @@ describe('tx analysis MCP server', () => {
         analyzeTransaction() {
           throw new Error('not called during construction');
         },
+        getAnalysisReport() {
+          throw new Error('not called during construction');
+        },
+        listAnalysisReports() {
+          throw new Error('not called during construction');
+        },
       },
     });
 
     expect(server).toBeDefined();
     expect(TX_ANALYSIS_MCP_INSTRUCTIONS).toContain('unknown');
     expect(TX_ANALYSIS_MCP_INSTRUCTIONS).toContain('Do not provide investment advice');
+  });
+
+  it('registers all declared tools', () => {
+    const server = createTxAnalysisMcpServer({
+      handlers: {
+        analyzeTransaction() {
+          throw new Error('not called during construction');
+        },
+        getAnalysisReport() {
+          throw new Error('not called during construction');
+        },
+        listAnalysisReports() {
+          throw new Error('not called during construction');
+        },
+      },
+    });
+
+    expect(Object.keys(getRegisteredTools(server)).sort()).toEqual(
+      [...TX_ANALYSIS_MCP_TOOL_NAMES].sort(),
+    );
   });
 
   it('forwards the MCP channel marker to the transaction handler', async () => {
@@ -65,10 +96,19 @@ describe('tx analysis MCP server', () => {
             status: 'failure',
           });
         },
+        getAnalysisReport() {
+          throw new Error('get report should not be called');
+        },
+        listAnalysisReports() {
+          throw new Error('list reports should not be called');
+        },
       },
     });
 
-    const handler = getAnalyzeTransactionToolHandler(server);
+    const handler = getToolHandler<{ chain?: 'base'; channel?: 'ops'; txHash: string }>(
+      server,
+      'analyze_transaction',
+    );
     await handler({ chain: 'base', channel: 'ops', txHash: evmTx }, {});
 
     expect(receivedInput).toEqual({
@@ -76,5 +116,175 @@ describe('tx analysis MCP server', () => {
       channel: 'ops',
       txHash: evmTx,
     });
+  });
+
+  it('returns structured content for get_analysis_report', async () => {
+    const server = createTxAnalysisMcpServer({
+      handlers: {
+        analyzeTransaction() {
+          throw new Error('analyze should not be called');
+        },
+        getAnalysisReport(input) {
+          expect(input).toEqual({ id: 'report-id' });
+          return Promise.resolve({
+            document: {
+              id: 'report-id',
+              status: 'success',
+            },
+          });
+        },
+        listAnalysisReports() {
+          throw new Error('list reports should not be called');
+        },
+      },
+    });
+
+    const handler = getToolHandler<{ id: string }>(server, 'get_analysis_report');
+
+    await expect(handler({ id: 'report-id' }, {})).resolves.toEqual({
+      content: [
+        {
+          text: JSON.stringify(
+            {
+              document: {
+                id: 'report-id',
+                status: 'success',
+              },
+            },
+            null,
+            2,
+          ),
+          type: 'text',
+        },
+      ],
+      structuredContent: {
+        document: {
+          id: 'report-id',
+          status: 'success',
+        },
+      },
+    });
+  });
+
+  it('returns structured content for list_analysis_reports', async () => {
+    const server = createTxAnalysisMcpServer({
+      handlers: {
+        analyzeTransaction() {
+          throw new Error('analyze should not be called');
+        },
+        getAnalysisReport() {
+          throw new Error('get report should not be called');
+        },
+        listAnalysisReports(input) {
+          expect(input).toEqual({
+            chain: 'base',
+            limit: 2,
+            reviewAssignee: 'analyst@example.com',
+            reviewStatus: 'open',
+            status: 'success',
+            txHash: evmTx,
+          });
+          return Promise.resolve({
+            reports: [
+              {
+                chain: 'base',
+                confidence: 0.6,
+                generatedAt: '2026-06-14T00:00:00.000Z',
+                reportUrl: '/assets/tx-analysis-report-base.json',
+                status: 'success',
+                txHash: evmTx,
+                verdict: 'not_sandwiched',
+              },
+            ],
+          });
+        },
+      },
+    });
+
+    const handler = getToolHandler<{
+      chain?: 'base';
+      limit?: number;
+      reviewAssignee?: string;
+      reviewStatus?: 'open';
+      status?: 'success';
+      txHash?: string;
+    }>(server, 'list_analysis_reports');
+
+    const result = await handler(
+      {
+        chain: 'base',
+        limit: 2,
+        reviewAssignee: 'analyst@example.com',
+        reviewStatus: 'open',
+        status: 'success',
+        txHash: evmTx,
+      },
+      {},
+    );
+
+    expect(result).toMatchObject({
+      structuredContent: {
+        reports: [
+          {
+            chain: 'base',
+            txHash: evmTx,
+          },
+        ],
+      },
+    });
+  });
+
+  it('accepts unknown chain and oversized limit through SDK validation', async () => {
+    let receivedInput: unknown;
+    const server = createTxAnalysisMcpServer({
+      handlers: {
+        analyzeTransaction() {
+          throw new Error('analyze should not be called');
+        },
+        getAnalysisReport() {
+          throw new Error('get report should not be called');
+        },
+        listAnalysisReports(input) {
+          receivedInput = input;
+          return Promise.resolve({
+            reports: [
+              {
+                chain: 'unknown',
+                generatedAt: '2026-06-14T00:00:00.000Z',
+                reason: 'tx_not_found',
+                reportUrl: '/assets/tx-analysis-report-unknown.json',
+                status: 'failure',
+                txHash: evmTx,
+              },
+            ],
+          });
+        },
+      },
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'tx-analysis-mcp-test', version: '0.0.0' });
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const result = await client.callTool({
+        name: 'list_analysis_reports',
+        arguments: { chain: 'unknown', limit: 1000 },
+      });
+
+      expect(receivedInput).toEqual({ chain: 'unknown', limit: 1000 });
+      expect(result.structuredContent).toEqual({
+        reports: [
+          expect.objectContaining({
+            chain: 'unknown',
+            txHash: evmTx,
+          }),
+        ],
+      });
+    } finally {
+      await client.close();
+      await server.close();
+    }
   });
 });

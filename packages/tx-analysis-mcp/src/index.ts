@@ -1,6 +1,7 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   createConfiguredTxAnalysisProvider,
+  createConfiguredTxAnalysisReportReader,
   loadRagConfig,
   loadWorkspaceEnv,
   resolveWorkspaceCwd,
@@ -15,8 +16,9 @@ const env = loadWorkspaceEnv({
 });
 const config = loadRagConfig(env);
 const provider = createConfiguredTxAnalysisProvider(config);
+const reportReader = createConfiguredTxAnalysisReportReader(config);
 const server = createTxAnalysisMcpServer({
-  handlers: createTxAnalysisToolHandlers({ provider }),
+  handlers: createTxAnalysisToolHandlers({ provider, reportReader }),
 });
 const transport = new StdioServerTransport();
 

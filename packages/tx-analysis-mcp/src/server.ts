@@ -1,6 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
+import type { FindTxAnalysisReportsOptions, TxAnalysisUnavailableReason } from '@xxyy/rag-core';
+
 import type { TxAnalysisToolHandlers } from './tools.js';
 
 export const TX_ANALYSIS_MCP_TOOL_NAMES = [
@@ -17,11 +19,40 @@ export const TX_ANALYSIS_MCP_INSTRUCTIONS = [
 ].join(' ');
 
 const chainSchema = z.enum(['solana', 'base', 'ethereum', 'bsc', 'unknown']).optional();
+const reportStatusSchema = z.enum(['success', 'failure']).optional();
+const reviewStatusSchema = z.enum(['open', 'in_review', 'closed']).optional();
+const txAnalysisUnavailableReasons = [
+  'not_configured',
+  'provider_unavailable',
+  'invalid_reference',
+  'unsupported_chain',
+  'browser_verification_required',
+  'tx_not_found',
+  'tx_failed',
+  'tx_pending',
+  'pool_not_found',
+  'target_trade_not_found',
+  'screenshot_unavailable',
+  'timeout',
+] as const satisfies readonly TxAnalysisUnavailableReason[];
+const failureReasonSchema = z.enum(txAnalysisUnavailableReasons).optional();
 
 const analyzeTransactionInputSchema = z.object({
   chain: chainSchema,
   channel: z.enum(['agent', 'ops', 'support']).optional(),
   txHash: z.string().min(1),
+});
+const getAnalysisReportInputSchema = z.object({
+  id: z.string().min(1),
+});
+const listAnalysisReportsInputSchema = z.object({
+  chain: chainSchema,
+  limit: z.number().int().positive().optional(),
+  reason: failureReasonSchema,
+  reviewAssignee: z.string().min(1).optional(),
+  reviewStatus: reviewStatusSchema,
+  status: reportStatusSchema,
+  txHash: z.string().min(1).optional(),
 });
 
 export interface CreateTxAnalysisMcpServerOptions {
@@ -60,5 +91,51 @@ export function createTxAnalysisMcpServer(options: CreateTxAnalysisMcpServerOpti
     },
   );
 
+  server.registerTool(
+    'get_analysis_report',
+    {
+      description: 'Fetch one stored XXYY transaction analysis report document by report id.',
+      inputSchema: getAnalysisReportInputSchema,
+      title: 'Get Transaction Analysis Report',
+    },
+    async ({ id }) => {
+      const output = await options.handlers.getAnalysisReport({ id });
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output,
+      };
+    },
+  );
+
+  server.registerTool(
+    'list_analysis_reports',
+    {
+      description: 'List stored XXYY transaction analysis reports with optional filters.',
+      inputSchema: listAnalysisReportsInputSchema,
+      title: 'List Transaction Analysis Reports',
+    },
+    async (input) => {
+      const output = await options.handlers.listAnalysisReports(toFindReportsInput(input));
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output,
+      };
+    },
+  );
+
   return server;
+}
+
+function toFindReportsInput(
+  input: z.infer<typeof listAnalysisReportsInputSchema>,
+): FindTxAnalysisReportsOptions {
+  return {
+    ...(input.chain === undefined ? {} : { chain: input.chain }),
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+    ...(input.reason === undefined ? {} : { reason: input.reason }),
+    ...(input.reviewAssignee === undefined ? {} : { reviewAssignee: input.reviewAssignee }),
+    ...(input.reviewStatus === undefined ? {} : { reviewStatus: input.reviewStatus }),
+    ...(input.status === undefined ? {} : { status: input.status }),
+    ...(input.txHash === undefined ? {} : { txHash: input.txHash }),
+  };
 }

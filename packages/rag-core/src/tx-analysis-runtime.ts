@@ -16,6 +16,17 @@ import {
 import {
   createFileTxAnalysisReportWriter,
   createPgTxAnalysisReportStore,
+  findFileTxAnalysisReports,
+  getFileTxAnalysisReportDocument,
+  summarizeFileTxAnalysisReports,
+  updateFileTxAnalysisReportReview,
+  type FindTxAnalysisReportsOptions,
+  type SummarizeTxAnalysisReportsOptions,
+  type TxAnalysisReportIndexEntry,
+  type TxAnalysisReportReview,
+  type TxAnalysisReportSummary,
+  type TxAnalysisStoredReportDocument,
+  type UpdateTxAnalysisReportReviewInput,
 } from './tx-analysis-report-store.js';
 import {
   createMockTxAnalysisProvider,
@@ -52,7 +63,19 @@ export type AnalyzeTransactionOutput =
       status: 'failure';
     };
 
+export interface TxAnalysisReportReader {
+  findReports(options: FindTxAnalysisReportsOptions): Promise<TxAnalysisReportIndexEntry[]>;
+  getReportDocument?(id: string): Promise<TxAnalysisStoredReportDocument | undefined>;
+  summarizeReports(options?: SummarizeTxAnalysisReportsOptions): Promise<TxAnalysisReportSummary>;
+  updateReportReview?(
+    input: UpdateTxAnalysisReportReviewInput,
+  ): Promise<TxAnalysisReportReview | undefined>;
+}
+
 type TxAnalysisRuntimeConfig = Pick<RagConfig, 'txAnalysisProvider'> & Partial<RagConfig>;
+type TxAnalysisReportReaderConfig = Partial<
+  Pick<RagConfig, 'databaseUrl' | 'txAnalysisReportStore' | 'txAnalysisScreenshotDir'>
+>;
 
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_TX_ANALYSIS_BROWSER_HEADLESS = false;
@@ -179,6 +202,46 @@ export function createConfiguredTxAnalysisProvider(
   }
 
   throw new Error(`Unsupported TX_ANALYSIS_PROVIDER: ${config.txAnalysisProvider}`);
+}
+
+export function createConfiguredTxAnalysisReportReader(
+  config: TxAnalysisReportReaderConfig,
+): TxAnalysisReportReader {
+  const reportStore = config.txAnalysisReportStore ?? DEFAULT_TX_ANALYSIS_REPORT_STORE;
+  if (reportStore === 'postgres') {
+    return createPgTxAnalysisReportStore({ client: createPgPool(config.databaseUrl) });
+  }
+  if (reportStore === 'file') {
+    const reportDir = config.txAnalysisScreenshotDir;
+    return {
+      findReports(options) {
+        if (reportDir === undefined) {
+          return findFileTxAnalysisReports(options);
+        }
+        return findFileTxAnalysisReports({ ...options, reportDir });
+      },
+      getReportDocument(id) {
+        if (reportDir === undefined) {
+          return getFileTxAnalysisReportDocument({ id });
+        }
+        return getFileTxAnalysisReportDocument({ id, reportDir });
+      },
+      summarizeReports(options = {}) {
+        if (reportDir === undefined) {
+          return summarizeFileTxAnalysisReports(options);
+        }
+        return summarizeFileTxAnalysisReports({ ...options, reportDir });
+      },
+      updateReportReview(input) {
+        if (reportDir === undefined) {
+          return updateFileTxAnalysisReportReview(input);
+        }
+        return updateFileTxAnalysisReportReview({ ...input, reportDir });
+      },
+    };
+  }
+
+  throw new Error(`Unsupported TX_ANALYSIS_REPORT_STORE: ${reportStore}`);
 }
 
 function createConfiguredTxAnalysisReviewer(
