@@ -73,6 +73,8 @@ MCP stdio 服务可用仓库内置 mock 样本验证真实协议路径：
 TX_ANALYSIS_PROVIDER=mock pnpm tx:mcp:smoke
 ```
 
+Agent 接入时可以把 `pnpm tx:mcp` 作为 stdio MCP server 启动命令，并配套使用仓库内的 Skill 源文件 `skills/xxyy-transaction-analysis`。该 Skill 会提醒 agent 只对公开交易哈希/浏览器链接做 交易夹子检测，`unknown` 只表示裸 EVM 哈希在 Base、Ethereum、BSC 间自动探测，不能用于账户、订单、余额、私有交易记录或投资建议。
+
 默认读取 `docs/tx-analysis-mcp-smoke-samples.mock.json`，也可以用 `pnpm tx:mcp:smoke -- --tx-samples ./your-samples.json` 指定样本文件。MCP smoke 校验 MCP `analyze_transaction` 返回的 `structuredContent`，不下载截图或报告资产；需要 GET 截图、报告 JSON 和静态资产内容时继续使用 `pnpm ops:smoke -- --tx-verify-assets`。
 
 MCP 样本文件可以是数组或 `{ "samples": [...] }`，每条样本支持 `label`、`chain`、`txHash`，以及顶层 `expectedStatus`、`expectedChain`、`expectedDataSource`、`expectedVerdict`、`expectedConfidence`、`expectedAnalysisRuleVersion`、`expectedFailureReason`、`expectedFailureMessage`、`expectedProbeAttempts`、`expectedExplorerUrl`、`expectedXxyyPoolUrl`、`expectedPoolAddress`、`expectedContractAddress`、`expectedRouterAddress`、`expectedScreenshotTargetRowMarked`、`expectedTargetTradeSide`、`expectedTargetTraderAddress`、`expectedTransactionTime`、`expectedRelatedTransactionCount`、`expectedRelatedTransactionRoles`、`expectedRelatedTransactions`；也可以写在嵌套 `expected` 对象里并去掉 `expected` 前缀，例如 `expected.status`、`expected.analysisRuleVersion`、`expected.relatedTransactions`。样本中出现未支持的顶层 `expected*` 字段或 `expected` 对象字段会直接失败为 unsupported expected field，避免预期漂移被静默忽略。
