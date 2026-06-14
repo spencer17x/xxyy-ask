@@ -67,6 +67,18 @@ Web UI 会在每条回答后提供正负反馈入口，写入 Postgres `rag_feed
 仓库内置了 `docs/tx-analysis-smoke-samples.example.json` 作为真实 Solana、Base、Ethereum、BSC，以及裸 EVM 自动识别 Base/Ethereum/BSC 样本，可用 `pnpm ops:smoke -- --tx-samples docs/tx-analysis-smoke-samples.example.json --tx-verify-assets` 检查本地 browser provider 的截图、报告、规则版本、交易时间和交易窗口。
 浏览器取证生成成功结果和失败 metadata，以及文件/Postgres 报告写入器落盘 relatedTransactions 时，会清洗相关交易摘要；空摘要会按角色兜底为“前置交易”“用户交易”“后置交易”或“相关交易”；同一交易哈希重复出现时会只保留一条复查记录，EVM 交易哈希按大小写无关归并，避免报告、ops 队列和 smoke 验收出现空白或重复复查行。
 
+MCP stdio 服务可用仓库内置 mock 样本验证真实协议路径：
+
+```bash
+TX_ANALYSIS_PROVIDER=mock pnpm tx:mcp:smoke
+```
+
+默认读取 `docs/tx-analysis-mcp-smoke-samples.mock.json`，也可以用 `pnpm tx:mcp:smoke -- --tx-samples ./your-samples.json` 指定样本文件。MCP smoke 校验 MCP `analyze_transaction` 返回的 `structuredContent`，不下载截图或报告资产；需要 GET 截图、报告 JSON 和静态资产内容时继续使用 `pnpm ops:smoke -- --tx-verify-assets`。
+
+MCP 样本文件可以是数组或 `{ "samples": [...] }`，每条样本支持 `label`、`chain`、`txHash`，以及顶层 `expectedStatus`、`expectedChain`、`expectedDataSource`、`expectedVerdict`、`expectedConfidence`、`expectedAnalysisRuleVersion`、`expectedFailureReason`、`expectedFailureMessage`、`expectedProbeAttempts`、`expectedExplorerUrl`、`expectedXxyyPoolUrl`、`expectedPoolAddress`、`expectedContractAddress`、`expectedRouterAddress`、`expectedScreenshotTargetRowMarked`、`expectedTargetTradeSide`、`expectedTargetTraderAddress`、`expectedTransactionTime`、`expectedRelatedTransactionCount`、`expectedRelatedTransactionRoles`、`expectedRelatedTransactions`；也可以写在嵌套 `expected` 对象里并去掉 `expected` 前缀，例如 `expected.status`、`expected.analysisRuleVersion`、`expected.relatedTransactions`。样本中出现未支持的顶层 `expected*` 字段或 `expected` 对象字段会直接失败为 unsupported expected field，避免预期漂移被静默忽略。
+
+MCP smoke 的 enum 预期字段必须是字符串，`expectedConfidence` 必须是 0-1 数字，`expectedScreenshotTargetRowMarked` 必须是 boolean，`expectedRelatedTransactionCount` 必须是非负整数，`expectedRelatedTransactionRoles` 必须是非空角色数组，`expectedRelatedTransactions` 必须是非空数组且每项包含 `hash` 和 `role`。`expectedRelatedTransactions` 可额外固定 `explorerUrl`、`side`、`traderAddress` 和 `timestamp`，交易链接字段同样兼容 `explorer_url`、`explorerLink`、`explorer_link`、`txUrl`、`tx_url`、`txLink`、`tx_link`、`transactionUrl`、`transaction_url`、`transactionLink`、`transaction_link`、`url`、`link` 和 `href`。
+
 `pnpm rag:evaluate -- --fast` 只跳过 chat LLM 回答生成，仍会调用 embedding 模型并查询 pgvector；它用于快速检查检索、引用和边界分类。`pnpm rag:evaluate` 会调用配置的大模型，用于检查最终客服回答质量。
 
 正式知识库写入 Postgres + pgvector。本地体验直接运行 `pnpm start`：启动脚本会尝试启动本地 pgvector、检查知识库，在知识库为空时先跑 ingest，然后执行增量 `x:scrape` 和 `rag:sync:x`，最后启动 API + Web。生产环境使用 `NODE_ENV=production pnpm start` 会跳过本地 Docker，但同样会做知识库检查和增量同步。完全跳过启动前同步的内部入口是 `pnpm start:service`。

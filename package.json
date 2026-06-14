@@ -29,6 +29,7 @@
     "sync": "node scripts/rag-refresh.mjs",
     "test": "vitest run",
     "tx:mcp": "pnpm --filter @xxyy/tx-analysis-mcp start",
+    "tx:mcp:smoke": "node scripts/tx-analysis-mcp-smoke.mjs",
     "typecheck": "pnpm typecheck:root && pnpm -r --if-present --filter \"@xxyy/*\" typecheck",
     "typecheck:root": "tsc --noEmit -p tsconfig.json",
     "x:scrape": "node scripts/fetch-usexxyy-posts.mjs"

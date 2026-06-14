@@ -1,0 +1,42 @@
+{
+  "samples": [
+    {
+      "label": "mock base fixture success",
+      "chain": "base",
+      "txHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "expected": {
+        "status": "success",
+        "chain": "base",
+        "verdict": "sandwiched",
+        "confidence": 0.62,
+        "dataSource": "fixture",
+        "relatedTransactionCount": 3,
+        "relatedTransactionRoles": ["front_run", "user", "back_run"],
+        "relatedTransactions": [
+          {
+            "hash": "0x11111111...front",
+            "role": "front_run"
+          },
+          {
+            "hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "role": "user"
+          },
+          {
+            "hash": "0x11111111...back",
+            "role": "back_run"
+          }
+        ]
+      }
+    },
+    {
+      "label": "mock invalid hash boundary",
+      "chain": "base",
+      "txHash": "not-a-transaction-hash",
+      "expected": {
+        "status": "failure",
+        "failureReason": "invalid_reference",
+        "failureMessage": "Transaction reference is invalid or ambiguous."
+      }
+    }
+  ]
+}
