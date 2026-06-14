@@ -28,6 +28,7 @@ venv/
 # Local data
 .rag/
 .superpowers/
+.worktrees/
 .tx-analysis-browser-profile/
 data/
 storage/
