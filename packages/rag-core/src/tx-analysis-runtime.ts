@@ -187,9 +187,7 @@ export function createConfiguredTxAnalysisProvider(
         ...(config.txAnalysisChromeExecutablePath === undefined
           ? {}
           : { chromeExecutablePath: config.txAnalysisChromeExecutablePath }),
-        ...(config.txAnalysisScreenshotDir === undefined
-          ? {}
-          : { screenshotDir: config.txAnalysisScreenshotDir }),
+        ...optionalRuntimeConfigValue('screenshotDir', config.txAnalysisScreenshotDir),
         ...(config.txAnalysisBrowserUserDataDir === undefined
           ? {}
           : { userDataDir: config.txAnalysisBrowserUserDataDir }),
@@ -212,7 +210,7 @@ export function createConfiguredTxAnalysisReportReader(
     return createPgTxAnalysisReportStore({ client: createPgPool(config.databaseUrl) });
   }
   if (reportStore === 'file') {
-    const reportDir = config.txAnalysisScreenshotDir;
+    const reportDir = normalizeOptionalRuntimeConfigString(config.txAnalysisScreenshotDir);
     return {
       findReports(options) {
         if (reportDir === undefined) {
@@ -273,9 +271,7 @@ function createConfiguredTxAnalysisReportWriter(
   if (reportStore === 'file') {
     return createFileTxAnalysisReportWriter({
       reportBaseUrl: config.txAnalysisScreenshotBaseUrl ?? DEFAULT_TX_ANALYSIS_SCREENSHOT_BASE_URL,
-      ...(config.txAnalysisScreenshotDir === undefined
-        ? {}
-        : { reportDir: config.txAnalysisScreenshotDir }),
+      ...optionalRuntimeConfigValue('reportDir', config.txAnalysisScreenshotDir),
     });
   }
   if (reportStore === 'postgres') {
@@ -308,6 +304,22 @@ function createLazyPgTxAnalysisReportWriter(
       return loadWriter().writeReport(input);
     },
   };
+}
+
+function optionalRuntimeConfigValue<T extends string>(
+  key: T,
+  value: string | undefined,
+): Partial<Record<T, string>> {
+  const normalized = normalizeOptionalRuntimeConfigString(value);
+  return normalized === undefined ? {} : ({ [key]: normalized } as Record<T, string>);
+}
+
+function normalizeOptionalRuntimeConfigString(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
 }
 
 function createFailure(

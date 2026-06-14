@@ -231,6 +231,97 @@ describe('tx-analysis-runtime', () => {
     ).toThrow('Unsupported TX_ANALYSIS_REPORT_STORE: memory');
   });
 
+  it('treats blank screenshot dir as the default report directory', async () => {
+    const createBrowserProvider = vi.fn((options: unknown) => {
+      void options;
+      return {
+        analyze() {
+          return Promise.reject(new Error('provider should not be called'));
+        },
+      };
+    });
+    const createDriver = vi.fn(() => ({
+      analyze() {
+        return Promise.reject(new Error('driver should not be called'));
+      },
+      analyzeSolanaTransaction() {
+        return Promise.reject(new Error('driver should not be called'));
+      },
+    }));
+    const reportWriter = {
+      writeFailureReport: vi.fn(),
+      writeReport: vi.fn(),
+    };
+    const createFileReportWriter = vi.fn(() => reportWriter);
+    const findReports = vi.fn().mockResolvedValue([]);
+    const getReportDocument = vi.fn().mockResolvedValue(undefined);
+    const summarizeReports = vi.fn().mockResolvedValue({
+      chains: {},
+      failureReasons: {},
+      generatedAt: '2026-06-14T00:00:00.000Z',
+      recentReports: [],
+      reviewStatuses: {},
+      statuses: {},
+      totalReports: 0,
+    });
+    const updateReportReview = vi.fn().mockResolvedValue(undefined);
+
+    vi.resetModules();
+    vi.doMock('./browser-tx-analysis.js', () => ({
+      createBrowserTxAnalysisProvider: createBrowserProvider,
+    }));
+    vi.doMock('./playwright-browser-tx-driver.js', () => ({
+      createPlaywrightBrowserTxAnalysisDriver: createDriver,
+    }));
+    vi.doMock('./tx-analysis-report-store.js', () => ({
+      createFileTxAnalysisReportWriter: createFileReportWriter,
+      createPgTxAnalysisReportStore: vi.fn(),
+      findFileTxAnalysisReports: findReports,
+      getFileTxAnalysisReportDocument: getReportDocument,
+      summarizeFileTxAnalysisReports: summarizeReports,
+      updateFileTxAnalysisReportReview: updateReportReview,
+    }));
+
+    try {
+      const {
+        createConfiguredTxAnalysisProvider: createProvider,
+        createConfiguredTxAnalysisReportReader: createReportReader,
+      } = await import('./tx-analysis-runtime.js');
+
+      createProvider({
+        txAnalysisProvider: 'browser',
+        txAnalysisScreenshotDir: '   ',
+      });
+      expect(createDriver).toHaveBeenCalledWith({
+        headless: false,
+        screenshotBaseUrl: '/assets',
+        timeoutMs: 60000,
+      });
+      expect(createFileReportWriter).toHaveBeenCalledWith({
+        reportBaseUrl: '/assets',
+      });
+
+      const reader = createReportReader({
+        txAnalysisReportStore: 'file',
+        txAnalysisScreenshotDir: '   ',
+      });
+      await reader.findReports({ limit: 2 });
+      await reader.getReportDocument?.('report-id');
+      await reader.summarizeReports();
+      await reader.updateReportReview?.({ id: 'report-id', status: 'closed' });
+
+      expect(findReports).toHaveBeenCalledWith({ limit: 2 });
+      expect(getReportDocument).toHaveBeenCalledWith({ id: 'report-id' });
+      expect(summarizeReports).toHaveBeenCalledWith({});
+      expect(updateReportReview).toHaveBeenCalledWith({ id: 'report-id', status: 'closed' });
+    } finally {
+      vi.doUnmock('./browser-tx-analysis.js');
+      vi.doUnmock('./playwright-browser-tx-driver.js');
+      vi.doUnmock('./tx-analysis-report-store.js');
+      vi.resetModules();
+    }
+  });
+
   it('applies browser defaults for partial config', async () => {
     const createBrowserProvider = vi.fn((options: unknown) => {
       void options;

@@ -227,6 +227,10 @@ function readTxAnalysisMcpSmokeSamples(filePath) {
   return rawSamples.map((sample, index) => normalizeSample(sample, index));
 }
 
+export function normalizeTxAnalysisMcpSmokeSample(sample, index = 0) {
+  return normalizeSample(sample, index);
+}
+
 function normalizeSample(sample, index) {
   if (!isRecord(sample)) {
     throw new Error(`Transaction analysis MCP smoke sample ${index + 1} must be an object.`);
@@ -388,6 +392,10 @@ async function runSample(client, sample) {
   }
 }
 
+export function validateTxAnalysisMcpSmokeToolOutput(sample, output) {
+  return validateToolOutput(sample, output);
+}
+
 function validateToolOutput(sample, output) {
   const errors = [];
   if (isRecord(output) && output.isError === true) {
@@ -437,6 +445,17 @@ function validateFailureOutput(sample, structuredContent) {
   const failure = structuredContent.failure;
   if (!isRecord(failure)) {
     return ['structuredContent.failure must be present for failure status.'];
+  }
+
+  if (!TX_ANALYSIS_FAILURE_REASONS.has(failure.reason)) {
+    errors.push(
+      `failure.reason must be one of: ${[...TX_ANALYSIS_FAILURE_REASONS].join(', ')}, got ${formatValue(
+        failure.reason,
+      )}.`,
+    );
+  }
+  if (typeof failure.message !== 'string' || failure.message.trim().length === 0) {
+    errors.push('failure.message must be a non-empty string.');
   }
 
   errors.push(...validateExpectedResultFields(sample, undefined));
