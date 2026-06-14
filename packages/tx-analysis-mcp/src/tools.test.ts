@@ -36,6 +36,40 @@ describe('tx analysis MCP tool handlers', () => {
     });
   });
 
+  it('accepts an MCP channel marker without passing it to the provider reference', async () => {
+    let providerReference: unknown;
+    const handlers = createTxAnalysisToolHandlers({
+      provider: {
+        analyze(reference) {
+          providerReference = reference;
+          return Promise.resolve({
+            analyzedAt: '2026-06-14T00:00:00.000Z',
+            chain: reference.chain,
+            confidence: 0.6,
+            dataSource: 'fixture',
+            evidence: [],
+            relatedTransactions: [],
+            summary: '未发现典型 sandwich。',
+            txHash: reference.txHash,
+            verdict: 'not_sandwiched',
+          });
+        },
+      },
+    });
+
+    await expect(
+      handlers.analyzeTransaction({ chain: 'base', channel: 'agent', txHash: evmTx }),
+    ).resolves.toMatchObject({
+      result: {
+        chain: 'base',
+        txHash: evmTx,
+        verdict: 'not_sandwiched',
+      },
+      status: 'success',
+    });
+    expect(providerReference).not.toHaveProperty('channel');
+  });
+
   it('returns not_configured when the provider is missing', async () => {
     const handlers = createTxAnalysisToolHandlers({ provider: undefined });
 
