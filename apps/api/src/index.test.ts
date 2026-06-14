@@ -1094,6 +1094,76 @@ describe('createRequestHandler', () => {
     }
   });
 
+  it('returns unsupported_chain for direct transaction analysis chain fields that are known but not supported', async () => {
+    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+    const calls: unknown[] = [];
+    const handler = createRequestHandler({
+      getChatService: () =>
+        Promise.resolve({
+          ask(request) {
+            calls.push(request);
+            return Promise.resolve({
+              answer: 'should not be called',
+              citations: [],
+              confidence: 0,
+              intent: 'tx_sandwich_detection',
+            });
+          },
+          stream() {
+            throw new Error('stream should not be used for direct transaction analysis');
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      body: { chain: 'Polygon', txHash },
+      method: 'POST',
+      url: '/api/tx-analysis',
+    });
+
+    expect(response.statusCode).toBe(200);
+    const responseBody = JSON.parse(response.body) as ChatResponse;
+    expect(responseBody.answer).toContain('暂不支持');
+    expect(calls).toEqual([]);
+  });
+
+  it('routes unsupported direct transaction analysis chain fields with invalid hashes to chat', async () => {
+    const calls: unknown[] = [];
+    const handler = createRequestHandler({
+      getChatService: () =>
+        Promise.resolve({
+          ask(request) {
+            calls.push(request);
+            return Promise.resolve({
+              answer: 'stubbed invalid reference response',
+              citations: [],
+              confidence: 0,
+              intent: 'tx_sandwich_detection',
+            });
+          },
+          stream() {
+            throw new Error('stream should not be used for direct transaction analysis');
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      body: { chain: 'Polygon', txHash: 'not-a-transaction' },
+      method: 'POST',
+      url: '/api/tx-analysis',
+    });
+
+    expect(response.statusCode).toBe(200);
+    const responseBody = JSON.parse(response.body) as ChatResponse;
+    expect(responseBody.answer).toBe('stubbed invalid reference response');
+    expect(calls).toEqual([
+      {
+        channel: 'web',
+        message: 'Polygon not-a-transaction 是否被夹？',
+      },
+    ]);
+  });
+
   it('rejects direct transaction analysis when the requested chain conflicts with the explorer link', async () => {
     const handler = createRequestHandler({
       getChatService: () => {

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
   createChatService,
+  createTxAnalysisUnavailableAnswer,
   createLazyRetriever,
   createPgTxAnalysisReportStore,
   createPgFeedbackStore,
@@ -17,9 +18,13 @@ import {
   LlmConfigurationError,
   loadRagConfig,
   loadWorkspaceEnv,
+  parseOptionalTxAnalysisChainInput,
+  parseRequiredTxAnalysisChainInput,
   parseTransactionReference,
   resolveWorkspaceCwd,
   summarizeFileTxAnalysisReports,
+  toTxAnalysisReferenceInput,
+  TX_ANALYSIS_CHAIN_ERROR,
   updateFileTxAnalysisReportReview,
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
@@ -123,6 +128,7 @@ interface TxAnalysisPayload {
   chain?: TxAnalysisChain;
   channel?: ChatChannel;
   sessionId?: string;
+  unsupportedChainText?: string;
   userId?: string;
 }
 
@@ -224,106 +230,6 @@ const MAX_FEEDBACK_SESSION_CHARS = 200;
 const MAX_TX_ANALYSIS_REVIEW_ASSIGNEE_CHARS = 200;
 const MAX_TX_ANALYSIS_REVIEW_NOTE_CHARS = 2000;
 const MAX_TX_ANALYSIS_REVIEW_UPDATED_BY_CHARS = 200;
-const txAnalysisChainAliases = new Map<string, TxAnalysisChain>([
-  ['unknown', 'unknown'],
-  ['solana', 'solana'],
-  ['sol', 'solana'],
-  ['sol chain', 'solana'],
-  ['sol mainnet', 'solana'],
-  ['sol network', 'solana'],
-  ['base', 'base'],
-  ['ethereum', 'ethereum'],
-  ['eth', 'ethereum'],
-  ['以太', 'ethereum'],
-  ['以太链', 'ethereum'],
-  ['以太坊', 'ethereum'],
-  ['bsc', 'bsc'],
-  ['bnb', 'bsc'],
-  ['bnbchain', 'bsc'],
-  ['bnb chain', 'bsc'],
-  ['bnbsmartchain', 'bsc'],
-  ['bnb smartchain', 'bsc'],
-  ['bnb smart chain', 'bsc'],
-  ['binance chain', 'bsc'],
-  ['binancesmartchain', 'bsc'],
-  ['binance smartchain', 'bsc'],
-  ['binance smart chain', 'bsc'],
-  ['bep20', 'bsc'],
-  ['bep 20', 'bsc'],
-  ['币安', 'bsc'],
-  ['币安链', 'bsc'],
-  ['币安智能链', 'bsc'],
-]);
-const unsupportedTxAnalysisChainAliases = new Set([
-  'amoy',
-  'arb',
-  'arbitrum',
-  'arbitrum one',
-  'abstract',
-  'avalanche',
-  'avalanche c chain',
-  'avax',
-  'avax c chain',
-  'berachain',
-  'base goerli',
-  'base sepolia',
-  'bnb chain testnet',
-  'bnb smart chain testnet',
-  'bnb smartchain testnet',
-  'bnb testnet',
-  'blast',
-  'bsc testnet',
-  'celo',
-  'cronos',
-  'devnet',
-  'eth goerli',
-  'eth holesky',
-  'eth hoodi',
-  'eth sepolia',
-  'ethereum goerli',
-  'ethereum holesky',
-  'ethereum hoodi',
-  'ethereum sepolia',
-  'fantom',
-  'fantom opera',
-  'fuji',
-  'gnosis',
-  'gnosis chain',
-  'goerli',
-  'holesky',
-  'hoodi',
-  'linea',
-  'manta',
-  'manta pacific',
-  'mantle',
-  'matic',
-  'mode',
-  'mode network',
-  'moonbeam',
-  'moonriver',
-  'op',
-  'opbnb',
-  'optimistic ethereum',
-  'optimism',
-  'plasma',
-  'polygon',
-  'polygon pos',
-  'polygon zkevm',
-  'scroll',
-  'sepolia',
-  'sonic',
-  'taiko',
-  'testnet',
-  'world chain',
-  'x layer',
-  'xlayer',
-  'zora',
-  'zora network',
-  'zk sync',
-  'zk sync era',
-  'zksync',
-  'zksync era',
-]);
 const supportedTxAnalysisReportStatuses = ['failure', 'success'] as const;
 const supportedTxAnalysisReportReviewStatuses = ['closed', 'in_review', 'open'] as const;
 const supportedTxAnalysisReportReviewActions = ['claim', 'close', 'reopen'] as const;
@@ -840,6 +746,17 @@ async function handleTxAnalysisRequest(options: {
   response: ApiResponseLike;
 }): Promise<void> {
   const payload = parseTxAnalysisPayload(await readJsonBody(options.request, options.maxBodyBytes));
+  if (payload.unsupportedChainText !== undefined) {
+    sendJson(
+      options.response,
+      200,
+      createTxAnalysisUnavailableAnswer('unsupported_chain', {
+        metadata: { unsupportedChainHint: payload.unsupportedChainText },
+      }),
+    );
+    return;
+  }
+
   const service = await options.getChatService();
   sendJson(options.response, 200, await service.ask(toTxAnalysisChatRequest(payload)));
 }
@@ -960,17 +877,15 @@ function parseOptionalPositiveQueryInteger(value: string | null): number | undef
 }
 
 function parseTxAnalysisChainValue(chain: string): TxAnalysisChain {
-  const normalized = normalizeTxAnalysisChain(chain);
-  if (normalized === undefined) {
-    throw new BadRequestError('chain must be one of: solana, base, ethereum, bsc, unknown.');
+  try {
+    const parsed = parseRequiredTxAnalysisChainInput(chain);
+    if (parsed.chain === undefined) {
+      throw new BadRequestError(TX_ANALYSIS_CHAIN_ERROR);
+    }
+    return parsed.chain;
+  } catch (error) {
+    throw new BadRequestError(error instanceof Error ? error.message : TX_ANALYSIS_CHAIN_ERROR);
   }
-
-  const canonicalChain = txAnalysisChainAliases.get(normalized);
-  if (canonicalChain === undefined) {
-    throw new BadRequestError('chain must be one of: solana, base, ethereum, bsc, unknown.');
-  }
-
-  return canonicalChain;
 }
 
 function parseTxAnalysisReportStatusValue(status: string): 'failure' | 'success' {
@@ -1725,9 +1640,14 @@ function parseTxAnalysisPayload(value: unknown): TxAnalysisPayload {
     const channel = parseOptionalChannel(record.channel);
     const sessionId = parseOptionalString(record.sessionId, 'sessionId');
     const userId = parseOptionalString(record.userId, 'userId');
+    const combinedReferenceInput = `${parsedChain.unsupportedChainText} ${txHash}`;
+    const combinedReference = parseTransactionReference(combinedReferenceInput);
 
     return {
-      txHash: `${parsedChain.unsupportedChainText} ${txHash}`,
+      txHash: combinedReference === undefined ? combinedReferenceInput : txHash,
+      ...(combinedReference === undefined
+        ? {}
+        : { unsupportedChainText: parsedChain.unsupportedChainText }),
       ...(channel === undefined ? {} : { channel }),
       ...(sessionId === undefined ? {} : { sessionId }),
       ...(userId === undefined ? {} : { userId }),
@@ -1908,43 +1828,11 @@ function parseTxAnalysisReportReviewStatus(value: unknown): TxAnalysisReportRevi
 }
 
 function parseOptionalTxAnalysisPayloadChain(value: unknown): ParsedTxAnalysisPayloadChain {
-  if (value === undefined) {
-    return {};
+  try {
+    return parseOptionalTxAnalysisChainInput(value);
+  } catch (error) {
+    throw new BadRequestError(error instanceof Error ? error.message : TX_ANALYSIS_CHAIN_ERROR);
   }
-  if (typeof value !== 'string') {
-    throw new BadRequestError('chain must be one of: solana, base, ethereum, bsc, unknown.');
-  }
-
-  const normalized = normalizeTxAnalysisChain(value);
-  if (normalized === undefined) {
-    return {};
-  }
-
-  const chain = txAnalysisChainAliases.get(normalized);
-  if (chain !== undefined) {
-    return { chain };
-  }
-  if (unsupportedTxAnalysisChainAliases.has(normalized)) {
-    return { unsupportedChainText: value.trim() };
-  }
-
-  throw new BadRequestError('chain must be one of: solana, base, ethereum, bsc, unknown.');
-}
-
-function normalizeTxAnalysisChain(value: string): string | undefined {
-  const normalized = value
-    .normalize('NFKC')
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/gu, ' ')
-    .replace(/\s+/gu, ' ');
-
-  if (normalized.length === 0) {
-    return undefined;
-  }
-
-  const withoutMainnetSuffix = normalized.replace(/\s+mainnet(?:\s+beta)?$/u, '');
-  return withoutMainnetSuffix.length === 0 ? normalized : withoutMainnetSuffix;
 }
 
 function parseFeedbackRating(value: unknown): 'positive' | 'negative' {
@@ -2046,18 +1934,13 @@ function toChatRequest(payload: ChatPayload): ChatRequest {
 function toTxAnalysisChatRequest(payload: TxAnalysisPayload): ChatRequest {
   return {
     channel: payload.channel ?? 'web',
-    message: buildTxAnalysisMessage(payload),
+    message: toTxAnalysisReferenceInput({
+      ...(payload.chain === undefined ? {} : { chain: payload.chain }),
+      txHash: payload.txHash,
+    }),
     ...(payload.sessionId === undefined ? {} : { sessionId: payload.sessionId }),
     ...(payload.userId === undefined ? {} : { userId: payload.userId }),
   };
-}
-
-function buildTxAnalysisMessage(payload: TxAnalysisPayload): string {
-  if (payload.chain === undefined || payload.chain === 'unknown') {
-    return `${payload.txHash} 是否被夹？`;
-  }
-
-  return `${payload.chain} ${payload.txHash} 是否被夹？`;
 }
 
 function toRecordFeedbackInput(payload: FeedbackPayload): RecordFeedbackInput {
