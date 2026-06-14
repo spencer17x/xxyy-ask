@@ -1,0 +1,20 @@
+{
+  "name": "@xxyy/tx-analysis-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/tools.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@xxyy/rag-core": "workspace:*",
+    "@xxyy/shared": "workspace:*",
+    "zod": "^4.0.0"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

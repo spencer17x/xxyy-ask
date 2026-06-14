@@ -16,6 +16,9 @@
       "path": "./packages/rag-core"
     },
     {
+      "path": "./packages/tx-analysis-mcp"
+    },
+    {
       "path": "./apps/cli"
     },
     {

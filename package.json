@@ -28,6 +28,7 @@
     "start:service": "pnpm --filter @xxyy/api start",
     "sync": "node scripts/rag-refresh.mjs",
     "test": "vitest run",
+    "tx:mcp": "pnpm --filter @xxyy/tx-analysis-mcp start",
     "typecheck": "pnpm typecheck:root && pnpm -r --if-present --filter \"@xxyy/*\" typecheck",
     "typecheck:root": "tsc --noEmit -p tsconfig.json",
     "x:scrape": "node scripts/fetch-usexxyy-posts.mjs"
