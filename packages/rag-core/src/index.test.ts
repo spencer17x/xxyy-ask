@@ -4,19 +4,26 @@ import {
   classifyQuestion,
   createBrowserTxAnalysisProvider,
   createChatService,
+  createEvmBrowserTxChainAdapter,
+  createFileTxAnalysisReportWriter,
   createGroundedAnswer,
   createLocalRetriever,
   createMockTxAnalysisProvider,
   createOpenAiAnswerProvider,
   createPlaywrightBrowserTxAnalysisDriver,
   createPgPool,
+  createPgTxAnalysisReportStore,
   createPgVectorStore,
+  createSolanaBrowserTxChainAdapter,
   createTxAnalysisAnswer,
   evaluateCases,
+  analyzeSandwichWindow,
+  findFileTxAnalysisReports,
   LlmConfigurationError,
   loadRagConfig,
   parseTransactionReference,
   retrieve,
+  SANDWICH_ANALYZER_VERSION,
   toPgVectorLiteral,
   TxAnalysisProviderUnavailableError,
   VectorStoreConfigurationError,
@@ -33,9 +40,16 @@ describe('rag-core public exports', () => {
     expect(createGroundedAnswer).toBeTypeOf('function');
     expect(parseTransactionReference).toBeTypeOf('function');
     expect(createBrowserTxAnalysisProvider).toBeTypeOf('function');
+    expect(createEvmBrowserTxChainAdapter).toBeTypeOf('function');
+    expect(createFileTxAnalysisReportWriter).toBeTypeOf('function');
+    expect(createPgTxAnalysisReportStore).toBeTypeOf('function');
+    expect(findFileTxAnalysisReports).toBeTypeOf('function');
+    expect(createSolanaBrowserTxChainAdapter).toBeTypeOf('function');
     expect(createPlaywrightBrowserTxAnalysisDriver).toBeTypeOf('function');
     expect(createMockTxAnalysisProvider).toBeTypeOf('function');
     expect(createTxAnalysisAnswer).toBeTypeOf('function');
+    expect(analyzeSandwichWindow).toBeTypeOf('function');
+    expect(SANDWICH_ANALYZER_VERSION).toBe('sandwich-window-rules-v1');
     expect(TxAnalysisProviderUnavailableError).toBeTypeOf('function');
     expect(createOpenAiAnswerProvider).toBeTypeOf('function');
     expect(LlmConfigurationError).toBeTypeOf('function');

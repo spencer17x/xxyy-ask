@@ -1300,7 +1300,9 @@ export function renderOpsPage(): string {
       }
 
       button,
-      input {
+      input,
+      select,
+      textarea {
         font: inherit;
       }
 
@@ -1341,13 +1343,27 @@ export function renderOpsPage(): string {
         align-items: center;
       }
 
-      input {
+      input,
+      select,
+      textarea {
         min-height: 40px;
         border: 1px solid #cbd5e1;
         border-radius: 8px;
         background: var(--panel);
         color: var(--text);
         padding: 8px 10px;
+      }
+
+      textarea {
+        resize: vertical;
+      }
+
+      label {
+        display: grid;
+        gap: 5px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
       }
 
       button {
@@ -1424,6 +1440,10 @@ export function renderOpsPage(): string {
         overflow: hidden;
       }
 
+      .panel.wide-panel {
+        grid-column: 1 / -1;
+      }
+
       .panel h2 {
         margin: 0;
         border-bottom: 1px solid var(--line);
@@ -1437,8 +1457,84 @@ export function renderOpsPage(): string {
         padding: 14px;
       }
 
+      .tx-report-form {
+        display: grid;
+        grid-template-columns: minmax(220px, 2fr) repeat(6, minmax(110px, 1fr)) auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .tx-report-form button {
+        white-space: nowrap;
+      }
+
+      .tx-report-bulk-review {
+        display: grid;
+        grid-template-columns: minmax(130px, 0.7fr) minmax(220px, 1.4fr) auto auto auto minmax(130px, 0.8fr);
+        gap: 8px;
+        align-items: end;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-soft);
+        padding: 10px;
+      }
+
+      .tx-report-bulk-review input {
+        min-height: 34px;
+        padding: 6px 8px;
+      }
+
+      .tx-report-bulk-review button {
+        min-height: 34px;
+        padding: 6px 10px;
+        white-space: nowrap;
+      }
+
+      .tx-report-bulk-status {
+        min-height: 18px;
+        align-self: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .report-review-form {
+        display: grid;
+        flex-basis: 100%;
+        grid-template-columns: minmax(110px, 0.7fr) minmax(130px, 0.8fr) minmax(180px, 1.4fr) auto auto auto auto;
+        gap: 8px;
+        align-items: end;
+        width: 100%;
+        margin-top: 4px;
+      }
+
+      .report-review-form input,
+      .report-review-form select {
+        min-height: 34px;
+        padding: 6px 8px;
+      }
+
+      .report-review-form button {
+        min-height: 34px;
+        padding: 6px 10px;
+        white-space: nowrap;
+      }
+
+      .report-review-status {
+        grid-column: 1 / -1;
+        min-height: 18px;
+        align-self: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .tx-report-results {
+        display: grid;
+        gap: 10px;
+      }
+
       .check,
       .feedback-item,
+      .tx-analysis-item,
       .source-row {
         display: grid;
         gap: 4px;
@@ -1453,15 +1549,44 @@ export function renderOpsPage(): string {
         flex-wrap: wrap;
         justify-content: space-between;
         gap: 8px;
+        min-width: 0;
         font-size: 13px;
         font-weight: 750;
       }
 
+      .row-title span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
       .row-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
         color: var(--muted);
         font-size: 12px;
         line-height: 1.45;
         overflow-wrap: anywhere;
+      }
+
+      .row-meta a {
+        color: var(--accent-strong);
+        font-weight: 700;
+      }
+
+      .tx-report-select {
+        display: inline-flex;
+        gap: 5px;
+        align-items: center;
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .tx-report-select input {
+        min-height: 0;
+        width: 16px;
+        height: 16px;
+        padding: 0;
       }
 
       .empty {
@@ -1479,10 +1604,13 @@ export function renderOpsPage(): string {
       }
 
       @media (max-width: 860px) {
-        .token-form,
-        .summary-grid,
-        .panel-grid {
-          grid-template-columns: 1fr;
+         .token-form,
+         .tx-report-form,
+         .tx-report-bulk-review,
+         .report-review-form,
+         .summary-grid,
+         .panel-grid {
+           grid-template-columns: 1fr;
         }
 
         .ops-header {
@@ -1521,6 +1649,96 @@ export function renderOpsPage(): string {
           <div id="feedback" class="panel-body"></div>
         </article>
         <article class="panel">
+          <h2>Transaction Analysis</h2>
+          <div id="tx-analysis" class="panel-body"></div>
+        </article>
+        <article class="panel wide-panel">
+          <h2>Report Search</h2>
+          <div class="panel-body">
+            <form id="tx-report-form" class="tx-report-form">
+              <label for="tx-report-hash">
+                Tx hash
+                <input id="tx-report-hash" name="txHash" autocomplete="off" placeholder="0x... or signature" />
+              </label>
+              <label for="tx-report-chain">
+                Chain
+                <input id="tx-report-chain" name="chain" autocomplete="off" list="tx-report-chain-options" placeholder="base, ETH, BNBChain" />
+                <datalist id="tx-report-chain-options">
+                  <option value="solana">
+                  <option value="base">
+                  <option value="ethereum">
+                  <option value="bsc">
+                  <option value="ETH">
+                  <option value="BNBChain">
+                  <option value="BNB Smart Chain">
+                  <option value="BEP20">
+                  <option value="unknown">
+                </datalist>
+              </label>
+              <label for="tx-report-status">
+                Status
+                <select id="tx-report-status" name="status">
+                  <option value="">Any</option>
+                  <option value="success">Success</option>
+                  <option value="failure">Failure</option>
+                </select>
+              </label>
+              <label for="tx-report-review-status">
+                Review
+                <select id="tx-report-review-status" name="reviewStatus">
+                  <option value="">Any</option>
+                  <option value="open">Open</option>
+                  <option value="in_review">In review</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </label>
+              <label for="tx-report-assignee">
+                Assignee
+                <input id="tx-report-assignee" name="assignee" autocomplete="off" placeholder="alice" />
+              </label>
+              <label for="tx-report-reason">
+                Failure
+                <select id="tx-report-reason" name="reason">
+                  <option value="">Any</option>
+                  <option value="browser_verification_required">browser_verification_required</option>
+                  <option value="invalid_reference">invalid_reference</option>
+                  <option value="not_configured">not_configured</option>
+                  <option value="pool_not_found">pool_not_found</option>
+                  <option value="provider_unavailable">provider_unavailable</option>
+                  <option value="screenshot_unavailable">screenshot_unavailable</option>
+                  <option value="target_trade_not_found">target_trade_not_found</option>
+                  <option value="timeout">timeout</option>
+                  <option value="tx_failed">tx_failed</option>
+                  <option value="tx_pending">tx_pending</option>
+                  <option value="tx_not_found">tx_not_found</option>
+                  <option value="unsupported_chain">unsupported_chain</option>
+                </select>
+              </label>
+              <label for="tx-report-limit">
+                Limit
+                <input id="tx-report-limit" name="limit" type="number" min="1" max="100" value="20" />
+              </label>
+              <button id="tx-report-submit" type="submit">Search</button>
+            </form>
+            <div id="tx-report-bulk-review" class="tx-report-bulk-review">
+              <label for="tx-report-bulk-assignee">
+                Assignee
+                <input id="tx-report-bulk-assignee" autocomplete="off" placeholder="alice" />
+              </label>
+              <label for="tx-report-bulk-note">
+                Note
+                <input id="tx-report-bulk-note" autocomplete="off" placeholder="handled" />
+              </label>
+              <button type="button" data-action="claim">Claim</button>
+              <button type="button" data-action="close">Close</button>
+              <button type="button" data-action="reopen">Reopen</button>
+              <div id="tx-report-bulk-status" class="tx-report-bulk-status" role="status" aria-live="polite">0 selected</div>
+            </div>
+            <div id="tx-report-status-line" class="status-line" role="status" aria-live="polite"></div>
+            <div id="tx-report-results" class="tx-report-results"></div>
+          </div>
+        </article>
+        <article class="panel">
           <h2>Latest Feedback</h2>
           <div id="latest-feedback" class="panel-body"></div>
         </article>
@@ -1536,11 +1754,46 @@ export function renderOpsPage(): string {
       const healthTarget = document.querySelector("#health");
       const knowledgeTarget = document.querySelector("#knowledge");
       const feedbackTarget = document.querySelector("#feedback");
+      const txAnalysisTarget = document.querySelector("#tx-analysis");
       const latestFeedbackTarget = document.querySelector("#latest-feedback");
+      const queryTxReports = document.querySelector("#tx-report-form");
+      const txReportHash = document.querySelector("#tx-report-hash");
+      const txReportChain = document.querySelector("#tx-report-chain");
+      const txReportStatus = document.querySelector("#tx-report-status");
+      const txReportReviewStatus = document.querySelector("#tx-report-review-status");
+      const txReportAssignee = document.querySelector("#tx-report-assignee");
+      const txReportReason = document.querySelector("#tx-report-reason");
+      const txReportLimit = document.querySelector("#tx-report-limit");
+      const txReportSubmit = document.querySelector("#tx-report-submit");
+      const txReportSearchStatus = document.querySelector("#tx-report-status-line");
+      const txReportResultsTarget = document.querySelector("#tx-report-results");
+      const txReportBulkReview = document.querySelector("#tx-report-bulk-review");
+      const txReportBulkAssignee = document.querySelector("#tx-report-bulk-assignee");
+      const txReportBulkNote = document.querySelector("#tx-report-bulk-note");
+      const txReportBulkStatus = document.querySelector("#tx-report-bulk-status");
+      const txReportBulkButtons = Array.from(document.querySelectorAll("#tx-report-bulk-review button[data-action]"));
+      let currentTxReports = [];
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         await loadSummary();
+      });
+
+      queryTxReports.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await loadTxReports();
+      });
+
+      txReportBulkReview.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) {
+          return;
+        }
+        const action = target.dataset.action;
+        if (!action) {
+          return;
+        }
+        await updateBulkReportReview(action);
       });
 
       async function loadSummary() {
@@ -1568,6 +1821,7 @@ export function renderOpsPage(): string {
           renderHealth(summary.health);
           renderKnowledge(summary.knowledge);
           renderFeedback(summary.feedback);
+          renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
           status.textContent = "Updated " + summary.generatedAt;
         } catch (error) {
           status.textContent = error instanceof Error ? error.message : String(error);
@@ -1582,6 +1836,7 @@ export function renderOpsPage(): string {
           metric("Documents", summary.knowledge.documentCount, "ok"),
           metric("Chunks", summary.knowledge.chunkCount, "ok"),
           metric("Negative", summary.feedback.negativeCount, summary.feedback.negativeCount > 0 ? "warn" : "ok"),
+          metric("Tx Failures", summary.txAnalysis?.failureCount || 0, (summary.txAnalysis?.failureCount || 0) > 0 ? "warn" : "ok"),
         );
       }
 
@@ -1631,6 +1886,643 @@ export function renderOpsPage(): string {
         );
       }
 
+      function renderTxAnalysis(summary, runtime) {
+        if (!summary) {
+          txAnalysisTarget.replaceChildren(empty("No transaction analysis reports yet."));
+          return;
+        }
+
+        const runtimeRows = renderTxAnalysisRuntimeRows(runtime);
+        const chainRows = Object.keys(summary.byChain || {}).map((chain) =>
+          row("tx-analysis-item", "Chain · " + chain, String(summary.byChain[chain]), "reports"),
+        );
+        const failureRows = Object.keys(summary.failureReasons || {}).map((reason) =>
+          row("tx-analysis-item", "Failure · " + reason, String(summary.failureReasons[reason]), "reports"),
+        );
+        const ruleRows = Object.keys(summary.byRuleVersion || {}).map((version) =>
+          row("tx-analysis-item", "Rule · " + version, String(summary.byRuleVersion[version]), "reports"),
+        );
+        const reviewRows = Object.keys(summary.byReviewStatus || {}).map((status) =>
+          row("tx-analysis-item", "Review · " + status, String(summary.byReviewStatus[status]), "reports"),
+        );
+        const latestRows = (summary.latestReports || []).slice(0, 5).map((report) =>
+          rowWithMetaNodes(
+            "tx-analysis-item",
+            report.status + " · " + report.chain,
+            report.txHash,
+            [
+              text(report.reason || report.verdict || report.generatedAt || ""),
+              report.targetTraderAddress ? text("Trader " + report.targetTraderAddress) : undefined,
+              report.transactionTime ? text("Time " + report.transactionTime) : undefined,
+              report.routerAddress ? text("Router " + report.routerAddress) : undefined,
+              report.unsupportedExplorerHost ? text("Unsupported explorer " + report.unsupportedExplorerHost) : undefined,
+              report.unsupportedChainHint ? text("Unsupported chain " + report.unsupportedChainHint) : undefined,
+              report.analysisRuleVersion ? text("Rule " + report.analysisRuleVersion) : undefined,
+              link("Report", report.reportUrl),
+              link("Screenshot", report.screenshotUrl),
+              screenshotMarkerNode(report),
+              link("Explorer", report.explorerUrl),
+              link("XXYY", report.xxyyPoolUrl),
+              ...probeAttemptNodes(report),
+              ...relatedTransactionLinks(report),
+              ...reportReviewNodes(report),
+            ],
+          ),
+        );
+
+        txAnalysisTarget.replaceChildren(
+          ...runtimeRows,
+          row("tx-analysis-item", "Total", String(summary.totalCount || 0), ""),
+          row("tx-analysis-item", "Success", String(summary.successCount || 0), ""),
+          row("tx-analysis-item", "Failure", String(summary.failureCount || 0), ""),
+          ...(chainRows.length === 0 ? [empty("No chain reports yet.")] : chainRows),
+          ...reviewRows,
+          ...failureRows,
+          ...ruleRows,
+          ...latestRows,
+        );
+      }
+
+      function renderTxAnalysisRuntimeRows(runtime) {
+        if (!runtime) {
+          return [];
+        }
+
+        const browser = runtime.browser || {};
+        return [
+          row(
+            "tx-analysis-item",
+            "Runtime · provider",
+            runtime.provider || "none",
+            "Reviewer " + (runtime.reviewer || "none") + " · Store " + (runtime.reportStore || "file"),
+          ),
+          row(
+            "tx-analysis-item",
+            "Browser concurrency",
+            String(browser.maxConcurrency ?? "unknown"),
+            "Headless " + formatBoolean(browser.headless),
+          ),
+          row(
+            "tx-analysis-item",
+            "Browser retry",
+            String(browser.maxRetries ?? "unknown"),
+            "Timeout failures",
+          ),
+          row(
+            "tx-analysis-item",
+            "Browser timeout",
+            browser.timeoutMs === undefined ? "unknown" : String(browser.timeoutMs) + "ms",
+            browser.discoverUrl ? "Discover " + browser.discoverUrl : "Discover default",
+          ),
+        ];
+      }
+
+      function formatBoolean(value) {
+        return value === true ? "on" : "off";
+      }
+
+      async function loadTxReports() {
+        const params = new URLSearchParams();
+        const txHash = txReportHash.value.trim();
+        const chain = txReportChain.value.trim();
+        const reportStatus = txReportStatus.value;
+        const reviewStatus = txReportReviewStatus.value;
+        const assignee = txReportAssignee.value.trim();
+        const reason = txReportReason.value;
+        const limit = txReportLimit.value.trim();
+
+        if (txHash) {
+          params.set("txHash", txHash);
+        }
+        if (chain) {
+          params.set("chain", chain);
+        }
+        if (reportStatus) {
+          params.set("status", reportStatus);
+        }
+        if (reviewStatus) {
+          params.set("reviewStatus", reviewStatus);
+        }
+        if (assignee) {
+          params.set("assignee", assignee);
+        }
+        if (reason) {
+          params.set("reason", reason);
+        }
+        if (limit) {
+          params.set("limit", limit);
+        }
+
+        txReportSubmit.disabled = true;
+        txReportSearchStatus.textContent = "Searching";
+        try {
+          const response = await fetch("/api/tx-analysis/reports?" + params.toString());
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.message || "Unable to load reports.");
+          }
+          renderTxReportResults(payload.reports || []);
+          txReportSearchStatus.textContent = String((payload.reports || []).length) + " reports";
+        } catch (error) {
+          txReportSearchStatus.textContent = error instanceof Error ? error.message : String(error);
+        } finally {
+          txReportSubmit.disabled = false;
+        }
+      }
+
+      function renderTxReportResults(reports) {
+        currentTxReports = reports;
+        if (reports.length === 0) {
+          txReportResultsTarget.replaceChildren(empty("No matching reports."));
+          updateSelectedTxReportCount();
+          return;
+        }
+
+        txReportResultsTarget.replaceChildren(
+          ...reports.map((report) =>
+            rowWithMetaNodes(
+              "tx-analysis-item",
+              report.status + " · " + report.chain,
+              report.txHash,
+              [
+                createTxReportSelectionNode(report),
+                text(report.reason || report.verdict || report.message || report.generatedAt || ""),
+                report.targetTraderAddress ? text("Trader " + report.targetTraderAddress) : undefined,
+                report.transactionTime ? text("Time " + report.transactionTime) : undefined,
+                report.routerAddress ? text("Router " + report.routerAddress) : undefined,
+                report.unsupportedExplorerHost ? text("Unsupported explorer " + report.unsupportedExplorerHost) : undefined,
+                report.unsupportedChainHint ? text("Unsupported chain " + report.unsupportedChainHint) : undefined,
+                report.analysisRuleVersion ? text("Rule " + report.analysisRuleVersion) : undefined,
+                link("Report", report.reportUrl),
+                link("Screenshot", report.screenshotUrl),
+                screenshotMarkerNode(report),
+                link("Explorer", report.explorerUrl),
+                link("XXYY", report.xxyyPoolUrl),
+                ...probeAttemptNodes(report),
+                ...relatedTransactionLinks(report),
+                ...reportReviewNodes(report),
+              ],
+            ),
+          ),
+        );
+        updateSelectedTxReportCount();
+      }
+
+      function reportReviewNodes(report) {
+        const review = report.review || {};
+        return [
+          text("Review " + (review.status || "open")),
+          review.assignee ? text("Assignee " + review.assignee) : undefined,
+          review.note ? text("Note " + review.note) : undefined,
+          review.updatedAt ? text("Reviewed " + review.updatedAt) : undefined,
+          createReportReviewForm(report),
+        ].filter(Boolean);
+      }
+
+      function createTxReportSelectionNode(report) {
+        const reportId = reportReviewId(report);
+        if (!reportId) {
+          return undefined;
+        }
+
+        const label = document.createElement("label");
+        label.className = "tx-report-select";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = reportId;
+        checkbox.addEventListener("change", updateSelectedTxReportCount);
+        label.append(checkbox, text("Select"));
+        return label;
+      }
+
+      function selectedTxReportIds() {
+        return Array.from(txReportResultsTarget.querySelectorAll(".tx-report-select input:checked"))
+          .map((checkbox) => checkbox.value)
+          .filter(Boolean);
+      }
+
+      function updateSelectedTxReportCount() {
+        const count = selectedTxReportIds().length;
+        txReportBulkStatus.textContent = String(count) + " selected";
+      }
+
+      async function updateBulkReportReview(action) {
+        const token = tokenInput.value.trim();
+        if (!token) {
+          txReportBulkStatus.textContent = "Ops token is required.";
+          tokenInput.focus();
+          return;
+        }
+        const ids = selectedTxReportIds();
+        if (ids.length === 0) {
+          txReportBulkStatus.textContent = "Select at least one report.";
+          return;
+        }
+        if (action === "claim" && !txReportBulkAssignee.value.trim()) {
+          txReportBulkStatus.textContent = "Assignee is required to claim.";
+          txReportBulkAssignee.focus();
+          return;
+        }
+        if (action === "close" && !txReportBulkNote.value.trim()) {
+          txReportBulkStatus.textContent = "Note is required to close.";
+          txReportBulkNote.focus();
+          return;
+        }
+
+        for (const button of txReportBulkButtons) {
+          button.disabled = true;
+        }
+        txReportBulkStatus.textContent = "Saving";
+        try {
+          const response = await fetch("/api/tx-analysis/reports/review", {
+            method: "PATCH",
+            headers: {
+              Authorization: "Bearer " + token,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action,
+              assignee: txReportBulkAssignee.value.trim(),
+              ids: selectedTxReportIds(),
+              note: txReportBulkNote.value.trim(),
+            }),
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.message || "Unable to save reviews.");
+          }
+
+          const reviewsById = new Map((payload.reviews || []).map((item) => [item.id, item.review]));
+          currentTxReports = currentTxReports.map((report) => {
+            const reportId = reportReviewId(report);
+            const review = reviewsById.get(reportId);
+            return review === undefined ? report : { ...report, review };
+          });
+          renderTxReportResults(currentTxReports);
+          txReportBulkStatus.textContent =
+            "Saved " +
+            String(payload.updatedCount || 0) +
+            " · Missing " +
+            String(payload.notFoundCount || 0);
+        } catch (error) {
+          txReportBulkStatus.textContent = error instanceof Error ? error.message : String(error);
+        } finally {
+          for (const button of txReportBulkButtons) {
+            button.disabled = false;
+          }
+        }
+      }
+
+      function createReportReviewForm(report) {
+        const reportId = reportReviewId(report);
+        if (!reportId) {
+          return undefined;
+        }
+
+        const review = report.review || {};
+        const form = document.createElement("form");
+        form.className = "report-review-form";
+
+        const statusLabel = document.createElement("label");
+        statusLabel.textContent = "Review";
+        const status = document.createElement("select");
+        status.name = "review-status";
+        for (const optionConfig of [
+          { value: "open", label: "Open" },
+          { value: "in_review", label: "In review" },
+          { value: "closed", label: "Closed" },
+        ]) {
+          const option = document.createElement("option");
+          option.value = optionConfig.value;
+          option.textContent = optionConfig.label;
+          status.append(option);
+        }
+        status.value = review.status || "open";
+        statusLabel.append(status);
+
+        const assigneeLabel = document.createElement("label");
+        assigneeLabel.textContent = "Assignee";
+        const assignee = document.createElement("input");
+        assignee.name = "assignee";
+        assignee.autocomplete = "off";
+        assignee.value = review.assignee || "";
+        assigneeLabel.append(assignee);
+
+        const noteLabel = document.createElement("label");
+        noteLabel.textContent = "Note";
+        const note = document.createElement("input");
+        note.name = "note";
+        note.autocomplete = "off";
+        note.value = review.note || "";
+        noteLabel.append(note);
+
+        const submit = document.createElement("button");
+        submit.type = "submit";
+        submit.textContent = "Save";
+
+        const statusTarget = document.createElement("div");
+        statusTarget.className = "report-review-status";
+        statusTarget.setAttribute("role", "status");
+        statusTarget.setAttribute("aria-live", "polite");
+
+        const claim = createReportReviewWorkflowButton(report, {
+          action: "claim",
+          assignee,
+          note,
+          status,
+          statusTarget,
+        });
+        claim.textContent = "Claim";
+
+        const close = createReportReviewWorkflowButton(report, {
+          action: "close",
+          assignee,
+          note,
+          status,
+          statusTarget,
+        });
+        close.textContent = "Close";
+
+        const reopen = createReportReviewWorkflowButton(report, {
+          action: "reopen",
+          assignee,
+          note,
+          status,
+          statusTarget,
+        });
+        reopen.textContent = "Reopen";
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const token = tokenInput.value.trim();
+          if (!token) {
+            statusTarget.textContent = "Ops token is required.";
+            tokenInput.focus();
+            return;
+          }
+
+          submit.disabled = true;
+          statusTarget.textContent = "Saving";
+          try {
+            const reviewResult = await updateReportReview(
+              report,
+              {
+                assignee: assignee.value,
+                note: note.value,
+                status: status.value,
+              },
+              statusTarget,
+            );
+            status.value = reviewResult.status;
+            assignee.value = reviewResult.assignee || "";
+            note.value = reviewResult.note || "";
+            statusTarget.textContent = "Saved · " + reviewResult.status;
+          } catch (error) {
+            statusTarget.textContent = error instanceof Error ? error.message : String(error);
+          } finally {
+            submit.disabled = false;
+          }
+        });
+
+        form.append(statusLabel, assigneeLabel, noteLabel, submit, claim, close, reopen, statusTarget);
+        return form;
+      }
+
+      function createReportReviewWorkflowButton(report, options) {
+        const button = document.createElement("button");
+        button.type = "button";
+
+        button.addEventListener("click", async () => {
+          const token = tokenInput.value.trim();
+          if (!token) {
+            options.statusTarget.textContent = "Ops token is required.";
+            tokenInput.focus();
+            return;
+          }
+          if (options.action === "claim" && !options.assignee.value.trim()) {
+            options.statusTarget.textContent = "Assignee is required to claim.";
+            options.assignee.focus();
+            return;
+          }
+          if (options.action === "close" && !options.note.value.trim()) {
+            options.statusTarget.textContent = "Note is required to close.";
+            options.note.focus();
+            return;
+          }
+
+          button.disabled = true;
+          options.statusTarget.textContent = "Saving";
+          try {
+            const reviewResult = await updateReportReview(
+              report,
+              {
+                action: options.action,
+                assignee: options.assignee.value.trim(),
+                note: options.note.value.trim(),
+              },
+              options.statusTarget,
+            );
+            options.status.value = reviewResult.status;
+            options.assignee.value = reviewResult.assignee || "";
+            options.note.value = reviewResult.note || "";
+            options.statusTarget.textContent = "Saved · " + reviewResult.status;
+          } catch (error) {
+            options.statusTarget.textContent = error instanceof Error ? error.message : String(error);
+          } finally {
+            button.disabled = false;
+          }
+        });
+
+        return button;
+      }
+
+      async function updateReportReview(report, payload, statusTarget) {
+        const reportId = reportReviewId(report);
+        if (!reportId) {
+          throw new Error("Report cannot be updated.");
+        }
+
+        const token = tokenInput.value.trim();
+        const response = await fetch("/api/tx-analysis/reports/" + encodeURIComponent(reportId) + "/review", {
+          method: "PATCH",
+          headers: {
+            Authorization: "Bearer " + token,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        const responsePayload = await response.json();
+        if (!response.ok) {
+          throw new Error(responsePayload.message || "Unable to save review.");
+        }
+
+        report.review = responsePayload.review;
+        statusTarget.textContent = "Saved";
+        return responsePayload.review;
+      }
+
+      function reportReviewId(report) {
+        const reportUrl = report.reportUrl || "";
+        if (!reportUrl) {
+          return "";
+        }
+
+        let pathname = reportUrl;
+        try {
+          pathname = new URL(reportUrl, window.location.origin).pathname;
+        } catch (_error) {
+          pathname = reportUrl;
+        }
+
+        const prefix = "/api/tx-analysis/reports/";
+        if (!pathname.startsWith(prefix)) {
+          return "";
+        }
+
+        const id = pathname.slice(prefix.length).split(/[?#]/u)[0];
+        if (!id || id.includes("/")) {
+          return "";
+        }
+
+        try {
+          return decodeURIComponent(id);
+        } catch (_error) {
+          return id;
+        }
+      }
+
+      function relatedTransactionLinks(report) {
+        return (report.relatedTransactions || [])
+          .map(
+            (transaction) =>
+              link(relatedTransactionLabel(transaction), transaction.explorerUrl) ||
+              text(relatedTransactionLabel(transaction)),
+          )
+          .filter(Boolean);
+      }
+
+      function relatedTransactionLabel(transaction) {
+        const side = formatTradeSideLabel(transaction.side);
+        return [
+          roleLabel(transaction.role),
+          side,
+          transaction.traderAddress ? "Trader " + transaction.traderAddress : "",
+          transaction.timestamp ? "Time " + transaction.timestamp : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      }
+
+      function screenshotMarkerNode(report) {
+        if (report.screenshotTargetRowMarked === true) {
+          return text("Target row marked");
+        }
+        if (report.screenshotTargetRowMarked === false) {
+          return text("Target row unmarked");
+        }
+
+        return undefined;
+      }
+
+      function probeAttemptNodes(report) {
+        return (report.probeAttempts || [])
+          .map((attempt) =>
+            text(
+              "Probe " +
+                formatChainLabel(attempt.chain) +
+                " · " +
+                formatProbeReason(attempt.reason),
+            ),
+          )
+          .filter(Boolean);
+      }
+
+      function formatChainLabel(chain) {
+        if (chain === "solana") {
+          return "Solana";
+        }
+        if (chain === "base") {
+          return "Base";
+        }
+        if (chain === "ethereum") {
+          return "Ethereum";
+        }
+        if (chain === "bsc") {
+          return "BSC";
+        }
+
+        return "Unknown";
+      }
+
+      function formatProbeReason(reason) {
+        if (reason === "browser_verification_required") {
+          return "browser verification";
+        }
+        if (reason === "provider_unavailable") {
+          return "provider unavailable";
+        }
+        if (reason === "timeout") {
+          return "timeout";
+        }
+        if (reason === "tx_not_found") {
+          return "tx not found";
+        }
+        if (reason === "tx_failed") {
+          return "tx failed";
+        }
+        if (reason === "tx_pending") {
+          return "tx pending";
+        }
+        if (reason === "pool_not_found") {
+          return "pool not found";
+        }
+        if (reason === "target_trade_not_found") {
+          return "target trade not found";
+        }
+        if (reason === "screenshot_unavailable") {
+          return "screenshot unavailable";
+        }
+        if (reason === "unsupported_chain") {
+          return "unsupported chain";
+        }
+        if (reason === "invalid_reference") {
+          return "invalid reference";
+        }
+        if (reason === "not_configured") {
+          return "not configured";
+        }
+
+        return String(reason || "unknown");
+      }
+
+      function roleLabel(role) {
+        if (role === "front_run") {
+          return "Front";
+        }
+        if (role === "user") {
+          return "User";
+        }
+        if (role === "back_run") {
+          return "Back";
+        }
+
+        return "Related";
+      }
+
+      function formatTradeSideLabel(side) {
+        if (side === "buy") {
+          return "Buy";
+        }
+        if (side === "sell") {
+          return "Sell";
+        }
+        if (side === "unknown") {
+          return "Unknown side";
+        }
+
+        return "";
+      }
+
       function metric(label, value, state) {
         const item = document.createElement("article");
         item.className = "metric " + state;
@@ -1665,6 +2557,32 @@ export function renderOpsPage(): string {
 
         item.append(titleNode, metaNode);
         return item;
+      }
+
+      function rowWithMetaNodes(className, title, value, metaNodes) {
+        const item = row(className, title, value, "");
+        const metaNode = item.querySelector(".row-meta");
+        metaNode.replaceChildren(...metaNodes.filter(Boolean));
+        return item;
+      }
+
+      function text(value) {
+        const item = document.createElement("span");
+        item.textContent = value;
+        return item;
+      }
+
+      function link(label, url) {
+        if (!url) {
+          return undefined;
+        }
+
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.target = "_blank";
+        anchor.rel = "noreferrer";
+        anchor.textContent = label;
+        return anchor;
       }
 
       function empty(text) {

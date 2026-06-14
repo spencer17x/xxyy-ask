@@ -1,0 +1,333 @@
+{
+  "samples": [
+    {
+      "label": "Solana XXYY pool window sample",
+      "chain": "solana",
+      "txHash": "5uTPyzPctFriE2wPTpvvvduS451Dd32zDr6RrEheuYHYh1M4SptKd7jqcVoHBjPX3CkvHPxj7ecTNjVMYfQBZ4MH",
+      "requireScreenshot": true,
+      "requireReport": true,
+      "verifyAssets": true,
+      "expectedStatus": "success",
+      "expectedChain": "solana",
+      "expectedDataSource": "browser",
+      "expectedAnalysisRuleVersion": "sandwich-window-rules-v1",
+      "expectedVerdict": "not_sandwiched",
+      "expectedConfidence": 0.6,
+      "expectedScreenshotTargetRowMarked": true,
+      "expectedXxyyPoolUrl": "https://www.xxyy.io/sol/HgRhWnmKZMJqNzjrhTixnJ5CSsM4GYPDjhBVnJd6dgNE",
+      "expectedPoolAddress": "HgRhWnmKZMJqNzjrhTixnJ5CSsM4GYPDjhBVnJd6dgNE",
+      "expectedContractAddress": "9smMJxtru37j29w7pfcQZfpKXdsUohuDXqHFaLJcpump",
+      "expectedTargetTradeSide": "sell",
+      "expectedTargetTraderAddress": "EJLVo2EZ3kYnBgL7RyTPd7ZC8DBK9YWiXwfLvsmVcxhA",
+      "expectedTransactionTime": "05:41:34 Jun 10, 2026 (UTC)",
+      "expectedRelatedTransactionCount": 11,
+      "expectedRelatedTransactionRoles": [
+        "related",
+        "related",
+        "related",
+        "related",
+        "related",
+        "user",
+        "related",
+        "related",
+        "related",
+        "related",
+        "related"
+      ],
+      "expectedRelatedTransactions": [
+        {
+          "role": "user",
+          "hash": "5uTPyzPctFriE2wPTpvvvduS451Dd32zDr6RrEheuYHYh1M4SptKd7jqcVoHBjPX3CkvHPxj7ecTNjVMYfQBZ4MH",
+          "side": "sell",
+          "traderAddress": "EJLVo2EZ3kYnBgL7RyTPd7ZC8DBK9YWiXwfLvsmVcxhA"
+        }
+      ]
+    },
+    {
+      "label": "Base XXYY pool window sample",
+      "chain": "base",
+      "txHash": "0x42a2030a39950aa611a2308c9bc77296a97e44fd75449777340df3e097eaf0ba",
+      "requireScreenshot": true,
+      "requireReport": true,
+      "verifyAssets": true,
+      "expectedStatus": "success",
+      "expectedChain": "base",
+      "expectedDataSource": "browser",
+      "expectedAnalysisRuleVersion": "sandwich-window-rules-v1",
+      "expectedVerdict": "not_sandwiched",
+      "expectedConfidence": 0.6,
+      "expectedScreenshotTargetRowMarked": true,
+      "expectedXxyyPoolUrl": "https://www.xxyy.io/base/0x6b0f53cbd9272d8117e9535fe25371dedf39a1be",
+      "expectedPoolAddress": "0x6b0f53cbd9272d8117e9535fe25371dedf39a1be",
+      "expectedContractAddress": "0xbf927b841994731c573bdf09ceb0c6b0aa887cdd",
+      "expectedRouterAddress": "0xBE6D8f0d05cC4be24d5167a3eF062215bE6D18a5",
+      "expectedTargetTradeSide": "sell",
+      "expectedTargetTraderAddress": "0xf9b6a1eb0190bf76274b0876957ee9f4f508af41",
+      "expectedTransactionTime": "2026-06-13T23:48:33.006Z",
+      "expectedRelatedTransactionCount": 11,
+      "expectedRelatedTransactionRoles": [
+        "related",
+        "related",
+        "related",
+        "related",
+        "related",
+        "user",
+        "related",
+        "related",
+        "related",
+        "related",
+        "related"
+      ],
+      "expectedRelatedTransactions": [
+        {
+          "role": "user",
+          "hash": "0x42a2030a39950aa611a2308c9bc77296a97e44fd75449777340df3e097eaf0ba",
+          "side": "sell",
+          "traderAddress": "0xf9b6a1eb0190bf76274b0876957ee9f4f508af41"
+        }
+      ]
+    },
+    {
+      "label": "Unknown EVM Base auto-detect sample",
+      "chain": "unknown",
+      "txHash": "0x42a2030a39950aa611a2308c9bc77296a97e44fd75449777340df3e097eaf0ba",
+      "requireScreenshot": true,
+      "requireReport": true,
+      "verifyAssets": true,
+      "expectedStatus": "success",
+      "expectedChain": "base",
+      "expectedDataSource": "browser",
+      "expectedAnalysisRuleVersion": "sandwich-window-rules-v1",
+      "expectedVerdict": "not_sandwiched",
+      "expectedConfidence": 0.6,
+      "expectedScreenshotTargetRowMarked": true,
+      "expectedXxyyPoolUrl": "https://www.xxyy.io/base/0x6b0f53cbd9272d8117e9535fe25371dedf39a1be",
+      "expectedPoolAddress": "0x6b0f53cbd9272d8117e9535fe25371dedf39a1be",
+      "expectedContractAddress": "0xbf927b841994731c573bdf09ceb0c6b0aa887cdd",
+      "expectedRouterAddress": "0xBE6D8f0d05cC4be24d5167a3eF062215bE6D18a5",
+      "expectedTargetTradeSide": "sell",
+      "expectedTargetTraderAddress": "0xf9b6a1eb0190bf76274b0876957ee9f4f508af41",
+      "expectedTransactionTime": "2026-06-13T23:48:33.006Z",
+      "expectedRelatedTransactionCount": 11,
+      "expectedRelatedTransactionRoles": [
+        "related",
+        "related",
+        "related",
+        "related",
+        "related",
+        "user",
+        "related",
+        "related",
+        "related",
+        "related",
+        "related"
+      ],
+      "expectedRelatedTransactions": [
+        {
+          "role": "user",
+          "hash": "0x42a2030a39950aa611a2308c9bc77296a97e44fd75449777340df3e097eaf0ba",
+          "side": "sell",
+          "traderAddress": "0xf9b6a1eb0190bf76274b0876957ee9f4f508af41"
+        }
+      ]
+    },
+    {
+      "label": "Ethereum XXYY pool window sample",
+      "chain": "ethereum",
+      "txHash": "0x62217195d19d8c2c1058ce844de6862cf4054321a725ee6e60f1d011f5b84806",
+      "requireScreenshot": true,
+      "requireReport": true,
+      "verifyAssets": true,
+      "expectedStatus": "success",
+      "expectedChain": "ethereum",
+      "expectedDataSource": "browser",
+      "expectedAnalysisRuleVersion": "sandwich-window-rules-v1",
+      "expectedVerdict": "sandwiched",
+      "expectedConfidence": 0.9,
+      "expectedScreenshotTargetRowMarked": true,
+      "expectedXxyyPoolUrl": "https://www.xxyy.io/eth/0x35650bdc37864a3fdca76cb979fabc8b12ffd7b9015e0d1b5d8e03afae05a041",
+      "expectedPoolAddress": "0x35650bdc37864a3fdca76cb979fabc8b12ffd7b9015e0d1b5d8e03afae05a041",
+      "expectedContractAddress": "0x0d7a6caa63bc2b47c881044b0dfa58e087b63bc2",
+      "expectedRouterAddress": "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af",
+      "expectedTargetTradeSide": "buy",
+      "expectedTargetTraderAddress": "0x6582d9ea654cfa1ff2002a174ea3e2715a1f9ea4",
+      "expectedTransactionTime": "2026-06-13T23:55:11.048Z",
+      "expectedRelatedTransactionCount": 11,
+      "expectedRelatedTransactionRoles": [
+        "related",
+        "related",
+        "related",
+        "related",
+        "front_run",
+        "user",
+        "related",
+        "related",
+        "back_run",
+        "related",
+        "related"
+      ],
+      "expectedRelatedTransactions": [
+        {
+          "role": "front_run",
+          "hash": "0x65b5a30e468af5354fbc7c529b917b9cadd10b61c173de9a216409ee51edb5d7",
+          "side": "buy",
+          "traderAddress": "0xc9f66d1e2f39ee201c7e60718984924c78bb188c"
+        },
+        {
+          "role": "user",
+          "hash": "0x62217195d19d8c2c1058ce844de6862cf4054321a725ee6e60f1d011f5b84806",
+          "side": "buy",
+          "traderAddress": "0x6582d9ea654cfa1ff2002a174ea3e2715a1f9ea4"
+        },
+        {
+          "role": "back_run",
+          "hash": "0xdb3b73c36ec56fd1608caba423fe1bf874e79daed9d9809fcf4e4d177fa9baba",
+          "side": "sell",
+          "traderAddress": "0xc9f66d1e2f39ee201c7e60718984924c78bb188c"
+        }
+      ]
+    },
+    {
+      "label": "Unknown EVM Ethereum auto-detect sample",
+      "chain": "unknown",
+      "txHash": "0x62217195d19d8c2c1058ce844de6862cf4054321a725ee6e60f1d011f5b84806",
+      "requireScreenshot": true,
+      "requireReport": true,
+      "verifyAssets": true,
+      "expectedStatus": "success",
+      "expectedChain": "ethereum",
+      "expectedDataSource": "browser",
+      "expectedAnalysisRuleVersion": "sandwich-window-rules-v1",
+      "expectedVerdict": "sandwiched",
+      "expectedConfidence": 0.9,
+      "expectedScreenshotTargetRowMarked": true,
+      "expectedXxyyPoolUrl": "https://www.xxyy.io/eth/0x35650bdc37864a3fdca76cb979fabc8b12ffd7b9015e0d1b5d8e03afae05a041",
+      "expectedPoolAddress": "0x35650bdc37864a3fdca76cb979fabc8b12ffd7b9015e0d1b5d8e03afae05a041",
+      "expectedContractAddress": "0x0d7a6caa63bc2b47c881044b0dfa58e087b63bc2",
+      "expectedRouterAddress": "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af",
+      "expectedTargetTradeSide": "buy",
+      "expectedTargetTraderAddress": "0x6582d9ea654cfa1ff2002a174ea3e2715a1f9ea4",
+      "expectedTransactionTime": "2026-06-13T23:55:11.048Z",
+      "expectedRelatedTransactionCount": 11,
+      "expectedRelatedTransactionRoles": [
+        "related",
+        "related",
+        "related",
+        "related",
+        "front_run",
+        "user",
+        "related",
+        "related",
+        "back_run",
+        "related",
+        "related"
+      ],
+      "expectedRelatedTransactions": [
+        {
+          "role": "front_run",
+          "hash": "0x65b5a30e468af5354fbc7c529b917b9cadd10b61c173de9a216409ee51edb5d7",
+          "side": "buy",
+          "traderAddress": "0xc9f66d1e2f39ee201c7e60718984924c78bb188c"
+        },
+        {
+          "role": "user",
+          "hash": "0x62217195d19d8c2c1058ce844de6862cf4054321a725ee6e60f1d011f5b84806",
+          "side": "buy",
+          "traderAddress": "0x6582d9ea654cfa1ff2002a174ea3e2715a1f9ea4"
+        },
+        {
+          "role": "back_run",
+          "hash": "0xdb3b73c36ec56fd1608caba423fe1bf874e79daed9d9809fcf4e4d177fa9baba",
+          "side": "sell",
+          "traderAddress": "0xc9f66d1e2f39ee201c7e60718984924c78bb188c"
+        }
+      ]
+    },
+    {
+      "label": "BSC XXYY pool window sample",
+      "chain": "bsc",
+      "txHash": "0x26540a18818fedb1c83769964619e88e9dd08669cd8a092251431157a886e3cd",
+      "requireScreenshot": true,
+      "requireReport": true,
+      "verifyAssets": true,
+      "expectedStatus": "success",
+      "expectedChain": "bsc",
+      "expectedDataSource": "browser",
+      "expectedAnalysisRuleVersion": "sandwich-window-rules-v1",
+      "expectedVerdict": "not_sandwiched",
+      "expectedConfidence": 0.6,
+      "expectedScreenshotTargetRowMarked": true,
+      "expectedXxyyPoolUrl": "https://www.xxyy.io/bsc/0x66f289de31eef70d52186729d2637ac978cfc56b",
+      "expectedPoolAddress": "0x66f289de31eef70d52186729d2637ac978cfc56b",
+      "expectedContractAddress": "0x924fa68a0fc644485b8df8abfa0a41c2e7744444",
+      "expectedTargetTradeSide": "buy",
+      "expectedTargetTraderAddress": "0x44df49308b090088bd6e5faea4998304c7a44165",
+      "expectedTransactionTime": "2026-06-13T23:23:11.048Z",
+      "expectedRelatedTransactionCount": 11,
+      "expectedRelatedTransactionRoles": [
+        "related",
+        "related",
+        "related",
+        "related",
+        "related",
+        "user",
+        "related",
+        "related",
+        "related",
+        "related",
+        "related"
+      ],
+      "expectedRelatedTransactions": [
+        {
+          "role": "user",
+          "hash": "0x26540a18818fedb1c83769964619e88e9dd08669cd8a092251431157a886e3cd",
+          "side": "buy",
+          "traderAddress": "0x44df49308b090088bd6e5faea4998304c7a44165"
+        }
+      ]
+    },
+    {
+      "label": "Unknown EVM BSC auto-detect sample",
+      "chain": "unknown",
+      "txHash": "0x26540a18818fedb1c83769964619e88e9dd08669cd8a092251431157a886e3cd",
+      "requireScreenshot": true,
+      "requireReport": true,
+      "verifyAssets": true,
+      "expectedStatus": "success",
+      "expectedChain": "bsc",
+      "expectedDataSource": "browser",
+      "expectedAnalysisRuleVersion": "sandwich-window-rules-v1",
+      "expectedVerdict": "not_sandwiched",
+      "expectedConfidence": 0.6,
+      "expectedScreenshotTargetRowMarked": true,
+      "expectedXxyyPoolUrl": "https://www.xxyy.io/bsc/0x66f289de31eef70d52186729d2637ac978cfc56b",
+      "expectedPoolAddress": "0x66f289de31eef70d52186729d2637ac978cfc56b",
+      "expectedContractAddress": "0x924fa68a0fc644485b8df8abfa0a41c2e7744444",
+      "expectedTargetTradeSide": "buy",
+      "expectedTargetTraderAddress": "0x44df49308b090088bd6e5faea4998304c7a44165",
+      "expectedTransactionTime": "2026-06-13T23:23:11.048Z",
+      "expectedRelatedTransactionCount": 11,
+      "expectedRelatedTransactionRoles": [
+        "related",
+        "related",
+        "related",
+        "related",
+        "related",
+        "user",
+        "related",
+        "related",
+        "related",
+        "related",
+        "related"
+      ],
+      "expectedRelatedTransactions": [
+        {
+          "role": "user",
+          "hash": "0x26540a18818fedb1c83769964619e88e9dd08669cd8a092251431157a886e3cd",
+          "side": "buy",
+          "traderAddress": "0x44df49308b090088bd6e5faea4998304c7a44165"
+        }
+      ]
+    }
+  ]
+}

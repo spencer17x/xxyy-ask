@@ -1,0 +1,6 @@
+const BROWSER_VERIFICATION_TEXT =
+  /安全验证|DDoS-Guard|DataDome|Akamai\s+Bot\s+Manager|PerimeterX|Kasada|Arkose|verify you are human|verifying you are human|human verification required|(?:confirm|prove) you are (?:a )?human|verify you are not a bot|verify your browser|request is being verified|not a bot|not a robot|checking your browser|checking if the site connection is secure|review the security of your connection|security check|security service to protect itself from online attacks|triggered the security solution|just a moment|enable JavaScript and cookies|please enable (?:cookies?|JavaScript)|enable JavaScript and refresh|sorry,? you have been blocked|you are unable to access|attention required|browser verification|security verification|(?:complete|solve|pass|enter)\s+(?:the\s+)?captcha|captcha\s+(?:required|challenge|verification)|验证码|access denied|error code 1020|cloudflare ray id|cf-challenge-running|cf-turnstile|cf-turnstile-response|cf_clearance|cf[_-]chl|cf-mitigated:\s*challenge|challenge-platform|g-recaptcha|h-captcha|turnstile|_abck|bm_sz|_px3|pxvid|x-kpsdk|kpsdk/iu;
+
+export function isBrowserVerificationText(text: string): boolean {
+  return BROWSER_VERIFICATION_TEXT.test(text);
+}

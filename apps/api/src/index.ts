@@ -8,24 +8,46 @@ import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxy
 import {
   createChatService,
   createLazyRetriever,
+  createPgTxAnalysisReportStore,
   createPgFeedbackStore,
   createPgPool,
   createPgVectorStore,
+  findFileTxAnalysisReports,
+  getFileTxAnalysisReportDocument,
   LlmConfigurationError,
   loadRagConfig,
   loadWorkspaceEnv,
+  parseTransactionReference,
   resolveWorkspaceCwd,
+  summarizeFileTxAnalysisReports,
+  updateFileTxAnalysisReportReview,
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
-import type { ChatRequest, ChatChannel, ChatResponse, ChatStreamEvent, Intent } from '@xxyy/shared';
+import type {
+  ChatRequest,
+  ChatChannel,
+  ChatResponse,
+  ChatStreamEvent,
+  Intent,
+  TxAnalysisChain,
+} from '@xxyy/shared';
 import { supportedChannels, supportedIntents } from '@xxyy/shared';
 import type {
   ChatService,
   FeedbackStats,
+  FindTxAnalysisReportsOptions,
   KnowledgeStats,
   PgFeedbackStore,
   RagEnv,
+  SummarizeTxAnalysisReportsOptions,
+  TxAnalysisReportIndexEntry,
+  TxAnalysisReportReview,
+  TxAnalysisReportReviewStatus,
+  TxAnalysisReportSummary,
+  TxAnalysisStoredReportDocument,
+  TxAnalysisUnavailableReason,
+  UpdateTxAnalysisReportReviewInput,
 } from '@xxyy/rag-core';
 import type { RecordFeedbackInput } from '@xxyy/rag-core';
 import { renderChatPage, renderOpsPage } from '@xxyy/web';
@@ -68,6 +90,7 @@ export interface CreateRequestHandlerOptions {
   getChatService?: () => Promise<ChatService>;
   getHealthStatus?: () => Promise<DeepHealthStatus>;
   getOpsSummary?: () => Promise<OpsSummary>;
+  getTxAnalysisReportStore?: () => Promise<TxAnalysisReportReader>;
   logger?: ApiLogger;
   now?: () => number;
   recordFeedback?: (input: RecordFeedbackInput) => Promise<void>;
@@ -95,6 +118,14 @@ interface ChatPayload {
   userId?: string;
 }
 
+interface TxAnalysisPayload {
+  txHash: string;
+  chain?: TxAnalysisChain;
+  channel?: ChatChannel;
+  sessionId?: string;
+  userId?: string;
+}
+
 interface FeedbackPayload {
   answer: string;
   channel?: ChatChannel;
@@ -104,6 +135,11 @@ interface FeedbackPayload {
   question: string;
   rating: 'positive' | 'negative';
   sessionId?: string;
+}
+
+interface ParsedTxAnalysisPayloadChain {
+  chain?: TxAnalysisChain;
+  unsupportedChainText?: string;
 }
 
 export interface ApiLogEntry {
@@ -151,12 +187,161 @@ interface OpsSummary {
   generatedAt: string;
   health: DeepHealthStatus;
   knowledge: KnowledgeStats;
+  txAnalysis: TxAnalysisReportSummary;
+  txAnalysisRuntime?: TxAnalysisRuntimeSummary;
+}
+
+interface TxAnalysisRuntimeSummary {
+  browser: {
+    chromeExecutablePathConfigured: boolean;
+    discoverUrl?: string;
+    headless: boolean;
+    maxConcurrency: number;
+    maxRetries: number;
+    screenshotBaseUrl: string;
+    screenshotDirConfigured: boolean;
+    timeoutMs: number;
+    userDataDirConfigured: boolean;
+  };
+  provider: string;
+  reportStore: string;
+  reviewer: string;
+}
+
+interface TxAnalysisReportReader {
+  findReports(options: FindTxAnalysisReportsOptions): Promise<TxAnalysisReportIndexEntry[]>;
+  getReportDocument?(id: string): Promise<TxAnalysisStoredReportDocument | undefined>;
+  summarizeReports(options?: SummarizeTxAnalysisReportsOptions): Promise<TxAnalysisReportSummary>;
+  updateReportReview?(
+    input: UpdateTxAnalysisReportReviewInput,
+  ): Promise<TxAnalysisReportReview | undefined>;
 }
 
 const MAX_FEEDBACK_QUESTION_CHARS = 2000;
 const MAX_FEEDBACK_ANSWER_CHARS = 4000;
 const MAX_FEEDBACK_COMMENT_CHARS = 1000;
 const MAX_FEEDBACK_SESSION_CHARS = 200;
+const MAX_TX_ANALYSIS_REVIEW_ASSIGNEE_CHARS = 200;
+const MAX_TX_ANALYSIS_REVIEW_NOTE_CHARS = 2000;
+const MAX_TX_ANALYSIS_REVIEW_UPDATED_BY_CHARS = 200;
+const txAnalysisChainAliases = new Map<string, TxAnalysisChain>([
+  ['unknown', 'unknown'],
+  ['solana', 'solana'],
+  ['sol', 'solana'],
+  ['sol chain', 'solana'],
+  ['sol mainnet', 'solana'],
+  ['sol network', 'solana'],
+  ['base', 'base'],
+  ['ethereum', 'ethereum'],
+  ['eth', 'ethereum'],
+  ['以太', 'ethereum'],
+  ['以太链', 'ethereum'],
+  ['以太坊', 'ethereum'],
+  ['bsc', 'bsc'],
+  ['bnb', 'bsc'],
+  ['bnbchain', 'bsc'],
+  ['bnb chain', 'bsc'],
+  ['bnbsmartchain', 'bsc'],
+  ['bnb smartchain', 'bsc'],
+  ['bnb smart chain', 'bsc'],
+  ['binance chain', 'bsc'],
+  ['binancesmartchain', 'bsc'],
+  ['binance smartchain', 'bsc'],
+  ['binance smart chain', 'bsc'],
+  ['bep20', 'bsc'],
+  ['bep 20', 'bsc'],
+  ['币安', 'bsc'],
+  ['币安链', 'bsc'],
+  ['币安智能链', 'bsc'],
+]);
+const unsupportedTxAnalysisChainAliases = new Set([
+  'amoy',
+  'arb',
+  'arbitrum',
+  'arbitrum one',
+  'abstract',
+  'avalanche',
+  'avalanche c chain',
+  'avax',
+  'avax c chain',
+  'berachain',
+  'base goerli',
+  'base sepolia',
+  'bnb chain testnet',
+  'bnb smart chain testnet',
+  'bnb smartchain testnet',
+  'bnb testnet',
+  'blast',
+  'bsc testnet',
+  'celo',
+  'cronos',
+  'devnet',
+  'eth goerli',
+  'eth holesky',
+  'eth hoodi',
+  'eth sepolia',
+  'ethereum goerli',
+  'ethereum holesky',
+  'ethereum hoodi',
+  'ethereum sepolia',
+  'fantom',
+  'fantom opera',
+  'fuji',
+  'gnosis',
+  'gnosis chain',
+  'goerli',
+  'holesky',
+  'hoodi',
+  'linea',
+  'manta',
+  'manta pacific',
+  'mantle',
+  'matic',
+  'mode',
+  'mode network',
+  'moonbeam',
+  'moonriver',
+  'op',
+  'opbnb',
+  'optimistic ethereum',
+  'optimism',
+  'plasma',
+  'polygon',
+  'polygon pos',
+  'polygon zkevm',
+  'scroll',
+  'sepolia',
+  'sonic',
+  'taiko',
+  'testnet',
+  'world chain',
+  'x layer',
+  'xlayer',
+  'zora',
+  'zora network',
+  'zk sync',
+  'zk sync era',
+  'zksync',
+  'zksync era',
+]);
+const supportedTxAnalysisReportStatuses = ['failure', 'success'] as const;
+const supportedTxAnalysisReportReviewStatuses = ['closed', 'in_review', 'open'] as const;
+const supportedTxAnalysisReportReviewActions = ['claim', 'close', 'reopen'] as const;
+type TxAnalysisReportReviewAction = (typeof supportedTxAnalysisReportReviewActions)[number];
+const supportedTxAnalysisReportFailureReasons = [
+  'not_configured',
+  'provider_unavailable',
+  'invalid_reference',
+  'unsupported_chain',
+  'browser_verification_required',
+  'tx_not_found',
+  'tx_failed',
+  'tx_pending',
+  'pool_not_found',
+  'target_trade_not_found',
+  'screenshot_unavailable',
+  'timeout',
+] as const;
 
 export function createRequestHandler(options: CreateRequestHandlerOptions = {}): ApiRequestHandler {
   const env = options.env ?? createDefaultApiEnv(options);
@@ -168,11 +353,16 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
   const logger = options.logger ?? noopLogger;
   const now = options.now ?? Date.now;
+  const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
+  const getTxAnalysisReportStore =
+    options.getTxAnalysisReportStore ??
+    createCachedTxAnalysisReportStoreLoader(config, staticAssetsDir);
   const getOpsSummary =
-    options.getOpsSummary ?? (() => createOpsSummary(config, getHealthStatus, now));
+    options.getOpsSummary ??
+    (() => createOpsSummary(config, getHealthStatus, now, getTxAnalysisReportStore));
+  const txAnalysisRuntime = createTxAnalysisRuntimeSummary(config);
   const recordFeedback = options.recordFeedback ?? createCachedFeedbackRecorder(config);
   const rateLimiter = createRateLimiter(apiConfig, Date.now);
-  const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
 
   return async function handleRequest(request, response): Promise<void> {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
@@ -181,7 +371,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       return;
     }
 
-    if (isChatApiRoute(requestUrl.pathname) && request.method === 'POST') {
+    if (isRateLimitedPostApiRoute(requestUrl.pathname) && request.method === 'POST') {
       const rateLimitResult = rateLimiter.check(clientAddress(request));
       if (!rateLimitResult.allowed) {
         response.setHeader('Retry-After', String(Math.ceil(rateLimitResult.retryAfterMs / 1000)));
@@ -210,6 +400,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
           getOpsSummary,
           request,
           response,
+          txAnalysisRuntime,
           ...(apiConfig.opsToken === undefined ? {} : { opsToken: apiConfig.opsToken }),
         });
         return;
@@ -222,6 +413,61 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
 
       if (request.method === 'GET' && requestUrl.pathname === '/ops') {
         sendHtml(response, 200, renderOpsHtml());
+        return;
+      }
+
+      if (request.method === 'GET' && requestUrl.pathname === '/api/tx-analysis/reports/summary') {
+        await handleTxAnalysisReportSummaryRequest({
+          getTxAnalysisReportStore,
+          response,
+        });
+        return;
+      }
+
+      if (request.method === 'PATCH' && requestUrl.pathname === '/api/tx-analysis/reports/review') {
+        await handleTxAnalysisReportBatchReviewRequest({
+          getTxAnalysisReportStore,
+          maxBodyBytes: apiConfig.maxBodyBytes,
+          ...(apiConfig.opsToken === undefined ? {} : { opsToken: apiConfig.opsToken }),
+          request,
+          response,
+        });
+        return;
+      }
+
+      if (
+        request.method === 'PATCH' &&
+        requestUrl.pathname.startsWith('/api/tx-analysis/reports/') &&
+        requestUrl.pathname.endsWith('/review')
+      ) {
+        await handleTxAnalysisReportReviewRequest({
+          getTxAnalysisReportStore,
+          maxBodyBytes: apiConfig.maxBodyBytes,
+          ...(apiConfig.opsToken === undefined ? {} : { opsToken: apiConfig.opsToken }),
+          reportId: decodeURIComponent(extractTxAnalysisReportReviewId(requestUrl.pathname)),
+          request,
+          response,
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && requestUrl.pathname.startsWith('/api/tx-analysis/reports/')) {
+        await handleTxAnalysisReportDocumentRequest({
+          getTxAnalysisReportStore,
+          reportId: decodeURIComponent(
+            requestUrl.pathname.slice('/api/tx-analysis/reports/'.length),
+          ),
+          response,
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && requestUrl.pathname === '/api/tx-analysis/reports') {
+        await handleTxAnalysisReportsRequest({
+          getTxAnalysisReportStore,
+          requestUrl,
+          response,
+        });
         return;
       }
 
@@ -252,6 +498,16 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
           request,
           response,
           route: '/api/chat/stream',
+        });
+        return;
+      }
+
+      if (request.method === 'POST' && requestUrl.pathname === '/api/tx-analysis') {
+        await handleTxAnalysisRequest({
+          getChatService,
+          maxBodyBytes: apiConfig.maxBodyBytes,
+          request,
+          response,
         });
         return;
       }
@@ -343,6 +599,7 @@ interface HandleOpsSummaryRequestOptions {
   opsToken?: string;
   request: ApiRequestLike;
   response: ApiResponseLike;
+  txAnalysisRuntime: TxAnalysisRuntimeSummary;
 }
 
 async function handleOpsSummaryRequest(options: HandleOpsSummaryRequestOptions): Promise<void> {
@@ -362,7 +619,229 @@ async function handleOpsSummaryRequest(options: HandleOpsSummaryRequestOptions):
     return;
   }
 
-  sendJson(options.response, 200, await options.getOpsSummary());
+  sendJson(options.response, 200, {
+    ...(await options.getOpsSummary()),
+    txAnalysisRuntime: options.txAnalysisRuntime,
+  });
+}
+
+interface HandleTxAnalysisReportsRequestOptions {
+  getTxAnalysisReportStore: () => Promise<TxAnalysisReportReader>;
+  requestUrl: URL;
+  response: ApiResponseLike;
+}
+
+async function handleTxAnalysisReportsRequest(
+  options: HandleTxAnalysisReportsRequestOptions,
+): Promise<void> {
+  const chain = parseOptionalTxAnalysisReportChain(options.requestUrl.searchParams.get('chain'));
+  const reason = parseOptionalTxAnalysisReportFailureReason(
+    options.requestUrl.searchParams.get('reason'),
+  );
+  const status = parseOptionalTxAnalysisReportStatus(options.requestUrl.searchParams.get('status'));
+  const reviewStatus = parseOptionalTxAnalysisReportReviewStatus(
+    options.requestUrl.searchParams.get('reviewStatus'),
+  );
+  const reviewAssignee = parseOptionalQueryString(options.requestUrl.searchParams.get('assignee'));
+  const limit = parseOptionalPositiveQueryInteger(options.requestUrl.searchParams.get('limit'));
+  const txHash = parseOptionalQueryString(options.requestUrl.searchParams.get('txHash'));
+  validateTxAnalysisReportQueryReference({ chain, txHash });
+
+  const reportStore = await options.getTxAnalysisReportStore();
+  const reports = await reportStore.findReports({
+    ...(chain === undefined ? {} : { chain }),
+    ...(limit === undefined ? {} : { limit }),
+    ...(reason === undefined ? {} : { reason }),
+    ...(reviewAssignee === undefined ? {} : { reviewAssignee }),
+    ...(reviewStatus === undefined ? {} : { reviewStatus }),
+    ...(status === undefined ? {} : { status }),
+    ...(txHash === undefined ? {} : { txHash }),
+  });
+
+  sendJson(options.response, 200, { reports });
+}
+
+function validateTxAnalysisReportQueryReference(input: {
+  chain: TxAnalysisChain | undefined;
+  txHash: string | undefined;
+}): void {
+  if (input.chain === undefined || input.chain === 'unknown' || input.txHash === undefined) {
+    return;
+  }
+
+  const reference = parseTransactionReference(input.txHash);
+  if (
+    reference !== undefined &&
+    reference.unsupportedExplorerHost === undefined &&
+    reference.unsupportedChainHint === undefined &&
+    reference.chain !== 'unknown' &&
+    reference.chain !== input.chain
+  ) {
+    throw new BadRequestError('chain does not match the transaction explorer link.');
+  }
+}
+
+function extractTxAnalysisReportReviewId(pathname: string): string {
+  const prefix = '/api/tx-analysis/reports/';
+  const suffix = '/review';
+  return pathname.slice(prefix.length, -suffix.length);
+}
+
+async function handleTxAnalysisReportSummaryRequest(options: {
+  getTxAnalysisReportStore: () => Promise<TxAnalysisReportReader>;
+  response: ApiResponseLike;
+}): Promise<void> {
+  const reportStore = await options.getTxAnalysisReportStore();
+  sendJson(options.response, 200, await reportStore.summarizeReports({}));
+}
+
+async function handleTxAnalysisReportDocumentRequest(options: {
+  getTxAnalysisReportStore: () => Promise<TxAnalysisReportReader>;
+  reportId: string;
+  response: ApiResponseLike;
+}): Promise<void> {
+  const reportId = parseTxAnalysisReportId(options.reportId);
+
+  const reportStore = await options.getTxAnalysisReportStore();
+  const document = await reportStore.getReportDocument?.(reportId);
+  if (document === undefined) {
+    sendJson(options.response, 404, {
+      error: 'tx_analysis_report_not_found',
+      message: 'Transaction analysis report was not found.',
+    });
+    return;
+  }
+
+  sendJson(options.response, 200, document);
+}
+
+async function handleTxAnalysisReportBatchReviewRequest(options: {
+  getTxAnalysisReportStore: () => Promise<TxAnalysisReportReader>;
+  maxBodyBytes: number;
+  opsToken?: string;
+  request: ApiRequestLike;
+  response: ApiResponseLike;
+}): Promise<void> {
+  if (options.opsToken === undefined) {
+    sendJson(options.response, 404, {
+      error: 'ops_disabled',
+      message: 'Ops summary API is disabled.',
+    });
+    return;
+  }
+
+  if (!isOpsRequestAuthorized(options.request, options.opsToken)) {
+    sendJson(options.response, 401, {
+      error: 'ops_unauthorized',
+      message: 'A valid ops token is required.',
+    });
+    return;
+  }
+
+  const payload = parseTxAnalysisReportBatchReviewPayload(
+    await readJsonBody(options.request, options.maxBodyBytes),
+  );
+  const reportStore = await options.getTxAnalysisReportStore();
+  if (reportStore.updateReportReview === undefined) {
+    sendJson(options.response, 501, {
+      error: 'tx_analysis_report_review_unsupported',
+      message: 'Transaction analysis report review updates are not supported by this store.',
+    });
+    return;
+  }
+
+  const reviews: Array<{ id: string; review: TxAnalysisReportReview }> = [];
+  const notFound: string[] = [];
+  for (const id of payload.ids) {
+    const review = await reportStore.updateReportReview({
+      id,
+      ...payload.review,
+    });
+    if (review === undefined) {
+      notFound.push(id);
+    } else {
+      reviews.push({ id, review });
+    }
+  }
+
+  sendJson(options.response, 200, {
+    notFound,
+    notFoundCount: notFound.length,
+    reviews,
+    updatedCount: reviews.length,
+  });
+}
+
+function parseTxAnalysisReportId(reportId: string): string {
+  const normalized = reportId.trim();
+  if (normalized.length === 0 || normalized.includes('/')) {
+    throw new BadRequestError('Invalid transaction analysis report id.');
+  }
+
+  return normalized;
+}
+
+async function handleTxAnalysisReportReviewRequest(options: {
+  getTxAnalysisReportStore: () => Promise<TxAnalysisReportReader>;
+  maxBodyBytes: number;
+  opsToken?: string;
+  reportId: string;
+  request: ApiRequestLike;
+  response: ApiResponseLike;
+}): Promise<void> {
+  if (options.opsToken === undefined) {
+    sendJson(options.response, 404, {
+      error: 'ops_disabled',
+      message: 'Ops summary API is disabled.',
+    });
+    return;
+  }
+
+  if (!isOpsRequestAuthorized(options.request, options.opsToken)) {
+    sendJson(options.response, 401, {
+      error: 'ops_unauthorized',
+      message: 'A valid ops token is required.',
+    });
+    return;
+  }
+
+  const reportId = parseTxAnalysisReportId(options.reportId);
+  const payload = parseTxAnalysisReportReviewPayload(
+    await readJsonBody(options.request, options.maxBodyBytes),
+  );
+  const reportStore = await options.getTxAnalysisReportStore();
+  if (reportStore.updateReportReview === undefined) {
+    sendJson(options.response, 501, {
+      error: 'tx_analysis_report_review_unsupported',
+      message: 'Transaction analysis report review updates are not supported by this store.',
+    });
+    return;
+  }
+
+  const review = await reportStore.updateReportReview({
+    id: reportId,
+    ...payload,
+  });
+  if (review === undefined) {
+    sendJson(options.response, 404, {
+      error: 'tx_analysis_report_not_found',
+      message: 'Transaction analysis report was not found.',
+    });
+    return;
+  }
+
+  sendJson(options.response, 200, { review });
+}
+
+async function handleTxAnalysisRequest(options: {
+  getChatService: () => Promise<ChatService>;
+  maxBodyBytes: number;
+  request: ApiRequestLike;
+  response: ApiResponseLike;
+}): Promise<void> {
+  const payload = parseTxAnalysisPayload(await readJsonBody(options.request, options.maxBodyBytes));
+  const service = await options.getChatService();
+  sendJson(options.response, 200, await service.ask(toTxAnalysisChatRequest(payload)));
 }
 
 async function handleFeedbackRequest(options: HandleFeedbackRequestOptions): Promise<void> {
@@ -379,6 +858,35 @@ function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
     ...(opsToken === undefined ? {} : { opsToken }),
     rateLimitMax: parsePositiveInteger(env.API_RATE_LIMIT_MAX, 60),
     rateLimitWindowMs: parsePositiveInteger(env.API_RATE_LIMIT_WINDOW_MS, 60_000),
+  };
+}
+
+function createTxAnalysisRuntimeSummary(
+  config: ReturnType<typeof loadRagConfig>,
+): TxAnalysisRuntimeSummary {
+  return {
+    browser: {
+      chromeExecutablePathConfigured:
+        config.txAnalysisChromeExecutablePath !== undefined &&
+        config.txAnalysisChromeExecutablePath.trim().length > 0,
+      ...(config.txAnalysisDiscoverUrl === undefined
+        ? {}
+        : { discoverUrl: config.txAnalysisDiscoverUrl }),
+      headless: config.txAnalysisBrowserHeadless,
+      maxConcurrency: config.txAnalysisBrowserMaxConcurrency,
+      maxRetries: config.txAnalysisBrowserMaxRetries,
+      screenshotBaseUrl: config.txAnalysisScreenshotBaseUrl,
+      screenshotDirConfigured:
+        config.txAnalysisScreenshotDir !== undefined &&
+        config.txAnalysisScreenshotDir.trim().length > 0,
+      timeoutMs: config.txAnalysisBrowserTimeoutMs,
+      userDataDirConfigured:
+        config.txAnalysisBrowserUserDataDir !== undefined &&
+        config.txAnalysisBrowserUserDataDir.trim().length > 0,
+    },
+    provider: config.txAnalysisProvider,
+    reportStore: config.txAnalysisReportStore,
+    reviewer: config.txAnalysisReviewer,
   };
 }
 
@@ -404,6 +912,87 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 
 function parseOptionalEnvText(value: string | undefined): string | undefined {
   if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized.length === 0 ? undefined : normalized;
+}
+
+function parseOptionalTxAnalysisReportChain(value: string | null): TxAnalysisChain | undefined {
+  const chain = parseOptionalQueryString(value);
+  return chain === undefined ? undefined : parseTxAnalysisChainValue(chain);
+}
+
+function parseOptionalTxAnalysisReportStatus(
+  value: string | null,
+): 'failure' | 'success' | undefined {
+  const status = parseOptionalQueryString(value);
+  return status === undefined ? undefined : parseTxAnalysisReportStatusValue(status);
+}
+
+function parseOptionalTxAnalysisReportReviewStatus(
+  value: string | null,
+): TxAnalysisReportReviewStatus | undefined {
+  const status = parseOptionalQueryString(value);
+  return status === undefined ? undefined : parseTxAnalysisReportReviewStatus(status);
+}
+
+function parseOptionalTxAnalysisReportFailureReason(
+  value: string | null,
+): TxAnalysisUnavailableReason | undefined {
+  const reason = parseOptionalQueryString(value);
+  return reason === undefined ? undefined : parseTxAnalysisReportFailureReasonValue(reason);
+}
+
+function parseOptionalPositiveQueryInteger(value: string | null): number | undefined {
+  const normalized = parseOptionalQueryString(value);
+  if (normalized === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new BadRequestError('limit must be a positive integer.');
+  }
+
+  return Math.min(parsed, 100);
+}
+
+function parseTxAnalysisChainValue(chain: string): TxAnalysisChain {
+  const normalized = normalizeTxAnalysisChain(chain);
+  if (normalized === undefined) {
+    throw new BadRequestError('chain must be one of: solana, base, ethereum, bsc, unknown.');
+  }
+
+  const canonicalChain = txAnalysisChainAliases.get(normalized);
+  if (canonicalChain === undefined) {
+    throw new BadRequestError('chain must be one of: solana, base, ethereum, bsc, unknown.');
+  }
+
+  return canonicalChain;
+}
+
+function parseTxAnalysisReportStatusValue(status: string): 'failure' | 'success' {
+  if (!supportedTxAnalysisReportStatuses.includes(status as 'failure' | 'success')) {
+    throw new BadRequestError('status must be one of: failure, success.');
+  }
+
+  return status as 'failure' | 'success';
+}
+
+function parseTxAnalysisReportFailureReasonValue(reason: string): TxAnalysisUnavailableReason {
+  if (!supportedTxAnalysisReportFailureReasons.includes(reason as TxAnalysisUnavailableReason)) {
+    throw new BadRequestError(
+      'reason must be one of: not_configured, provider_unavailable, invalid_reference, unsupported_chain, browser_verification_required, tx_not_found, tx_failed, tx_pending, pool_not_found, target_trade_not_found, screenshot_unavailable, timeout.',
+    );
+  }
+
+  return reason as TxAnalysisUnavailableReason;
+}
+
+function parseOptionalQueryString(value: string | null): string | undefined {
+  if (value === null) {
     return undefined;
   }
 
@@ -462,8 +1051,10 @@ function isApiRoute(pathname: string): boolean {
   return pathname.startsWith('/api/');
 }
 
-function isChatApiRoute(pathname: string): boolean {
-  return pathname === '/api/chat' || pathname === '/api/chat/stream';
+function isRateLimitedPostApiRoute(pathname: string): boolean {
+  return (
+    pathname === '/api/chat' || pathname === '/api/chat/stream' || pathname === '/api/tx-analysis'
+  );
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {
@@ -663,6 +1254,7 @@ async function createOpsSummary(
   config: ReturnType<typeof loadRagConfig>,
   getHealthStatus: () => Promise<DeepHealthStatus>,
   now: () => number,
+  getTxAnalysisReportStore: () => Promise<TxAnalysisReportReader>,
 ): Promise<OpsSummary> {
   const pool = createPgPool(config.databaseUrl);
   try {
@@ -673,10 +1265,11 @@ async function createOpsSummary(
       },
     });
     const feedbackStore = createPgFeedbackStore({ client: pool });
-    const [health, knowledge, feedback] = await Promise.all([
+    const [health, knowledge, feedback, txAnalysis] = await Promise.all([
       getHealthStatus(),
       knowledgeStore.getStats(),
       feedbackStore.getFeedbackStats({ limit: 10 }),
+      getTxAnalysisReportStore().then((reportStore) => reportStore.summarizeReports({})),
     ]);
 
     return {
@@ -684,6 +1277,7 @@ async function createOpsSummary(
       generatedAt: new Date(now()).toISOString(),
       health,
       knowledge,
+      txAnalysis,
     };
   } finally {
     await pool.end();
@@ -717,6 +1311,13 @@ function checkRequiredConfig(config: ReturnType<typeof loadRagConfig>): HealthCh
   ) {
     return {
       message: `Unsupported TX_ANALYSIS_PROVIDER: ${config.txAnalysisProvider}`,
+      missing,
+      status: 'error',
+    };
+  }
+  if (config.txAnalysisReportStore !== 'file' && config.txAnalysisReportStore !== 'postgres') {
+    return {
+      message: `Unsupported TX_ANALYSIS_REPORT_STORE: ${config.txAnalysisReportStore}`,
       missing,
       status: 'error',
     };
@@ -973,6 +1574,59 @@ function createCachedChatServiceLoader(
   };
 }
 
+function createCachedTxAnalysisReportStoreLoader(
+  config: ReturnType<typeof loadRagConfig>,
+  reportDir: string,
+): () => Promise<TxAnalysisReportReader> {
+  let cachedStore: TxAnalysisReportReader | undefined;
+
+  return () => {
+    if (cachedStore !== undefined) {
+      return Promise.resolve(cachedStore);
+    }
+
+    if (config.txAnalysisReportStore === 'postgres') {
+      cachedStore = createPgTxAnalysisReportStore({ client: createPgPool(config.databaseUrl) });
+      return Promise.resolve(cachedStore);
+    }
+    if (config.txAnalysisReportStore === 'file') {
+      cachedStore = createFileTxAnalysisReportReader(reportDir);
+      return Promise.resolve(cachedStore);
+    }
+
+    throw new Error(`Unsupported TX_ANALYSIS_REPORT_STORE: ${config.txAnalysisReportStore}`);
+  };
+}
+
+function createFileTxAnalysisReportReader(reportDir: string): TxAnalysisReportReader {
+  return {
+    async findReports(options: FindTxAnalysisReportsOptions) {
+      return findFileTxAnalysisReports({
+        ...options,
+        reportDir,
+      });
+    },
+    async getReportDocument(id: string) {
+      return getFileTxAnalysisReportDocument({
+        id,
+        reportDir,
+      });
+    },
+    async summarizeReports(options: SummarizeTxAnalysisReportsOptions = {}) {
+      return summarizeFileTxAnalysisReports({
+        ...options,
+        reportDir,
+      });
+    },
+    async updateReportReview(input: UpdateTxAnalysisReportReviewInput) {
+      return updateFileTxAnalysisReportReview({
+        ...input,
+        reportDir,
+      });
+    },
+  };
+}
+
 function createCachedFeedbackRecorder(
   config: ReturnType<typeof loadRagConfig>,
 ): (input: RecordFeedbackInput) => Promise<void> {
@@ -1051,6 +1705,246 @@ function parseChatPayload(value: unknown): ChatPayload {
     },
     record,
   );
+}
+
+function parseTxAnalysisPayload(value: unknown): TxAnalysisPayload {
+  if (typeof value !== 'object' || value === null) {
+    throw new BadRequestError('Request body must be a JSON object.');
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.txHash !== 'string' || record.txHash.trim().length === 0) {
+    throw new BadRequestError('txHash must be a non-empty string.');
+  }
+
+  const txHash = record.txHash.trim();
+  const parsedChain = parseOptionalTxAnalysisPayloadChain(record.chain);
+  const chain = parsedChain.chain;
+  const reference = parseTransactionReference(txHash);
+  if (parsedChain.unsupportedChainText !== undefined) {
+    const channel = parseOptionalChannel(record.channel);
+    const sessionId = parseOptionalString(record.sessionId, 'sessionId');
+    const userId = parseOptionalString(record.userId, 'userId');
+
+    return {
+      txHash: `${parsedChain.unsupportedChainText} ${txHash}`,
+      ...(channel === undefined ? {} : { channel }),
+      ...(sessionId === undefined ? {} : { sessionId }),
+      ...(userId === undefined ? {} : { userId }),
+    };
+  }
+
+  if (chain !== undefined && chain !== 'unknown' && reference !== undefined) {
+    if (reference.chain !== 'unknown' && reference.chain !== chain) {
+      throw new BadRequestError(
+        isTransactionExplorerLink(txHash)
+          ? 'chain does not match the transaction explorer link.'
+          : 'chain does not match the transaction hash.',
+      );
+    }
+
+    if (parseTransactionReference(`${chain} ${txHash}`) === undefined) {
+      throw new BadRequestError('chain does not match the transaction hash.');
+    }
+  }
+  const channel = parseOptionalChannel(record.channel);
+  const sessionId = parseOptionalString(record.sessionId, 'sessionId');
+  const userId = parseOptionalString(record.userId, 'userId');
+  const preservesUnsupportedReference =
+    reference?.unsupportedChainHint !== undefined ||
+    (reference?.unsupportedExplorerHost !== undefined && reference.chain === 'unknown');
+  const normalizedReference =
+    reference === undefined ||
+    reference.unsupportedExplorerHost !== undefined ||
+    reference.unsupportedChainHint !== undefined
+      ? undefined
+      : reference;
+
+  return {
+    txHash: normalizedReference?.txHash ?? txHash,
+    ...(preservesUnsupportedReference || chain === undefined || chain === 'unknown'
+      ? normalizedReference?.chain === undefined || normalizedReference.chain === 'unknown'
+        ? {}
+        : { chain: normalizedReference.chain }
+      : { chain }),
+    ...(channel === undefined ? {} : { channel }),
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(userId === undefined ? {} : { userId }),
+  };
+}
+
+function isTransactionExplorerLink(value: string): boolean {
+  return /\b(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?=[/:?#\s]|$)/iu.test(value);
+}
+
+function parseTxAnalysisReportReviewPayload(
+  value: unknown,
+): Omit<UpdateTxAnalysisReportReviewInput, 'id'> {
+  if (typeof value !== 'object' || value === null) {
+    throw new BadRequestError('Request body must be a JSON object.');
+  }
+
+  const record = value as Record<string, unknown>;
+  const assignee = parseOptionalText(
+    record.assignee,
+    'assignee',
+    MAX_TX_ANALYSIS_REVIEW_ASSIGNEE_CHARS,
+  );
+  const note = parseOptionalText(record.note, 'note', MAX_TX_ANALYSIS_REVIEW_NOTE_CHARS);
+  const updatedBy = parseOptionalText(
+    record.updatedBy,
+    'updatedBy',
+    MAX_TX_ANALYSIS_REVIEW_UPDATED_BY_CHARS,
+  );
+  const action = parseOptionalTxAnalysisReportReviewAction(record.action);
+  const status =
+    record.status === undefined ? undefined : parseTxAnalysisReportReviewStatus(record.status);
+
+  if (action === 'claim') {
+    if (status !== undefined && status !== 'in_review') {
+      throw new BadRequestError('claim action must use status in_review.');
+    }
+    if (assignee === undefined) {
+      throw new BadRequestError('assignee is required when claiming a report.');
+    }
+
+    return {
+      assignee,
+      ...(note === undefined ? {} : { note }),
+      status: 'in_review',
+      ...(updatedBy === undefined ? {} : { updatedBy }),
+    };
+  }
+  if (action === 'close') {
+    if (status !== undefined && status !== 'closed') {
+      throw new BadRequestError('close action must use status closed.');
+    }
+    if (note === undefined) {
+      throw new BadRequestError('note is required when closing a report.');
+    }
+
+    return {
+      ...(assignee === undefined ? {} : { assignee }),
+      note,
+      status: 'closed',
+      ...(updatedBy === undefined ? {} : { updatedBy }),
+    };
+  }
+  if (action === 'reopen') {
+    if (status !== undefined && status !== 'open') {
+      throw new BadRequestError('reopen action must use status open.');
+    }
+
+    return {
+      ...(note === undefined ? {} : { note }),
+      status: 'open',
+      ...(updatedBy === undefined ? {} : { updatedBy }),
+    };
+  }
+
+  return {
+    ...(assignee === undefined ? {} : { assignee }),
+    ...(note === undefined ? {} : { note }),
+    status: status ?? parseTxAnalysisReportReviewStatus(record.status),
+    ...(updatedBy === undefined ? {} : { updatedBy }),
+  };
+}
+
+function parseTxAnalysisReportBatchReviewPayload(value: unknown): {
+  ids: string[];
+  review: Omit<UpdateTxAnalysisReportReviewInput, 'id'>;
+} {
+  if (typeof value !== 'object' || value === null) {
+    throw new BadRequestError('Request body must be a JSON object.');
+  }
+
+  const record = value as Record<string, unknown>;
+  const ids = parseTxAnalysisReportReviewIds(record.ids);
+  return {
+    ids,
+    review: parseTxAnalysisReportReviewPayload(value),
+  };
+}
+
+function parseTxAnalysisReportReviewIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new BadRequestError('ids must be a non-empty array.');
+  }
+
+  return value.map((item, index) => {
+    if (typeof item !== 'string') {
+      throw new BadRequestError(`ids item ${index + 1} must be a string.`);
+    }
+
+    return parseTxAnalysisReportId(item);
+  });
+}
+
+function parseOptionalTxAnalysisReportReviewAction(
+  value: unknown,
+): TxAnalysisReportReviewAction | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (
+    typeof value !== 'string' ||
+    !supportedTxAnalysisReportReviewActions.includes(value as TxAnalysisReportReviewAction)
+  ) {
+    throw new BadRequestError('action must be one of: claim, close, reopen.');
+  }
+
+  return value as TxAnalysisReportReviewAction;
+}
+
+function parseTxAnalysisReportReviewStatus(value: unknown): TxAnalysisReportReviewStatus {
+  if (
+    typeof value !== 'string' ||
+    !supportedTxAnalysisReportReviewStatuses.includes(value as TxAnalysisReportReviewStatus)
+  ) {
+    throw new BadRequestError('status must be one of: open, in_review, closed.');
+  }
+
+  return value as TxAnalysisReportReviewStatus;
+}
+
+function parseOptionalTxAnalysisPayloadChain(value: unknown): ParsedTxAnalysisPayloadChain {
+  if (value === undefined) {
+    return {};
+  }
+  if (typeof value !== 'string') {
+    throw new BadRequestError('chain must be one of: solana, base, ethereum, bsc, unknown.');
+  }
+
+  const normalized = normalizeTxAnalysisChain(value);
+  if (normalized === undefined) {
+    return {};
+  }
+
+  const chain = txAnalysisChainAliases.get(normalized);
+  if (chain !== undefined) {
+    return { chain };
+  }
+  if (unsupportedTxAnalysisChainAliases.has(normalized)) {
+    return { unsupportedChainText: value.trim() };
+  }
+
+  throw new BadRequestError('chain must be one of: solana, base, ethereum, bsc, unknown.');
+}
+
+function normalizeTxAnalysisChain(value: string): string | undefined {
+  const normalized = value
+    .normalize('NFKC')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/gu, ' ')
+    .replace(/\s+/gu, ' ');
+
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  const withoutMainnetSuffix = normalized.replace(/\s+mainnet(?:\s+beta)?$/u, '');
+  return withoutMainnetSuffix.length === 0 ? normalized : withoutMainnetSuffix;
 }
 
 function parseFeedbackRating(value: unknown): 'positive' | 'negative' {
@@ -1149,6 +2043,23 @@ function toChatRequest(payload: ChatPayload): ChatRequest {
   };
 }
 
+function toTxAnalysisChatRequest(payload: TxAnalysisPayload): ChatRequest {
+  return {
+    channel: payload.channel ?? 'web',
+    message: buildTxAnalysisMessage(payload),
+    ...(payload.sessionId === undefined ? {} : { sessionId: payload.sessionId }),
+    ...(payload.userId === undefined ? {} : { userId: payload.userId }),
+  };
+}
+
+function buildTxAnalysisMessage(payload: TxAnalysisPayload): string {
+  if (payload.chain === undefined || payload.chain === 'unknown') {
+    return `${payload.txHash} 是否被夹？`;
+  }
+
+  return `${payload.chain} ${payload.txHash} 是否被夹？`;
+}
+
 function toRecordFeedbackInput(payload: FeedbackPayload): RecordFeedbackInput {
   return {
     answer: payload.answer,
@@ -1176,6 +2087,13 @@ function createDefaultStaticAssetsDir(
   options: Pick<CreateRequestHandlerOptions, 'cwd'>,
   env: ApiEnv,
 ): string {
+  if (
+    env.TX_ANALYSIS_SCREENSHOT_DIR !== undefined &&
+    env.TX_ANALYSIS_SCREENSHOT_DIR.trim().length > 0
+  ) {
+    return path.resolve(env.TX_ANALYSIS_SCREENSHOT_DIR);
+  }
+
   const workspaceCwd = resolveWorkspaceCwd(options.cwd ?? process.cwd(), env);
   return path.join(workspaceCwd, 'docs', 'product-features', 'assets');
 }
@@ -1222,6 +2140,9 @@ function contentTypeForAsset(assetName: string): string {
   }
   if (lower.endsWith('.svg')) {
     return 'image/svg+xml';
+  }
+  if (lower.endsWith('.json')) {
+    return 'application/json; charset=utf-8';
   }
 
   return 'application/octet-stream';

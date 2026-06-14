@@ -1,6 +1,10 @@
 import type { Classification, Intent } from '@xxyy/shared';
 
-import { parseTransactionReference } from './tx-hash.js';
+import {
+  hasAmbiguousTransactionReferences,
+  hasTransactionReferenceCandidate,
+  parseTransactionReference,
+} from './tx-hash.js';
 
 type IntentRule = {
   intent: Intent;
@@ -103,18 +107,6 @@ export function classifyQuestion(question: string): Classification {
     return createClassification('unknown', 0.3, 'unsafe or unsupported operation request');
   }
 
-  const realtimeRule = rules.find((rule) => rule.intent === 'realtime_account_query');
-  if (realtimeRule !== undefined && matchesRule(realtimeRule, normalized)) {
-    const isUserSpecific = userSpecificLookupPatterns.some((pattern) => pattern.test(normalized));
-    if (isUserSpecific) {
-      return createClassification(
-        realtimeRule.intent,
-        realtimeRule.confidence,
-        realtimeRule.reason,
-      );
-    }
-  }
-
   const investmentRule = rules.find((rule) => rule.intent === 'investment_advice');
   if (investmentRule !== undefined && matchesRule(investmentRule, normalized)) {
     return createClassification(
@@ -134,6 +126,38 @@ export function classifyQuestion(question: string): Classification {
       0.9,
       'asks to analyze a concrete transaction hash for sandwich or MEV signals',
     );
+  }
+
+  if (hasAmbiguousTransactionReferences(question)) {
+    return createClassification(
+      'tx_sandwich_detection',
+      0.86,
+      'asks to analyze multiple transaction hashes and needs a single hash clarification',
+    );
+  }
+
+  if (
+    transactionReference === undefined &&
+    hasTransactionReferenceCandidate(question) &&
+    transactionAnalysisPatterns.some((pattern) => pattern.test(normalized))
+  ) {
+    return createClassification(
+      'tx_sandwich_detection',
+      0.84,
+      'asks to analyze a transaction reference but the chain hints are unclear',
+    );
+  }
+
+  const realtimeRule = rules.find((rule) => rule.intent === 'realtime_account_query');
+  if (realtimeRule !== undefined && matchesRule(realtimeRule, normalized)) {
+    const isUserSpecific = userSpecificLookupPatterns.some((pattern) => pattern.test(normalized));
+    if (isUserSpecific) {
+      return createClassification(
+        realtimeRule.intent,
+        realtimeRule.confidence,
+        realtimeRule.reason,
+      );
+    }
   }
 
   if (productOperationPatterns.some((pattern) => pattern.test(normalized))) {

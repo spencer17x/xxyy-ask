@@ -87,6 +87,147 @@ describe('renderOpsPage', () => {
     expect(html).toContain('renderHealth(summary.health)');
     expect(html).toContain('renderKnowledge(summary.knowledge)');
     expect(html).toContain('renderFeedback(summary.feedback)');
+    expect(html).toContain('Transaction Analysis');
+    expect(html).toContain('renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime)');
+    expect(html).toContain('summary.byReviewStatus || {}');
+    expect(html).toContain('Review · " + status');
+    expect(html).toContain('Runtime · provider');
+    expect(html).toContain('Browser concurrency');
+    expect(html).toContain('Browser retry');
+    expect(html).toContain('Browser timeout');
+  });
+
+  it('renders transaction analysis report and screenshot links in ops rows', () => {
+    const html = renderOpsPage();
+
+    expect(html).toContain('link("Report", report.reportUrl)');
+    expect(html).toContain('link("Screenshot", report.screenshotUrl)');
+    expect(html).toContain('link("Explorer", report.explorerUrl)');
+    expect(html).toContain('link("XXYY", report.xxyyPoolUrl)');
+    expect(html).toContain('screenshotMarkerNode(report)');
+    expect(html).toContain('function screenshotMarkerNode(report)');
+    expect(html).toContain('Target row marked');
+    expect(html).toContain('Target row unmarked');
+    expect(html).toContain('probeAttemptNodes(report)');
+    expect(html).toContain('function probeAttemptNodes(report)');
+    expect(html).toContain('"Probe " +');
+    expect(html).toContain('formatChainLabel(attempt.chain)');
+    expect(html).toContain('formatProbeReason(attempt.reason)');
+    expect(html).toContain('relatedTransactionLinks(report)');
+    expect(html).toContain('link(relatedTransactionLabel(transaction), transaction.explorerUrl)');
+    expect(html).toContain('function relatedTransactionLabel(transaction)');
+    expect(html).toContain('formatTradeSideLabel(transaction.side)');
+    expect(html).toContain('"Trader " + transaction.traderAddress');
+    expect(html).toContain('"Time " + transaction.timestamp');
+    expect(html).toContain(
+      'report.targetTraderAddress ? text("Trader " + report.targetTraderAddress) : undefined',
+    );
+    expect(html).toContain(
+      'report.transactionTime ? text("Time " + report.transactionTime) : undefined',
+    );
+    expect(html).toContain(
+      'report.routerAddress ? text("Router " + report.routerAddress) : undefined',
+    );
+    expect(html).toContain(
+      'report.unsupportedExplorerHost ? text("Unsupported explorer " + report.unsupportedExplorerHost) : undefined',
+    );
+    expect(html).toContain(
+      'report.unsupportedChainHint ? text("Unsupported chain " + report.unsupportedChainHint) : undefined',
+    );
+    expect(html).toContain(
+      'report.analysisRuleVersion ? text("Rule " + report.analysisRuleVersion) : undefined',
+    );
+    expect(html).toContain('Rule · " + version');
+    expect(html).toContain('document.createElement("a")');
+    expect(html).toContain('anchor.target = "_blank"');
+  });
+
+  it('renders a transaction analysis report search panel for ops review', () => {
+    const html = renderOpsPage();
+
+    expect(html).toContain('id="tx-report-form"');
+    expect(html).toContain('id="tx-report-hash"');
+    expect(html).toContain('id="tx-report-chain"');
+    expect(html).toContain('list="tx-report-chain-options"');
+    expect(html).toContain('id="tx-report-chain-options"');
+    expect(html).toContain('<option value="ETH">');
+    expect(html).toContain('<option value="BNBChain">');
+    expect(html).toContain('<option value="BNB Smart Chain">');
+    expect(html).not.toContain('<select id="tx-report-chain"');
+    expect(html).toContain('id="tx-report-status"');
+    expect(html).toContain('id="tx-report-review-status"');
+    expect(html).toContain('<option value="in_review">In review</option>');
+    expect(html).toContain('id="tx-report-assignee"');
+    expect(html).toContain('id="tx-report-reason"');
+    expect(html).toContain('<option value="not_configured">not_configured</option>');
+    expect(html).toContain('<option value="invalid_reference">invalid_reference</option>');
+    expect(html).toContain('<option value="tx_failed">tx_failed</option>');
+    expect(html).toContain('<option value="tx_pending">tx_pending</option>');
+    expect(html).toContain('id="tx-report-results"');
+    expect(html).toContain('function loadTxReports()');
+    expect(html).toContain('new URLSearchParams()');
+    expect(html).toContain('fetch("/api/tx-analysis/reports?" + params.toString()');
+    expect(html).toContain('params.set("reviewStatus", reviewStatus)');
+    expect(html).toContain('params.set("assignee", assignee)');
+    expect(html).toContain('renderTxReportResults(payload.reports || [])');
+    expect(html).toContain('queryTxReports.addEventListener("submit"');
+    expect(html).toContain('return "tx pending"');
+    expect(html).not.toContain('Enter tx hash, status, or failure reason.');
+  });
+
+  it('renders transaction analysis report review controls that save with the ops token', () => {
+    const html = renderOpsPage();
+
+    expect(html).toContain('reportReviewNodes(report)');
+    expect(html).toContain('class="panel wide-panel"');
+    expect(html).toContain('.row-title span');
+    expect(html).toContain('function reportReviewNodes(report)');
+    expect(html).toContain('function createReportReviewForm(report)');
+    expect(html).toContain('function updateReportReview(report, payload, statusTarget)');
+    expect(html).toContain('className = "report-review-form"');
+    expect(html).toContain('status.name = "review-status"');
+    expect(html).toContain('{ value: "in_review", label: "In review" }');
+    expect(html).toContain('assignee.name = "assignee"');
+    expect(html).toContain('note.name = "note"');
+    expect(html).toContain('review.status || "open"');
+    expect(html).toContain('grid-column: 1 / -1;');
+    expect(html).toContain(
+      'fetch("/api/tx-analysis/reports/" + encodeURIComponent(reportId) + "/review"',
+    );
+    expect(html).toContain('Authorization: "Bearer " + token');
+  });
+
+  it('renders transaction analysis report workflow action buttons for ops queues', () => {
+    const html = renderOpsPage();
+
+    expect(html).toContain('function createReportReviewWorkflowButton(');
+    expect(html).toContain('claim.textContent = "Claim"');
+    expect(html).toContain('close.textContent = "Close"');
+    expect(html).toContain('reopen.textContent = "Reopen"');
+    expect(html).toContain('action: "claim"');
+    expect(html).toContain('action: "close"');
+    expect(html).toContain('action: "reopen"');
+    expect(html).toContain('assignee.value.trim()');
+    expect(html).toContain('note.value.trim()');
+  });
+
+  it('renders bulk transaction analysis report review controls for ops queues', () => {
+    const html = renderOpsPage();
+
+    expect(html).toContain('id="tx-report-bulk-review"');
+    expect(html).toContain('id="tx-report-bulk-assignee"');
+    expect(html).toContain('id="tx-report-bulk-note"');
+    expect(html).toContain('data-action="claim"');
+    expect(html).toContain('data-action="close"');
+    expect(html).toContain('data-action="reopen"');
+    expect(html).toContain('function selectedTxReportIds()');
+    expect(html).toContain('className = "tx-report-select"');
+    expect(html).toContain('checkbox.value = reportId');
+    expect(html).toContain('function updateSelectedTxReportCount()');
+    expect(html).toContain('function updateBulkReportReview(action)');
+    expect(html).toContain('fetch("/api/tx-analysis/reports/review"');
+    expect(html).toContain('ids: selectedTxReportIds()');
+    expect(html).toContain('renderTxReportResults(currentTxReports)');
   });
 
   it('does not hardcode an ops token in the page', () => {

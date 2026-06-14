@@ -38,11 +38,15 @@ export type TxAnalysisChain = 'solana' | 'base' | 'ethereum' | 'bsc' | 'unknown'
 
 export type TxAnalysisDataSource = 'fixture' | 'browser';
 
+export type TxAnalysisTradeSide = 'buy' | 'sell' | 'unknown';
+
 export interface TxAnalysisRelatedTransaction {
   role: 'front_run' | 'user' | 'back_run' | 'related';
   hash: string;
   summary: string;
+  side?: TxAnalysisTradeSide;
   timestamp?: string;
+  traderAddress?: string;
   explorerUrl?: string;
 }
 
@@ -56,16 +60,24 @@ export interface TxAnalysisResult {
   txHash: string;
   chain: TxAnalysisChain;
   dataSource?: TxAnalysisDataSource;
+  analysisRuleVersion?: string;
   contractAddress?: string;
   poolAddress?: string;
+  routerAddress?: string;
   explorerUrl?: string;
+  xxyyPoolUrl?: string;
+  targetTradeSide?: TxAnalysisTradeSide;
+  targetTraderAddress?: string;
+  transactionTime?: string;
   verdict: TxAnalysisVerdict;
   confidence: number;
   summary: string;
   evidence: TxAnalysisEvidence[];
   relatedTransactions: TxAnalysisRelatedTransaction[];
   analyzedAt: string;
+  reportUrl?: string;
   screenshotUrl?: string;
+  screenshotTargetRowMarked?: boolean;
 }
 
 export type ChatAttachment =

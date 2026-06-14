@@ -42,12 +42,45 @@ describe('classifyQuestion', () => {
     expect(classifyQuestion('帮我查 XXYY 钱包余额').intent).toBe('realtime_account_query');
   });
 
+  it('prefers concrete transaction hash analysis over realtime transaction lookup wording', () => {
+    expect(
+      classifyQuestion(
+        '帮我查一下这笔交易 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 是否被夹',
+      ).intent,
+    ).toBe('tx_sandwich_detection');
+    expect(
+      classifyQuestion(
+        'lookup this transaction 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef sandwich?',
+      ).intent,
+    ).toBe('tx_sandwich_detection');
+  });
+
   it('prefers MEV forensics over generic transaction lookup when sandwich wording is present', () => {
     expect(classifyQuestion('我的交易是不是被夹子夹了？').intent).toBe('mev_or_chain_forensics');
   });
 
   it('keeps generic MEV questions on the boundary intent without a transaction hash', () => {
     expect(classifyQuestion('什么是 MEV sandwich？').intent).toBe('mev_or_chain_forensics');
+  });
+
+  it('routes ambiguous multi-hash sandwich checks to transaction analysis for a clear correction prompt', () => {
+    expect(
+      classifyQuestion(
+        [
+          '帮我查这两笔哪个被夹了',
+          '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+          '0x2234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+        ].join(' '),
+      ).intent,
+    ).toBe('tx_sandwich_detection');
+    expect(
+      classifyQuestion(
+        [
+          '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+          '0x2234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+        ].join(' '),
+      ).intent,
+    ).toBe('tx_sandwich_detection');
   });
 
   it('keeps investment advice higher priority than transaction analysis', () => {

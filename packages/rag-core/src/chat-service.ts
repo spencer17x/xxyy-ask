@@ -2,12 +2,22 @@ import type { ChatRequest, ChatResponse, ChatStreamEvent, RagIndex } from '@xxyy
 
 import { createBoundaryAnswer } from './answer.js';
 import type { AnswerProvider } from './answer-provider.js';
-import { createBrowserTxAnalysisProvider } from './browser-tx-analysis.js';
+import {
+  createBrowserTxAnalysisProvider,
+  type BrowserTxAnalysisReportWriter,
+  type BrowserTxAnalysisReviewer,
+} from './browser-tx-analysis.js';
 import { classifyQuestion } from './classify.js';
 import { loadRagConfig, type RagConfig } from './config.js';
 import { createOpenAiAnswerProvider } from './openai-answer-provider.js';
+import { createOpenAiTxAnalysisReviewer } from './openai-tx-analysis-reviewer.js';
 import { createPlaywrightBrowserTxAnalysisDriver } from './playwright-browser-tx-driver.js';
+import { createPgPool } from './pgvector-store.js';
 import { createLocalRetriever, type Retriever } from './retriever.js';
+import {
+  createFileTxAnalysisReportWriter,
+  createPgTxAnalysisReportStore,
+} from './tx-analysis-report-store.js';
 import {
   createMockTxAnalysisProvider,
   createTxAnalysisAnswer,
@@ -115,8 +125,13 @@ function createConfiguredTxAnalysisProvider(config: RagConfig): TxAnalysisProvid
     return createMockTxAnalysisProvider();
   }
   if (config.txAnalysisProvider === 'browser') {
+    const analysisReviewer = createConfiguredTxAnalysisReviewer(config);
     return createBrowserTxAnalysisProvider({
+      ...(analysisReviewer === undefined ? {} : { analysisReviewer }),
       driver: createPlaywrightBrowserTxAnalysisDriver({
+        ...(config.txAnalysisDiscoverUrl === undefined
+          ? {}
+          : { discoverUrl: config.txAnalysisDiscoverUrl }),
         headless: config.txAnalysisBrowserHeadless,
         screenshotBaseUrl: config.txAnalysisScreenshotBaseUrl,
         timeoutMs: config.txAnalysisBrowserTimeoutMs,
@@ -130,10 +145,73 @@ function createConfiguredTxAnalysisProvider(config: RagConfig): TxAnalysisProvid
           ? {}
           : { userDataDir: config.txAnalysisBrowserUserDataDir }),
       }),
+      maxConcurrentAnalyses: config.txAnalysisBrowserMaxConcurrency,
+      maxRetries: config.txAnalysisBrowserMaxRetries,
+      reportWriter: createConfiguredTxAnalysisReportWriter(config),
     });
   }
 
   throw new Error(`Unsupported TX_ANALYSIS_PROVIDER: ${config.txAnalysisProvider}`);
+}
+
+function createConfiguredTxAnalysisReviewer(
+  config: RagConfig,
+): BrowserTxAnalysisReviewer | undefined {
+  if (config.txAnalysisReviewer === 'none') {
+    return undefined;
+  }
+  if (config.txAnalysisReviewer === 'openai') {
+    return createOpenAiTxAnalysisReviewer({
+      apiKey: config.openAiApiKey,
+      baseUrl: config.openAiBaseUrl,
+      maxRetries: config.openAiMaxRetries,
+      model: config.openAiModel,
+      requestTimeoutMs: config.openAiRequestTimeoutMs,
+    });
+  }
+
+  throw new Error(`Unsupported TX_ANALYSIS_REVIEWER: ${config.txAnalysisReviewer}`);
+}
+
+function createConfiguredTxAnalysisReportWriter(config: RagConfig): BrowserTxAnalysisReportWriter {
+  if (config.txAnalysisReportStore === 'file') {
+    return createFileTxAnalysisReportWriter({
+      reportBaseUrl: config.txAnalysisScreenshotBaseUrl,
+      ...(config.txAnalysisScreenshotDir === undefined
+        ? {}
+        : { reportDir: config.txAnalysisScreenshotDir }),
+    });
+  }
+  if (config.txAnalysisReportStore === 'postgres') {
+    return createLazyPgTxAnalysisReportWriter(config.databaseUrl);
+  }
+
+  throw new Error(`Unsupported TX_ANALYSIS_REPORT_STORE: ${config.txAnalysisReportStore}`);
+}
+
+function createLazyPgTxAnalysisReportWriter(
+  databaseUrl: string | undefined,
+): BrowserTxAnalysisReportWriter {
+  let writer: BrowserTxAnalysisReportWriter | undefined;
+
+  function loadWriter(): BrowserTxAnalysisReportWriter {
+    writer ??= createPgTxAnalysisReportStore({ client: createPgPool(databaseUrl) });
+    return writer;
+  }
+
+  return {
+    async writeFailureReport(input) {
+      const currentWriter = loadWriter();
+      if (currentWriter.writeFailureReport === undefined) {
+        throw new Error('Transaction analysis failure report writer is not configured.');
+      }
+      return currentWriter.writeFailureReport(input);
+    },
+
+    async writeReport(input) {
+      return loadWriter().writeReport(input);
+    },
+  };
 }
 
 async function answerTxAnalysis(
@@ -145,6 +223,22 @@ async function answerTxAnalysis(
     return createTxAnalysisUnavailableAnswer('invalid_reference');
   }
 
+  if (
+    reference.unsupportedExplorerHost !== undefined ||
+    reference.unsupportedChainHint !== undefined
+  ) {
+    return createTxAnalysisUnavailableAnswer('unsupported_chain', {
+      metadata: {
+        ...(reference.unsupportedExplorerHost === undefined
+          ? {}
+          : { unsupportedExplorerHost: reference.unsupportedExplorerHost }),
+        ...(reference.unsupportedChainHint === undefined
+          ? {}
+          : { unsupportedChainHint: reference.unsupportedChainHint }),
+      },
+    });
+  }
+
   if (provider === undefined) {
     return createTxAnalysisUnavailableAnswer('not_configured');
   }
@@ -153,10 +247,16 @@ async function answerTxAnalysis(
     return createTxAnalysisAnswer(await provider.analyze(reference));
   } catch (error) {
     if (error instanceof TxAnalysisProviderUnavailableError) {
-      return createTxAnalysisUnavailableAnswer('provider_unavailable');
+      return createTxAnalysisUnavailableAnswer(error.reason, {
+        ...(error.metadata === undefined ? {} : { metadata: error.metadata }),
+        ...(error.reportUrl === undefined ? {} : { reportUrl: error.reportUrl }),
+      });
     }
     if (error instanceof TxAnalysisUnsupportedChainError) {
-      return createTxAnalysisUnavailableAnswer('unsupported_chain');
+      return createTxAnalysisUnavailableAnswer('unsupported_chain', {
+        ...(error.metadata === undefined ? {} : { metadata: error.metadata }),
+        ...(error.reportUrl === undefined ? {} : { reportUrl: error.reportUrl }),
+      });
     }
 
     throw error;
