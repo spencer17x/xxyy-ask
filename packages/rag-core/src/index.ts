@@ -40,6 +40,7 @@ export { retrieve } from './retrieve.js';
 export { createLazyRetriever, createLocalRetriever } from './retriever.js';
 export { analyzeSandwichWindow, SANDWICH_ANALYZER_VERSION } from './sandwich-analyzer.js';
 export { createChatService } from './chat-service.js';
+export { analyzeTransaction, createConfiguredTxAnalysisProvider } from './tx-analysis-runtime.js';
 export {
   createMockTxAnalysisProvider,
   createTxAnalysisAnswer,
@@ -126,4 +127,9 @@ export type {
   TxAnalysisProvider,
   TxAnalysisUnavailableReason,
 } from './tx-analysis.js';
+export type {
+  AnalyzeTransactionInput,
+  AnalyzeTransactionOptions,
+  AnalyzeTransactionOutput,
+} from './tx-analysis-runtime.js';
 export type { TransactionReference } from './tx-hash.js';

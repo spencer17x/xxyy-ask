@@ -2,24 +2,12 @@ import type { ChatRequest, ChatResponse, ChatStreamEvent, RagIndex } from '@xxyy
 
 import { createBoundaryAnswer } from './answer.js';
 import type { AnswerProvider } from './answer-provider.js';
-import {
-  createBrowserTxAnalysisProvider,
-  type BrowserTxAnalysisReportWriter,
-  type BrowserTxAnalysisReviewer,
-} from './browser-tx-analysis.js';
 import { classifyQuestion } from './classify.js';
 import { loadRagConfig, type RagConfig } from './config.js';
 import { createOpenAiAnswerProvider } from './openai-answer-provider.js';
-import { createOpenAiTxAnalysisReviewer } from './openai-tx-analysis-reviewer.js';
-import { createPlaywrightBrowserTxAnalysisDriver } from './playwright-browser-tx-driver.js';
-import { createPgPool } from './pgvector-store.js';
 import { createLocalRetriever, type Retriever } from './retriever.js';
+import { createConfiguredTxAnalysisProvider } from './tx-analysis-runtime.js';
 import {
-  createFileTxAnalysisReportWriter,
-  createPgTxAnalysisReportStore,
-} from './tx-analysis-report-store.js';
-import {
-  createMockTxAnalysisProvider,
   createTxAnalysisAnswer,
   createTxAnalysisUnavailableAnswer,
   TxAnalysisProviderUnavailableError,
@@ -115,103 +103,6 @@ function createRetriever(options: CreateChatServiceOptions): Retriever {
 
 function shouldRetrieve(intent: ChatResponse['intent']): boolean {
   return intent === 'product_qa' || intent === 'how_to';
-}
-
-function createConfiguredTxAnalysisProvider(config: RagConfig): TxAnalysisProvider | undefined {
-  if (config.txAnalysisProvider === 'none') {
-    return undefined;
-  }
-  if (config.txAnalysisProvider === 'mock') {
-    return createMockTxAnalysisProvider();
-  }
-  if (config.txAnalysisProvider === 'browser') {
-    const analysisReviewer = createConfiguredTxAnalysisReviewer(config);
-    return createBrowserTxAnalysisProvider({
-      ...(analysisReviewer === undefined ? {} : { analysisReviewer }),
-      driver: createPlaywrightBrowserTxAnalysisDriver({
-        ...(config.txAnalysisDiscoverUrl === undefined
-          ? {}
-          : { discoverUrl: config.txAnalysisDiscoverUrl }),
-        headless: config.txAnalysisBrowserHeadless,
-        screenshotBaseUrl: config.txAnalysisScreenshotBaseUrl,
-        timeoutMs: config.txAnalysisBrowserTimeoutMs,
-        ...(config.txAnalysisChromeExecutablePath === undefined
-          ? {}
-          : { chromeExecutablePath: config.txAnalysisChromeExecutablePath }),
-        ...(config.txAnalysisScreenshotDir === undefined
-          ? {}
-          : { screenshotDir: config.txAnalysisScreenshotDir }),
-        ...(config.txAnalysisBrowserUserDataDir === undefined
-          ? {}
-          : { userDataDir: config.txAnalysisBrowserUserDataDir }),
-      }),
-      maxConcurrentAnalyses: config.txAnalysisBrowserMaxConcurrency,
-      maxRetries: config.txAnalysisBrowserMaxRetries,
-      reportWriter: createConfiguredTxAnalysisReportWriter(config),
-    });
-  }
-
-  throw new Error(`Unsupported TX_ANALYSIS_PROVIDER: ${config.txAnalysisProvider}`);
-}
-
-function createConfiguredTxAnalysisReviewer(
-  config: RagConfig,
-): BrowserTxAnalysisReviewer | undefined {
-  if (config.txAnalysisReviewer === 'none') {
-    return undefined;
-  }
-  if (config.txAnalysisReviewer === 'openai') {
-    return createOpenAiTxAnalysisReviewer({
-      apiKey: config.openAiApiKey,
-      baseUrl: config.openAiBaseUrl,
-      maxRetries: config.openAiMaxRetries,
-      model: config.openAiModel,
-      requestTimeoutMs: config.openAiRequestTimeoutMs,
-    });
-  }
-
-  throw new Error(`Unsupported TX_ANALYSIS_REVIEWER: ${config.txAnalysisReviewer}`);
-}
-
-function createConfiguredTxAnalysisReportWriter(config: RagConfig): BrowserTxAnalysisReportWriter {
-  if (config.txAnalysisReportStore === 'file') {
-    return createFileTxAnalysisReportWriter({
-      reportBaseUrl: config.txAnalysisScreenshotBaseUrl,
-      ...(config.txAnalysisScreenshotDir === undefined
-        ? {}
-        : { reportDir: config.txAnalysisScreenshotDir }),
-    });
-  }
-  if (config.txAnalysisReportStore === 'postgres') {
-    return createLazyPgTxAnalysisReportWriter(config.databaseUrl);
-  }
-
-  throw new Error(`Unsupported TX_ANALYSIS_REPORT_STORE: ${config.txAnalysisReportStore}`);
-}
-
-function createLazyPgTxAnalysisReportWriter(
-  databaseUrl: string | undefined,
-): BrowserTxAnalysisReportWriter {
-  let writer: BrowserTxAnalysisReportWriter | undefined;
-
-  function loadWriter(): BrowserTxAnalysisReportWriter {
-    writer ??= createPgTxAnalysisReportStore({ client: createPgPool(databaseUrl) });
-    return writer;
-  }
-
-  return {
-    async writeFailureReport(input) {
-      const currentWriter = loadWriter();
-      if (currentWriter.writeFailureReport === undefined) {
-        throw new Error('Transaction analysis failure report writer is not configured.');
-      }
-      return currentWriter.writeFailureReport(input);
-    },
-
-    async writeReport(input) {
-      return loadWriter().writeReport(input);
-    },
-  };
 }
 
 async function answerTxAnalysis(
