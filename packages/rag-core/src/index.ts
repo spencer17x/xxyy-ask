@@ -23,6 +23,12 @@ export {
   updateFileTxAnalysisReportReview,
 } from './tx-analysis-report-store.js';
 export {
+  parseOptionalTxAnalysisChainInput,
+  parseRequiredTxAnalysisChainInput,
+  toTxAnalysisReferenceInput,
+  TX_ANALYSIS_CHAIN_ERROR,
+} from './tx-analysis-chain.js';
+export {
   createPgFeedbackStore,
   createPgPool,
   createPgVectorStore,
@@ -88,6 +94,7 @@ export type {
   UpdateFileTxAnalysisReportReviewInput,
   UpdateTxAnalysisReportReviewInput,
 } from './tx-analysis-report-store.js';
+export type { ParsedTxAnalysisChainInput, TxAnalysisReferenceInput } from './tx-analysis-chain.js';
 export type {
   EmbeddedKnowledgeChunk,
   FeedbackRecord,
