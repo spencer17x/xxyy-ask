@@ -2,6 +2,11 @@ export const workspacePackageName = '@xxyy/agent-core';
 
 export { createInMemoryAuditSink, createNoopAuditSink } from './audit.js';
 export type { InMemoryAuditSink, ToolAuditEvent, ToolAuditSink, ToolAuditStatus } from './audit.js';
+export { createCustomerAgentRuntime } from './customer-agent-runtime.js';
+export type {
+  CreateCustomerAgentRuntimeOptions,
+  CustomerAgentRuntime,
+} from './customer-agent-runtime.js';
 export {
   PRODUCT_TOOL_NAMES,
   answerProductQuestionInputSchema,
@@ -38,4 +43,9 @@ export {
   ToolRegistryToolNotFoundError,
   createToolRegistry,
 } from './tool-registry.js';
-export type { ListToolsOptions, ToolDefinition, ToolPolicy, ToolRegistry } from './tool-registry.js';
+export type {
+  ListToolsOptions,
+  ToolDefinition,
+  ToolPolicy,
+  ToolRegistry,
+} from './tool-registry.js';

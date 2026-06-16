@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 
 export interface ToolPolicy {
   allowExternalMcp: boolean;
@@ -15,9 +15,7 @@ export interface ToolDefinition<
   inputSchema: InputSchema;
   outputSchema: OutputSchema;
   policy: ToolPolicy;
-  execute: (
-    input: z.output<InputSchema>,
-  ) => z.input<OutputSchema> | Promise<z.input<OutputSchema>>;
+  execute: (input: z.output<InputSchema>) => z.input<OutputSchema> | Promise<z.input<OutputSchema>>;
 }
 
 export interface ListToolsOptions {
@@ -25,7 +23,7 @@ export interface ListToolsOptions {
 }
 
 type RegisteredToolDefinition = Omit<ToolDefinition, 'execute'> & {
-  execute: (input: unknown) => unknown | Promise<unknown>;
+  execute: (input: unknown) => unknown;
 };
 
 export class ToolRegistryDuplicateNameError extends Error {

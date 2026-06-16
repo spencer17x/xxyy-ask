@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { type TxAnalysisProvider, type TxAnalysisReportReader, createMockTxAnalysisProvider } from '@xxyy/rag-core';
+import {
+  type TxAnalysisProvider,
+  type TxAnalysisReportReader,
+  createMockTxAnalysisProvider,
+} from '@xxyy/rag-core';
 
 import { createToolRegistry } from '../tool-registry.js';
 import { TX_ANALYSIS_TOOL_NAMES, createTxAnalysisTools } from './tx-analysis-tools.js';
@@ -109,8 +113,8 @@ describe('createTxAnalysisTools', () => {
     }
 
     await expect(registry.execute('list_analysis_reports', {})).resolves.toEqual({ reports: [] });
-    await expect(registry.execute('get_analysis_report', { id: 'missing-report' })).resolves.toEqual(
-      {},
-    );
+    await expect(
+      registry.execute('get_analysis_report', { id: 'missing-report' }),
+    ).resolves.toEqual({});
   });
 });

@@ -17,7 +17,7 @@ describe('createToolRegistry', () => {
       inputSchema: z.object({ count: z.number().int().positive() }),
       outputSchema: z.object({ label: z.string() }),
       policy: { allowExternalMcp: true, requiresOpsAuth: false },
-      execute: async ({ count }) => ({ label: `count:${count}` }),
+      execute: ({ count }) => ({ label: `count:${count}` }),
     });
 
     await expect(registry.execute('echo_count', { count: 2 })).resolves.toEqual({
@@ -35,7 +35,7 @@ describe('createToolRegistry', () => {
       inputSchema: z.object({}),
       outputSchema: z.string().transform((value) => Number(value)),
       policy: { allowExternalMcp: true, requiresOpsAuth: false },
-      execute: async () => '42',
+      execute: () => '42',
     });
 
     await expect(registry.execute('string_to_number', {})).resolves.toBe(42);
@@ -49,7 +49,7 @@ describe('createToolRegistry', () => {
       inputSchema: z.object({}),
       outputSchema: z.object({ ok: z.boolean() }),
       policy: { allowExternalMcp: false, requiresOpsAuth: false },
-      execute: async () => ({ ok: true }),
+      execute: () => ({ ok: true }),
     };
 
     registry.register(definition);
@@ -66,7 +66,7 @@ describe('createToolRegistry', () => {
       inputSchema: z.object({}),
       outputSchema: z.object({ ok: z.boolean() }),
       policy: { allowExternalMcp: true, requiresOpsAuth: false },
-      execute: async () => ({ ok: true }),
+      execute: () => ({ ok: true }),
     });
     registry.register({
       name: 'internal_tool',
@@ -74,7 +74,7 @@ describe('createToolRegistry', () => {
       inputSchema: z.object({}),
       outputSchema: z.object({ ok: z.boolean() }),
       policy: { allowExternalMcp: false, requiresOpsAuth: false },
-      execute: async () => ({ ok: true }),
+      execute: () => ({ ok: true }),
     });
 
     expect(registry.list({ externalMcpOnly: true }).map((tool) => tool.name)).toEqual([
@@ -86,6 +86,8 @@ describe('createToolRegistry', () => {
   it("throws stable ToolRegistryToolNotFoundError from execute('missing_tool', {})", async () => {
     const registry = createToolRegistry();
 
-    await expect(registry.execute('missing_tool', {})).rejects.toThrow(ToolRegistryToolNotFoundError);
+    await expect(registry.execute('missing_tool', {})).rejects.toThrow(
+      ToolRegistryToolNotFoundError,
+    );
   });
 });

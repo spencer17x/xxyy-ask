@@ -1,6 +1,6 @@
 export const workspacePackageName = '@xxyy/rag-core';
 
-export { createGroundedAnswer } from './answer.js';
+export { createBoundaryAnswer, createGroundedAnswer } from './answer.js';
 export {
   createBrowserTxAnalysisProvider,
   createEvmBrowserTxChainAdapter,
