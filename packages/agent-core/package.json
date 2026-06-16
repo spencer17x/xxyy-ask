@@ -1,0 +1,17 @@
+{
+  "name": "@xxyy/agent-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@xxyy/rag-core": "workspace:*",
+    "@xxyy/shared": "workspace:*",
+    "zod": "^4.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}
