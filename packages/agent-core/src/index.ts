@@ -3,6 +3,19 @@ export const workspacePackageName = '@xxyy/agent-core';
 export { createInMemoryAuditSink, createNoopAuditSink } from './audit.js';
 export type { InMemoryAuditSink, ToolAuditEvent, ToolAuditSink, ToolAuditStatus } from './audit.js';
 export {
+  PRODUCT_TOOL_NAMES,
+  answerProductQuestionInputSchema,
+  answerProductQuestionOutputSchema,
+  createProductTools,
+  searchProductDocsInputSchema,
+  searchProductDocsOutputSchema,
+} from './tools/product-tools.js';
+export type {
+  AnswerProductQuestionToolOutput,
+  CreateProductToolsOptions,
+  ProductToolName,
+} from './tools/product-tools.js';
+export {
   TX_ANALYSIS_TOOL_NAMES,
   analyzeTransactionInputSchema,
   analyzeTransactionOutputSchema,
