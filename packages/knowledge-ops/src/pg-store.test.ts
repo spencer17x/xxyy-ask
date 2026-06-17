@@ -259,6 +259,73 @@ describe('createPgKnowledgeOpsStore', () => {
     ]);
   });
 
+  it('gets candidates by id from Postgres', async () => {
+    const client = new FakePgClient();
+    client.rows = [toPgCandidateRow(candidate({ status: 'approved' }))];
+    const store = createPgKnowledgeOpsStore({ client });
+
+    const found = await store.getCandidate('kc_telegram_setup');
+
+    expect(client.queries[0]?.sql).toContain('from knowledge_candidates');
+    expect(client.queries[0]?.sql).toContain('where id = $1');
+    expect(client.queries[0]?.values).toEqual(['kc_telegram_setup']);
+    expect(found).toMatchObject({
+      id: 'kc_telegram_setup',
+      status: 'approved',
+    });
+  });
+
+  it('marks only approved Postgres candidates as published', async () => {
+    const client = new FakePgClient();
+    client.queuedRows = [
+      [toPgCandidateRow(candidate({ status: 'approved' }))],
+      [
+        toPgCandidateRow(
+          candidate({
+            publishedTarget: 'pages/65-reviewed-support-knowledge.md#kc_telegram_setup',
+            status: 'published',
+            updatedAt: '2026-06-17T05:00:00.000Z',
+          }),
+        ),
+      ],
+      [toPgCandidateRow(candidate({ id: 'kc_waiting', status: 'needs_review' }))],
+      [],
+    ];
+    const store = createPgKnowledgeOpsStore({ client });
+
+    const published = await store.markCandidatePublished('kc_telegram_setup', {
+      publishedAt: '2026-06-17T05:00:00.000Z',
+      publishedTarget: 'pages/65-reviewed-support-knowledge.md#kc_telegram_setup',
+    });
+
+    expect(client.queries[1]?.sql).toContain('update knowledge_candidates');
+    expect(client.queries[1]?.values).toEqual([
+      'published',
+      'pages/65-reviewed-support-knowledge.md#kc_telegram_setup',
+      '2026-06-17T05:00:00.000Z',
+      'kc_telegram_setup',
+    ]);
+    expect(published).toMatchObject({
+      publishedTarget: 'pages/65-reviewed-support-knowledge.md#kc_telegram_setup',
+      status: 'published',
+      updatedAt: '2026-06-17T05:00:00.000Z',
+    });
+    await expect(
+      store.markCandidatePublished('kc_waiting', {
+        publishedAt: '2026-06-17T05:00:00.000Z',
+        publishedTarget: 'pages/65-reviewed-support-knowledge.md#kc_waiting',
+      }),
+    ).rejects.toThrow(
+      'Knowledge candidate kc_waiting must be approved before publishing; current status is needs_review.',
+    );
+    await expect(
+      store.markCandidatePublished('missing', {
+        publishedAt: '2026-06-17T05:00:00.000Z',
+        publishedTarget: 'pages/65-reviewed-support-knowledge.md#missing',
+      }),
+    ).rejects.toThrow('Knowledge candidate not found: missing');
+  });
+
   it('records human review decisions in Postgres', async () => {
     const client = new FakePgClient();
     client.rows = [

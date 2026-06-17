@@ -38,6 +38,8 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
     await store.addCandidates([candidate(), candidate({ id: 'candidate_2', status: 'draft' })]);
 
     await expect(store.listCandidates({ status: 'needs_review' })).resolves.toEqual([candidate()]);
+    await expect(store.getCandidate('candidate_1')).resolves.toEqual(candidate());
+    await expect(store.getCandidate('missing')).resolves.toBeUndefined();
   });
 
   it('records human review decisions without publishing approved candidates', async () => {
@@ -77,6 +79,39 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
         action: 'reject',
         reviewedAt: '2026-06-17T03:00:00.000Z',
         reviewer: 'ops@example.com',
+      }),
+    ).rejects.toThrow('Knowledge candidate not found: missing');
+  });
+
+  it('marks only approved candidates as published', async () => {
+    const store = createInMemoryKnowledgeCandidateStore();
+    await store.addCandidates([
+      candidate({ status: 'approved' }),
+      candidate({ id: 'candidate_2', status: 'needs_review' }),
+    ]);
+
+    const published = await store.markCandidatePublished('candidate_1', {
+      publishedAt: '2026-06-17T05:00:00.000Z',
+      publishedTarget: 'pages/65-reviewed-support-knowledge.md#candidate_1',
+    });
+
+    expect(published).toMatchObject({
+      publishedTarget: 'pages/65-reviewed-support-knowledge.md#candidate_1',
+      status: 'published',
+      updatedAt: '2026-06-17T05:00:00.000Z',
+    });
+    await expect(
+      store.markCandidatePublished('candidate_2', {
+        publishedAt: '2026-06-17T05:00:00.000Z',
+        publishedTarget: 'pages/65-reviewed-support-knowledge.md#candidate_2',
+      }),
+    ).rejects.toThrow(
+      'Knowledge candidate candidate_2 must be approved before publishing; current status is needs_review.',
+    );
+    await expect(
+      store.markCandidatePublished('missing', {
+        publishedAt: '2026-06-17T05:00:00.000Z',
+        publishedTarget: 'pages/65-reviewed-support-knowledge.md#missing',
       }),
     ).rejects.toThrow('Knowledge candidate not found: missing');
   });

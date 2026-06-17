@@ -2693,8 +2693,16 @@ describe('createRequestHandler', () => {
       getKnowledgeCandidateStore: () =>
         Promise.resolve({
           addCandidates: () => Promise.resolve([]),
+          getCandidate() {
+            throw new Error('getCandidate should not be called for unauthorized requests');
+          },
           listCandidates() {
             throw new Error('listCandidates should not be called for unauthorized requests');
+          },
+          markCandidatePublished() {
+            throw new Error(
+              'markCandidatePublished should not be called for unauthorized requests',
+            );
           },
           reviewCandidate() {
             throw new Error('reviewCandidate should not be called for unauthorized requests');
@@ -2718,6 +2726,9 @@ describe('createRequestHandler', () => {
     let listFilter: unknown;
     const store: KnowledgeCandidateStore = {
       addCandidates: () => Promise.resolve([]),
+      getCandidate() {
+        throw new Error('getCandidate should not be called for list requests');
+      },
       listCandidates(filter) {
         listFilter = filter;
         return Promise.resolve([
@@ -2739,6 +2750,9 @@ describe('createRequestHandler', () => {
       },
       reviewCandidate() {
         throw new Error('reviewCandidate should not be called for list requests');
+      },
+      markCandidatePublished() {
+        throw new Error('markCandidatePublished should not be called for list requests');
       },
     };
     const handler = createRequestHandler({
@@ -2775,7 +2789,13 @@ describe('createRequestHandler', () => {
     let reviewInput: unknown;
     const store: KnowledgeCandidateStore = {
       addCandidates: () => Promise.resolve([]),
+      getCandidate() {
+        throw new Error('getCandidate should not be called for review requests');
+      },
       listCandidates: () => Promise.resolve([]),
+      markCandidatePublished() {
+        throw new Error('markCandidatePublished should not be called for review requests');
+      },
       reviewCandidate(candidateId, input) {
         reviewInput = { candidateId, input };
         return Promise.resolve(
@@ -2831,7 +2851,10 @@ describe('createRequestHandler', () => {
       getKnowledgeCandidateStore: () =>
         Promise.resolve({
           addCandidates: () => Promise.resolve([]),
+          getCandidate: () => Promise.resolve(undefined),
           listCandidates: () => Promise.resolve([]),
+          markCandidatePublished: () =>
+            Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),
           reviewCandidate: () =>
             Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),
         }),

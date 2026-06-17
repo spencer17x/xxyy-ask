@@ -700,7 +700,7 @@ Agent Runtime 不直接暴露底层异常栈；对用户返回客服可读文案
 5. [x] 新增受保护候选列表和审核 API。
 6. [x] 新增 Telegram 采集运行入口：`pnpm rag:sync:telegram` 读取授权 Telegram 消息、写入 Raw Source、生成 `needs_review` 候选并推进 getUpdates offset。
 7. [ ] 新增知识运营 Agent Profile 和内部工具。
-8. [ ] 审核通过后发布到 reviewed support knowledge 正式知识源。
+8. [x] 审核通过后发布到 reviewed support knowledge 正式知识源：`pnpm rag:publish:knowledge -- --id <candidate-id>` 只发布 `approved` 候选，并写入 `docs/product-features/pages/65-reviewed-support-knowledge.md` 或指定 `pages/*.md`。
 9. [ ] 发布后触发 ingest/embedding 和 targeted eval gate。
 
 ### Phase 3：知识质量和运营增强
@@ -746,7 +746,7 @@ Agent Runtime 不直接暴露底层异常栈；对用户返回客服可读文案
 - Redaction 测试：钱包、订单、联系方式、用户身份、截图 metadata 脱敏。
 - Knowledge miner 测试：问题/答案抽取、重复知识识别、越界内容过滤。
 - Candidate workflow 测试：状态流转、人工审核、拒绝、合并重复项、发布限制。
-- Publish/eval 测试：只发布 `approved` 候选、生成 eval case、eval 失败阻断生产确认。
+- Publish/eval 测试：只发布 `approved` 候选、写入正式 Markdown 知识源、生成 eval case、eval 失败阻断生产确认。
 - MCP adapter 测试：工具元数据和 `structuredContent` 与 Tool Registry 输出一致。
 - AgentRuntime 测试：产品问答、交易哈希、余额查询、投资建议、多哈希歧义、运维摘要、报告复查、知识候选挖掘。
 - 回归测试：现有 `pnpm rag:evaluate -- --fast`、API 测试、MCP smoke。

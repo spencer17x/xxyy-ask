@@ -11,10 +11,14 @@ import {
   type PreparedKnowledgeChunk,
 } from '@xxyy/knowledge';
 import {
+  KnowledgeCandidateInvalidPublishStatusError,
+  KnowledgeCandidateNotFoundError,
+  KnowledgePublishTargetError,
   createPgKnowledgeOpsStore,
   fetchTelegramSupportMessages,
   mineSupportConversations,
   migratePgKnowledgeOpsStore,
+  publishKnowledgeCandidate,
 } from '@xxyy/knowledge-ops';
 import {
   VectorStoreConfigurationError,
@@ -65,6 +69,7 @@ type CliCommand =
   | { command: 'feedback'; json: boolean; limit: number; rating?: FeedbackRating }
   | { command: 'ingest' }
   | { command: 'migrate' }
+  | { command: 'publish:knowledge'; candidateId: string; targetFile?: string }
   | { command: 'stats' }
   | { command: 'sync:telegram' }
   | { command: 'sync:x' }
@@ -94,6 +99,12 @@ interface SyncTelegramSupportSummary {
   storedRawMessageCount: number;
 }
 
+interface PublishKnowledgeSummary {
+  candidateId: string;
+  publishedTarget: string;
+  publishRunId: string;
+}
+
 interface CliIo {
   cwd: string;
   env: CliEnv;
@@ -116,6 +127,7 @@ interface CliChatRuntime {
 const HELP_TEXT = [
   'Usage:',
   '  pnpm rag:ingest',
+  '  pnpm rag:publish:knowledge -- --id <candidate-id> [--target pages/support-faq.md]',
   '  pnpm rag:sync:telegram',
   '  pnpm rag:sync:x',
   '  pnpm rag:migrate',
@@ -399,6 +411,10 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     return parseFeedbackArgs(rawRest);
   }
 
+  if (command === 'publish:knowledge') {
+    return parsePublishKnowledgeArgs(rawRest);
+  }
+
   if (command === 'evaluate') {
     const rest = rawRest[0] === '--' ? rawRest.slice(1) : rawRest;
     if (rest.length === 0) {
@@ -423,6 +439,47 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
   }
 
   return { command: 'help', error: `Unknown command: ${command}` };
+}
+
+function parsePublishKnowledgeArgs(rawArgs: readonly string[]): CliCommand {
+  const args = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs;
+  let candidateId: string | undefined;
+  let targetFile: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const option = args[index];
+    if (option === '--id') {
+      const rawId = args[index + 1]?.trim();
+      if (rawId === undefined || rawId.length === 0) {
+        return { command: 'help', error: 'Missing value for publish:knowledge --id.' };
+      }
+      candidateId = rawId;
+      index += 1;
+      continue;
+    }
+
+    if (option === '--target') {
+      const rawTarget = args[index + 1]?.trim();
+      if (rawTarget === undefined || rawTarget.length === 0) {
+        return { command: 'help', error: 'Missing value for publish:knowledge --target.' };
+      }
+      targetFile = rawTarget;
+      index += 1;
+      continue;
+    }
+
+    return { command: 'help', error: `Unknown option for publish:knowledge: ${option}` };
+  }
+
+  if (candidateId === undefined) {
+    return { command: 'help', error: 'Missing value for publish:knowledge --id.' };
+  }
+
+  return {
+    candidateId,
+    command: 'publish:knowledge',
+    ...(targetFile === undefined ? {} : { targetFile }),
+  };
 }
 
 function parseFeedbackArgs(rawArgs: readonly string[]): CliCommand {
@@ -515,6 +572,15 @@ export function formatSyncTelegramSupportSummary(summary: SyncTelegramSupportSum
   }
 
   return lines.join('\n');
+}
+
+export function formatPublishKnowledgeSummary(summary: PublishKnowledgeSummary): string {
+  return [
+    `Published knowledge candidate ${summary.candidateId}.`,
+    `Published target: ${summary.publishedTarget}`,
+    `Publish run: ${summary.publishRunId}`,
+    'Next: run pnpm rag:ingest and pnpm rag:evaluate -- --fast before production confirmation.',
+  ].join('\n');
 }
 
 export function formatMigrationSummary(): string {
@@ -700,6 +766,25 @@ export async function runCli(
     try {
       const summary = await syncTelegramSupportMessages({ ...io, cwd: workspaceCwd });
       writeLine(io.stdout, formatSyncTelegramSupportSummary(summary));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'publish:knowledge') {
+    try {
+      const summary = await publishReviewedKnowledgeCandidate(
+        { ...io, cwd: workspaceCwd },
+        {
+          candidateId: parsed.candidateId,
+          ...(parsed.targetFile === undefined ? {} : { targetFile: parsed.targetFile }),
+        },
+      );
+      writeLine(io.stdout, formatPublishKnowledgeSummary(summary));
       return 0;
     } catch (error) {
       if (writeConfigurationError(io, error)) {
@@ -914,6 +999,41 @@ async function syncTelegramSupportMessages(io: CliIo): Promise<SyncTelegramSuppo
       ...(fetched.nextOffset === undefined ? {} : { nextOffset: fetched.nextOffset }),
       pairsConsidered: mined.pairsConsidered,
       storedRawMessageCount: storedRawMessages.length,
+    };
+  } finally {
+    await pool.end();
+  }
+}
+
+async function publishReviewedKnowledgeCandidate(
+  io: CliIo,
+  options: { candidateId: string; targetFile?: string },
+): Promise<PublishKnowledgeSummary> {
+  const config = loadRagConfig(io.env);
+  const pool = createPgPool(config.databaseUrl);
+
+  try {
+    const store = createPgKnowledgeOpsStore({ client: pool });
+    await store.migrate();
+    const candidate = await store.getCandidate(options.candidateId);
+    if (candidate === undefined) {
+      throw new KnowledgeCandidateNotFoundError(options.candidateId);
+    }
+
+    const published = await publishKnowledgeCandidate({
+      candidate,
+      productFeaturesDir: path.join(io.cwd, 'docs', 'product-features'),
+      ...(options.targetFile === undefined ? {} : { targetFile: options.targetFile }),
+    });
+    await store.markCandidatePublished(options.candidateId, {
+      publishedAt: published.publishedAt,
+      publishedTarget: published.publishedTarget,
+    });
+
+    return {
+      candidateId: options.candidateId,
+      publishedTarget: published.publishedTarget,
+      publishRunId: published.publishRunId,
     };
   } finally {
     await pool.end();
@@ -1227,6 +1347,15 @@ function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): 
 }
 
 function writeConfigurationError(io: CliIo, error: unknown): boolean {
+  if (
+    error instanceof KnowledgeCandidateInvalidPublishStatusError ||
+    error instanceof KnowledgeCandidateNotFoundError ||
+    error instanceof KnowledgePublishTargetError
+  ) {
+    writeLine(io.stderr, error.message);
+    return true;
+  }
+
   if (error instanceof TelegramSyncConfigurationError) {
     writeLine(io.stderr, error.message);
     return true;

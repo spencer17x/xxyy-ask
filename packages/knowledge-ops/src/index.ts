@@ -5,10 +5,12 @@ export {
 } from './conversation-miner.js';
 export {
   KnowledgeCandidateNotFoundError,
+  KnowledgeCandidateInvalidPublishStatusError,
   createInMemoryKnowledgeCandidateStore,
   type KnowledgeCandidateReviewAction,
   type KnowledgeCandidateStore,
   type ListKnowledgeCandidatesFilter,
+  type MarkKnowledgeCandidatePublishedInput,
   type ReviewKnowledgeCandidateInput,
 } from './knowledge-candidate-store.js';
 export {
@@ -21,6 +23,13 @@ export {
   type SetSourceCursorInput,
   type SourceCursorInput,
 } from './pg-store.js';
+export {
+  DEFAULT_REVIEWED_SUPPORT_KNOWLEDGE_TARGET,
+  KnowledgePublishTargetError,
+  publishKnowledgeCandidate,
+  type PublishKnowledgeCandidateInput,
+  type PublishKnowledgeCandidateResult,
+} from './publish-workflow.js';
 export {
   redactSupportMessage,
   redactSupportText,

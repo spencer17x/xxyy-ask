@@ -20,9 +20,19 @@ export interface ReviewKnowledgeCandidateInput {
   notes?: string;
 }
 
+export interface MarkKnowledgeCandidatePublishedInput {
+  publishedAt?: string;
+  publishedTarget: string;
+}
+
 export interface KnowledgeCandidateStore {
   addCandidates(candidates: KnowledgeCandidate[]): Promise<KnowledgeCandidate[]>;
+  getCandidate(candidateId: string): Promise<KnowledgeCandidate | undefined>;
   listCandidates(filter?: ListKnowledgeCandidatesFilter): Promise<KnowledgeCandidate[]>;
+  markCandidatePublished(
+    candidateId: string,
+    input: MarkKnowledgeCandidatePublishedInput,
+  ): Promise<KnowledgeCandidate>;
   reviewCandidate(
     candidateId: string,
     input: ReviewKnowledgeCandidateInput,
@@ -33,6 +43,15 @@ export class KnowledgeCandidateNotFoundError extends Error {
   constructor(candidateId: string) {
     super(`Knowledge candidate not found: ${candidateId}`);
     this.name = 'KnowledgeCandidateNotFoundError';
+  }
+}
+
+export class KnowledgeCandidateInvalidPublishStatusError extends Error {
+  constructor(candidateId: string, currentStatus: KnowledgeCandidateStatus) {
+    super(
+      `Knowledge candidate ${candidateId} must be approved before publishing; current status is ${currentStatus}.`,
+    );
+    this.name = 'KnowledgeCandidateInvalidPublishStatusError';
   }
 }
 
@@ -52,12 +71,32 @@ export function createInMemoryKnowledgeCandidateStore(
       return Promise.resolve(newCandidates);
     },
 
+    getCandidate(candidateId) {
+      return Promise.resolve(candidates.get(candidateId));
+    },
+
     listCandidates(filter = {}) {
       return Promise.resolve(
         Array.from(candidates.values())
           .filter((candidate) => matchesFilter(candidate, filter))
           .slice(0, normalizeLimit(filter.limit)),
       );
+    },
+
+    markCandidatePublished(candidateId, input) {
+      const candidate = candidates.get(candidateId);
+      if (candidate === undefined) {
+        return Promise.reject(new KnowledgeCandidateNotFoundError(candidateId));
+      }
+      if (candidate.status !== 'approved') {
+        return Promise.reject(
+          new KnowledgeCandidateInvalidPublishStatusError(candidateId, candidate.status),
+        );
+      }
+
+      const published = applyPublished(candidate, input);
+      candidates.set(candidateId, published);
+      return Promise.resolve(published);
     },
 
     reviewCandidate(candidateId, input) {
@@ -112,6 +151,20 @@ function applyReview(
     status,
     reviewer: input.reviewer,
     ...(input.notes === undefined ? {} : { reviewNotes: input.notes }),
+    updatedAt,
+  };
+}
+
+function applyPublished(
+  candidate: KnowledgeCandidate,
+  input: MarkKnowledgeCandidatePublishedInput,
+): KnowledgeCandidate {
+  const updatedAt = input.publishedAt ?? new Date().toISOString();
+
+  return {
+    ...candidate,
+    publishedTarget: input.publishedTarget,
+    status: 'published',
     updatedAt,
   };
 }

@@ -47,6 +47,24 @@ describe('parseCliArgs', () => {
   it('parses commands that do not require extra arguments', () => {
     expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
     expect(parseCliArgs(['migrate'])).toEqual({ command: 'migrate' });
+    expect(parseCliArgs(['publish:knowledge', '--id', 'kc_telegram_setup'])).toEqual({
+      candidateId: 'kc_telegram_setup',
+      command: 'publish:knowledge',
+    });
+    expect(
+      parseCliArgs([
+        'publish:knowledge',
+        '--',
+        '--id',
+        'kc_telegram_setup',
+        '--target',
+        'pages/support-faq.md',
+      ]),
+    ).toEqual({
+      candidateId: 'kc_telegram_setup',
+      command: 'publish:knowledge',
+      targetFile: 'pages/support-faq.md',
+    });
     expect(parseCliArgs(['stats'])).toEqual({ command: 'stats' });
     expect(parseCliArgs(['sync:telegram'])).toEqual({ command: 'sync:telegram' });
     expect(parseCliArgs(['sync:x'])).toEqual({ command: 'sync:x' });
@@ -60,6 +78,10 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['evaluate', '--', '--fast'])).toEqual({
       command: 'evaluate',
       fast: true,
+    });
+    expect(parseCliArgs(['publish:knowledge'])).toEqual({
+      command: 'help',
+      error: 'Missing value for publish:knowledge --id.',
     });
   });
 
@@ -1066,6 +1088,153 @@ describe('runCli', () => {
       );
       expect(stdout.join('')).toContain('Next Telegram offset: 125');
       expect(stdout.join('')).toContain('No candidates were published; human review is required.');
+    } finally {
+      vi.doUnmock('@xxyy/rag-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
+    }
+  });
+
+  it('publishes an approved knowledge candidate into the reviewed support source', async () => {
+    vi.resetModules();
+
+    const events: string[] = [];
+    const approvedCandidate = {
+      confidence: 0.8,
+      createdAt: '2026-06-17T02:00:00.000Z',
+      existingKnowledgeMatches: [],
+      generatedEvalCases: [
+        {
+          expectedAnswer: '在钱包监控里配置 Telegram Bot。',
+          question: 'Telegram 通知怎么设置？',
+        },
+      ],
+      id: 'kc_telegram_setup',
+      proposedAnswer: '在钱包监控里配置 Telegram Bot。',
+      question: 'Telegram 通知怎么设置？',
+      redactionReport: { entities: [], riskFlags: [], riskLevel: 'low' },
+      reviewer: 'ops@example.com',
+      riskLevel: 'low',
+      sourceRefs: [{ source: 'telegram', chatIdHash: 'support_chat_hash', messageId: '100' }],
+      status: 'approved',
+      targetCategory: 'product_faq',
+      type: 'faq',
+      updatedAt: '2026-06-17T03:00:00.000Z',
+    };
+    const migrate = vi.fn(() => {
+      events.push('knowledge-ops:migrate');
+      return Promise.resolve();
+    });
+    const getCandidate = vi.fn((candidateId: string) => {
+      events.push(`candidate:get:${candidateId}`);
+      return Promise.resolve(approvedCandidate);
+    });
+    const markCandidatePublished = vi.fn(
+      (candidateId: string, input: { publishedTarget: string }) => {
+        events.push(`candidate:mark:${candidateId}:${input.publishedTarget}`);
+        return Promise.resolve({
+          ...approvedCandidate,
+          publishedTarget: input.publishedTarget,
+          status: 'published',
+          updatedAt: '2026-06-17T05:00:00.000Z',
+        });
+      },
+    );
+    const end = vi.fn(() => {
+      events.push('pool.end');
+      return Promise.resolve();
+    });
+
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgPool: vi.fn(() => ({ end })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+        })),
+      };
+    });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgKnowledgeOpsStore: vi.fn(() => ({
+          getCandidate,
+          markCandidatePublished,
+          migrate,
+        })),
+        publishKnowledgeCandidate: vi.fn(
+          (input: {
+            candidate: { id: string };
+            productFeaturesDir: string;
+            targetFile?: string;
+          }) => {
+            events.push(`publish:${input.candidate.id}:${input.targetFile ?? 'default'}`);
+            expect(input.productFeaturesDir).toBe(
+              path.join(process.cwd(), 'docs', 'product-features'),
+            );
+            return Promise.resolve({
+              candidate: {
+                ...approvedCandidate,
+                publishedTarget: 'pages/support-faq.md#kc_telegram_setup',
+                status: 'published',
+                updatedAt: '2026-06-17T05:00:00.000Z',
+              },
+              publishedAt: '2026-06-17T05:00:00.000Z',
+              publishedTarget: 'pages/support-faq.md#kc_telegram_setup',
+              publishRunId: 'publish_20260617T050000Z_abcd1234',
+            });
+          },
+        ),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+      const stdout: string[] = [];
+
+      const exitCode = await runCliWithMocks(
+        ['publish:knowledge', '--id', 'kc_telegram_setup', '--target', 'pages/support-faq.md'],
+        {
+          cwd: process.cwd(),
+          env: { DATABASE_URL: 'postgres://example.test/db' },
+          stderr: { write: () => true },
+          stdout: {
+            write: (message: string) => {
+              stdout.push(message);
+              return true;
+            },
+          },
+        },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(events).toEqual([
+        'knowledge-ops:migrate',
+        'candidate:get:kc_telegram_setup',
+        'publish:kc_telegram_setup:pages/support-faq.md',
+        'candidate:mark:kc_telegram_setup:pages/support-faq.md#kc_telegram_setup',
+        'pool.end',
+      ]);
+      expect(markCandidatePublished).toHaveBeenCalledWith('kc_telegram_setup', {
+        publishedAt: '2026-06-17T05:00:00.000Z',
+        publishedTarget: 'pages/support-faq.md#kc_telegram_setup',
+      });
+      expect(stdout.join('')).toContain('Published knowledge candidate kc_telegram_setup.');
+      expect(stdout.join('')).toContain('Published target: pages/support-faq.md#kc_telegram_setup');
+      expect(stdout.join('')).toContain('Publish run: publish_20260617T050000Z_abcd1234');
+      expect(stdout.join('')).toContain(
+        'Next: run pnpm rag:ingest and pnpm rag:evaluate -- --fast before production confirmation.',
+      );
     } finally {
       vi.doUnmock('@xxyy/rag-core');
       vi.doUnmock('@xxyy/knowledge-ops');

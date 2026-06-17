@@ -137,7 +137,8 @@
 - [x] 候选知识内核：已新增 `@xxyy/knowledge-ops`，支持授权 Telegram 采集基础、客服消息结构、敏感信息脱敏、客服问答候选挖掘、Raw Source 持久化、Candidate 持久化、增量 cursor 和内存待审队列；第一版只生成 `needs_review` 候选，不会自动发布到正式 RAG 知识库。
 - [x] 候选知识审核 API：受 `API_OPS_TOKEN` 保护，支持查看候选队列和执行 approve/reject/request_changes/merge_duplicate，审核动作不会自动发布。
 - [x] Telegram 知识学习运行入口：`pnpm rag:sync:telegram` 支持手动或定时增量采集授权 Telegram 客服消息，写入 Raw Source Store，生成 `needs_review` 候选知识，并推进 getUpdates offset；不会发布或 embedding 未审核内容。
-- [ ] 知识发布和质量门禁：仍需接审核通过后的正式知识源发布、ingest/embedding、eval gate 和回滚线索。
+- [x] 审核后知识发布入口：`pnpm rag:publish:knowledge -- --id <candidate-id>` 只允许发布 `approved` 候选，默认追加到 `docs/product-features/pages/65-reviewed-support-knowledge.md` 正式 Markdown 知识源，并把候选状态标记为 `published`；未审核候选不能发布。
+- [ ] 知识入库和质量门禁：仍需把发布后的正式知识源自动接入 ingest/embedding、targeted eval gate、发布 run 与 ingestion/eval run 关联，以及失败回滚线索。
 - [ ] 知识运营 Agent 工具：仍需把 Telegram 采集、候选挖掘、候选查询/审核、发布和 eval gate 封装为内部 Agent tools / MCP / Skill。
 - [ ] 工单后台：查看、分配、处理和关闭客服工单。
 - [ ] 会话后台：查看用户会话、检索来源、反馈和处理结果。

@@ -10,9 +10,13 @@ import type {
 import type {
   KnowledgeCandidateStore,
   ListKnowledgeCandidatesFilter,
+  MarkKnowledgeCandidatePublishedInput,
   ReviewKnowledgeCandidateInput,
 } from './knowledge-candidate-store.js';
-import { KnowledgeCandidateNotFoundError } from './knowledge-candidate-store.js';
+import {
+  KnowledgeCandidateInvalidPublishStatusError,
+  KnowledgeCandidateNotFoundError,
+} from './knowledge-candidate-store.js';
 
 export interface PgClientLike {
   query<T>(sql: string, values?: readonly unknown[]): Promise<{ rows: T[] }>;
@@ -104,6 +108,10 @@ export function createPgKnowledgeOpsStore(
       return response.rows[0]?.cursor_value;
     },
 
+    getCandidate(candidateId) {
+      return getCandidateById(options.client, candidateId);
+    },
+
     async listCandidates(filter = {}) {
       const { sql, values } = buildListCandidatesQuery(filter);
       const response = await options.client.query<KnowledgeCandidateRow>(sql, values);
@@ -114,6 +122,10 @@ export function createPgKnowledgeOpsStore(
       const { sql, values } = buildListRawMessagesQuery(filter);
       const response = await options.client.query<RawSupportMessageRow>(sql, values);
       return response.rows.map(mapRawSupportMessageRow);
+    },
+
+    async markCandidatePublished(candidateId, input) {
+      return markCandidatePublished(options.client, candidateId, input);
     },
 
     async migrate() {
@@ -259,6 +271,57 @@ export async function migratePgKnowledgeOpsStore(client: PgClientLike): Promise<
     create index if not exists knowledge_source_cursors_updated_at_idx
       on knowledge_source_cursors (updated_at desc)
   `);
+}
+
+async function getCandidateById(
+  client: PgClientLike,
+  candidateId: string,
+): Promise<KnowledgeCandidate | undefined> {
+  const response = await client.query<KnowledgeCandidateRow>(
+    `
+    select ${candidateReturnColumns()}
+    from knowledge_candidates
+    where id = $1
+    `,
+    [candidateId],
+  );
+
+  const row = response.rows[0];
+  return row === undefined ? undefined : mapCandidateRow(row);
+}
+
+async function markCandidatePublished(
+  client: PgClientLike,
+  candidateId: string,
+  input: MarkKnowledgeCandidatePublishedInput,
+): Promise<KnowledgeCandidate> {
+  const candidate = await getCandidateById(client, candidateId);
+  if (candidate === undefined) {
+    throw new KnowledgeCandidateNotFoundError(candidateId);
+  }
+  if (candidate.status !== 'approved') {
+    throw new KnowledgeCandidateInvalidPublishStatusError(candidateId, candidate.status);
+  }
+
+  const publishedAt = input.publishedAt ?? new Date().toISOString();
+  const response = await client.query<KnowledgeCandidateRow>(
+    `
+    update knowledge_candidates
+    set
+      status = $1,
+      published_target = $2,
+      updated_at = $3
+    where id = $4
+    returning ${candidateReturnColumns()}
+    `,
+    ['published', input.publishedTarget, publishedAt, candidateId],
+  );
+  const row = response.rows[0];
+  if (row === undefined) {
+    throw new KnowledgeCandidateNotFoundError(candidateId);
+  }
+
+  return mapCandidateRow(row);
 }
 
 async function upsertRawMessage(client: PgClientLike, message: RawSupportMessage): Promise<void> {

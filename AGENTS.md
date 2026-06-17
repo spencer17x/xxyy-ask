@@ -27,7 +27,7 @@
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、本地索引、OpenAI embedding provider。
 - `packages/knowledge-ops`：Telegram 授权采集、客服消息脱敏、候选知识挖掘、Raw Source 持久化、Candidate 待审队列和增量 cursor。
 - `packages/rag-core`：意图分类、检索接口、pgvector store、反馈 store、LLM answer provider、评测。
-- `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:sync:telegram`、`rag:migrate`、`rag:stats`、`rag:feedback`、`rag:ask`、`rag:evaluate`。
+- `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:sync:telegram`、`rag:publish:knowledge`、`rag:migrate`、`rag:stats`、`rag:feedback`、`rag:ask`、`rag:evaluate`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/web`：静态聊天 UI。
 - `docs/product-features`：知识库种子文档。
@@ -101,7 +101,7 @@ pnpm check
 
 如果改了正式文档结构、需要重建全部知识库，或要做发布前全量确认，再跑 `pnpm sync -- --full`。
 
-`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：读取当前 X 文档和 JSONL，按 DB 里的 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧 chunk。`pnpm rag:sync:telegram` 用于授权 Telegram 人工客服消息增量采集：读取 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_ALLOWED_CHAT_IDS`、可选 `TELEGRAM_SUPPORT_USER_IDS` 和 `TELEGRAM_UPDATES_LIMIT`，写入 Raw Source Store，生成 `needs_review` 候选知识，并推进 getUpdates offset；该命令不会发布候选知识，也不会把未审核内容写入正式 RAG 知识库。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 用于查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
+`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：读取当前 X 文档和 JSONL，按 DB 里的 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧 chunk。`pnpm rag:sync:telegram` 用于授权 Telegram 人工客服消息增量采集：读取 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_ALLOWED_CHAT_IDS`、可选 `TELEGRAM_SUPPORT_USER_IDS` 和 `TELEGRAM_UPDATES_LIMIT`，写入 Raw Source Store，生成 `needs_review` 候选知识，并推进 getUpdates offset；该命令不会发布候选知识，也不会把未审核内容写入正式 RAG 知识库。`pnpm rag:publish:knowledge -- --id <candidate-id>` 只发布已人工审核为 `approved` 的候选，默认追加到 `docs/product-features/pages/65-reviewed-support-knowledge.md`，并把候选状态标记为 `published`；发布后仍需运行 `pnpm rag:ingest` 和 `pnpm rag:evaluate -- --fast` 做入库和质量确认。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 用于查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 
 `pnpm rag:feedback -- --rating negative --limit 25 --json` 用于导出负反馈 triage 队列，方便把低质量回答补进知识库或评测集。不要在反馈记录里写入明文用户身份或密钥。
 
@@ -139,7 +139,7 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
 - 不要提交 `.rag/`、`.env`、数据库数据或密钥。
 - 不要在 `docker-compose.yml` 写死数据库密码；使用 `.env` 注入。
 - 不要把真实 API key 写入测试、README 或日志。
-- 生产 API 服务端不负责迁移，迁移和写库由 `pnpm sync`、`pnpm rag:ingest`、`pnpm rag:sync:x` 或 `pnpm rag:sync:telegram` 完成；本地 `pnpm start` 的启动脚本可以为空知识库做首次 bootstrap。
+- 生产 API 服务端不负责迁移，迁移和写库由 `pnpm sync`、`pnpm rag:ingest`、`pnpm rag:sync:x`、`pnpm rag:sync:telegram` 或 `pnpm rag:publish:knowledge` 完成；本地 `pnpm start` 的启动脚本可以为空知识库做首次 bootstrap。
 - 新增行为需要加测试；风险较高的改动跑 `pnpm check`。
 - 对外错误信息应清晰区分：
   - LLM 配置缺失
