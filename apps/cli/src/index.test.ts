@@ -46,6 +46,11 @@ describe('parseCliArgs', () => {
 
   it('parses commands that do not require extra arguments', () => {
     expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
+    expect(parseCliArgs(['gate:knowledge', '--id', 'kc_telegram_setup', '--fast'])).toEqual({
+      candidateId: 'kc_telegram_setup',
+      command: 'gate:knowledge',
+      fast: true,
+    });
     expect(parseCliArgs(['migrate'])).toEqual({ command: 'migrate' });
     expect(parseCliArgs(['publish:knowledge', '--id', 'kc_telegram_setup'])).toEqual({
       candidateId: 'kc_telegram_setup',
@@ -82,6 +87,10 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['publish:knowledge'])).toEqual({
       command: 'help',
       error: 'Missing value for publish:knowledge --id.',
+    });
+    expect(parseCliArgs(['gate:knowledge'])).toEqual({
+      command: 'help',
+      error: 'Missing value for gate:knowledge --id.',
     });
   });
 
@@ -1233,9 +1242,270 @@ describe('runCli', () => {
       expect(stdout.join('')).toContain('Published target: pages/support-faq.md#kc_telegram_setup');
       expect(stdout.join('')).toContain('Publish run: publish_20260617T050000Z_abcd1234');
       expect(stdout.join('')).toContain(
-        'Next: run pnpm rag:ingest and pnpm rag:evaluate -- --fast before production confirmation.',
+        'Next: run pnpm rag:gate:knowledge -- --id <candidate-id> --fast before production confirmation.',
       );
     } finally {
+      vi.doUnmock('@xxyy/rag-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
+    }
+  });
+
+  it('runs the knowledge gate by ingesting published knowledge and evaluating generated cases', async () => {
+    vi.resetModules();
+
+    const events: string[] = [];
+    const publishedCandidate = {
+      confidence: 0.8,
+      createdAt: '2026-06-17T02:00:00.000Z',
+      existingKnowledgeMatches: [],
+      generatedEvalCases: [
+        {
+          expectedAnswer: '在钱包监控里配置 Telegram Bot。',
+          question: 'Telegram 通知怎么设置？',
+        },
+      ],
+      id: 'kc_telegram_setup',
+      proposedAnswer: '在钱包监控里配置 Telegram Bot。',
+      publishedTarget: 'pages/support-faq.md#kc_telegram_setup',
+      question: 'Telegram 通知怎么设置？',
+      redactionReport: { entities: [], riskFlags: [], riskLevel: 'low' },
+      reviewer: 'ops@example.com',
+      riskLevel: 'low',
+      sourceRefs: [{ source: 'telegram', chatIdHash: 'support_chat_hash', messageId: '100' }],
+      status: 'published',
+      targetCategory: 'product_faq',
+      type: 'faq',
+      updatedAt: '2026-06-17T05:00:00.000Z',
+    };
+    const documents = [
+      {
+        content: 'Telegram 通知怎么设置？\n在钱包监控里配置 Telegram Bot。',
+        file: 'docs/product-features/pages/support-faq.md',
+        id: 'reviewed-support',
+        module: 'Support',
+        sourceType: 'official_docs',
+        title: 'Reviewed Support Knowledge',
+      },
+    ] satisfies SourceDocument[];
+    const chunks = [
+      {
+        contentHash: 'hash-reviewed-support',
+        documentId: 'reviewed-support',
+        id: 'official_docs:reviewed-support:chunk:0001',
+        metadata: {
+          file: 'docs/product-features/pages/support-faq.md',
+          headingPath: ['Telegram 通知怎么设置？'],
+          module: 'Support',
+          sourceType: 'official_docs',
+          title: 'Reviewed Support Knowledge',
+        },
+        searchableText: 'Telegram 通知怎么设置？ 在钱包监控里配置 Telegram Bot。',
+        text: 'Telegram 通知怎么设置？\n在钱包监控里配置 Telegram Bot。',
+        tokens: ['telegram', 'bot'],
+      },
+    ] satisfies PreparedKnowledgeChunk[];
+    const embedTexts = vi.fn(() => {
+      events.push('embed');
+      return Promise.resolve([[0.1, 0.2, 0.3]]);
+    });
+    const migrate = vi.fn(() => {
+      events.push('vector:migrate');
+      return Promise.resolve();
+    });
+    const replaceChunks = vi.fn(() => {
+      events.push('vector:replace');
+      return Promise.resolve();
+    });
+    const recordIngestionRun = vi.fn(() => {
+      events.push('vector:record');
+      return Promise.resolve();
+    });
+    const migratePgKnowledgeOpsStore = vi.fn(() => {
+      events.push('knowledge-ops:migrate:ingest');
+      return Promise.resolve();
+    });
+    const storeMigrate = vi.fn(() => {
+      events.push('knowledge-ops:migrate:gate');
+      return Promise.resolve();
+    });
+    const getCandidate = vi.fn((candidateId: string) => {
+      events.push(`candidate:get:${candidateId}`);
+      return Promise.resolve(publishedCandidate);
+    });
+    const markCandidateIngested = vi.fn((candidateId: string, _input: { ingestedAt?: string }) => {
+      events.push(`candidate:ingested:${candidateId}`);
+      return Promise.resolve({
+        ...publishedCandidate,
+        status: 'ingested',
+        updatedAt: '2026-06-17T06:00:00.000Z',
+      });
+    });
+    const markCandidateEvalResult = vi.fn(
+      (candidateId: string, input: { evaluatedAt?: string; passed: boolean }) => {
+        events.push(`candidate:eval:${candidateId}:${input.passed ? 'passed' : 'failed'}`);
+        return Promise.resolve({
+          ...publishedCandidate,
+          status: input.passed ? 'eval_passed' : 'eval_failed',
+          updatedAt: '2026-06-17T06:10:00.000Z',
+        });
+      },
+    );
+    const end = vi.fn(() => {
+      events.push('pool.end');
+      return Promise.resolve();
+    });
+    const createCustomerAgentChatService = vi.fn(
+      (_options: CreateCustomerAgentChatServiceOptions) => ({
+        ask: vi.fn(),
+        stream: vi.fn(),
+      }),
+    );
+    const evaluateCases = vi.fn(
+      (
+        cases: EvaluationCase[],
+        _service: unknown,
+        options?: EvaluateCasesOptions,
+      ): Promise<EvaluationReport> => {
+        events.push(`evaluate:${cases.map((item) => item.name).join('|')}`);
+        expect(cases).toEqual([
+          expect.objectContaining({
+            expectedIntent: 'product_qa',
+            minCitations: 1,
+            name: 'knowledge candidate kc_telegram_setup / Telegram 通知怎么设置？',
+            request: {
+              channel: 'cli',
+              message: 'Telegram 通知怎么设置？',
+            },
+            requiredAnswerIncludes: ['在钱包监控里配置 Telegram Bot。'],
+          }),
+        ]);
+        const result: EvaluationResult = {
+          actualIntent: 'product_qa',
+          citationCount: 1,
+          expectedIntent: 'product_qa',
+          failureReasons: [],
+          minCitations: 1,
+          name: cases[0]?.name ?? 'knowledge candidate',
+          passed: true,
+        };
+        options?.onResult?.(result, 1, 1);
+        return Promise.resolve({
+          passed: 1,
+          total: 1,
+          results: [result],
+        });
+      },
+    );
+
+    vi.doMock('@xxyy/agent-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createCustomerAgentChatService,
+      };
+    });
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createOpenAiEmbeddingProvider: vi.fn(() => ({ embedTexts })),
+        loadProductDocuments: vi.fn(() => Promise.resolve(documents)),
+        prepareKnowledgeChunks: vi.fn(() => chunks),
+      };
+    });
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgPool: vi.fn(() => ({ end })),
+        createPgVectorStore: vi.fn(() => ({
+          getStats: vi.fn(),
+          migrate,
+          recordIngestionRun,
+          replaceChunks,
+          retrieve: vi.fn(),
+          upsertChunks: vi.fn(),
+        })),
+        evaluateCases,
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+          txAnalysisProvider: 'none',
+          txAnalysisReportStore: 'file',
+          txAnalysisReviewer: 'none',
+        })),
+      };
+    });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgKnowledgeOpsStore: vi.fn(() => ({
+          getCandidate,
+          markCandidateEvalResult,
+          markCandidateIngested,
+          migrate: storeMigrate,
+        })),
+        migratePgKnowledgeOpsStore,
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+      const stdout: string[] = [];
+
+      const exitCode = await runCliWithMocks(
+        ['gate:knowledge', '--id', 'kc_telegram_setup', '--fast'],
+        {
+          cwd: process.cwd(),
+          env: { DATABASE_URL: 'postgres://example.test/db' },
+          stderr: { write: () => true },
+          stdout: {
+            write: (message: string) => {
+              stdout.push(message);
+              return true;
+            },
+          },
+        },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(events).toEqual([
+        'knowledge-ops:migrate:gate',
+        'candidate:get:kc_telegram_setup',
+        'vector:migrate',
+        'knowledge-ops:migrate:ingest',
+        'embed',
+        'vector:replace',
+        'vector:record',
+        'pool.end',
+        'candidate:ingested:kc_telegram_setup',
+        'evaluate:knowledge candidate kc_telegram_setup / Telegram 通知怎么设置？',
+        'candidate:eval:kc_telegram_setup:passed',
+        'pool.end',
+      ]);
+      const ingestedCall = markCandidateIngested.mock.calls[0];
+      expect(ingestedCall?.[0]).toBe('kc_telegram_setup');
+      expect(typeof ingestedCall?.[1].ingestedAt).toBe('string');
+      const evalCall = markCandidateEvalResult.mock.calls[0];
+      expect(evalCall?.[0]).toBe('kc_telegram_setup');
+      expect(evalCall?.[1].passed).toBe(true);
+      expect(typeof evalCall?.[1].evaluatedAt).toBe('string');
+      expect(createCustomerAgentChatService).toHaveBeenCalledTimes(1);
+      expect(stdout.join('')).toContain('Knowledge gate passed for candidate kc_telegram_setup.');
+      expect(stdout.join('')).toContain('Ingest run: ingest_');
+      expect(stdout.join('')).toContain('Evaluation: 1/1 passed');
+    } finally {
+      vi.doUnmock('@xxyy/agent-core');
+      vi.doUnmock('@xxyy/knowledge');
       vi.doUnmock('@xxyy/rag-core');
       vi.doUnmock('@xxyy/knowledge-ops');
     }

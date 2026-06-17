@@ -326,6 +326,67 @@ describe('createPgKnowledgeOpsStore', () => {
     ).rejects.toThrow('Knowledge candidate not found: missing');
   });
 
+  it('marks Postgres candidates as ingested and records eval gate results', async () => {
+    const client = new FakePgClient();
+    client.queuedRows = [
+      [toPgCandidateRow(candidate({ status: 'published' }))],
+      [
+        toPgCandidateRow(
+          candidate({
+            status: 'ingested',
+            updatedAt: '2026-06-17T06:00:00.000Z',
+          }),
+        ),
+      ],
+      [toPgCandidateRow(candidate({ status: 'ingested' }))],
+      [
+        toPgCandidateRow(
+          candidate({
+            status: 'eval_failed',
+            updatedAt: '2026-06-17T06:10:00.000Z',
+          }),
+        ),
+      ],
+      [toPgCandidateRow(candidate({ id: 'kc_waiting', status: 'approved' }))],
+    ];
+    const store = createPgKnowledgeOpsStore({ client });
+
+    const ingested = await store.markCandidateIngested('kc_telegram_setup', {
+      ingestedAt: '2026-06-17T06:00:00.000Z',
+    });
+    const evaluated = await store.markCandidateEvalResult('kc_telegram_setup', {
+      evaluatedAt: '2026-06-17T06:10:00.000Z',
+      passed: false,
+    });
+
+    expect(client.queries[1]?.sql).toContain('update knowledge_candidates');
+    expect(client.queries[1]?.values).toEqual([
+      'ingested',
+      '2026-06-17T06:00:00.000Z',
+      'kc_telegram_setup',
+    ]);
+    expect(client.queries[3]?.values).toEqual([
+      'eval_failed',
+      '2026-06-17T06:10:00.000Z',
+      'kc_telegram_setup',
+    ]);
+    expect(ingested).toMatchObject({
+      status: 'ingested',
+      updatedAt: '2026-06-17T06:00:00.000Z',
+    });
+    expect(evaluated).toMatchObject({
+      status: 'eval_failed',
+      updatedAt: '2026-06-17T06:10:00.000Z',
+    });
+    await expect(
+      store.markCandidateIngested('kc_waiting', {
+        ingestedAt: '2026-06-17T06:00:00.000Z',
+      }),
+    ).rejects.toThrow(
+      'Knowledge candidate kc_waiting cannot be marked ingested from approved; expected status is published.',
+    );
+  });
+
   it('records human review decisions in Postgres', async () => {
     const client = new FakePgClient();
     client.rows = [

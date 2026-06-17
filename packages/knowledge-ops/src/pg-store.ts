@@ -10,11 +10,14 @@ import type {
 import type {
   KnowledgeCandidateStore,
   ListKnowledgeCandidatesFilter,
+  MarkKnowledgeCandidateEvalResultInput,
+  MarkKnowledgeCandidateIngestedInput,
   MarkKnowledgeCandidatePublishedInput,
   ReviewKnowledgeCandidateInput,
 } from './knowledge-candidate-store.js';
 import {
   KnowledgeCandidateInvalidPublishStatusError,
+  KnowledgeCandidateInvalidStatusTransitionError,
   KnowledgeCandidateNotFoundError,
 } from './knowledge-candidate-store.js';
 
@@ -122,6 +125,14 @@ export function createPgKnowledgeOpsStore(
       const { sql, values } = buildListRawMessagesQuery(filter);
       const response = await options.client.query<RawSupportMessageRow>(sql, values);
       return response.rows.map(mapRawSupportMessageRow);
+    },
+
+    async markCandidateEvalResult(candidateId, input) {
+      return markCandidateEvalResult(options.client, candidateId, input);
+    },
+
+    async markCandidateIngested(candidateId, input) {
+      return markCandidateIngested(options.client, candidateId, input ?? {});
     },
 
     async markCandidatePublished(candidateId, input) {
@@ -315,6 +326,78 @@ async function markCandidatePublished(
     returning ${candidateReturnColumns()}
     `,
     ['published', input.publishedTarget, publishedAt, candidateId],
+  );
+  const row = response.rows[0];
+  if (row === undefined) {
+    throw new KnowledgeCandidateNotFoundError(candidateId);
+  }
+
+  return mapCandidateRow(row);
+}
+
+async function markCandidateIngested(
+  client: PgClientLike,
+  candidateId: string,
+  input: MarkKnowledgeCandidateIngestedInput,
+): Promise<KnowledgeCandidate> {
+  const candidate = await getCandidateById(client, candidateId);
+  if (candidate === undefined) {
+    throw new KnowledgeCandidateNotFoundError(candidateId);
+  }
+  if (candidate.status !== 'published') {
+    throw new KnowledgeCandidateInvalidStatusTransitionError(
+      candidateId,
+      'ingested',
+      candidate.status,
+      'published',
+    );
+  }
+
+  return updateCandidateStatus(client, candidateId, 'ingested', input.ingestedAt);
+}
+
+async function markCandidateEvalResult(
+  client: PgClientLike,
+  candidateId: string,
+  input: MarkKnowledgeCandidateEvalResultInput,
+): Promise<KnowledgeCandidate> {
+  const candidate = await getCandidateById(client, candidateId);
+  if (candidate === undefined) {
+    throw new KnowledgeCandidateNotFoundError(candidateId);
+  }
+  if (candidate.status !== 'ingested') {
+    throw new KnowledgeCandidateInvalidStatusTransitionError(
+      candidateId,
+      input.passed ? 'eval_passed' : 'eval_failed',
+      candidate.status,
+      'ingested',
+    );
+  }
+
+  return updateCandidateStatus(
+    client,
+    candidateId,
+    input.passed ? 'eval_passed' : 'eval_failed',
+    input.evaluatedAt,
+  );
+}
+
+async function updateCandidateStatus(
+  client: PgClientLike,
+  candidateId: string,
+  status: KnowledgeCandidateStatus,
+  updatedAt: string | undefined,
+): Promise<KnowledgeCandidate> {
+  const response = await client.query<KnowledgeCandidateRow>(
+    `
+    update knowledge_candidates
+    set
+      status = $1,
+      updated_at = $2
+    where id = $3
+    returning ${candidateReturnColumns()}
+    `,
+    [status, updatedAt ?? new Date().toISOString(), candidateId],
   );
   const row = response.rows[0];
   if (row === undefined) {

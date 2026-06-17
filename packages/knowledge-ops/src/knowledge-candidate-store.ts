@@ -25,10 +25,27 @@ export interface MarkKnowledgeCandidatePublishedInput {
   publishedTarget: string;
 }
 
+export interface MarkKnowledgeCandidateIngestedInput {
+  ingestedAt?: string;
+}
+
+export interface MarkKnowledgeCandidateEvalResultInput {
+  evaluatedAt?: string;
+  passed: boolean;
+}
+
 export interface KnowledgeCandidateStore {
   addCandidates(candidates: KnowledgeCandidate[]): Promise<KnowledgeCandidate[]>;
   getCandidate(candidateId: string): Promise<KnowledgeCandidate | undefined>;
   listCandidates(filter?: ListKnowledgeCandidatesFilter): Promise<KnowledgeCandidate[]>;
+  markCandidateEvalResult(
+    candidateId: string,
+    input: MarkKnowledgeCandidateEvalResultInput,
+  ): Promise<KnowledgeCandidate>;
+  markCandidateIngested(
+    candidateId: string,
+    input?: MarkKnowledgeCandidateIngestedInput,
+  ): Promise<KnowledgeCandidate>;
   markCandidatePublished(
     candidateId: string,
     input: MarkKnowledgeCandidatePublishedInput,
@@ -52,6 +69,20 @@ export class KnowledgeCandidateInvalidPublishStatusError extends Error {
       `Knowledge candidate ${candidateId} must be approved before publishing; current status is ${currentStatus}.`,
     );
     this.name = 'KnowledgeCandidateInvalidPublishStatusError';
+  }
+}
+
+export class KnowledgeCandidateInvalidStatusTransitionError extends Error {
+  constructor(
+    candidateId: string,
+    action: string,
+    currentStatus: KnowledgeCandidateStatus,
+    expectedStatus: KnowledgeCandidateStatus,
+  ) {
+    super(
+      `Knowledge candidate ${candidateId} cannot be marked ${action} from ${currentStatus}; expected status is ${expectedStatus}.`,
+    );
+    this.name = 'KnowledgeCandidateInvalidStatusTransitionError';
   }
 }
 
@@ -81,6 +112,48 @@ export function createInMemoryKnowledgeCandidateStore(
           .filter((candidate) => matchesFilter(candidate, filter))
           .slice(0, normalizeLimit(filter.limit)),
       );
+    },
+
+    markCandidateEvalResult(candidateId, input) {
+      const candidate = candidates.get(candidateId);
+      if (candidate === undefined) {
+        return Promise.reject(new KnowledgeCandidateNotFoundError(candidateId));
+      }
+      if (candidate.status !== 'ingested') {
+        return Promise.reject(
+          new KnowledgeCandidateInvalidStatusTransitionError(
+            candidateId,
+            input.passed ? 'eval_passed' : 'eval_failed',
+            candidate.status,
+            'ingested',
+          ),
+        );
+      }
+
+      const evaluated = applyEvalResult(candidate, input);
+      candidates.set(candidateId, evaluated);
+      return Promise.resolve(evaluated);
+    },
+
+    markCandidateIngested(candidateId, input = {}) {
+      const candidate = candidates.get(candidateId);
+      if (candidate === undefined) {
+        return Promise.reject(new KnowledgeCandidateNotFoundError(candidateId));
+      }
+      if (candidate.status !== 'published') {
+        return Promise.reject(
+          new KnowledgeCandidateInvalidStatusTransitionError(
+            candidateId,
+            'ingested',
+            candidate.status,
+            'published',
+          ),
+        );
+      }
+
+      const ingested = applyIngested(candidate, input);
+      candidates.set(candidateId, ingested);
+      return Promise.resolve(ingested);
     },
 
     markCandidatePublished(candidateId, input) {
@@ -165,6 +238,32 @@ function applyPublished(
     ...candidate,
     publishedTarget: input.publishedTarget,
     status: 'published',
+    updatedAt,
+  };
+}
+
+function applyIngested(
+  candidate: KnowledgeCandidate,
+  input: MarkKnowledgeCandidateIngestedInput,
+): KnowledgeCandidate {
+  const updatedAt = input.ingestedAt ?? new Date().toISOString();
+
+  return {
+    ...candidate,
+    status: 'ingested',
+    updatedAt,
+  };
+}
+
+function applyEvalResult(
+  candidate: KnowledgeCandidate,
+  input: MarkKnowledgeCandidateEvalResultInput,
+): KnowledgeCandidate {
+  const updatedAt = input.evaluatedAt ?? new Date().toISOString();
+
+  return {
+    ...candidate,
+    status: input.passed ? 'eval_passed' : 'eval_failed',
     updatedAt,
   };
 }

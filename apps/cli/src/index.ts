@@ -12,6 +12,7 @@ import {
 } from '@xxyy/knowledge';
 import {
   KnowledgeCandidateInvalidPublishStatusError,
+  KnowledgeCandidateInvalidStatusTransitionError,
   KnowledgeCandidateNotFoundError,
   KnowledgePublishTargetError,
   createPgKnowledgeOpsStore,
@@ -20,6 +21,7 @@ import {
   migratePgKnowledgeOpsStore,
   publishKnowledgeCandidate,
 } from '@xxyy/knowledge-ops';
+import type { KnowledgeCandidate } from '@xxyy/knowledge-ops';
 import {
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
@@ -67,6 +69,7 @@ type CliCommand =
   | { command: 'ask'; question: string }
   | { command: 'evaluate'; fast: boolean }
   | { command: 'feedback'; json: boolean; limit: number; rating?: FeedbackRating }
+  | { command: 'gate:knowledge'; candidateId: string; fast: boolean }
   | { command: 'ingest' }
   | { command: 'migrate' }
   | { command: 'publish:knowledge'; candidateId: string; targetFile?: string }
@@ -105,6 +108,13 @@ interface PublishKnowledgeSummary {
   publishRunId: string;
 }
 
+interface KnowledgeGateSummary {
+  candidateId: string;
+  evalPassed: boolean;
+  evaluation: EvaluationReport;
+  ingestion: IngestSummary;
+}
+
 interface CliIo {
   cwd: string;
   env: CliEnv;
@@ -128,6 +138,7 @@ const HELP_TEXT = [
   'Usage:',
   '  pnpm rag:ingest',
   '  pnpm rag:publish:knowledge -- --id <candidate-id> [--target pages/support-faq.md]',
+  '  pnpm rag:gate:knowledge -- --id <candidate-id> [--fast]',
   '  pnpm rag:sync:telegram',
   '  pnpm rag:sync:x',
   '  pnpm rag:migrate',
@@ -411,6 +422,10 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     return parseFeedbackArgs(rawRest);
   }
 
+  if (command === 'gate:knowledge') {
+    return parseKnowledgeGateArgs(rawRest);
+  }
+
   if (command === 'publish:knowledge') {
     return parsePublishKnowledgeArgs(rawRest);
   }
@@ -479,6 +494,42 @@ function parsePublishKnowledgeArgs(rawArgs: readonly string[]): CliCommand {
     candidateId,
     command: 'publish:knowledge',
     ...(targetFile === undefined ? {} : { targetFile }),
+  };
+}
+
+function parseKnowledgeGateArgs(rawArgs: readonly string[]): CliCommand {
+  const args = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs;
+  let candidateId: string | undefined;
+  let fast = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const option = args[index];
+    if (option === '--fast') {
+      fast = true;
+      continue;
+    }
+
+    if (option === '--id') {
+      const rawId = args[index + 1]?.trim();
+      if (rawId === undefined || rawId.length === 0) {
+        return { command: 'help', error: 'Missing value for gate:knowledge --id.' };
+      }
+      candidateId = rawId;
+      index += 1;
+      continue;
+    }
+
+    return { command: 'help', error: `Unknown option for gate:knowledge: ${option}` };
+  }
+
+  if (candidateId === undefined) {
+    return { command: 'help', error: 'Missing value for gate:knowledge --id.' };
+  }
+
+  return {
+    candidateId,
+    command: 'gate:knowledge',
+    fast,
   };
 }
 
@@ -579,7 +630,15 @@ export function formatPublishKnowledgeSummary(summary: PublishKnowledgeSummary):
     `Published knowledge candidate ${summary.candidateId}.`,
     `Published target: ${summary.publishedTarget}`,
     `Publish run: ${summary.publishRunId}`,
-    'Next: run pnpm rag:ingest and pnpm rag:evaluate -- --fast before production confirmation.',
+    'Next: run pnpm rag:gate:knowledge -- --id <candidate-id> --fast before production confirmation.',
+  ].join('\n');
+}
+
+export function formatKnowledgeGateSummary(summary: KnowledgeGateSummary): string {
+  return [
+    `Knowledge gate ${summary.evalPassed ? 'passed' : 'failed'} for candidate ${summary.candidateId}.`,
+    `Ingest run: ${summary.ingestion.runId ?? 'none'}`,
+    formatEvaluationSummary(summary.evaluation),
   ].join('\n');
 }
 
@@ -786,6 +845,25 @@ export async function runCli(
       );
       writeLine(io.stdout, formatPublishKnowledgeSummary(summary));
       return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'gate:knowledge') {
+    try {
+      const summary = await runKnowledgeGate(
+        { ...io, cwd: workspaceCwd },
+        {
+          candidateId: parsed.candidateId,
+          fast: parsed.fast,
+        },
+      );
+      writeLine(io.stdout, formatKnowledgeGateSummary(summary));
+      return summary.evalPassed ? 0 : 1;
     } catch (error) {
       if (writeConfigurationError(io, error)) {
         return 1;
@@ -1038,6 +1116,117 @@ async function publishReviewedKnowledgeCandidate(
   } finally {
     await pool.end();
   }
+}
+
+async function runKnowledgeGate(
+  io: CliIo,
+  options: { candidateId: string; fast: boolean },
+): Promise<KnowledgeGateSummary> {
+  const config = loadRagConfig(io.env);
+  const pool = createPgPool(config.databaseUrl);
+
+  try {
+    const store = createPgKnowledgeOpsStore({ client: pool });
+    await store.migrate();
+    const candidate = await store.getCandidate(options.candidateId);
+    if (candidate === undefined) {
+      throw new KnowledgeCandidateNotFoundError(options.candidateId);
+    }
+    if (candidate.status !== 'published') {
+      throw new KnowledgeCandidateInvalidStatusTransitionError(
+        options.candidateId,
+        'ingested',
+        candidate.status,
+        'published',
+      );
+    }
+
+    const ingestion = await ingest(io);
+    await store.markCandidateIngested(options.candidateId, {
+      ingestedAt: new Date().toISOString(),
+    });
+
+    const cases = createKnowledgeGateEvaluationCases(candidate);
+    const runtime = createCliChatRuntime(config, { fastAnswers: options.fast });
+    let evaluation: EvaluationReport;
+    try {
+      evaluation = await evaluateCases(cases, runtime.service, {
+        onResult: (result, index, total) => {
+          writeLine(io.stdout, formatEvaluationProgress(result, index, total));
+        },
+      });
+    } finally {
+      await runtime.close();
+    }
+
+    const evalPassed = evaluation.passed === evaluation.total;
+    await store.markCandidateEvalResult(options.candidateId, {
+      evaluatedAt: new Date().toISOString(),
+      passed: evalPassed,
+    });
+
+    return {
+      candidateId: options.candidateId,
+      evalPassed,
+      evaluation,
+      ingestion,
+    };
+  } finally {
+    await pool.end();
+  }
+}
+
+function createKnowledgeGateEvaluationCases(candidate: KnowledgeCandidate): EvaluationCase[] {
+  const generatedCases =
+    candidate.generatedEvalCases.length > 0
+      ? candidate.generatedEvalCases
+      : [
+          {
+            expectedAnswer: candidate.proposedAnswer,
+            question: candidate.question,
+          },
+        ];
+  const expectedIntent = expectedIntentForKnowledgeCandidate(candidate);
+  const minCitations = candidate.targetCategory === 'policy_boundary' ? 0 : 1;
+
+  return generatedCases.map((generatedCase) => ({
+    expectedIntent,
+    forbiddenAnswerIncludes: PRODUCT_FORBIDDEN_TEXT,
+    minCitations,
+    name: `knowledge candidate ${candidate.id} / ${generatedCase.question}`,
+    request: {
+      channel: 'cli',
+      message: generatedCase.question,
+    },
+    ...(shouldRequireExpectedAnswerText(candidate)
+      ? { requiredAnswerIncludes: [generatedCase.expectedAnswer] }
+      : {}),
+  }));
+}
+
+function expectedIntentForKnowledgeCandidate(
+  candidate: KnowledgeCandidate,
+): EvaluationCase['expectedIntent'] {
+  if (candidate.targetCategory !== 'policy_boundary') {
+    return 'product_qa';
+  }
+
+  if (candidate.redactionReport.riskFlags.includes('investment_advice')) {
+    return 'investment_advice';
+  }
+
+  if (
+    candidate.redactionReport.riskFlags.includes('private_account_query') ||
+    candidate.redactionReport.riskFlags.includes('private_transaction_data')
+  ) {
+    return 'realtime_account_query';
+  }
+
+  return 'unknown';
+}
+
+function shouldRequireExpectedAnswerText(candidate: KnowledgeCandidate): boolean {
+  return candidate.targetCategory !== 'policy_boundary';
 }
 
 async function migrateDatabase(config: ReturnType<typeof loadRagConfig>): Promise<void> {
@@ -1349,6 +1538,7 @@ function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): 
 function writeConfigurationError(io: CliIo, error: unknown): boolean {
   if (
     error instanceof KnowledgeCandidateInvalidPublishStatusError ||
+    error instanceof KnowledgeCandidateInvalidStatusTransitionError ||
     error instanceof KnowledgeCandidateNotFoundError ||
     error instanceof KnowledgePublishTargetError
   ) {

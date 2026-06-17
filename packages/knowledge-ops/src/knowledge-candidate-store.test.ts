@@ -115,4 +115,44 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
       }),
     ).rejects.toThrow('Knowledge candidate not found: missing');
   });
+
+  it('moves published candidates through ingest and eval gate statuses', async () => {
+    const store = createInMemoryKnowledgeCandidateStore();
+    await store.addCandidates([
+      candidate({ status: 'published' }),
+      candidate({ id: 'candidate_2', status: 'approved' }),
+    ]);
+
+    const ingested = await store.markCandidateIngested('candidate_1', {
+      ingestedAt: '2026-06-17T06:00:00.000Z',
+    });
+
+    expect(ingested).toMatchObject({
+      status: 'ingested',
+      updatedAt: '2026-06-17T06:00:00.000Z',
+    });
+
+    const evaluated = await store.markCandidateEvalResult('candidate_1', {
+      evaluatedAt: '2026-06-17T06:10:00.000Z',
+      passed: true,
+    });
+
+    expect(evaluated).toMatchObject({
+      status: 'eval_passed',
+      updatedAt: '2026-06-17T06:10:00.000Z',
+    });
+    await expect(
+      store.markCandidateIngested('candidate_2', {
+        ingestedAt: '2026-06-17T06:00:00.000Z',
+      }),
+    ).rejects.toThrow(
+      'Knowledge candidate candidate_2 cannot be marked ingested from approved; expected status is published.',
+    );
+    await expect(
+      store.markCandidateEvalResult('missing', {
+        evaluatedAt: '2026-06-17T06:10:00.000Z',
+        passed: false,
+      }),
+    ).rejects.toThrow('Knowledge candidate not found: missing');
+  });
 });

@@ -2699,6 +2699,14 @@ describe('createRequestHandler', () => {
           listCandidates() {
             throw new Error('listCandidates should not be called for unauthorized requests');
           },
+          markCandidateEvalResult() {
+            throw new Error(
+              'markCandidateEvalResult should not be called for unauthorized requests',
+            );
+          },
+          markCandidateIngested() {
+            throw new Error('markCandidateIngested should not be called for unauthorized requests');
+          },
           markCandidatePublished() {
             throw new Error(
               'markCandidatePublished should not be called for unauthorized requests',
@@ -2748,6 +2756,12 @@ describe('createRequestHandler', () => {
           }),
         ]);
       },
+      markCandidateEvalResult() {
+        throw new Error('markCandidateEvalResult should not be called for list requests');
+      },
+      markCandidateIngested() {
+        throw new Error('markCandidateIngested should not be called for list requests');
+      },
       reviewCandidate() {
         throw new Error('reviewCandidate should not be called for list requests');
       },
@@ -2793,6 +2807,12 @@ describe('createRequestHandler', () => {
         throw new Error('getCandidate should not be called for review requests');
       },
       listCandidates: () => Promise.resolve([]),
+      markCandidateEvalResult() {
+        throw new Error('markCandidateEvalResult should not be called for review requests');
+      },
+      markCandidateIngested() {
+        throw new Error('markCandidateIngested should not be called for review requests');
+      },
       markCandidatePublished() {
         throw new Error('markCandidatePublished should not be called for review requests');
       },
@@ -2853,6 +2873,10 @@ describe('createRequestHandler', () => {
           addCandidates: () => Promise.resolve([]),
           getCandidate: () => Promise.resolve(undefined),
           listCandidates: () => Promise.resolve([]),
+          markCandidateEvalResult: () =>
+            Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),
+          markCandidateIngested: () =>
+            Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),
           markCandidatePublished: () =>
             Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),
           reviewCandidate: () =>

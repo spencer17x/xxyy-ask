@@ -17,6 +17,7 @@
     "rag:ask": "tsx src/index.ts ask",
     "rag:evaluate": "tsx src/index.ts evaluate",
     "rag:feedback": "tsx src/index.ts feedback",
+    "rag:gate:knowledge": "tsx src/index.ts gate:knowledge",
     "rag:ingest": "tsx src/index.ts ingest",
     "rag:migrate": "tsx src/index.ts migrate",
     "rag:publish:knowledge": "tsx src/index.ts publish:knowledge",

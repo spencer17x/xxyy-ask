@@ -6,10 +6,13 @@ export {
 export {
   KnowledgeCandidateNotFoundError,
   KnowledgeCandidateInvalidPublishStatusError,
+  KnowledgeCandidateInvalidStatusTransitionError,
   createInMemoryKnowledgeCandidateStore,
   type KnowledgeCandidateReviewAction,
   type KnowledgeCandidateStore,
   type ListKnowledgeCandidatesFilter,
+  type MarkKnowledgeCandidateEvalResultInput,
+  type MarkKnowledgeCandidateIngestedInput,
   type MarkKnowledgeCandidatePublishedInput,
   type ReviewKnowledgeCandidateInput,
 } from './knowledge-candidate-store.js';

@@ -54,10 +54,11 @@ pnpm sync            # 增量同步知识库，适合线上定时任务
 pnpm sync -- --full  # 全量重建知识库，适合发布前或文档结构大改
 pnpm rag:sync:telegram # 增量采集授权 Telegram 客服消息到候选知识队列
 pnpm rag:publish:knowledge -- --id <candidate-id> # 发布 approved 候选到正式 reviewed support knowledge
+pnpm rag:gate:knowledge -- --id <candidate-id> --fast # 发布后入库并运行候选定向评测 gate
 pnpm check           # lint + format check + typecheck + tests
 ```
 
-`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录一次 ingestion run，包含 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：按 DB 中已有 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧知识块。`pnpm rag:sync:telegram` 用于授权 Telegram 人工客服消息增量采集：读取 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_ALLOWED_CHAT_IDS`、可选 `TELEGRAM_SUPPORT_USER_IDS` 和 `TELEGRAM_UPDATES_LIMIT`，写入 Raw Source Store，生成 `needs_review` 候选知识，并推进 getUpdates offset；该命令不会发布候选知识，也不会把未审核内容写入正式 RAG 知识库。`pnpm rag:publish:knowledge -- --id <candidate-id>` 只发布 `approved` 候选，默认写入 `docs/product-features/pages/65-reviewed-support-knowledge.md`，也可用 `--target pages/<file>.md` 指定正式页面；发布后候选会变成 `published`，但仍需运行 `pnpm rag:ingest` 和 `pnpm rag:evaluate -- --fast` 做入库与质量确认。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 可以查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
+`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录一次 ingestion run，包含 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：按 DB 中已有 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧知识块。`pnpm rag:sync:telegram` 用于授权 Telegram 人工客服消息增量采集：读取 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_ALLOWED_CHAT_IDS`、可选 `TELEGRAM_SUPPORT_USER_IDS` 和 `TELEGRAM_UPDATES_LIMIT`，写入 Raw Source Store，生成 `needs_review` 候选知识，并推进 getUpdates offset；该命令不会发布候选知识，也不会把未审核内容写入正式 RAG 知识库。`pnpm rag:publish:knowledge -- --id <candidate-id>` 只发布 `approved` 候选，默认写入 `docs/product-features/pages/65-reviewed-support-knowledge.md`，也可用 `--target pages/<file>.md` 指定正式页面；发布后候选会变成 `published`。`pnpm rag:gate:knowledge -- --id <candidate-id> --fast` 会对已发布候选执行正式 ingest/embedding，运行候选生成的 targeted eval gate，并把候选推进为 `eval_passed` 或 `eval_failed`；未发布候选不能进入 gate。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 可以查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 
 Web UI 会在每条回答后提供正负反馈入口，写入 Postgres `rag_feedback` 表，不记录明文 `userId`。`pnpm rag:feedback` 可以查看用户反馈总数、正负反馈数量和最近反馈明细，用于补知识库或扩展评测集；生产 triage 可以用 `pnpm rag:feedback -- --rating negative --limit 25 --json` 导出负反馈队列。
 

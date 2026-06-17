@@ -20,6 +20,7 @@
     "rag:ask": "pnpm --filter @xxyy/cli rag:ask",
     "rag:evaluate": "pnpm --filter @xxyy/cli rag:evaluate",
     "rag:feedback": "pnpm --filter @xxyy/cli rag:feedback",
+    "rag:gate:knowledge": "pnpm --filter @xxyy/cli rag:gate:knowledge",
     "rag:ingest": "pnpm --filter @xxyy/cli rag:ingest",
     "rag:migrate": "pnpm --filter @xxyy/cli rag:migrate",
     "rag:publish:knowledge": "pnpm --filter @xxyy/cli rag:publish:knowledge",

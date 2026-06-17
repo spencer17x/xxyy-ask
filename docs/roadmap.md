@@ -5,7 +5,7 @@
 ## Planned Work
 
 - [ ] Agent 化客服流程：支持澄清问题、自动分流、调用客服动作、创建工单和转人工。
-- [ ] Telegram 知识学习闭环：在已完成的 `@xxyy/knowledge-ops` 授权采集、候选知识、持久化、采集运行入口、审核 API 和 approved-only 发布入口上，补自动 ingest/embedding、targeted eval gate、发布 run 关联和回滚线索。
+- [ ] Telegram 知识学习闭环增强：在已完成的 `@xxyy/knowledge-ops` 授权采集、候选知识、持久化、采集运行入口、审核 API、approved-only 发布入口和第一版 `rag:gate:knowledge` 上，补 publish/ingestion/eval run 持久关联、失败回滚线索，以及知识运营 Agent 工具封装。
 - [ ] 交易分析多链稳定性：继续补 Base、Ethereum、BSC 真实样本，覆盖更多 explorer 页面结构、XXYY 搜索结果和池子交易窗口。
 - [ ] 交易分析复查工作流：完善多成员分派策略、SLA、工单联动和可交互分析详情页。
 - [ ] 工单与人工接管：无法直接解决的问题可以创建客服工单，复杂问题可以转人工继续处理。
