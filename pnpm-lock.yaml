@@ -92,6 +92,8 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
+  packages/knowledge-ops: {}
+
   packages/product-qa-mcp:
     dependencies:
       '@modelcontextprotocol/sdk':

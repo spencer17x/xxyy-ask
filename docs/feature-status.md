@@ -134,6 +134,8 @@
 - [x] 交易分析报告处理状态：文件模式和 Postgres 模式下，`/ops` 报告列表可用 `API_OPS_TOKEN` 保存 `open`、`in_review`、`closed` 处理状态、负责人和备注，也可按处理状态或负责人筛选复查队列；保存时会同步更新本地 JSONL 索引和报告 JSON，或 Postgres 报告行；受保护 review API 和 `/ops` 页面支持 Claim 认领、Close 关闭与 Reopen 重新打开快捷动作，关闭动作要求填写处理备注，避免空结案；`PATCH /api/tx-analysis/reports/review` 支持按 id 列表批量执行同一 review 动作，并返回 updated/notFound 结果，`/ops` 报告搜索结果可勾选多条报告批量处理，便于客服清理复查队列。
 - [x] 知识库同步：支持产品文档 ingest、官方 X 更新增量同步和全量重建。
 - [x] RAG 评测：内置产品客服回归评测集，可用于发布前检查回答质量。
+- [x] 候选知识内核：已新增 `@xxyy/knowledge-ops`，支持授权客服消息结构、敏感信息脱敏、客服问答候选挖掘和内存待审队列；第一版只生成 `needs_review` 候选，不会自动发布到正式 RAG 知识库。
+- [ ] Telegram 知识学习接入：仍需接授权 Telegram 来源、持久化 Raw Source / Candidate Store、审核 API、发布流程和 eval gate。
 - [ ] 工单后台：查看、分配、处理和关闭客服工单。
 - [ ] 会话后台：查看用户会话、检索来源、反馈和处理结果。
 - [ ] 知识库管理后台：支持文档编辑、审核、发布和知识缺口归类。

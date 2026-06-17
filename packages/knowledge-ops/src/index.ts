@@ -1,0 +1,35 @@
+export {
+  mineSupportConversations,
+  type MineSupportConversationsInput,
+  type MineSupportConversationsOutput,
+} from './conversation-miner.js';
+export {
+  KnowledgeCandidateNotFoundError,
+  createInMemoryKnowledgeCandidateStore,
+  type KnowledgeCandidateReviewAction,
+  type KnowledgeCandidateStore,
+  type ListKnowledgeCandidatesFilter,
+  type ReviewKnowledgeCandidateInput,
+} from './knowledge-candidate-store.js';
+export {
+  redactSupportMessage,
+  redactSupportText,
+  type RedactSupportTextResult,
+} from './redaction.js';
+export type {
+  ExistingKnowledgeMatch,
+  GeneratedEvalCase,
+  KnowledgeCandidate,
+  KnowledgeCandidateSourceRef,
+  KnowledgeCandidateStatus,
+  KnowledgeCandidateType,
+  KnowledgeRiskFlag,
+  KnowledgeRiskLevel,
+  RawSupportMessage,
+  RedactedEntitySummary,
+  RedactedEntityType,
+  RedactedSupportMessage,
+  RedactionReport,
+  SupportMessageSenderRole,
+  SupportSource,
+} from './types.js';

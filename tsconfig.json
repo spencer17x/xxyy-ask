@@ -13,6 +13,9 @@
       "path": "./packages/knowledge"
     },
     {
+      "path": "./packages/knowledge-ops"
+    },
+    {
       "path": "./packages/rag-core"
     },
     {
