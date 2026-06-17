@@ -28,9 +28,21 @@ export interface ListRawSupportMessagesFilter {
   source?: SupportSource;
 }
 
+export interface SourceCursorInput {
+  cursorKey: string;
+  source: SupportSource;
+}
+
+export interface SetSourceCursorInput extends SourceCursorInput {
+  cursorValue: string;
+  updatedAt?: string;
+}
+
 export interface PgKnowledgeOpsStore extends KnowledgeCandidateStore {
+  getSourceCursor(input: SourceCursorInput): Promise<string | undefined>;
   listRawMessages(filter?: ListRawSupportMessagesFilter): Promise<RawSupportMessage[]>;
   migrate(): Promise<void>;
+  setSourceCursor(input: SetSourceCursorInput): Promise<void>;
   upsertRawMessages(messages: RawSupportMessage[]): Promise<RawSupportMessage[]>;
 }
 
@@ -79,6 +91,19 @@ export function createPgKnowledgeOpsStore(
       return Promise.all(candidates.map((candidate) => upsertCandidate(options.client, candidate)));
     },
 
+    async getSourceCursor(input) {
+      const response = await options.client.query<{ cursor_value: string }>(
+        `
+        select cursor_value
+        from knowledge_source_cursors
+        where source = $1 and cursor_key = $2
+        `,
+        [input.source, input.cursorKey],
+      );
+
+      return response.rows[0]?.cursor_value;
+    },
+
     async listCandidates(filter = {}) {
       const { sql, values } = buildListCandidatesQuery(filter);
       const response = await options.client.query<KnowledgeCandidateRow>(sql, values);
@@ -117,6 +142,29 @@ export function createPgKnowledgeOpsStore(
       }
 
       return mapCandidateRow(row);
+    },
+
+    async setSourceCursor(input) {
+      await options.client.query(
+        `
+        insert into knowledge_source_cursors (
+          source,
+          cursor_key,
+          cursor_value,
+          updated_at
+        )
+        values ($1, $2, $3, $4)
+        on conflict (source, cursor_key) do update set
+          cursor_value = excluded.cursor_value,
+          updated_at = excluded.updated_at
+        `,
+        [
+          input.source,
+          input.cursorKey,
+          input.cursorValue,
+          input.updatedAt ?? new Date().toISOString(),
+        ],
+      );
     },
 
     async upsertRawMessages(messages) {
@@ -197,6 +245,19 @@ export async function migratePgKnowledgeOpsStore(client: PgClientLike): Promise<
   await client.query(`
     create index if not exists knowledge_candidates_updated_at_idx
       on knowledge_candidates (updated_at desc)
+  `);
+  await client.query(`
+    create table if not exists knowledge_source_cursors (
+      source text not null check (source in ('telegram')),
+      cursor_key text not null,
+      cursor_value text not null,
+      updated_at timestamptz not null,
+      primary key (source, cursor_key)
+    )
+  `);
+  await client.query(`
+    create index if not exists knowledge_source_cursors_updated_at_idx
+      on knowledge_source_cursors (updated_at desc)
   `);
 }
 

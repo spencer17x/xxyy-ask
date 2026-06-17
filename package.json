@@ -23,6 +23,7 @@
     "rag:ingest": "pnpm --filter @xxyy/cli rag:ingest",
     "rag:migrate": "pnpm --filter @xxyy/cli rag:migrate",
     "rag:stats": "pnpm --filter @xxyy/cli rag:stats",
+    "rag:sync:telegram": "pnpm --filter @xxyy/cli rag:sync:telegram",
     "rag:sync:x": "pnpm --filter @xxyy/cli rag:sync:x",
     "product:mcp": "pnpm --filter @xxyy/product-qa-mcp start",
     "start": "node scripts/start-agent.mjs",

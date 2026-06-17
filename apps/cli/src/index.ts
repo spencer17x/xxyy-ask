@@ -10,7 +10,12 @@ import {
   prepareKnowledgeChunks,
   type PreparedKnowledgeChunk,
 } from '@xxyy/knowledge';
-import { migratePgKnowledgeOpsStore } from '@xxyy/knowledge-ops';
+import {
+  createPgKnowledgeOpsStore,
+  fetchTelegramSupportMessages,
+  mineSupportConversations,
+  migratePgKnowledgeOpsStore,
+} from '@xxyy/knowledge-ops';
 import {
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
@@ -42,7 +47,17 @@ import type {
 
 export { resolveWorkspaceCwd } from '@xxyy/rag-core';
 
-type CliEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
+type CliEnv = RagEnv &
+  Partial<
+    Record<
+      | 'INIT_CWD'
+      | 'TELEGRAM_ALLOWED_CHAT_IDS'
+      | 'TELEGRAM_BOT_TOKEN'
+      | 'TELEGRAM_SUPPORT_USER_IDS'
+      | 'TELEGRAM_UPDATES_LIMIT',
+      string
+    >
+  >;
 
 type CliCommand =
   | { command: 'ask'; question: string }
@@ -51,6 +66,7 @@ type CliCommand =
   | { command: 'ingest' }
   | { command: 'migrate' }
   | { command: 'stats' }
+  | { command: 'sync:telegram' }
   | { command: 'sync:x' }
   | { command: 'help'; error?: string };
 
@@ -68,6 +84,14 @@ interface SyncXUpdatesSummary {
   indexPath: string;
   skippedChunkCount: number;
   runId?: string;
+}
+
+interface SyncTelegramSupportSummary {
+  fetchedMessageCount: number;
+  generatedCandidateCount: number;
+  nextOffset?: number;
+  pairsConsidered: number;
+  storedRawMessageCount: number;
 }
 
 interface CliIo {
@@ -92,6 +116,7 @@ interface CliChatRuntime {
 const HELP_TEXT = [
   'Usage:',
   '  pnpm rag:ingest',
+  '  pnpm rag:sync:telegram',
   '  pnpm rag:sync:x',
   '  pnpm rag:migrate',
   '  pnpm rag:stats',
@@ -102,6 +127,7 @@ const HELP_TEXT = [
 
 const EMBEDDING_BATCH_SIZE = 64;
 const PRODUCT_FORBIDDEN_TEXT = ['保证盈利', '推荐买币'];
+const DEFAULT_TELEGRAM_UPDATES_LIMIT = 100;
 
 type BuiltInEvaluationCaseOptions = Omit<EvaluationCase, 'expectedIntent' | 'request'> & {
   expectedIntent?: EvaluationCase['expectedIntent'];
@@ -363,6 +389,7 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     command === 'ingest' ||
     command === 'migrate' ||
     command === 'stats' ||
+    command === 'sync:telegram' ||
     command === 'sync:x'
   ) {
     return { command };
@@ -471,6 +498,20 @@ export function formatSyncXUpdatesSummary(summary: SyncXUpdatesSummary): string 
 
   if (summary.runId !== undefined) {
     lines.push(`Run ID: ${summary.runId}`);
+  }
+
+  return lines.join('\n');
+}
+
+export function formatSyncTelegramSupportSummary(summary: SyncTelegramSupportSummary): string {
+  const lines = [
+    `Telegram support sync: fetched ${summary.fetchedMessageCount} messages, stored ${summary.storedRawMessageCount} raw messages, generated ${summary.generatedCandidateCount} review candidates.`,
+    `Conversation pairs considered: ${summary.pairsConsidered}`,
+    'No candidates were published; human review is required.',
+  ];
+
+  if (summary.nextOffset !== undefined) {
+    lines.push(`Next Telegram offset: ${summary.nextOffset}`);
   }
 
   return lines.join('\n');
@@ -655,6 +696,19 @@ export async function runCli(
     }
   }
 
+  if (parsed.command === 'sync:telegram') {
+    try {
+      const summary = await syncTelegramSupportMessages({ ...io, cwd: workspaceCwd });
+      writeLine(io.stdout, formatSyncTelegramSupportSummary(summary));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
   const config = loadRagConfig(io.env);
 
   if (parsed.command === 'migrate') {
@@ -813,6 +867,53 @@ async function syncXUpdates(io: CliIo): Promise<SyncXUpdatesSummary> {
       indexPath: 'pgvector',
       skippedChunkCount: chunks.length - changedChunks.length,
       ...(ingestionRun === undefined ? {} : { runId: ingestionRun.runId }),
+    };
+  } finally {
+    await pool.end();
+  }
+}
+
+async function syncTelegramSupportMessages(io: CliIo): Promise<SyncTelegramSupportSummary> {
+  const config = loadRagConfig(io.env);
+  const telegramConfig = loadTelegramSupportSyncConfig(io.env);
+  const pool = createPgPool(config.databaseUrl);
+
+  try {
+    const store = createPgKnowledgeOpsStore({ client: pool });
+    await store.migrate();
+
+    const cursorKey = createTelegramUpdatesCursorKey(telegramConfig.allowedChatIds);
+    const existingCursor = await store.getSourceCursor({
+      cursorKey,
+      source: 'telegram',
+    });
+    const offset = parseTelegramOffset(existingCursor);
+    const fetched = await fetchTelegramSupportMessages({
+      allowedChatIds: telegramConfig.allowedChatIds,
+      botToken: telegramConfig.botToken,
+      limit: telegramConfig.limit,
+      ...(offset === undefined ? {} : { offset }),
+      supportUserIds: telegramConfig.supportUserIds,
+    });
+
+    const storedRawMessages = await store.upsertRawMessages(fetched.messages);
+    const mined = mineSupportConversations({ messages: fetched.messages });
+    const storedCandidates = await store.addCandidates(mined.candidates);
+
+    if (fetched.nextOffset !== undefined) {
+      await store.setSourceCursor({
+        cursorKey,
+        cursorValue: String(fetched.nextOffset),
+        source: 'telegram',
+      });
+    }
+
+    return {
+      fetchedMessageCount: fetched.messages.length,
+      generatedCandidateCount: storedCandidates.length,
+      ...(fetched.nextOffset === undefined ? {} : { nextOffset: fetched.nextOffset }),
+      pairsConsidered: mined.pairsConsidered,
+      storedRawMessageCount: storedRawMessages.length,
     };
   } finally {
     await pool.end();
@@ -1032,11 +1133,105 @@ function formatEvaluationSummary(report: EvaluationReport): string {
   return `Evaluation: ${report.passed}/${report.total} passed`;
 }
 
+interface TelegramSupportSyncConfig {
+  allowedChatIds: string[];
+  botToken: string;
+  limit: number;
+  supportUserIds: string[];
+}
+
+class TelegramSyncConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TelegramSyncConfigurationError';
+  }
+}
+
+function loadTelegramSupportSyncConfig(env: CliEnv): TelegramSupportSyncConfig {
+  const botToken = normalizeEnvText(env.TELEGRAM_BOT_TOKEN);
+  if (botToken === undefined) {
+    throw new TelegramSyncConfigurationError(
+      'TELEGRAM_BOT_TOKEN is required for Telegram support sync.',
+    );
+  }
+
+  const allowedChatIds = parseEnvList(env.TELEGRAM_ALLOWED_CHAT_IDS);
+  if (allowedChatIds.length === 0) {
+    throw new TelegramSyncConfigurationError(
+      'TELEGRAM_ALLOWED_CHAT_IDS must include at least one authorized Telegram chat id.',
+    );
+  }
+
+  return {
+    allowedChatIds,
+    botToken,
+    limit: parseTelegramUpdatesLimit(env.TELEGRAM_UPDATES_LIMIT),
+    supportUserIds: parseEnvList(env.TELEGRAM_SUPPORT_USER_IDS),
+  };
+}
+
+function createTelegramUpdatesCursorKey(allowedChatIds: readonly string[]): string {
+  const hash = createHash('sha256')
+    .update(
+      allowedChatIds
+        .map((item) => item.trim())
+        .sort()
+        .join('\n'),
+    )
+    .digest('hex')
+    .slice(0, 16);
+
+  return `telegram_updates:${hash}`;
+}
+
+function parseTelegramOffset(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseTelegramUpdatesLimit(value: string | undefined): number {
+  if (value === undefined || value.trim().length === 0) {
+    return DEFAULT_TELEGRAM_UPDATES_LIMIT;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new TelegramSyncConfigurationError(`Invalid TELEGRAM_UPDATES_LIMIT: ${value}`);
+  }
+
+  return Math.min(parsed, DEFAULT_TELEGRAM_UPDATES_LIMIT);
+}
+
+function parseEnvList(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(/[,\n]/u)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function normalizeEnvText(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized.length === 0 ? undefined : normalized;
+}
+
 function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): void {
   stream.write(`${message}\n`);
 }
 
 function writeConfigurationError(io: CliIo, error: unknown): boolean {
+  if (error instanceof TelegramSyncConfigurationError) {
+    writeLine(io.stderr, error.message);
+    return true;
+  }
+
   if (error instanceof EmbeddingConfigurationError) {
     writeLine(io.stderr, error.message);
     return true;

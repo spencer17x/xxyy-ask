@@ -20,6 +20,7 @@
     "rag:ingest": "tsx src/index.ts ingest",
     "rag:migrate": "tsx src/index.ts migrate",
     "rag:stats": "tsx src/index.ts stats",
+    "rag:sync:telegram": "tsx src/index.ts sync:telegram",
     "rag:sync:x": "tsx src/index.ts sync:x",
     "start": "tsx src/index.ts",
     "test": "vitest run src",

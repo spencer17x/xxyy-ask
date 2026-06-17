@@ -69,6 +69,8 @@ describe('createPgKnowledgeOpsStore', () => {
     expect(sql).toContain('unique (source, chat_id_hash, message_id)');
     expect(sql).toContain('create table if not exists knowledge_candidates');
     expect(sql).toContain("status in ('draft', 'needs_review', 'approved', 'rejected'");
+    expect(sql).toContain('create table if not exists knowledge_source_cursors');
+    expect(sql).toContain('primary key (source, cursor_key)');
   });
 
   it('upserts and lists raw support messages without storing clear chat identifiers', async () => {
@@ -152,6 +154,39 @@ describe('createPgKnowledgeOpsStore', () => {
       null,
       '2026-06-17T02:00:00.000Z',
       '2026-06-17T02:00:00.000Z',
+    ]);
+  });
+
+  it('reads and writes source cursors for incremental Telegram collection', async () => {
+    const client = new FakePgClient();
+    client.queuedRows = [[{ cursor_value: '124' }], [], []];
+    const store = createPgKnowledgeOpsStore({ client });
+
+    const existingCursor = await store.getSourceCursor({
+      cursorKey: 'telegram_updates:allowed_chats_hash',
+      source: 'telegram',
+    });
+    await store.setSourceCursor({
+      cursorKey: 'telegram_updates:allowed_chats_hash',
+      cursorValue: '130',
+      source: 'telegram',
+      updatedAt: '2026-06-17T04:00:00.000Z',
+    });
+    const missingCursor = await store.getSourceCursor({
+      cursorKey: 'telegram_updates:other',
+      source: 'telegram',
+    });
+
+    expect(existingCursor).toBe('124');
+    expect(missingCursor).toBeUndefined();
+    expect(client.queries[0]?.sql).toContain('from knowledge_source_cursors');
+    expect(client.queries[0]?.values).toEqual(['telegram', 'telegram_updates:allowed_chats_hash']);
+    expect(client.queries[1]?.sql).toContain('insert into knowledge_source_cursors');
+    expect(client.queries[1]?.values).toEqual([
+      'telegram',
+      'telegram_updates:allowed_chats_hash',
+      '130',
+      '2026-06-17T04:00:00.000Z',
     ]);
   });
 

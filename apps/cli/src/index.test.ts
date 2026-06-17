@@ -48,6 +48,7 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
     expect(parseCliArgs(['migrate'])).toEqual({ command: 'migrate' });
     expect(parseCliArgs(['stats'])).toEqual({ command: 'stats' });
+    expect(parseCliArgs(['sync:telegram'])).toEqual({ command: 'sync:telegram' });
     expect(parseCliArgs(['sync:x'])).toEqual({ command: 'sync:x' });
     expect(parseCliArgs(['feedback'])).toEqual({
       command: 'feedback',
@@ -889,6 +890,183 @@ describe('runCli', () => {
       expect(stdout.join('')).toContain('Synced 1 changed X chunks (1 skipped).');
     } finally {
       vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
+    }
+  });
+
+  it('syncs authorized Telegram support messages into review candidates without publishing', async () => {
+    vi.resetModules();
+
+    const events: string[] = [];
+    const rawMessages = [
+      {
+        chatIdHash: 'support_chat_hash',
+        contentHash: 'question_hash',
+        ingestedAt: '2026-06-17T04:00:00.000Z',
+        messageId: '100',
+        senderRole: 'user',
+        sentAt: '2026-06-17T03:59:00.000Z',
+        source: 'telegram',
+        text: 'Telegram 通知怎么设置？',
+      },
+      {
+        chatIdHash: 'support_chat_hash',
+        contentHash: 'answer_hash',
+        ingestedAt: '2026-06-17T04:00:00.000Z',
+        messageId: '101',
+        replyToMessageId: '100',
+        senderRole: 'support',
+        sentAt: '2026-06-17T04:00:00.000Z',
+        source: 'telegram',
+        text: '在钱包监控里配置 Telegram Bot。',
+      },
+    ];
+    const candidates = [
+      {
+        confidence: 0.8,
+        createdAt: '2026-06-17T04:00:00.000Z',
+        existingKnowledgeMatches: [],
+        generatedEvalCases: [
+          {
+            expectedAnswer: '在钱包监控里配置 Telegram Bot。',
+            question: 'Telegram 通知怎么设置？',
+          },
+        ],
+        id: 'kc_telegram_setup',
+        proposedAnswer: '在钱包监控里配置 Telegram Bot。',
+        question: 'Telegram 通知怎么设置？',
+        redactionReport: { entities: [], riskFlags: [], riskLevel: 'low' },
+        riskLevel: 'low',
+        sourceRefs: [{ source: 'telegram', chatIdHash: 'support_chat_hash', messageId: '100' }],
+        status: 'needs_review',
+        targetCategory: 'product_faq',
+        type: 'faq',
+        updatedAt: '2026-06-17T04:00:00.000Z',
+      },
+    ];
+    const getSourceCursor = vi.fn(() => {
+      events.push('cursor:get');
+      return Promise.resolve('124');
+    });
+    const setSourceCursor = vi.fn((input: { cursorValue: string }) => {
+      events.push(`cursor:set:${input.cursorValue}`);
+      return Promise.resolve();
+    });
+    const migrate = vi.fn(() => {
+      events.push('knowledge-ops:migrate');
+      return Promise.resolve();
+    });
+    const upsertRawMessages = vi.fn((messages: unknown[]) => {
+      events.push(`raw:${messages.length}`);
+      return Promise.resolve(messages);
+    });
+    const addCandidates = vi.fn((items: unknown[]) => {
+      events.push(`candidates:${items.length}`);
+      return Promise.resolve(items);
+    });
+    const end = vi.fn(() => {
+      events.push('pool.end');
+      return Promise.resolve();
+    });
+
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgPool: vi.fn(() => ({ end })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+        })),
+      };
+    });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgKnowledgeOpsStore: vi.fn(() => ({
+          addCandidates,
+          getSourceCursor,
+          migrate,
+          setSourceCursor,
+          upsertRawMessages,
+        })),
+        fetchTelegramSupportMessages: vi.fn(
+          (input: {
+            allowedChatIds: readonly string[];
+            botToken: string;
+            limit?: number;
+            offset?: number;
+            supportUserIds?: readonly string[];
+          }) => {
+            events.push(`telegram:${input.offset}:${input.limit}`);
+            expect(input.allowedChatIds).toEqual(['-1001', '-1002']);
+            expect(input.botToken).toBe('bot-token');
+            expect(input.supportUserIds).toEqual(['42']);
+            return Promise.resolve({ messages: rawMessages, nextOffset: 125 });
+          },
+        ),
+        mineSupportConversations: vi.fn((input: { messages: unknown[] }) => {
+          events.push(`mine:${input.messages.length}`);
+          return { candidates, messagesRead: 2, pairsConsidered: 1 };
+        }),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+      const stdout: string[] = [];
+
+      const exitCode = await runCliWithMocks(['sync:telegram'], {
+        cwd: process.cwd(),
+        env: {
+          DATABASE_URL: 'postgres://example.test/db',
+          TELEGRAM_ALLOWED_CHAT_IDS: '-1001, -1002',
+          TELEGRAM_BOT_TOKEN: 'bot-token',
+          TELEGRAM_SUPPORT_USER_IDS: '42',
+          TELEGRAM_UPDATES_LIMIT: '50',
+        },
+        stderr: { write: () => true },
+        stdout: {
+          write: (message: string) => {
+            stdout.push(message);
+            return true;
+          },
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(events).toEqual([
+        'knowledge-ops:migrate',
+        'cursor:get',
+        'telegram:124:50',
+        'raw:2',
+        'mine:2',
+        'candidates:1',
+        'cursor:set:125',
+        'pool.end',
+      ]);
+      expect(setSourceCursor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cursorValue: '125',
+          source: 'telegram',
+        }),
+      );
+      expect(stdout.join('')).toContain(
+        'Telegram support sync: fetched 2 messages, stored 2 raw messages, generated 1 review candidates.',
+      );
+      expect(stdout.join('')).toContain('Next Telegram offset: 125');
+      expect(stdout.join('')).toContain('No candidates were published; human review is required.');
+    } finally {
       vi.doUnmock('@xxyy/rag-core');
       vi.doUnmock('@xxyy/knowledge-ops');
     }

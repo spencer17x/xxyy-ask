@@ -698,9 +698,10 @@ Agent Runtime 不直接暴露底层异常栈；对用户返回客服可读文案
 3. [x] 新增 Raw Source Store 和持久化 Knowledge Candidate Store。
 4. [x] 新增 Telegram Support Connector 基础能力，只读取显式授权客服来源。
 5. [x] 新增受保护候选列表和审核 API。
-6. [ ] 新增 Telegram 采集运行入口、知识运营 Agent Profile 和内部工具。
-7. [ ] 审核通过后发布到 reviewed support knowledge 正式知识源。
-8. [ ] 发布后触发 ingest/embedding 和 targeted eval gate。
+6. [x] 新增 Telegram 采集运行入口：`pnpm rag:sync:telegram` 读取授权 Telegram 消息、写入 Raw Source、生成 `needs_review` 候选并推进 getUpdates offset。
+7. [ ] 新增知识运营 Agent Profile 和内部工具。
+8. [ ] 审核通过后发布到 reviewed support knowledge 正式知识源。
+9. [ ] 发布后触发 ingest/embedding 和 targeted eval gate。
 
 ### Phase 3：知识质量和运营增强
 
@@ -741,7 +742,7 @@ Agent Runtime 不直接暴露底层异常栈；对用户返回客服可读文案
 - Tx analysis tool 测试：not configured、mock success、unsupported chain、invalid reference。
 - Report tools 测试：文件 store 和 Postgres store reader 行为。
 - Ops tools 测试：ops token 权限、deep health 聚合、反馈列表、报告复查更新。
-- Telegram connector 测试：增量 cursor、重复消息、回复关系、授权来源过滤。
+- Telegram connector / sync 测试：授权来源过滤、getUpdates offset、重复消息、回复关系、Raw Source 落库和候选生成。
 - Redaction 测试：钱包、订单、联系方式、用户身份、截图 metadata 脱敏。
 - Knowledge miner 测试：问题/答案抽取、重复知识识别、越界内容过滤。
 - Candidate workflow 测试：状态流转、人工审核、拒绝、合并重复项、发布限制。

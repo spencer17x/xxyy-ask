@@ -134,9 +134,11 @@
 - [x] 交易分析报告处理状态：文件模式和 Postgres 模式下，`/ops` 报告列表可用 `API_OPS_TOKEN` 保存 `open`、`in_review`、`closed` 处理状态、负责人和备注，也可按处理状态或负责人筛选复查队列；保存时会同步更新本地 JSONL 索引和报告 JSON，或 Postgres 报告行；受保护 review API 和 `/ops` 页面支持 Claim 认领、Close 关闭与 Reopen 重新打开快捷动作，关闭动作要求填写处理备注，避免空结案；`PATCH /api/tx-analysis/reports/review` 支持按 id 列表批量执行同一 review 动作，并返回 updated/notFound 结果，`/ops` 报告搜索结果可勾选多条报告批量处理，便于客服清理复查队列。
 - [x] 知识库同步：支持产品文档 ingest、官方 X 更新增量同步和全量重建。
 - [x] RAG 评测：内置产品客服回归评测集，可用于发布前检查回答质量。
-- [x] 候选知识内核：已新增 `@xxyy/knowledge-ops`，支持授权 Telegram 采集基础、客服消息结构、敏感信息脱敏、客服问答候选挖掘、Raw Source 持久化、Candidate 持久化和内存待审队列；第一版只生成 `needs_review` 候选，不会自动发布到正式 RAG 知识库。
+- [x] 候选知识内核：已新增 `@xxyy/knowledge-ops`，支持授权 Telegram 采集基础、客服消息结构、敏感信息脱敏、客服问答候选挖掘、Raw Source 持久化、Candidate 持久化、增量 cursor 和内存待审队列；第一版只生成 `needs_review` 候选，不会自动发布到正式 RAG 知识库。
 - [x] 候选知识审核 API：受 `API_OPS_TOKEN` 保护，支持查看候选队列和执行 approve/reject/request_changes/merge_duplicate，审核动作不会自动发布。
-- [ ] Telegram 知识学习运行入口：仍需接定时/手动采集命令、候选挖掘工具、发布流程和 eval gate。
+- [x] Telegram 知识学习运行入口：`pnpm rag:sync:telegram` 支持手动或定时增量采集授权 Telegram 客服消息，写入 Raw Source Store，生成 `needs_review` 候选知识，并推进 getUpdates offset；不会发布或 embedding 未审核内容。
+- [ ] 知识发布和质量门禁：仍需接审核通过后的正式知识源发布、ingest/embedding、eval gate 和回滚线索。
+- [ ] 知识运营 Agent 工具：仍需把 Telegram 采集、候选挖掘、候选查询/审核、发布和 eval gate 封装为内部 Agent tools / MCP / Skill。
 - [ ] 工单后台：查看、分配、处理和关闭客服工单。
 - [ ] 会话后台：查看用户会话、检索来源、反馈和处理结果。
 - [ ] 知识库管理后台：支持文档编辑、审核、发布和知识缺口归类。

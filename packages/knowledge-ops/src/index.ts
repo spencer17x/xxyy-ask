@@ -18,6 +18,8 @@ export {
   type PgClientLike,
   type PgKnowledgeOpsStore,
   type PgKnowledgeOpsStoreOptions,
+  type SetSourceCursorInput,
+  type SourceCursorInput,
 } from './pg-store.js';
 export {
   redactSupportMessage,
