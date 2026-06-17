@@ -25,10 +25,11 @@
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、索引读写。
 - `packages/knowledge-ops`：Telegram 授权采集、客服消息脱敏、候选知识挖掘、Raw Source 持久化和 Candidate 待审队列；未审核内容不会进入正式 RAG 知识库。
 - `packages/rag-core`：意图分类、混合检索、LLM 回答生成、边界回复、反馈存储、评测。
-- `packages/agent-core`：Tool Registry、客服 Agent Runtime、产品工具和交易分析工具共享定义。
+- `packages/agent-core`：Tool Registry、客服 Agent Runtime、产品工具、交易分析工具和知识运营工具共享定义。
 - `packages/product-qa-mcp`：产品问答 MCP stdio server，暴露 `search_product_docs` 和 `answer_product_question`。
 - `packages/tx-analysis-mcp`：夹子查询 MCP stdio server，复用 Agent 工具定义。
-- `apps/cli`：本地 `ingest` / `sync:x` / `sync:telegram` / `publish:knowledge` / `migrate` / `stats` / `feedback` / `ask` / `evaluate`。
+- `packages/knowledge-ops-mcp`：知识运营内部 MCP stdio server，暴露候选查询/审核、approved-only 发布、发布后 gate 和 Telegram sync。
+- `apps/cli`：本地 `ingest` / `sync:x` / `sync:telegram` / `publish:knowledge` / `gate:knowledge` / `migrate` / `stats` / `feedback` / `ask` / `evaluate`。
 - `apps/api`：`GET /health`、`GET /health/deep`、`GET /ops`、`GET /api/ops/summary`、`POST /api/chat`、`POST /api/chat/stream`、`POST /api/tx-analysis`、`POST /api/feedback`，以及交易分析报告查询/复查和候选知识查询/审核接口。
 - `apps/web`：静态聊天页和同源运维页，聊天页调用 `/api/chat/stream` 并提交 `/api/feedback`，运维页调用 ops summary 和交易分析报告接口。
 
@@ -82,6 +83,8 @@ TX_ANALYSIS_PROVIDER=mock pnpm tx:mcp:smoke
 ```
 
 产品客服 MCP 可以用 `pnpm product:mcp` 作为 stdio MCP server 启动命令，暴露 `search_product_docs` 和 `answer_product_question`，并复用 `@xxyy/agent-core` 的产品工具定义。Agent 接入时配套使用 `skills/xxyy-product-support`，只回答 XXYY 产品功能、配置步骤、权益说明和公开更新，不用于账户、订单、余额、私有交易记录或投资建议。
+
+知识运营 MCP 可以用 `pnpm knowledge-ops:mcp` 作为内部 stdio MCP server 启动命令，并配套使用 `skills/xxyy-knowledge-ops`。它暴露 `list_knowledge_candidates`、`review_knowledge_candidate`、`publish_knowledge_candidate`、`run_knowledge_gate` 和 `sync_telegram_support`。该 server 只用于受信任的内部 Agent：第一版必须人工审核后才能发布，未审核 Telegram 内容只能停留在候选知识队列，不能进入正式 RAG 知识库。
 
 Agent 接入时可以把 `pnpm tx:mcp` 作为 stdio MCP server 启动命令，并配套使用仓库内的 Skill 源文件 `skills/xxyy-transaction-analysis`。该 Skill 会提醒 agent 只对公开交易哈希/浏览器链接做 交易夹子检测，`unknown` 只表示裸 EVM 哈希在 Base、Ethereum、BSC 间自动探测，不能用于账户、订单、余额、私有交易记录或投资建议。
 

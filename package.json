@@ -17,6 +17,7 @@
     "ops:check:rag": "node scripts/ops-check.mjs --rag",
     "ops:refresh": "node scripts/rag-refresh.mjs",
     "ops:smoke": "node scripts/api-smoke.mjs",
+    "knowledge-ops:mcp": "pnpm --filter @xxyy/knowledge-ops-mcp start",
     "rag:ask": "pnpm --filter @xxyy/cli rag:ask",
     "rag:evaluate": "pnpm --filter @xxyy/cli rag:evaluate",
     "rag:feedback": "pnpm --filter @xxyy/cli rag:feedback",

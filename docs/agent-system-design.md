@@ -9,10 +9,10 @@
 - 产品问答：规则意图分类、pgvector 检索、OpenAI-compatible LLM 回答、引用和附件。
 - 交易分析：单笔交易哈希识别、mock/browser provider、截图、报告、报告复查。
 - 运维后台：`/ops` 页面、`/api/ops/summary`、deep health、知识库 stats、反馈 stats 和交易分析报告复查接口。
-- 知识同步：产品文档和官方 X 更新支持全量入库、X 增量同步、知识库统计和负反馈导出。
-- MCP 能力：`@xxyy/tx-analysis-mcp` 已把交易分析暴露为 `analyze_transaction`、`get_analysis_report` 和 `list_analysis_reports`。
+- 知识同步：产品文档和官方 X 更新支持全量入库、X 增量同步、知识库统计和负反馈导出；授权 Telegram 客服消息可以进入 Raw Source 和 Candidate 待审队列，审核通过后发布到 reviewed support knowledge，并通过 `rag:gate:knowledge` 完成 ingest/embedding 和 targeted eval。
+- MCP 能力：`@xxyy/product-qa-mcp` 暴露产品问答工具，`@xxyy/tx-analysis-mcp` 暴露交易分析工具，`@xxyy/knowledge-ops-mcp` 暴露内部知识运营工具，三者均复用 `@xxyy/agent-core` 工具定义。
 
-但当前内部聊天链路仍是 `ChatService -> Retriever / TxAnalysisProvider` 的代码编排，运维能力也主要是页面和受保护 API，知识更新也主要依赖文档/X 同步与人工补充。它们适合当前客服 RAG 阶段，但还不是完整 Agentic RAG 应用：工具没有统一注册，客服入口、运维入口和 MCP 入口没有共用同一层工具契约，Skill/Policy 也没有进入内部运行时，Telegram 人工客服对话还没有进入可审核的知识学习流程。
+但当前还没有完整的知识运营 Agent Profile / Skill、权限策略落地、调用审计和 publish/ingestion/eval run 持久关联。它们适合当前客服 RAG 第一版闭环，但距离完整 Agentic RAG 应用仍需要把 Profile、Skill、权限和观测补齐。
 
 ## 目标
 
@@ -701,10 +701,12 @@ Agent Runtime 不直接暴露底层异常栈；对用户返回客服可读文案
 4. [x] 新增 Telegram Support Connector 基础能力，只读取显式授权客服来源。
 5. [x] 新增受保护候选列表和审核 API。
 6. [x] 新增 Telegram 采集运行入口：`pnpm rag:sync:telegram` 读取授权 Telegram 消息、写入 Raw Source、生成 `needs_review` 候选并推进 getUpdates offset。
-7. [ ] 新增知识运营 Agent Profile 和内部工具。
+7. [x] 新增知识运营共享工具和内部 MCP：`@xxyy/agent-core` 提供候选查询/审核、发布、gate、Telegram sync 工具定义，`@xxyy/knowledge-ops-mcp` 通过 `pnpm knowledge-ops:mcp` 暴露给受信任内部 Agent。
 8. [x] 审核通过后发布到 reviewed support knowledge 正式知识源：`pnpm rag:publish:knowledge -- --id <candidate-id>` 只发布 `approved` 候选，并写入 `docs/product-features/pages/65-reviewed-support-knowledge.md` 或指定 `pages/*.md`。
 9. [x] 发布后触发 ingest/embedding 和第一版 targeted eval gate：`pnpm rag:gate:knowledge -- --id <candidate-id> --fast` 只接受 `published` 候选，执行正式 ingest/embedding，运行候选 generated eval cases，并把状态推进到 `ingested` 后标记为 `eval_passed` 或 `eval_failed`。
 10. [ ] 持久化 publish run、ingestion run 和 eval run 关联，并补 eval 失败回滚线索。
+11. [x] 新增知识运营 Skill 使用说明：`skills/xxyy-knowledge-ops` 约束内部 MCP 的安全调用流程。
+12. [ ] 新增知识运营 Agent Profile、权限策略和审计落地。
 
 ### Phase 3：知识质量和运营增强
 

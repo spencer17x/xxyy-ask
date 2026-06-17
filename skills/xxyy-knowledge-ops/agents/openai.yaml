@@ -1,0 +1,4 @@
+interface:
+  display_name: 'XXYY Knowledge Ops'
+  short_description: 'Use internal XXYY MCP for knowledge operations'
+  default_prompt: 'Use $xxyy-knowledge-ops to review, publish, and gate XXYY knowledge candidates.'

@@ -32,6 +32,7 @@ packages/
   agent-core/ Tool Registry、客服 Agent Runtime 和共享工具定义
   product-qa-mcp/  产品问答 MCP stdio server
   tx-analysis-mcp/  夹子查询 MCP stdio server
+  knowledge-ops-mcp/  知识运营内部 MCP stdio server
 docs/
   product-features/  XXYY 产品知识库种子文档
 ```

@@ -139,8 +139,10 @@
 - [x] Telegram 知识学习运行入口：`pnpm rag:sync:telegram` 支持手动或定时增量采集授权 Telegram 客服消息，写入 Raw Source Store，生成 `needs_review` 候选知识，并推进 getUpdates offset；不会发布或 embedding 未审核内容。
 - [x] 审核后知识发布入口：`pnpm rag:publish:knowledge -- --id <candidate-id>` 只允许发布 `approved` 候选，默认追加到 `docs/product-features/pages/65-reviewed-support-knowledge.md` 正式 Markdown 知识源，并把候选状态标记为 `published`；未审核候选不能发布。
 - [x] 知识入库和第一版质量门禁：`pnpm rag:gate:knowledge -- --id <candidate-id> --fast` 只接受已 `published` 候选，执行正式 ingest/embedding，运行候选生成的 targeted eval gate，并把候选推进到 `ingested` 后标记为 `eval_passed` 或 `eval_failed`。
+- [x] 知识运营内部工具/MCP 第一版：`@xxyy/agent-core` 已提供知识运营工具定义，`pnpm knowledge-ops:mcp` 暴露 `list_knowledge_candidates`、`review_knowledge_candidate`、`publish_knowledge_candidate`、`run_knowledge_gate` 和 `sync_telegram_support`，用于受信任内部 Agent 复用。
+- [x] 知识运营 Skill 第一版：`skills/xxyy-knowledge-ops` 描述内部知识运营 MCP 的安全调用边界，强调人工审核后发布和发布后 gate。
 - [ ] 知识发布 run 追踪增强：仍需把 publish run、ingestion run 和 eval run 持久关联，并提供 eval 失败后的回滚线索。
-- [ ] 知识运营 Agent 工具：仍需把 Telegram 采集、候选挖掘、候选查询/审核、发布和 eval gate 封装为内部 Agent tools / MCP / Skill。
+- [ ] 知识运营 Agent Profile 和权限审计增强：仍需补内部运行时 profile、权限策略落地和调用审计。
 - [ ] 工单后台：查看、分配、处理和关闭客服工单。
 - [ ] 会话后台：查看用户会话、检索来源、反馈和处理结果。
 - [ ] 知识库管理后台：支持文档编辑、审核、发布和知识缺口归类。

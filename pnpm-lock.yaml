@@ -100,6 +100,21 @@ importers:
 
   packages/knowledge-ops: {}
 
+  packages/knowledge-ops-mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
+      '@xxyy/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@xxyy/knowledge-ops':
+        specifier: workspace:*
+        version: link:../knowledge-ops
+      '@xxyy/rag-core':
+        specifier: workspace:*
+        version: link:../rag-core
+
   packages/product-qa-mcp:
     dependencies:
       '@modelcontextprotocol/sdk':

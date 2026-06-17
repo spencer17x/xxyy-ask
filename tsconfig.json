@@ -25,6 +25,9 @@
       "path": "./packages/product-qa-mcp"
     },
     {
+      "path": "./packages/knowledge-ops-mcp"
+    },
+    {
       "path": "./packages/tx-analysis-mcp"
     },
     {

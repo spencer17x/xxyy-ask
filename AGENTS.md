@@ -27,6 +27,7 @@
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、本地索引、OpenAI embedding provider。
 - `packages/knowledge-ops`：Telegram 授权采集、客服消息脱敏、候选知识挖掘、Raw Source 持久化、Candidate 待审队列和增量 cursor。
 - `packages/rag-core`：意图分类、检索接口、pgvector store、反馈 store、LLM answer provider、评测。
+- `packages/knowledge-ops-mcp`：知识运营内部 MCP stdio server，复用 agent-core 工具定义，暴露候选查询/审核、approved-only 发布、发布后 gate 和 Telegram sync。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:sync:telegram`、`rag:publish:knowledge`、`rag:gate:knowledge`、`rag:migrate`、`rag:stats`、`rag:feedback`、`rag:ask`、`rag:evaluate`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/web`：静态聊天 UI。

@@ -10,6 +10,33 @@ export type {
   CustomerAgentRuntime,
 } from './customer-agent-runtime.js';
 export {
+  KNOWLEDGE_OPS_TOOL_NAMES,
+  createKnowledgeOpsTools,
+  listKnowledgeCandidatesInputSchema,
+  listKnowledgeCandidatesOutputSchema,
+  publishKnowledgeCandidateInputSchema,
+  publishKnowledgeCandidateOutputSchema,
+  reviewKnowledgeCandidateInputSchema,
+  reviewKnowledgeCandidateOutputSchema,
+  runKnowledgeGateInputSchema,
+  runKnowledgeGateOutputSchema,
+  syncTelegramSupportInputSchema,
+  syncTelegramSupportOutputSchema,
+} from './tools/knowledge-ops-tools.js';
+export type {
+  CreateKnowledgeOpsToolsOptions,
+  KnowledgeOpsCandidate,
+  KnowledgeOpsToolName,
+  ListKnowledgeCandidatesInput,
+  PublishKnowledgeCandidateInput,
+  PublishKnowledgeCandidateOutput,
+  ReviewKnowledgeCandidateInput,
+  RunKnowledgeGateInput,
+  RunKnowledgeGateOutput,
+  SyncTelegramSupportInput,
+  SyncTelegramSupportOutput,
+} from './tools/knowledge-ops-tools.js';
+export {
   PRODUCT_TOOL_NAMES,
   answerProductQuestionInputSchema,
   answerProductQuestionOutputSchema,
