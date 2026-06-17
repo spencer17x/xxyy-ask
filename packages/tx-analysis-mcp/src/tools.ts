@@ -1,17 +1,18 @@
 import {
-  analyzeTransaction,
-  type AnalyzeTransactionInput,
   type AnalyzeTransactionOutput,
   type FindTxAnalysisReportsOptions,
   type TxAnalysisReportReader,
   type TxAnalysisProvider,
 } from '@xxyy/rag-core';
+import {
+  TX_ANALYSIS_TOOL_NAMES,
+  createToolRegistry,
+  createTxAnalysisTools,
+  type AnalyzeTransactionToolInput,
+} from '@xxyy/agent-core';
 
-export type TxAnalysisToolChannel = 'agent' | 'ops' | 'support';
-
-export type AnalyzeTransactionToolInput = AnalyzeTransactionInput & {
-  channel?: TxAnalysisToolChannel;
-};
+export type { AnalyzeTransactionToolInput } from '@xxyy/agent-core';
+export type TxAnalysisToolChannel = NonNullable<AnalyzeTransactionToolInput['channel']>;
 
 export interface TxAnalysisToolHandlersOptions {
   provider: TxAnalysisProvider | undefined;
@@ -29,29 +30,25 @@ export interface TxAnalysisToolHandlers {
 export function createTxAnalysisToolHandlers(
   options: TxAnalysisToolHandlersOptions,
 ): TxAnalysisToolHandlers {
+  const registry = createToolRegistry();
+  for (const tool of createTxAnalysisTools(options)) {
+    registry.register(tool);
+  }
+
   return {
     analyzeTransaction(input) {
-      return analyzeTransaction({
-        input: toRagAnalyzeTransactionInput(input),
-        provider: options.provider,
-      });
+      return registry.execute(
+        TX_ANALYSIS_TOOL_NAMES[0],
+        input,
+      ) as Promise<AnalyzeTransactionOutput>;
     },
-    async getAnalysisReport(input) {
-      const document = await options.reportReader?.getReportDocument?.(input.id);
-      return document === undefined ? {} : { document };
+    getAnalysisReport(input) {
+      return registry.execute(TX_ANALYSIS_TOOL_NAMES[1], input) as Promise<{ document?: unknown }>;
     },
-    async listAnalysisReports(input) {
-      if (options.reportReader === undefined) {
-        return { reports: [] };
-      }
-      return { reports: await options.reportReader.findReports(input) };
+    listAnalysisReports(input) {
+      return registry.execute(TX_ANALYSIS_TOOL_NAMES[2], input) as Promise<{
+        reports: Awaited<ReturnType<TxAnalysisReportReader['findReports']>>;
+      }>;
     },
-  };
-}
-
-function toRagAnalyzeTransactionInput(input: AnalyzeTransactionToolInput): AnalyzeTransactionInput {
-  return {
-    ...(input.chain === undefined ? {} : { chain: input.chain }),
-    txHash: input.txHash,
   };
 }

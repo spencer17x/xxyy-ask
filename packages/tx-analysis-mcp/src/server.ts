@@ -1,15 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 
-import type { FindTxAnalysisReportsOptions, TxAnalysisUnavailableReason } from '@xxyy/rag-core';
+import {
+  TX_ANALYSIS_TOOL_NAMES,
+  analyzeTransactionInputSchema,
+  getAnalysisReportInputSchema,
+  listAnalysisReportsInputSchema,
+} from '@xxyy/agent-core';
+import type { FindTxAnalysisReportsOptions } from '@xxyy/rag-core';
+import type { z } from 'zod';
 
 import type { TxAnalysisToolHandlers } from './tools.js';
 
-export const TX_ANALYSIS_MCP_TOOL_NAMES = [
-  'analyze_transaction',
-  'get_analysis_report',
-  'list_analysis_reports',
-] as const;
+export const TX_ANALYSIS_MCP_TOOL_NAMES = TX_ANALYSIS_TOOL_NAMES;
 
 export const TX_ANALYSIS_MCP_INSTRUCTIONS = [
   'Use this server for XXYY 交易夹子检测 when the user provides one clear transaction hash or supported explorer link.',
@@ -17,43 +19,6 @@ export const TX_ANALYSIS_MCP_INSTRUCTIONS = [
   'Do not provide investment advice.',
   'Do not use this server for private account, wallet balance, order, or user identity lookup.',
 ].join(' ');
-
-const chainSchema = z.enum(['solana', 'base', 'ethereum', 'bsc', 'unknown']).optional();
-const reportStatusSchema = z.enum(['success', 'failure']).optional();
-const reviewStatusSchema = z.enum(['open', 'in_review', 'closed']).optional();
-const txAnalysisUnavailableReasons = [
-  'not_configured',
-  'provider_unavailable',
-  'invalid_reference',
-  'unsupported_chain',
-  'browser_verification_required',
-  'tx_not_found',
-  'tx_failed',
-  'tx_pending',
-  'pool_not_found',
-  'target_trade_not_found',
-  'screenshot_unavailable',
-  'timeout',
-] as const satisfies readonly TxAnalysisUnavailableReason[];
-const failureReasonSchema = z.enum(txAnalysisUnavailableReasons).optional();
-
-const analyzeTransactionInputSchema = z.object({
-  chain: chainSchema,
-  channel: z.enum(['agent', 'ops', 'support']).optional(),
-  txHash: z.string().min(1),
-});
-const getAnalysisReportInputSchema = z.object({
-  id: z.string().min(1),
-});
-const listAnalysisReportsInputSchema = z.object({
-  chain: chainSchema,
-  limit: z.number().int().positive().optional(),
-  reason: failureReasonSchema,
-  reviewAssignee: z.string().min(1).optional(),
-  reviewStatus: reviewStatusSchema,
-  status: reportStatusSchema,
-  txHash: z.string().min(1).optional(),
-});
 
 export interface CreateTxAnalysisMcpServerOptions {
   handlers: TxAnalysisToolHandlers;
@@ -71,7 +36,7 @@ export function createTxAnalysisMcpServer(options: CreateTxAnalysisMcpServerOpti
   );
 
   server.registerTool(
-    'analyze_transaction',
+    TX_ANALYSIS_MCP_TOOL_NAMES[0],
     {
       description:
         'Analyze whether one XXYY-related transaction hash or supported explorer link was sandwiched.',
@@ -92,7 +57,7 @@ export function createTxAnalysisMcpServer(options: CreateTxAnalysisMcpServerOpti
   );
 
   server.registerTool(
-    'get_analysis_report',
+    TX_ANALYSIS_MCP_TOOL_NAMES[1],
     {
       description: 'Fetch one stored XXYY transaction analysis report document by report id.',
       inputSchema: getAnalysisReportInputSchema,
@@ -108,7 +73,7 @@ export function createTxAnalysisMcpServer(options: CreateTxAnalysisMcpServerOpti
   );
 
   server.registerTool(
-    'list_analysis_reports',
+    TX_ANALYSIS_MCP_TOOL_NAMES[2],
     {
       description: 'List stored XXYY transaction analysis reports with optional filters.',
       inputSchema: listAnalysisReportsInputSchema,
@@ -127,7 +92,7 @@ export function createTxAnalysisMcpServer(options: CreateTxAnalysisMcpServerOpti
 }
 
 function toFindReportsInput(
-  input: z.infer<typeof listAnalysisReportsInputSchema>,
+  input: z.output<typeof listAnalysisReportsInputSchema>,
 ): FindTxAnalysisReportsOptions {
   return {
     ...(input.chain === undefined ? {} : { chain: input.chain }),
