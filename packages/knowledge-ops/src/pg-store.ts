@@ -8,11 +8,13 @@ import type {
   SupportSource,
 } from './types.js';
 import type {
+  KnowledgeCandidateRun,
   KnowledgeCandidateStore,
   ListKnowledgeCandidatesFilter,
   MarkKnowledgeCandidateEvalResultInput,
   MarkKnowledgeCandidateIngestedInput,
   MarkKnowledgeCandidatePublishedInput,
+  RecordKnowledgeCandidateRunInput,
   ReviewKnowledgeCandidateInput,
 } from './knowledge-candidate-store.js';
 import {
@@ -87,6 +89,15 @@ interface KnowledgeCandidateRow {
   updated_at: Date | string;
 }
 
+interface KnowledgeCandidateRunRow {
+  candidate_id: string;
+  created_at: Date | string;
+  metadata: unknown;
+  run_id: string;
+  run_type: KnowledgeCandidateRun['runType'];
+  status: KnowledgeCandidateRun['status'];
+}
+
 const DEFAULT_QUERY_LIMIT = 50;
 const MAX_QUERY_LIMIT = 200;
 
@@ -137,6 +148,14 @@ export function createPgKnowledgeOpsStore(
 
     async markCandidatePublished(candidateId, input) {
       return markCandidatePublished(options.client, candidateId, input);
+    },
+
+    async listCandidateRuns(candidateId) {
+      return listCandidateRuns(options.client, candidateId);
+    },
+
+    async recordCandidateRun(input) {
+      return recordCandidateRun(options.client, input);
     },
 
     async migrate() {
@@ -270,6 +289,21 @@ export async function migratePgKnowledgeOpsStore(client: PgClientLike): Promise<
       on knowledge_candidates (updated_at desc)
   `);
   await client.query(`
+    create table if not exists knowledge_candidate_runs (
+      candidate_id text not null references knowledge_candidates(id) on delete cascade,
+      run_id text not null,
+      run_type text not null check (run_type in ('publish', 'ingest', 'eval')),
+      status text not null check (status in ('completed', 'passed', 'failed')),
+      metadata jsonb not null,
+      created_at timestamptz not null,
+      primary key (candidate_id, run_type, run_id)
+    )
+  `);
+  await client.query(`
+    create index if not exists knowledge_candidate_runs_candidate_created_idx
+      on knowledge_candidate_runs (candidate_id, created_at asc)
+  `);
+  await client.query(`
     create table if not exists knowledge_source_cursors (
       source text not null check (source in ('telegram')),
       cursor_key text not null,
@@ -380,6 +414,68 @@ async function markCandidateEvalResult(
     input.passed ? 'eval_passed' : 'eval_failed',
     input.evaluatedAt,
   );
+}
+
+async function recordCandidateRun(
+  client: PgClientLike,
+  input: RecordKnowledgeCandidateRunInput,
+): Promise<KnowledgeCandidateRun> {
+  const candidate = await getCandidateById(client, input.candidateId);
+  if (candidate === undefined) {
+    throw new KnowledgeCandidateNotFoundError(input.candidateId);
+  }
+
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  const metadata = input.metadata ?? {};
+  const response = await client.query<KnowledgeCandidateRunRow>(
+    `
+    insert into knowledge_candidate_runs (
+      candidate_id,
+      run_id,
+      run_type,
+      status,
+      metadata,
+      created_at
+    )
+    values ($1, $2, $3, $4, $5::jsonb, $6)
+    on conflict (candidate_id, run_type, run_id) do update set
+      status = excluded.status,
+      metadata = excluded.metadata,
+      created_at = excluded.created_at
+    returning ${candidateRunReturnColumns()}
+    `,
+    [
+      input.candidateId,
+      input.runId,
+      input.runType,
+      input.status,
+      JSON.stringify(metadata),
+      createdAt,
+    ],
+  );
+  const row = response.rows[0];
+  if (row === undefined) {
+    throw new KnowledgeCandidateNotFoundError(input.candidateId);
+  }
+
+  return mapCandidateRunRow(row);
+}
+
+async function listCandidateRuns(
+  client: PgClientLike,
+  candidateId: string,
+): Promise<KnowledgeCandidateRun[]> {
+  const response = await client.query<KnowledgeCandidateRunRow>(
+    `
+    select ${candidateRunReturnColumns()}
+    from knowledge_candidate_runs
+    where candidate_id = $1
+    order by created_at asc, run_type asc, run_id asc
+    `,
+    [candidateId],
+  );
+
+  return response.rows.map(mapCandidateRunRow);
 }
 
 async function updateCandidateStatus(
@@ -644,6 +740,17 @@ function mapCandidateRow(row: KnowledgeCandidateRow): KnowledgeCandidate {
   };
 }
 
+function mapCandidateRunRow(row: KnowledgeCandidateRunRow): KnowledgeCandidateRun {
+  return {
+    candidateId: row.candidate_id,
+    createdAt: toIsoString(row.created_at),
+    metadata: row.metadata as Record<string, unknown>,
+    runId: row.run_id,
+    runType: row.run_type,
+    status: row.status,
+  };
+}
+
 function toCandidateRow(candidate: KnowledgeCandidate): KnowledgeCandidateRow {
   return {
     confidence: candidate.confidence,
@@ -699,6 +806,17 @@ function candidateReturnColumns(): string {
     published_target,
     created_at::text as created_at,
     updated_at::text as updated_at
+  `;
+}
+
+function candidateRunReturnColumns(): string {
+  return `
+    candidate_id,
+    run_id,
+    run_type,
+    status,
+    metadata,
+    created_at::text as created_at
   `;
 }
 

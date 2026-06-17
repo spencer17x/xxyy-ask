@@ -7,6 +7,27 @@ export interface ListKnowledgeCandidatesFilter {
   riskLevel?: KnowledgeCandidate['riskLevel'];
 }
 
+export type KnowledgeCandidateRunType = 'publish' | 'ingest' | 'eval';
+export type KnowledgeCandidateRunStatus = 'completed' | 'failed' | 'passed';
+
+export interface KnowledgeCandidateRun {
+  candidateId: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+  runId: string;
+  runType: KnowledgeCandidateRunType;
+  status: KnowledgeCandidateRunStatus;
+}
+
+export interface RecordKnowledgeCandidateRunInput {
+  candidateId: string;
+  createdAt?: string;
+  metadata?: Record<string, unknown>;
+  runId: string;
+  runType: KnowledgeCandidateRunType;
+  status: KnowledgeCandidateRunStatus;
+}
+
 export type KnowledgeCandidateReviewAction =
   | 'approve'
   | 'reject'
@@ -50,6 +71,8 @@ export interface KnowledgeCandidateStore {
     candidateId: string,
     input: MarkKnowledgeCandidatePublishedInput,
   ): Promise<KnowledgeCandidate>;
+  listCandidateRuns(candidateId: string): Promise<KnowledgeCandidateRun[]>;
+  recordCandidateRun(input: RecordKnowledgeCandidateRunInput): Promise<KnowledgeCandidateRun>;
   reviewCandidate(
     candidateId: string,
     input: ReviewKnowledgeCandidateInput,
@@ -92,6 +115,7 @@ export function createInMemoryKnowledgeCandidateStore(
   const candidates = new Map<string, KnowledgeCandidate>(
     initialCandidates.map((candidate) => [candidate.id, candidate]),
   );
+  const candidateRuns = new Map<string, KnowledgeCandidateRun[]>();
 
   return {
     addCandidates(newCandidates) {
@@ -170,6 +194,34 @@ export function createInMemoryKnowledgeCandidateStore(
       const published = applyPublished(candidate, input);
       candidates.set(candidateId, published);
       return Promise.resolve(published);
+    },
+
+    listCandidateRuns(candidateId) {
+      return Promise.resolve(
+        [...(candidateRuns.get(candidateId) ?? [])].sort((left, right) =>
+          left.createdAt.localeCompare(right.createdAt),
+        ),
+      );
+    },
+
+    recordCandidateRun(input) {
+      if (!candidates.has(input.candidateId)) {
+        return Promise.reject(new KnowledgeCandidateNotFoundError(input.candidateId));
+      }
+
+      const run = applyCandidateRun(input);
+      const existingRuns = candidateRuns.get(input.candidateId) ?? [];
+      const nextRuns = [
+        ...existingRuns.filter(
+          (existing) =>
+            existing.runId !== run.runId ||
+            existing.runType !== run.runType ||
+            existing.candidateId !== run.candidateId,
+        ),
+        run,
+      ];
+      candidateRuns.set(input.candidateId, nextRuns);
+      return Promise.resolve(run);
     },
 
     reviewCandidate(candidateId, input) {
@@ -265,6 +317,17 @@ function applyEvalResult(
     ...candidate,
     status: input.passed ? 'eval_passed' : 'eval_failed',
     updatedAt,
+  };
+}
+
+function applyCandidateRun(input: RecordKnowledgeCandidateRunInput): KnowledgeCandidateRun {
+  return {
+    candidateId: input.candidateId,
+    createdAt: input.createdAt ?? new Date().toISOString(),
+    metadata: input.metadata ?? {},
+    runId: input.runId,
+    runType: input.runType,
+    status: input.status,
   };
 }
 

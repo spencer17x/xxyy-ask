@@ -141,7 +141,7 @@
 - [x] 知识入库和第一版质量门禁：`pnpm rag:gate:knowledge -- --id <candidate-id> --fast` 只接受已 `published` 候选，执行正式 ingest/embedding，运行候选生成的 targeted eval gate，并把候选推进到 `ingested` 后标记为 `eval_passed` 或 `eval_failed`。
 - [x] 知识运营内部工具/MCP 第一版：`@xxyy/agent-core` 已提供知识运营工具定义，`pnpm knowledge-ops:mcp` 暴露 `list_knowledge_candidates`、`review_knowledge_candidate`、`publish_knowledge_candidate`、`run_knowledge_gate` 和 `sync_telegram_support`，用于受信任内部 Agent 复用。
 - [x] 知识运营 Skill 第一版：`skills/xxyy-knowledge-ops` 描述内部知识运营 MCP 的安全调用边界，强调人工审核后发布和发布后 gate。
-- [ ] 知识发布 run 追踪增强：仍需把 publish run、ingestion run 和 eval run 持久关联，并提供 eval 失败后的回滚线索。
+- [x] 知识发布 run 追踪增强：`knowledge_candidate_runs` 持久记录 publish、ingest 和 eval run，`rag:publish:knowledge` 写入 publish run，`rag:gate:knowledge` 写入 ingestion/eval run；eval 失败时会记录失败 case 和原因作为修正/回滚线索。
 - [ ] 知识运营 Agent Profile 和权限审计增强：仍需补内部运行时 profile、权限策略落地和调用审计。
 - [ ] 工单后台：查看、分配、处理和关闭客服工单。
 - [ ] 会话后台：查看用户会话、检索来源、反馈和处理结果。

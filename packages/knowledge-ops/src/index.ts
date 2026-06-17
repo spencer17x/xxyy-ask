@@ -8,12 +8,16 @@ export {
   KnowledgeCandidateInvalidPublishStatusError,
   KnowledgeCandidateInvalidStatusTransitionError,
   createInMemoryKnowledgeCandidateStore,
+  type KnowledgeCandidateRun,
+  type KnowledgeCandidateRunStatus,
+  type KnowledgeCandidateRunType,
   type KnowledgeCandidateReviewAction,
   type KnowledgeCandidateStore,
   type ListKnowledgeCandidatesFilter,
   type MarkKnowledgeCandidateEvalResultInput,
   type MarkKnowledgeCandidateIngestedInput,
   type MarkKnowledgeCandidatePublishedInput,
+  type RecordKnowledgeCandidateRunInput,
   type ReviewKnowledgeCandidateInput,
 } from './knowledge-candidate-store.js';
 export {

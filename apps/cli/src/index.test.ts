@@ -1148,6 +1148,25 @@ describe('runCli', () => {
         });
       },
     );
+    type CandidateRunInputForTest = {
+      candidateId: string;
+      createdAt?: string;
+      metadata: Record<string, unknown>;
+      runId: string;
+      runType: string;
+      status: string;
+    };
+    const recordCandidateRun = vi.fn((input: CandidateRunInputForTest) => {
+      events.push(`candidate:run:${input.runType}:${input.runId}`);
+      return Promise.resolve({
+        candidateId: 'kc_telegram_setup',
+        createdAt: '2026-06-17T05:00:00.000Z',
+        metadata: {},
+        runId: input.runId,
+        runType: input.runType,
+        status: 'completed',
+      });
+    });
     const end = vi.fn(() => {
       events.push('pool.end');
       return Promise.resolve();
@@ -1180,6 +1199,7 @@ describe('runCli', () => {
           getCandidate,
           markCandidatePublished,
           migrate,
+          recordCandidateRun,
         })),
         publishKnowledgeCandidate: vi.fn(
           (input: {
@@ -1232,11 +1252,22 @@ describe('runCli', () => {
         'candidate:get:kc_telegram_setup',
         'publish:kc_telegram_setup:pages/support-faq.md',
         'candidate:mark:kc_telegram_setup:pages/support-faq.md#kc_telegram_setup',
+        'candidate:run:publish:publish_20260617T050000Z_abcd1234',
         'pool.end',
       ]);
       expect(markCandidatePublished).toHaveBeenCalledWith('kc_telegram_setup', {
         publishedAt: '2026-06-17T05:00:00.000Z',
         publishedTarget: 'pages/support-faq.md#kc_telegram_setup',
+      });
+      expect(recordCandidateRun).toHaveBeenCalledWith({
+        candidateId: 'kc_telegram_setup',
+        createdAt: '2026-06-17T05:00:00.000Z',
+        metadata: {
+          publishedTarget: 'pages/support-faq.md#kc_telegram_setup',
+        },
+        runId: 'publish_20260617T050000Z_abcd1234',
+        runType: 'publish',
+        status: 'completed',
       });
       expect(stdout.join('')).toContain('Published knowledge candidate kc_telegram_setup.');
       expect(stdout.join('')).toContain('Published target: pages/support-faq.md#kc_telegram_setup');
@@ -1350,6 +1381,22 @@ describe('runCli', () => {
         });
       },
     );
+    const recordCandidateRun = vi.fn((input: { runId: string; runType: string }) => {
+      const runIdPrefix = input.runId.startsWith('ingest_')
+        ? 'ingest_'
+        : input.runId.startsWith('eval_')
+          ? 'eval_'
+          : input.runId;
+      events.push(`candidate:run:${input.runType}:${runIdPrefix}`);
+      return Promise.resolve({
+        candidateId: 'kc_telegram_setup',
+        createdAt: '2026-06-17T06:10:00.000Z',
+        metadata: {},
+        runId: input.runId,
+        runType: input.runType,
+        status: input.runType === 'eval' ? 'passed' : 'completed',
+      });
+    });
     const end = vi.fn(() => {
       events.push('pool.end');
       return Promise.resolve();
@@ -1453,6 +1500,7 @@ describe('runCli', () => {
           markCandidateEvalResult,
           markCandidateIngested,
           migrate: storeMigrate,
+          recordCandidateRun,
         })),
         migratePgKnowledgeOpsStore,
       };
@@ -1488,8 +1536,10 @@ describe('runCli', () => {
         'vector:record',
         'pool.end',
         'candidate:ingested:kc_telegram_setup',
+        'candidate:run:ingest:ingest_',
         'evaluate:knowledge candidate kc_telegram_setup / Telegram 通知怎么设置？',
         'candidate:eval:kc_telegram_setup:passed',
+        'candidate:run:eval:eval_',
         'pool.end',
       ]);
       const ingestedCall = markCandidateIngested.mock.calls[0];
@@ -1500,8 +1550,32 @@ describe('runCli', () => {
       expect(evalCall?.[1].passed).toBe(true);
       expect(typeof evalCall?.[1].evaluatedAt).toBe('string');
       expect(createCustomerAgentChatService).toHaveBeenCalledTimes(1);
+      const runInputs = recordCandidateRun.mock.calls.map(([input]) => input);
+      const ingestRunInput = runInputs.find((input) => input.runType === 'ingest');
+      expect(ingestRunInput).toMatchObject({
+        candidateId: 'kc_telegram_setup',
+        metadata: {
+          chunkCount: 1,
+          documentCount: 1,
+          indexPath: 'pgvector',
+        },
+        runType: 'ingest',
+        status: 'completed',
+      });
+      const evalRunInput = runInputs.find((input) => input.runType === 'eval');
+      expect(evalRunInput).toMatchObject({
+        candidateId: 'kc_telegram_setup',
+        metadata: {
+          failures: [],
+          passed: 1,
+          total: 1,
+        },
+        runType: 'eval',
+        status: 'passed',
+      });
       expect(stdout.join('')).toContain('Knowledge gate passed for candidate kc_telegram_setup.');
       expect(stdout.join('')).toContain('Ingest run: ingest_');
+      expect(stdout.join('')).toContain('Eval run: eval_');
       expect(stdout.join('')).toContain('Evaluation: 1/1 passed');
     } finally {
       vi.doUnmock('@xxyy/agent-core');

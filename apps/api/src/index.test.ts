@@ -2699,6 +2699,9 @@ describe('createRequestHandler', () => {
           listCandidates() {
             throw new Error('listCandidates should not be called for unauthorized requests');
           },
+          listCandidateRuns() {
+            throw new Error('listCandidateRuns should not be called for unauthorized requests');
+          },
           markCandidateEvalResult() {
             throw new Error(
               'markCandidateEvalResult should not be called for unauthorized requests',
@@ -2711,6 +2714,9 @@ describe('createRequestHandler', () => {
             throw new Error(
               'markCandidatePublished should not be called for unauthorized requests',
             );
+          },
+          recordCandidateRun() {
+            throw new Error('recordCandidateRun should not be called for unauthorized requests');
           },
           reviewCandidate() {
             throw new Error('reviewCandidate should not be called for unauthorized requests');
@@ -2756,6 +2762,9 @@ describe('createRequestHandler', () => {
           }),
         ]);
       },
+      listCandidateRuns() {
+        throw new Error('listCandidateRuns should not be called for list requests');
+      },
       markCandidateEvalResult() {
         throw new Error('markCandidateEvalResult should not be called for list requests');
       },
@@ -2767,6 +2776,9 @@ describe('createRequestHandler', () => {
       },
       markCandidatePublished() {
         throw new Error('markCandidatePublished should not be called for list requests');
+      },
+      recordCandidateRun() {
+        throw new Error('recordCandidateRun should not be called for list requests');
       },
     };
     const handler = createRequestHandler({
@@ -2806,6 +2818,9 @@ describe('createRequestHandler', () => {
       getCandidate() {
         throw new Error('getCandidate should not be called for review requests');
       },
+      listCandidateRuns() {
+        throw new Error('listCandidateRuns should not be called for review requests');
+      },
       listCandidates: () => Promise.resolve([]),
       markCandidateEvalResult() {
         throw new Error('markCandidateEvalResult should not be called for review requests');
@@ -2815,6 +2830,9 @@ describe('createRequestHandler', () => {
       },
       markCandidatePublished() {
         throw new Error('markCandidatePublished should not be called for review requests');
+      },
+      recordCandidateRun() {
+        throw new Error('recordCandidateRun should not be called for review requests');
       },
       reviewCandidate(candidateId, input) {
         reviewInput = { candidateId, input };
@@ -2872,12 +2890,15 @@ describe('createRequestHandler', () => {
         Promise.resolve({
           addCandidates: () => Promise.resolve([]),
           getCandidate: () => Promise.resolve(undefined),
+          listCandidateRuns: () => Promise.resolve([]),
           listCandidates: () => Promise.resolve([]),
           markCandidateEvalResult: () =>
             Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),
           markCandidateIngested: () =>
             Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),
           markCandidatePublished: () =>
+            Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),
+          recordCandidateRun: () =>
             Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),
           reviewCandidate: () =>
             Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),

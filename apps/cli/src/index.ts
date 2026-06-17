@@ -111,6 +111,7 @@ interface PublishKnowledgeSummary {
 interface KnowledgeGateSummary {
   candidateId: string;
   evalPassed: boolean;
+  evalRunId: string;
   evaluation: EvaluationReport;
   ingestion: IngestSummary;
 }
@@ -638,6 +639,7 @@ export function formatKnowledgeGateSummary(summary: KnowledgeGateSummary): strin
   return [
     `Knowledge gate ${summary.evalPassed ? 'passed' : 'failed'} for candidate ${summary.candidateId}.`,
     `Ingest run: ${summary.ingestion.runId ?? 'none'}`,
+    `Eval run: ${summary.evalRunId}`,
     formatEvaluationSummary(summary.evaluation),
   ].join('\n');
 }
@@ -1107,6 +1109,16 @@ async function publishReviewedKnowledgeCandidate(
       publishedAt: published.publishedAt,
       publishedTarget: published.publishedTarget,
     });
+    await store.recordCandidateRun({
+      candidateId: options.candidateId,
+      createdAt: published.publishedAt,
+      metadata: {
+        publishedTarget: published.publishedTarget,
+      },
+      runId: published.publishRunId,
+      runType: 'publish',
+      status: 'completed',
+    });
 
     return {
       candidateId: options.candidateId,
@@ -1145,6 +1157,19 @@ async function runKnowledgeGate(
     await store.markCandidateIngested(options.candidateId, {
       ingestedAt: new Date().toISOString(),
     });
+    if (ingestion.runId !== undefined) {
+      await store.recordCandidateRun({
+        candidateId: options.candidateId,
+        metadata: {
+          chunkCount: ingestion.chunkCount,
+          documentCount: ingestion.documentCount,
+          indexPath: ingestion.indexPath,
+        },
+        runId: ingestion.runId,
+        runType: 'ingest',
+        status: 'completed',
+      });
+    }
 
     const cases = createKnowledgeGateEvaluationCases(candidate);
     const runtime = createCliChatRuntime(config, { fastAnswers: options.fast });
@@ -1160,14 +1185,27 @@ async function runKnowledgeGate(
     }
 
     const evalPassed = evaluation.passed === evaluation.total;
+    const evalRunId = createEvaluationRunId(options.candidateId, evaluation);
     await store.markCandidateEvalResult(options.candidateId, {
       evaluatedAt: new Date().toISOString(),
       passed: evalPassed,
+    });
+    await store.recordCandidateRun({
+      candidateId: options.candidateId,
+      metadata: {
+        failures: collectEvaluationFailures(evaluation),
+        passed: evaluation.passed,
+        total: evaluation.total,
+      },
+      runId: evalRunId,
+      runType: 'eval',
+      status: evalPassed ? 'passed' : 'failed',
     });
 
     return {
       candidateId: options.candidateId,
       evalPassed,
+      evalRunId,
       evaluation,
       ingestion,
     };
@@ -1227,6 +1265,33 @@ function expectedIntentForKnowledgeCandidate(
 
 function shouldRequireExpectedAnswerText(candidate: KnowledgeCandidate): boolean {
   return candidate.targetCategory !== 'policy_boundary';
+}
+
+function createEvaluationRunId(candidateId: string, evaluation: EvaluationReport): string {
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[-:]/gu, '')
+    .replace(/\.\d{3}/u, '');
+  const hash = createHash('sha256')
+    .update(candidateId)
+    .update('\0')
+    .update(String(evaluation.passed))
+    .update('/')
+    .update(String(evaluation.total))
+    .digest('hex')
+    .slice(0, 8);
+  return `eval_${timestamp}_${hash}`;
+}
+
+function collectEvaluationFailures(
+  evaluation: EvaluationReport,
+): Array<{ name: string; reasons: string[] }> {
+  return evaluation.results
+    .filter((result) => !result.passed)
+    .map((result) => ({
+      name: result.name,
+      reasons: result.failureReasons,
+    }));
 }
 
 async function migrateDatabase(config: ReturnType<typeof loadRagConfig>): Promise<void> {

@@ -155,4 +155,58 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
       }),
     ).rejects.toThrow('Knowledge candidate not found: missing');
   });
+
+  it('records publish, ingest, and eval runs for a candidate', async () => {
+    const store = createInMemoryKnowledgeCandidateStore();
+    await store.addCandidates([candidate({ status: 'published' })]);
+
+    await store.recordCandidateRun({
+      candidateId: 'candidate_1',
+      createdAt: '2026-06-17T05:00:00.000Z',
+      metadata: { publishedTarget: 'pages/support-faq.md#candidate_1' },
+      runId: 'publish_20260617T050000Z_abcd1234',
+      runType: 'publish',
+      status: 'completed',
+    });
+    await store.recordCandidateRun({
+      candidateId: 'candidate_1',
+      createdAt: '2026-06-17T06:00:00.000Z',
+      metadata: { chunkCount: 12, documentCount: 4 },
+      runId: 'ingest_20260617T060000Z_abcd1234',
+      runType: 'ingest',
+      status: 'completed',
+    });
+    await store.recordCandidateRun({
+      candidateId: 'candidate_1',
+      createdAt: '2026-06-17T06:10:00.000Z',
+      metadata: { failures: [] },
+      runId: 'eval_20260617T061000Z_abcd1234',
+      runType: 'eval',
+      status: 'passed',
+    });
+
+    await expect(store.listCandidateRuns('candidate_1')).resolves.toEqual([
+      expect.objectContaining({
+        runId: 'publish_20260617T050000Z_abcd1234',
+        runType: 'publish',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        metadata: { chunkCount: 12, documentCount: 4 },
+        runType: 'ingest',
+      }),
+      expect.objectContaining({
+        runType: 'eval',
+        status: 'passed',
+      }),
+    ]);
+    await expect(
+      store.recordCandidateRun({
+        candidateId: 'missing',
+        runId: 'eval_missing',
+        runType: 'eval',
+        status: 'failed',
+      }),
+    ).rejects.toThrow('Knowledge candidate not found: missing');
+  });
 });

@@ -69,6 +69,8 @@ describe('createPgKnowledgeOpsStore', () => {
     expect(sql).toContain('unique (source, chat_id_hash, message_id)');
     expect(sql).toContain('create table if not exists knowledge_candidates');
     expect(sql).toContain("status in ('draft', 'needs_review', 'approved', 'rejected'");
+    expect(sql).toContain('create table if not exists knowledge_candidate_runs');
+    expect(sql).toContain("run_type in ('publish', 'ingest', 'eval')");
     expect(sql).toContain('create table if not exists knowledge_source_cursors');
     expect(sql).toContain('primary key (source, cursor_key)');
   });
@@ -385,6 +387,91 @@ describe('createPgKnowledgeOpsStore', () => {
     ).rejects.toThrow(
       'Knowledge candidate kc_waiting cannot be marked ingested from approved; expected status is published.',
     );
+  });
+
+  it('records and lists Postgres candidate publish, ingest, and eval runs', async () => {
+    const client = new FakePgClient();
+    client.queuedRows = [
+      [toPgCandidateRow(candidate({ status: 'published' }))],
+      [
+        {
+          candidate_id: 'kc_telegram_setup',
+          created_at: '2026-06-17T06:10:00.000Z',
+          metadata: { failures: [] },
+          run_id: 'eval_20260617T061000Z_abcd1234',
+          run_type: 'eval',
+          status: 'passed',
+        },
+      ],
+      [
+        {
+          candidate_id: 'kc_telegram_setup',
+          created_at: '2026-06-17T05:00:00.000Z',
+          metadata: {
+            publishedTarget: 'pages/support-faq.md#kc_telegram_setup',
+          },
+          run_id: 'publish_20260617T050000Z_abcd1234',
+          run_type: 'publish',
+          status: 'completed',
+        },
+        {
+          candidate_id: 'kc_telegram_setup',
+          created_at: '2026-06-17T06:10:00.000Z',
+          metadata: { failures: [] },
+          run_id: 'eval_20260617T061000Z_abcd1234',
+          run_type: 'eval',
+          status: 'passed',
+        },
+      ],
+      [],
+    ];
+    const store = createPgKnowledgeOpsStore({ client });
+
+    const recorded = await store.recordCandidateRun({
+      candidateId: 'kc_telegram_setup',
+      createdAt: '2026-06-17T06:10:00.000Z',
+      metadata: { failures: [] },
+      runId: 'eval_20260617T061000Z_abcd1234',
+      runType: 'eval',
+      status: 'passed',
+    });
+    const runs = await store.listCandidateRuns('kc_telegram_setup');
+
+    expect(client.queries[1]?.sql).toContain('insert into knowledge_candidate_runs');
+    expect(client.queries[1]?.values).toEqual([
+      'kc_telegram_setup',
+      'eval_20260617T061000Z_abcd1234',
+      'eval',
+      'passed',
+      JSON.stringify({ failures: [] }),
+      '2026-06-17T06:10:00.000Z',
+    ]);
+    expect(client.queries[2]?.sql).toContain('from knowledge_candidate_runs');
+    expect(client.queries[2]?.values).toEqual(['kc_telegram_setup']);
+    expect(recorded).toMatchObject({
+      candidateId: 'kc_telegram_setup',
+      runId: 'eval_20260617T061000Z_abcd1234',
+      runType: 'eval',
+      status: 'passed',
+    });
+    expect(runs).toEqual([
+      expect.objectContaining({
+        runId: 'publish_20260617T050000Z_abcd1234',
+        runType: 'publish',
+      }),
+      expect.objectContaining({
+        metadata: { failures: [] },
+        runType: 'eval',
+      }),
+    ]);
+    await expect(
+      store.recordCandidateRun({
+        candidateId: 'missing',
+        runId: 'eval_missing',
+        runType: 'eval',
+        status: 'failed',
+      }),
+    ).rejects.toThrow('Knowledge candidate not found: missing');
   });
 
   it('records human review decisions in Postgres', async () => {
