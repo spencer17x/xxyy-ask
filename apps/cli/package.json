@@ -9,6 +9,7 @@
   "dependencies": {
     "@xxyy/agent-core": "workspace:*",
     "@xxyy/knowledge": "workspace:*",
+    "@xxyy/knowledge-ops": "workspace:*",
     "@xxyy/rag-core": "workspace:*",
     "@xxyy/shared": "workspace:*"
   },

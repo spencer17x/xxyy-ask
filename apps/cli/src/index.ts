@@ -10,6 +10,7 @@ import {
   prepareKnowledgeChunks,
   type PreparedKnowledgeChunk,
 } from '@xxyy/knowledge';
+import { migratePgKnowledgeOpsStore } from '@xxyy/knowledge-ops';
 import {
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
@@ -751,6 +752,7 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
     });
     const store = createPgVectorStore({ client: pool, embeddingProvider });
     await store.migrate();
+    await migratePgKnowledgeOpsStore(pool);
     const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
     const ingestionRun = createIngestionRun({
       chunks: embeddedChunks,
@@ -786,6 +788,7 @@ async function syncXUpdates(io: CliIo): Promise<SyncXUpdatesSummary> {
     });
     const store = createPgVectorStore({ client: pool, embeddingProvider });
     await store.migrate();
+    await migratePgKnowledgeOpsStore(pool);
     const existingHashes = await store.getChunkContentHashes(chunks.map((chunk) => chunk.id));
     const changedChunks = chunks.filter(
       (chunk) => existingHashes.get(chunk.id) !== chunk.contentHash,
@@ -826,6 +829,7 @@ async function migrateDatabase(config: ReturnType<typeof loadRagConfig>): Promis
       },
     });
     await store.migrate();
+    await migratePgKnowledgeOpsStore(pool);
   } finally {
     await pool.end();
   }

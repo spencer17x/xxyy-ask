@@ -12,6 +12,14 @@ export {
   type ReviewKnowledgeCandidateInput,
 } from './knowledge-candidate-store.js';
 export {
+  createPgKnowledgeOpsStore,
+  migratePgKnowledgeOpsStore,
+  type ListRawSupportMessagesFilter,
+  type PgClientLike,
+  type PgKnowledgeOpsStore,
+  type PgKnowledgeOpsStoreOptions,
+} from './pg-store.js';
+export {
   redactSupportMessage,
   redactSupportText,
   type RedactSupportTextResult,

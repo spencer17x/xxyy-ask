@@ -23,7 +23,7 @@
 
 - `packages/shared`：共享类型与聊天请求/响应契约。
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、索引读写。
-- `packages/knowledge-ops`：客服消息脱敏、候选知识挖掘和待审队列内核；未审核内容不会进入正式 RAG 知识库。
+- `packages/knowledge-ops`：客服消息脱敏、候选知识挖掘、Raw Source 持久化和 Candidate 待审队列；未审核内容不会进入正式 RAG 知识库。
 - `packages/rag-core`：意图分类、混合检索、LLM 回答生成、边界回复、反馈存储、评测。
 - `packages/agent-core`：Tool Registry、客服 Agent Runtime、产品工具和交易分析工具共享定义。
 - `packages/product-qa-mcp`：产品问答 MCP stdio server，暴露 `search_product_docs` 和 `answer_product_question`。

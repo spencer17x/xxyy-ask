@@ -628,6 +628,10 @@ describe('runCli', () => {
       events.push('migrate');
       return Promise.resolve();
     });
+    const migratePgKnowledgeOpsStore = vi.fn(() => {
+      events.push('knowledge-ops:migrate');
+      return Promise.resolve();
+    });
     const replaceChunks = vi.fn(() => {
       events.push('replace');
       return Promise.resolve();
@@ -675,6 +679,13 @@ describe('runCli', () => {
         })),
       };
     });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        migratePgKnowledgeOpsStore,
+      };
+    });
 
     try {
       const { runCli: runCliWithMocks } = await import('./index.js');
@@ -687,7 +698,14 @@ describe('runCli', () => {
       });
 
       expect(exitCode).toBe(0);
-      expect(events).toEqual(['migrate', 'embed', 'replace', 'record', 'pool.end']);
+      expect(events).toEqual([
+        'migrate',
+        'knowledge-ops:migrate',
+        'embed',
+        'replace',
+        'record',
+        'pool.end',
+      ]);
       expect(recordIngestionRun).toHaveBeenCalledWith(
         expect.objectContaining({
           chunkCount: 1,
@@ -699,6 +717,7 @@ describe('runCli', () => {
     } finally {
       vi.doUnmock('@xxyy/knowledge');
       vi.doUnmock('@xxyy/rag-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
     }
   });
 
@@ -746,6 +765,10 @@ describe('runCli', () => {
     });
     const migrate = vi.fn(() => {
       events.push('migrate');
+      return Promise.resolve();
+    });
+    const migratePgKnowledgeOpsStore = vi.fn(() => {
+      events.push('knowledge-ops:migrate');
       return Promise.resolve();
     });
     const getChunkContentHashes = vi.fn(() => {
@@ -809,6 +832,13 @@ describe('runCli', () => {
         })),
       };
     });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        migratePgKnowledgeOpsStore,
+      };
+    });
 
     try {
       const { runCli: runCliWithMocks } = await import('./index.js');
@@ -830,6 +860,7 @@ describe('runCli', () => {
       expect(events).toEqual([
         'prepare:x-doc',
         'migrate',
+        'knowledge-ops:migrate',
         'hashes',
         'embed:changed searchable text',
         'upsert',
@@ -859,6 +890,7 @@ describe('runCli', () => {
     } finally {
       vi.doUnmock('@xxyy/knowledge');
       vi.doUnmock('@xxyy/rag-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
     }
   });
 
@@ -867,7 +899,11 @@ describe('runCli', () => {
 
     const events: string[] = [];
     const migrate = vi.fn(() => {
-      events.push('migrate');
+      events.push('rag:migrate');
+      return Promise.resolve();
+    });
+    const migratePgKnowledgeOpsStore = vi.fn(() => {
+      events.push('knowledge-ops:migrate');
       return Promise.resolve();
     });
     const end = vi.fn(() => {
@@ -904,6 +940,13 @@ describe('runCli', () => {
         })),
       };
     });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        migratePgKnowledgeOpsStore,
+      };
+    });
 
     try {
       const { runCli: runCliWithMocks } = await import('./index.js');
@@ -922,10 +965,11 @@ describe('runCli', () => {
       });
 
       expect(exitCode).toBe(0);
-      expect(events).toEqual(['migrate', 'pool.end']);
+      expect(events).toEqual(['rag:migrate', 'knowledge-ops:migrate', 'pool.end']);
       expect(stdout.join('')).toContain('Database migrations applied.');
     } finally {
       vi.doUnmock('@xxyy/rag-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
     }
   });
 

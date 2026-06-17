@@ -27,7 +27,7 @@ apps/
 packages/
   shared/     共享类型
   knowledge/  文档加载、chunk、tokenize、embedding provider
-  knowledge-ops/  Telegram/客服消息脱敏、候选知识挖掘和待审队列内核
+  knowledge-ops/  Telegram/客服消息脱敏、候选知识挖掘和 Postgres/内存待审队列
   rag-core/   意图分类、检索、回答生成、pgvector store、评测
   agent-core/ Tool Registry、客服 Agent Runtime 和共享工具定义
   product-qa-mcp/  产品问答 MCP stdio server

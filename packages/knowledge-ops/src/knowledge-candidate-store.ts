@@ -1,6 +1,7 @@
 import type { KnowledgeCandidate, KnowledgeCandidateStatus } from './types.js';
 
 export interface ListKnowledgeCandidatesFilter {
+  limit?: number;
   status?: KnowledgeCandidateStatus;
   type?: KnowledgeCandidate['type'];
   riskLevel?: KnowledgeCandidate['riskLevel'];
@@ -53,7 +54,9 @@ export function createInMemoryKnowledgeCandidateStore(
 
     listCandidates(filter = {}) {
       return Promise.resolve(
-        Array.from(candidates.values()).filter((candidate) => matchesFilter(candidate, filter)),
+        Array.from(candidates.values())
+          .filter((candidate) => matchesFilter(candidate, filter))
+          .slice(0, normalizeLimit(filter.limit)),
       );
     },
 
@@ -68,6 +71,14 @@ export function createInMemoryKnowledgeCandidateStore(
       return Promise.resolve(updated);
     },
   };
+}
+
+function normalizeLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isInteger(limit) || limit <= 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return limit;
 }
 
 function matchesFilter(
