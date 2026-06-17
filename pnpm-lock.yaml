@@ -92,6 +92,24 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
+  packages/product-qa-mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
+      '@xxyy/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@xxyy/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
+      '@xxyy/rag-core':
+        specifier: workspace:*
+        version: link:../rag-core
+      '@xxyy/shared':
+        specifier: workspace:*
+        version: link:../shared
+
   packages/rag-core:
     dependencies:
       '@xxyy/knowledge':

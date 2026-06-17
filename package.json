@@ -24,6 +24,7 @@
     "rag:migrate": "pnpm --filter @xxyy/cli rag:migrate",
     "rag:stats": "pnpm --filter @xxyy/cli rag:stats",
     "rag:sync:x": "pnpm --filter @xxyy/cli rag:sync:x",
+    "product:mcp": "pnpm --filter @xxyy/product-qa-mcp start",
     "start": "node scripts/start-agent.mjs",
     "start:service": "pnpm --filter @xxyy/api start",
     "sync": "node scripts/rag-refresh.mjs",

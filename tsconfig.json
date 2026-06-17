@@ -19,6 +19,9 @@
       "path": "./packages/agent-core"
     },
     {
+      "path": "./packages/product-qa-mcp"
+    },
+    {
       "path": "./packages/tx-analysis-mcp"
     },
     {

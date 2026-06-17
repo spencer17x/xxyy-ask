@@ -1,0 +1,4 @@
+interface:
+  display_name: 'XXYY Product Support'
+  short_description: 'Use XXYY MCP for product support'
+  default_prompt: 'Use $xxyy-product-support to answer this XXYY product question from the knowledge base.'
