@@ -38,6 +38,7 @@ const txAnalysisChainSchema = z.enum(['solana', 'base', 'ethereum', 'bsc', 'unkn
 const txAnalysisChannelSchema = z.enum(['agent', 'cli', 'ops', 'support', 'telegram', 'web']);
 const txAnalysisReportStatusSchema = z.enum(['failure', 'success']);
 const txAnalysisReviewStatusSchema = z.enum(['closed', 'in_review', 'open']);
+const nonEmptyStringSchema = z.string().trim().min(1);
 const txAnalysisUnavailableReasonSchema = z.enum([
   'not_configured',
   'provider_unavailable',
@@ -79,7 +80,7 @@ const txAnalysisFailureSchema = z
 export const analyzeTransactionInputSchema = z.object({
   chain: z.string().optional(),
   channel: txAnalysisChannelSchema.optional(),
-  txHash: z.string(),
+  txHash: nonEmptyStringSchema,
 });
 
 export const analyzeTransactionOutputSchema = z.discriminatedUnion('status', [
@@ -94,7 +95,7 @@ export const analyzeTransactionOutputSchema = z.discriminatedUnion('status', [
 ]);
 
 export const getAnalysisReportInputSchema = z.object({
-  id: z.string(),
+  id: nonEmptyStringSchema,
 });
 
 export const getAnalysisReportOutputSchema = z.strictObject({
@@ -105,10 +106,10 @@ export const listAnalysisReportsInputSchema = z.object({
   chain: txAnalysisChainSchema.optional(),
   limit: z.number().int().positive().optional(),
   reason: txAnalysisUnavailableReasonSchema.optional(),
-  reviewAssignee: z.string().optional(),
+  reviewAssignee: nonEmptyStringSchema.optional(),
   reviewStatus: txAnalysisReviewStatusSchema.optional(),
   status: txAnalysisReportStatusSchema.optional(),
-  txHash: z.string().optional(),
+  txHash: nonEmptyStringSchema.optional(),
 });
 
 export const listAnalysisReportsOutputSchema = z.object({

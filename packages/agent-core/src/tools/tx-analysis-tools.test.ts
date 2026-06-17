@@ -7,7 +7,13 @@ import {
 } from '@xxyy/rag-core';
 
 import { createToolRegistry } from '../tool-registry.js';
-import { TX_ANALYSIS_TOOL_NAMES, createTxAnalysisTools } from './tx-analysis-tools.js';
+import {
+  TX_ANALYSIS_TOOL_NAMES,
+  analyzeTransactionInputSchema,
+  getAnalysisReportInputSchema,
+  listAnalysisReportsInputSchema,
+  createTxAnalysisTools,
+} from './tx-analysis-tools.js';
 
 describe('createTxAnalysisTools', () => {
   it('exports the transaction analysis tool names in registration order', () => {
@@ -52,6 +58,13 @@ describe('createTxAnalysisTools', () => {
       chain: 'base',
       txHash: '0x1111111111111111111111111111111111111111111111111111111111111111',
     });
+  });
+
+  it('rejects blank public MCP inputs at the schema boundary', () => {
+    expect(analyzeTransactionInputSchema.safeParse({ txHash: '' }).success).toBe(false);
+    expect(getAnalysisReportInputSchema.safeParse({ id: '' }).success).toBe(false);
+    expect(listAnalysisReportsInputSchema.safeParse({ reviewAssignee: '' }).success).toBe(false);
+    expect(listAnalysisReportsInputSchema.safeParse({ txHash: '' }).success).toBe(false);
   });
 
   it('wraps an existing report document in the get_analysis_report output shape', async () => {

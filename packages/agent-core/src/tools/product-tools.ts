@@ -36,6 +36,7 @@ const DEFAULT_TOP_K = 6;
 const MAX_CITATIONS = 3;
 const MAX_EXCERPT_LENGTH = 220;
 
+const nonEmptyStringSchema = z.string().trim().min(1);
 const productChannelSchema = z.enum(['cli', 'web', 'telegram', 'agent']);
 
 const citationSchema = z.object({
@@ -45,32 +46,30 @@ const citationSchema = z.object({
   title: z.string(),
 });
 
-const retrievedChunkSchema = z
-  .object({
-    documentId: z.string(),
-    id: z.string(),
-    lexicalScore: z.number(),
-    metadata: z
-      .object({
-        file: z.string(),
-        headingPath: z.array(z.string()),
-        module: z.string(),
-        order: z.number().optional(),
-        retrievedAt: z.string().optional(),
-        sourceType: z.enum(['official_docs', 'x_updates']),
-        sourceUrl: z.string().optional(),
-        title: z.string(),
-      })
-      .passthrough(),
-    rank: z.number(),
-    score: z.number(),
-    text: z.string(),
-    vectorScore: z.number(),
-  })
-  .passthrough();
+const retrievedChunkSchema = z.object({
+  documentId: z.string(),
+  id: z.string(),
+  lexicalScore: z.number(),
+  metadata: z
+    .object({
+      file: z.string(),
+      headingPath: z.array(z.string()),
+      module: z.string(),
+      order: z.number().optional(),
+      retrievedAt: z.string().optional(),
+      sourceType: z.enum(['official_docs', 'x_updates']),
+      sourceUrl: z.string().optional(),
+      title: z.string(),
+    })
+    .passthrough(),
+  rank: z.number(),
+  score: z.number(),
+  text: z.string(),
+  vectorScore: z.number(),
+});
 
 export const searchProductDocsInputSchema = z.object({
-  query: z.string(),
+  query: nonEmptyStringSchema,
   topK: z.number().int().positive().optional(),
 });
 
@@ -82,7 +81,7 @@ export const searchProductDocsOutputSchema = z.object({
 
 export const answerProductQuestionInputSchema = z.object({
   channel: productChannelSchema.optional(),
-  question: z.string(),
+  question: nonEmptyStringSchema,
 });
 
 export const answerProductQuestionOutputSchema = z.object({
@@ -190,10 +189,16 @@ function toSearchProductDocsOutput(
 
 function toOutputChunk(chunk: RetrievedChunk): z.input<typeof retrievedChunkSchema> {
   return {
-    ...chunk,
+    documentId: chunk.documentId,
+    id: chunk.id,
+    lexicalScore: chunk.lexicalScore,
     metadata: {
       ...chunk.metadata,
     },
+    rank: chunk.rank,
+    score: chunk.score,
+    text: chunk.text,
+    vectorScore: chunk.vectorScore,
   };
 }
 

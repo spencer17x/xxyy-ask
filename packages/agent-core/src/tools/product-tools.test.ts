@@ -4,7 +4,12 @@ import type { ChatResponse, RagIndex } from '@xxyy/shared';
 import type { AnswerProvider, RetrievedChunk, Retriever } from '@xxyy/rag-core';
 
 import { createToolRegistry } from '../tool-registry.js';
-import { PRODUCT_TOOL_NAMES, createProductTools } from './product-tools.js';
+import {
+  PRODUCT_TOOL_NAMES,
+  answerProductQuestionInputSchema,
+  createProductTools,
+  searchProductDocsInputSchema,
+} from './product-tools.js';
 
 describe('createProductTools', () => {
   it('exports the product tool names in registration order', () => {
@@ -42,6 +47,28 @@ describe('createProductTools', () => {
     });
     expect(result.chunks).toHaveLength(1);
     expect(result.confidence).toBeGreaterThan(0);
+  });
+
+  it('keeps search_product_docs chunks free of internal index artifacts', async () => {
+    const registry = createToolRegistry();
+
+    for (const tool of createProductTools({ config: { topK: 1 }, index: createRagIndex() })) {
+      registry.register(tool);
+    }
+
+    const result = (await registry.execute('search_product_docs', {
+      query: 'Telegram 通知如何配置？',
+    })) as { chunks: Array<Record<string, unknown>> };
+
+    expect(result.chunks[0]).not.toHaveProperty('embedding');
+    expect(result.chunks[0]).not.toHaveProperty('tokens');
+  });
+
+  it('rejects blank product tool inputs at the schema boundary', () => {
+    expect(searchProductDocsInputSchema.safeParse({ query: '' }).success).toBe(false);
+    expect(searchProductDocsInputSchema.safeParse({ query: '   ' }).success).toBe(false);
+    expect(answerProductQuestionInputSchema.safeParse({ question: '' }).success).toBe(false);
+    expect(answerProductQuestionInputSchema.safeParse({ question: '   ' }).success).toBe(false);
   });
 
   it('answers a product question through an injected AnswerProvider with retrieved chunks', async () => {
