@@ -5,8 +5,8 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PreparedKnowledgeChunk } from '@xxyy/knowledge';
+import type { CreateCustomerAgentChatServiceOptions } from '@xxyy/agent-core';
 import type {
-  CreateChatServiceOptions,
   EmbeddedKnowledgeChunk,
   EvaluateCasesOptions,
   EvaluationCase,
@@ -481,7 +481,20 @@ describe('runCli', () => {
     vi.resetModules();
 
     const stdout: string[] = [];
-    const createChatService = vi.fn((_options: CreateChatServiceOptions) => ({
+    const createCustomerAgentChatService = vi.fn(
+      (_options: CreateCustomerAgentChatServiceOptions) => ({
+        ask: vi.fn(),
+        stream: vi.fn(),
+      }),
+    );
+    vi.doMock('@xxyy/agent-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createCustomerAgentChatService,
+      };
+    });
+    const createLegacyChatService = vi.fn(() => ({
       ask: vi.fn(),
       stream: vi.fn(),
     }));
@@ -513,7 +526,7 @@ describe('runCli', () => {
       const actual = await importOriginal<Record<string, unknown>>();
       return {
         ...actual,
-        createChatService,
+        createChatService: createLegacyChatService,
         createLazyRetriever: vi.fn(() => ({ retrieve: vi.fn() })),
         createPgPool: vi.fn(() => ({ end: vi.fn() })),
         createPgVectorStore: vi.fn(() => ({ retrieve: vi.fn() })),
@@ -529,6 +542,9 @@ describe('runCli', () => {
           openAiModel: 'gpt-test',
           openAiRequestTimeoutMs: 30000,
           topK: 6,
+          txAnalysisProvider: 'none',
+          txAnalysisReportStore: 'file',
+          txAnalysisReviewer: 'none',
         })),
       };
     });
@@ -556,14 +572,18 @@ describe('runCli', () => {
       });
 
       expect(exitCode).toBe(0);
-      expect(createChatService).toHaveBeenCalledTimes(1);
-      expect(typeof createChatService.mock.calls[0]?.[0].answerProvider?.answer).toBe('function');
+      expect(createLegacyChatService).not.toHaveBeenCalled();
+      expect(createCustomerAgentChatService).toHaveBeenCalledTimes(1);
+      expect(typeof createCustomerAgentChatService.mock.calls[0]?.[0].answerProvider?.answer).toBe(
+        'function',
+      );
       expect(evaluateCases).toHaveBeenCalledTimes(1);
       expect(typeof evaluateCases.mock.calls[0]?.[2]?.onResult).toBe('function');
       expect(stdout.join('')).toContain('[1/1] PASS pro benefits');
       expect(stdout.join('')).toContain('Evaluation: 1/1 passed');
       expect(stdout.join('').match(/PASS pro benefits/gu)).toHaveLength(1);
     } finally {
+      vi.doUnmock('@xxyy/agent-core');
       vi.doUnmock('@xxyy/knowledge');
       vi.doUnmock('@xxyy/rag-core');
     }

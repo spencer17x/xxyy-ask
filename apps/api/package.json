@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@xxyy/agent-core": "workspace:*",
     "@xxyy/knowledge": "workspace:*",
     "@xxyy/rag-core": "workspace:*",
     "@xxyy/shared": "workspace:*",

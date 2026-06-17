@@ -41,6 +41,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@xxyy/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
       '@xxyy/knowledge':
         specifier: workspace:*
         version: link:../../packages/knowledge
@@ -56,6 +59,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@xxyy/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
       '@xxyy/knowledge':
         specifier: workspace:*
         version: link:../../packages/knowledge

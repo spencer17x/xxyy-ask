@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import {
@@ -75,6 +75,29 @@ async function callHandler(
 
   response.rawBody = Buffer.concat(bodyChunks);
   return response;
+}
+
+function createRuntimeConfigForTest(): Record<string, unknown> {
+  return {
+    answerProvider: 'openai',
+    databaseUrl: 'postgres://xxyy:secret@example.test/xxyy_ask',
+    openAiApiKey: 'test-key',
+    openAiApiKeyPresent: true,
+    openAiBaseUrl: 'https://api.openai.test/v1',
+    openAiEmbeddingModel: 'text-embedding-3-small',
+    openAiMaxRetries: 1,
+    openAiModel: 'test-model',
+    openAiRequestTimeoutMs: 30000,
+    topK: 6,
+    txAnalysisBrowserHeadless: true,
+    txAnalysisBrowserMaxConcurrency: 1,
+    txAnalysisBrowserMaxRetries: 1,
+    txAnalysisBrowserTimeoutMs: 60000,
+    txAnalysisProvider: 'none',
+    txAnalysisReportStore: 'file',
+    txAnalysisReviewer: 'none',
+    txAnalysisScreenshotBaseUrl: '/assets',
+  };
 }
 
 describe('createRequestHandler', () => {
@@ -2679,6 +2702,94 @@ describe('createRequestHandler', () => {
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toEqual(chatResponse);
+  });
+
+  it('builds the default chat service from the Customer Agent Runtime factory', async () => {
+    vi.resetModules();
+
+    const agentAsk = vi.fn(() =>
+      Promise.resolve({
+        answer: 'agent runtime response',
+        citations: [],
+        confidence: 0.7,
+        intent: 'product_qa' as const,
+      }),
+    );
+    const createCustomerAgentChatService = vi.fn(() => ({
+      ask: agentAsk,
+      stream: vi.fn(),
+    }));
+    const createLegacyChatService = vi.fn(() => ({
+      ask: vi.fn(() =>
+        Promise.resolve({
+          answer: 'legacy response',
+          citations: [],
+          confidence: 0.1,
+          intent: 'product_qa' as const,
+        }),
+      ),
+      stream: vi.fn(),
+    }));
+
+    vi.doMock('@xxyy/agent-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createCustomerAgentChatService,
+      };
+    });
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createOpenAiEmbeddingProvider: vi.fn(() => ({ embedTexts: vi.fn() })),
+      };
+    });
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createChatService: createLegacyChatService,
+        createLazyRetriever: vi.fn(() => ({ retrieve: vi.fn() })),
+        loadRagConfig: vi.fn(() => createRuntimeConfigForTest()),
+      };
+    });
+
+    try {
+      const { createRequestHandler: createRequestHandlerWithMocks } = await import('./index.js');
+      const handler = createRequestHandlerWithMocks({
+        env: {
+          DATABASE_URL: 'postgres://xxyy:secret@example.test/xxyy_ask',
+          OPENAI_API_KEY: 'test-key',
+          OPENAI_MODEL: 'test-model',
+        },
+      });
+
+      const response = await callHandler(handler, {
+        body: {
+          channel: 'web',
+          message: 'XXYY Pro 有哪些权益？',
+        },
+        method: 'POST',
+        url: '/api/chat',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body)).toMatchObject({
+        answer: 'agent runtime response',
+        intent: 'product_qa',
+      });
+      expect(createLegacyChatService).not.toHaveBeenCalled();
+      expect(createCustomerAgentChatService).toHaveBeenCalledTimes(1);
+      expect(agentAsk).toHaveBeenCalledWith({
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？',
+      });
+    } finally {
+      vi.doUnmock('@xxyy/agent-core');
+      vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+    }
   });
 
   it('logs completed chat requests with RAG response metrics', async () => {

@@ -4,9 +4,11 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
+import { createCustomerAgentChatService } from '@xxyy/agent-core';
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
-  createChatService,
+  createConfiguredTxAnalysisProvider,
+  createOpenAiAnswerProvider,
   createTxAnalysisUnavailableAnswer,
   createLazyRetriever,
   createPgTxAnalysisReportStore,
@@ -39,6 +41,7 @@ import type {
 } from '@xxyy/shared';
 import { supportedChannels, supportedIntents } from '@xxyy/shared';
 import type {
+  AnswerProvider,
   ChatService,
   FeedbackStats,
   FindTxAnalysisReportsOptions,
@@ -1484,8 +1487,34 @@ function createCachedChatServiceLoader(
         throw error;
       }
     });
-    cachedService = createChatService({ config, retriever });
+    cachedService = createCustomerAgentChatService({
+      answerProvider: createLazyAnswerProvider(config),
+      config,
+      retriever,
+      txAnalysisProvider: createConfiguredTxAnalysisProvider(config),
+    });
     return Promise.resolve(cachedService);
+  };
+}
+
+function createLazyAnswerProvider(config: ReturnType<typeof loadRagConfig>): AnswerProvider {
+  let cachedProvider: AnswerProvider | undefined;
+
+  function getProvider(): AnswerProvider {
+    cachedProvider ??= createOpenAiAnswerProvider({
+      apiKey: config.openAiApiKey,
+      baseUrl: config.openAiBaseUrl,
+      maxRetries: config.openAiMaxRetries,
+      model: config.openAiModel,
+      requestTimeoutMs: config.openAiRequestTimeoutMs,
+    });
+    return cachedProvider;
+  }
+
+  return {
+    answer(input) {
+      return getProvider().answer(input);
+    },
   };
 }
 

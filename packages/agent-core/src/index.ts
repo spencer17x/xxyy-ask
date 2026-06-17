@@ -2,6 +2,8 @@ export const workspacePackageName = '@xxyy/agent-core';
 
 export { createInMemoryAuditSink, createNoopAuditSink } from './audit.js';
 export type { InMemoryAuditSink, ToolAuditEvent, ToolAuditSink, ToolAuditStatus } from './audit.js';
+export { createCustomerAgentChatService } from './customer-agent-chat-service.js';
+export type { CreateCustomerAgentChatServiceOptions } from './customer-agent-chat-service.js';
 export { createCustomerAgentRuntime } from './customer-agent-runtime.js';
 export type {
   CreateCustomerAgentRuntimeOptions,
