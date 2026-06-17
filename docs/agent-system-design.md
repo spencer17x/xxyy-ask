@@ -12,7 +12,7 @@
 - 知识同步：产品文档和官方 X 更新支持全量入库、X 增量同步、知识库统计和负反馈导出；授权 Telegram 客服消息可以进入 Raw Source 和 Candidate 待审队列，审核通过后发布到 reviewed support knowledge，并通过 `rag:gate:knowledge` 完成 ingest/embedding 和 targeted eval。
 - MCP 能力：`@xxyy/product-qa-mcp` 暴露产品问答工具，`@xxyy/tx-analysis-mcp` 暴露交易分析工具，`@xxyy/knowledge-ops-mcp` 暴露内部知识运营工具，三者均复用 `@xxyy/agent-core` 工具定义。
 
-但当前还没有完整的知识运营 Agent Profile、权限策略落地和调用审计。它们适合当前客服 RAG 第一版闭环，但距离完整 Agentic RAG 应用仍需要把 Profile、权限和观测补齐。
+当前第一版已经具备知识运营 Agent Profile 的内部运行入口、ops 授权校验和工具调用审计，适合当前客服 RAG 第一版闭环。距离完整 Agentic RAG 应用仍需要继续补齐更细的权限角色、审计查询/可视化和知识发布回滚工作台。
 
 ## 目标
 
@@ -606,14 +606,15 @@ Eval 失败时不应静默上线，应保留发布记录、失败原因和回滚
 知识运营 Agent 处理流程：
 
 1. 先校验内部知识运营权限，未通过时直接拒绝。
-2. 增量采集授权 Telegram 来源：`ingest_telegram_messages`。
-3. 对新消息执行脱敏、归一化和候选挖掘：`mine_support_conversations`。
+2. 增量采集授权 Telegram 来源并生成待审候选：`sync_telegram_support`。
+3. 对新消息执行脱敏、归一化和候选挖掘，并且只写入 `needs_review` 队列。
 4. 将候选提交到 `needs_review` 队列：`list_knowledge_candidates`。
 5. 人工审核后调用 `review_knowledge_candidate`。
 6. 只有 `approved` 候选才能调用 `publish_knowledge_candidate`。
-7. 发布后调用 `run_knowledge_eval_gate`，通过后才把本次知识更新视为可生产确认。
+7. 发布后调用 `run_knowledge_gate`，通过后才把本次知识更新视为可生产确认。
 
 知识运营 Agent 可以帮助生成候选和摘要，但第一版不能替代人工审核。
+当前实现为 `createKnowledgeOpsAgentRuntime`，它只通过 `ToolRegistry` 调用 `list_knowledge_candidates`、`review_knowledge_candidate`、`publish_knowledge_candidate`、`run_knowledge_gate` 和 `sync_telegram_support`，所有调用都要求 `opsAuthorized` 并写入 `ToolAuditSink`。
 
 ## MCP Adapter
 
@@ -706,11 +707,11 @@ Agent Runtime 不直接暴露底层异常栈；对用户返回客服可读文案
 9. [x] 发布后触发 ingest/embedding 和第一版 targeted eval gate：`pnpm rag:gate:knowledge -- --id <candidate-id> --fast` 只接受 `published` 候选，执行正式 ingest/embedding，运行候选 generated eval cases，并把状态推进到 `ingested` 后标记为 `eval_passed` 或 `eval_failed`。
 10. [x] 持久化 publish run、ingestion run 和 eval run 关联，并补 eval 失败回滚线索。
 11. [x] 新增知识运营 Skill 使用说明：`skills/xxyy-knowledge-ops` 约束内部 MCP 的安全调用流程。
-12. [ ] 新增知识运营 Agent Profile、权限策略和审计落地。
+12. [x] 新增知识运营 Agent Profile、权限策略和调用审计落地：`createKnowledgeOpsAgentRuntime` 统一校验 `opsAuthorized`，并对候选查询、审核、发布、gate 和 Telegram sync 调用写入结构化审计。
 
 ### Phase 3：知识质量和运营增强
 
-1. 增加知识版本、发布 run、ingestion run 和 eval run 的关联查询。
+1. 增加知识版本、发布 run、ingestion run、eval run 和工具调用审计的关联查询/可视化。
 2. 增加候选合并、重复问题聚类和知识缺口看板。
 3. 增加 source-aware incremental sync，减少全量 embedding 成本。
 4. 增加内部 MCP 暴露策略，让受信任 Agent 可复用知识运营工具。

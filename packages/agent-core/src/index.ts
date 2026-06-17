@@ -10,6 +10,14 @@ export type {
   CustomerAgentRuntime,
 } from './customer-agent-runtime.js';
 export {
+  KnowledgeOpsAgentUnauthorizedError,
+  createKnowledgeOpsAgentRuntime,
+} from './knowledge-ops-agent-runtime.js';
+export type {
+  CreateKnowledgeOpsAgentRuntimeOptions,
+  KnowledgeOpsAgentRuntime,
+} from './knowledge-ops-agent-runtime.js';
+export {
   KNOWLEDGE_OPS_TOOL_NAMES,
   createKnowledgeOpsTools,
   listKnowledgeCandidatesInputSchema,
