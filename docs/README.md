@@ -23,13 +23,13 @@
 
 - `packages/shared`：共享类型与聊天请求/响应契约。
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、索引读写。
-- `packages/knowledge-ops`：客服消息脱敏、候选知识挖掘、Raw Source 持久化和 Candidate 待审队列；未审核内容不会进入正式 RAG 知识库。
+- `packages/knowledge-ops`：Telegram 授权采集、客服消息脱敏、候选知识挖掘、Raw Source 持久化和 Candidate 待审队列；未审核内容不会进入正式 RAG 知识库。
 - `packages/rag-core`：意图分类、混合检索、LLM 回答生成、边界回复、反馈存储、评测。
 - `packages/agent-core`：Tool Registry、客服 Agent Runtime、产品工具和交易分析工具共享定义。
 - `packages/product-qa-mcp`：产品问答 MCP stdio server，暴露 `search_product_docs` 和 `answer_product_question`。
 - `packages/tx-analysis-mcp`：夹子查询 MCP stdio server，复用 Agent 工具定义。
 - `apps/cli`：本地 `ingest` / `sync:x` / `migrate` / `stats` / `feedback` / `ask` / `evaluate`。
-- `apps/api`：`GET /health`、`GET /health/deep`、`GET /ops`、`GET /api/ops/summary`、`POST /api/chat`、`POST /api/chat/stream`、`POST /api/tx-analysis`、`POST /api/feedback`，以及交易分析报告查询和复查接口。
+- `apps/api`：`GET /health`、`GET /health/deep`、`GET /ops`、`GET /api/ops/summary`、`POST /api/chat`、`POST /api/chat/stream`、`POST /api/tx-analysis`、`POST /api/feedback`，以及交易分析报告查询/复查和候选知识查询/审核接口。
 - `apps/web`：静态聊天页和同源运维页，聊天页调用 `/api/chat/stream` 并提交 `/api/feedback`，运维页调用 ops summary 和交易分析报告接口。
 
 LLM 配置：

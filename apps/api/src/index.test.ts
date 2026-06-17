@@ -6,6 +6,8 @@ import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
+import type { KnowledgeCandidate, KnowledgeCandidateStore } from '@xxyy/knowledge-ops';
+import { KnowledgeCandidateNotFoundError } from '@xxyy/knowledge-ops';
 import {
   createChatService,
   LlmConfigurationError,
@@ -97,6 +99,35 @@ function createRuntimeConfigForTest(): Record<string, unknown> {
     txAnalysisReportStore: 'file',
     txAnalysisReviewer: 'none',
     txAnalysisScreenshotBaseUrl: '/assets',
+  };
+}
+
+function knowledgeCandidate(overrides: Partial<KnowledgeCandidate> = {}): KnowledgeCandidate {
+  return {
+    confidence: 0.8,
+    createdAt: '2026-06-17T02:00:00.000Z',
+    existingKnowledgeMatches: [],
+    generatedEvalCases: [
+      {
+        expectedAnswer: '在钱包监控里配置 Telegram Bot。',
+        question: 'Telegram 通知怎么设置？',
+      },
+    ],
+    id: 'kc_telegram_setup',
+    proposedAnswer: '在钱包监控里配置 Telegram Bot。',
+    question: 'Telegram 通知怎么设置？',
+    redactionReport: {
+      entities: [],
+      riskFlags: [],
+      riskLevel: 'low',
+    },
+    riskLevel: 'low',
+    sourceRefs: [{ source: 'telegram', chatIdHash: 'support_chat_hash', messageId: '10' }],
+    status: 'needs_review',
+    targetCategory: 'product_faq',
+    type: 'faq',
+    updatedAt: '2026-06-17T02:00:00.000Z',
+    ...overrides,
   };
 }
 
@@ -448,7 +479,7 @@ describe('createRequestHandler', () => {
 
     expect(response.statusCode).toBe(204);
     expect(response.headers['Access-Control-Allow-Origin']).toBe('https://app.example');
-    expect(response.headers['Access-Control-Allow-Methods']).toBe('POST, OPTIONS');
+    expect(response.headers['Access-Control-Allow-Methods']).toBe('GET, POST, PATCH, OPTIONS');
     expect(response.headers['Access-Control-Allow-Headers']).toBe('Content-Type');
     expect(response.body).toBe('');
   });
@@ -2653,6 +2684,173 @@ describe('createRequestHandler', () => {
         updatedAt: '2026-06-11T00:08:00.000Z',
         updatedBy: 'ops-user',
       },
+    });
+  });
+
+  it('requires a valid ops token before listing knowledge candidates', async () => {
+    const handler = createRequestHandler({
+      env: { API_OPS_TOKEN: 'secret-token' },
+      getKnowledgeCandidateStore: () =>
+        Promise.resolve({
+          addCandidates: () => Promise.resolve([]),
+          listCandidates() {
+            throw new Error('listCandidates should not be called for unauthorized requests');
+          },
+          reviewCandidate() {
+            throw new Error('reviewCandidate should not be called for unauthorized requests');
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      method: 'GET',
+      url: '/api/knowledge/candidates',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'ops_unauthorized',
+      message: 'A valid ops token is required.',
+    });
+  });
+
+  it('lists knowledge candidates for the protected review queue', async () => {
+    let listFilter: unknown;
+    const store: KnowledgeCandidateStore = {
+      addCandidates: () => Promise.resolve([]),
+      listCandidates(filter) {
+        listFilter = filter;
+        return Promise.resolve([
+          knowledgeCandidate({
+            id: 'kc_boundary',
+            proposedAnswer: '不能查询账户余额。',
+            question: '帮我查钱包余额。',
+            redactionReport: {
+              entities: [],
+              riskFlags: ['private_account_query'],
+              riskLevel: 'high',
+            },
+            riskLevel: 'high',
+            status: 'needs_review',
+            targetCategory: 'policy_boundary',
+            type: 'boundary_example',
+          }),
+        ]);
+      },
+      reviewCandidate() {
+        throw new Error('reviewCandidate should not be called for list requests');
+      },
+    };
+    const handler = createRequestHandler({
+      env: { API_OPS_TOKEN: 'secret-token' },
+      getKnowledgeCandidateStore: () => Promise.resolve(store),
+    });
+
+    const response = await callHandler(handler, {
+      headers: { Authorization: 'Bearer secret-token' },
+      method: 'GET',
+      url: '/api/knowledge/candidates?status=needs_review&type=boundary_example&riskLevel=high&limit=5',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(listFilter).toEqual({
+      limit: 5,
+      riskLevel: 'high',
+      status: 'needs_review',
+      type: 'boundary_example',
+    });
+    expect(JSON.parse(response.body)).toEqual({
+      candidates: [
+        expect.objectContaining({
+          id: 'kc_boundary',
+          riskLevel: 'high',
+          status: 'needs_review',
+          type: 'boundary_example',
+        }),
+      ],
+    });
+  });
+
+  it('reviews a knowledge candidate through a protected API route without publishing it', async () => {
+    let reviewInput: unknown;
+    const store: KnowledgeCandidateStore = {
+      addCandidates: () => Promise.resolve([]),
+      listCandidates: () => Promise.resolve([]),
+      reviewCandidate(candidateId, input) {
+        reviewInput = { candidateId, input };
+        return Promise.resolve(
+          knowledgeCandidate({
+            reviewNotes: '内容准确，等待发布流程处理。',
+            reviewer: 'ops@example.com',
+            status: 'approved',
+            updatedAt: '2026-06-17T03:00:00.000Z',
+          }),
+        );
+      },
+    };
+    const handler = createRequestHandler({
+      env: { API_OPS_TOKEN: 'secret-token' },
+      getKnowledgeCandidateStore: () => Promise.resolve(store),
+    });
+
+    const response = await callHandler(handler, {
+      body: {
+        action: 'approve',
+        notes: ' 内容准确，等待发布流程处理。 ',
+        reviewedAt: '2026-06-17T03:00:00.000Z',
+        reviewer: ' ops@example.com ',
+      },
+      headers: { Authorization: 'Bearer secret-token' },
+      method: 'PATCH',
+      url: '/api/knowledge/candidates/kc_telegram_setup/review',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(reviewInput).toEqual({
+      candidateId: 'kc_telegram_setup',
+      input: {
+        action: 'approve',
+        notes: '内容准确，等待发布流程处理。',
+        reviewedAt: '2026-06-17T03:00:00.000Z',
+        reviewer: 'ops@example.com',
+      },
+    });
+    const payload = JSON.parse(response.body) as { candidate: Record<string, unknown> };
+    expect(payload.candidate).toMatchObject({
+      id: 'kc_telegram_setup',
+      reviewNotes: '内容准确，等待发布流程处理。',
+      reviewer: 'ops@example.com',
+      status: 'approved',
+    });
+    expect(payload.candidate).not.toHaveProperty('publishedTarget');
+  });
+
+  it('returns 404 when reviewing a missing knowledge candidate', async () => {
+    const handler = createRequestHandler({
+      env: { API_OPS_TOKEN: 'secret-token' },
+      getKnowledgeCandidateStore: () =>
+        Promise.resolve({
+          addCandidates: () => Promise.resolve([]),
+          listCandidates: () => Promise.resolve([]),
+          reviewCandidate: () =>
+            Promise.reject(new KnowledgeCandidateNotFoundError('missing_candidate')),
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      body: {
+        action: 'reject',
+        reviewer: 'ops@example.com',
+      },
+      headers: { Authorization: 'Bearer secret-token' },
+      method: 'PATCH',
+      url: '/api/knowledge/candidates/missing_candidate/review',
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'knowledge_candidate_not_found',
+      message: 'Knowledge candidate was not found.',
     });
   });
 

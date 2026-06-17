@@ -696,10 +696,11 @@ Agent Runtime 不直接暴露底层异常栈；对用户返回客服可读文案
 1. [x] 新增 `@xxyy/knowledge-ops` 基础包。
 2. [x] 新增客服消息类型、Redaction、Conversation Miner 和内存 Knowledge Candidate Store。
 3. [x] 新增 Raw Source Store 和持久化 Knowledge Candidate Store。
-4. [ ] 新增 Telegram Support Connector，只读取授权客服来源。
-5. [ ] 新增候选审核 API、知识运营 Agent Profile 和内部工具。
-6. [ ] 审核通过后发布到 reviewed support knowledge 正式知识源。
-7. [ ] 发布后触发 ingest/embedding 和 targeted eval gate。
+4. [x] 新增 Telegram Support Connector 基础能力，只读取显式授权客服来源。
+5. [x] 新增受保护候选列表和审核 API。
+6. [ ] 新增 Telegram 采集运行入口、知识运营 Agent Profile 和内部工具。
+7. [ ] 审核通过后发布到 reviewed support knowledge 正式知识源。
+8. [ ] 发布后触发 ingest/embedding 和 targeted eval gate。
 
 ### Phase 3：知识质量和运营增强
 

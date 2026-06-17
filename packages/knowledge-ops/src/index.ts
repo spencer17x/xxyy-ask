@@ -24,6 +24,11 @@ export {
   redactSupportText,
   type RedactSupportTextResult,
 } from './redaction.js';
+export {
+  fetchTelegramSupportMessages,
+  type FetchTelegramSupportMessagesOptions,
+  type FetchTelegramSupportMessagesResult,
+} from './telegram-support-connector.js';
 export type {
   ExistingKnowledgeMatch,
   GeneratedEvalCase,

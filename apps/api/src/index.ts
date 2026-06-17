@@ -7,6 +7,15 @@ import path from 'node:path';
 import { createCustomerAgentChatService } from '@xxyy/agent-core';
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
+  KnowledgeCandidateNotFoundError,
+  createPgKnowledgeOpsStore,
+  type KnowledgeCandidateStore,
+  type KnowledgeCandidateStatus,
+  type KnowledgeCandidateType,
+  type KnowledgeRiskLevel,
+  type ReviewKnowledgeCandidateInput,
+} from '@xxyy/knowledge-ops';
+import {
   createConfiguredTxAnalysisProvider,
   createOpenAiAnswerProvider,
   createTxAnalysisUnavailableAnswer,
@@ -97,6 +106,7 @@ export interface CreateRequestHandlerOptions {
   env?: ApiEnv;
   getChatService?: () => Promise<ChatService>;
   getHealthStatus?: () => Promise<DeepHealthStatus>;
+  getKnowledgeCandidateStore?: () => Promise<KnowledgeCandidateStore>;
   getOpsSummary?: () => Promise<OpsSummary>;
   getTxAnalysisReportStore?: () => Promise<TxAnalysisReportReader>;
   logger?: ApiLogger;
@@ -233,10 +243,35 @@ const MAX_FEEDBACK_SESSION_CHARS = 200;
 const MAX_TX_ANALYSIS_REVIEW_ASSIGNEE_CHARS = 200;
 const MAX_TX_ANALYSIS_REVIEW_NOTE_CHARS = 2000;
 const MAX_TX_ANALYSIS_REVIEW_UPDATED_BY_CHARS = 200;
+const MAX_KNOWLEDGE_REVIEW_NOTES_CHARS = 2000;
+const MAX_KNOWLEDGE_REVIEW_REVIEWER_CHARS = 200;
 const supportedTxAnalysisReportStatuses = ['failure', 'success'] as const;
 const supportedTxAnalysisReportReviewStatuses = ['closed', 'in_review', 'open'] as const;
 const supportedTxAnalysisReportReviewActions = ['claim', 'close', 'reopen'] as const;
 type TxAnalysisReportReviewAction = (typeof supportedTxAnalysisReportReviewActions)[number];
+const supportedKnowledgeCandidateStatuses = [
+  'draft',
+  'needs_review',
+  'approved',
+  'rejected',
+  'published',
+  'ingested',
+  'eval_passed',
+  'eval_failed',
+] as const;
+const supportedKnowledgeCandidateTypes = [
+  'faq',
+  'doc_patch',
+  'boundary_example',
+  'eval_case',
+] as const;
+const supportedKnowledgeCandidateRiskLevels = ['low', 'medium', 'high'] as const;
+const supportedKnowledgeCandidateReviewActions = [
+  'approve',
+  'reject',
+  'request_changes',
+  'merge_duplicate',
+] as const;
 const supportedTxAnalysisReportFailureReasons = [
   'not_configured',
   'provider_unavailable',
@@ -260,6 +295,8 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const renderOpsHtml = options.renderOpsHtml ?? renderOpsPage;
   const getChatService = options.getChatService ?? createCachedChatServiceLoader(config);
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
+  const getKnowledgeCandidateStore =
+    options.getKnowledgeCandidateStore ?? createCachedKnowledgeCandidateStoreLoader(config);
   const logger = options.logger ?? noopLogger;
   const now = options.now ?? Date.now;
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
@@ -328,6 +365,33 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       if (request.method === 'GET' && requestUrl.pathname === '/api/tx-analysis/reports/summary') {
         await handleTxAnalysisReportSummaryRequest({
           getTxAnalysisReportStore,
+          response,
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && requestUrl.pathname === '/api/knowledge/candidates') {
+        await handleKnowledgeCandidatesRequest({
+          getKnowledgeCandidateStore,
+          ...(apiConfig.opsToken === undefined ? {} : { opsToken: apiConfig.opsToken }),
+          request,
+          requestUrl,
+          response,
+        });
+        return;
+      }
+
+      if (
+        request.method === 'PATCH' &&
+        requestUrl.pathname.startsWith('/api/knowledge/candidates/') &&
+        requestUrl.pathname.endsWith('/review')
+      ) {
+        await handleKnowledgeCandidateReviewRequest({
+          candidateId: decodeURIComponent(extractKnowledgeCandidateReviewId(requestUrl.pathname)),
+          getKnowledgeCandidateStore,
+          maxBodyBytes: apiConfig.maxBodyBytes,
+          ...(apiConfig.opsToken === undefined ? {} : { opsToken: apiConfig.opsToken }),
+          request,
           response,
         });
         return;
@@ -570,6 +634,81 @@ async function handleTxAnalysisReportsRequest(
   sendJson(options.response, 200, { reports });
 }
 
+async function handleKnowledgeCandidatesRequest(options: {
+  getKnowledgeCandidateStore: () => Promise<KnowledgeCandidateStore>;
+  opsToken?: string;
+  request: ApiRequestLike;
+  requestUrl: URL;
+  response: ApiResponseLike;
+}): Promise<void> {
+  if (!authorizeOpsApiRequest(options)) {
+    return;
+  }
+
+  const status = parseOptionalKnowledgeCandidateStatus(
+    options.requestUrl.searchParams.get('status'),
+  );
+  const type = parseOptionalKnowledgeCandidateType(options.requestUrl.searchParams.get('type'));
+  const riskLevel = parseOptionalKnowledgeRiskLevel(
+    options.requestUrl.searchParams.get('riskLevel'),
+  );
+  const limit = parseOptionalPositiveQueryInteger(options.requestUrl.searchParams.get('limit'));
+  const store = await options.getKnowledgeCandidateStore();
+  const candidates = await store.listCandidates({
+    ...(limit === undefined ? {} : { limit }),
+    ...(riskLevel === undefined ? {} : { riskLevel }),
+    ...(status === undefined ? {} : { status }),
+    ...(type === undefined ? {} : { type }),
+  });
+
+  sendJson(options.response, 200, { candidates });
+}
+
+async function handleKnowledgeCandidateReviewRequest(options: {
+  candidateId: string;
+  getKnowledgeCandidateStore: () => Promise<KnowledgeCandidateStore>;
+  maxBodyBytes: number;
+  opsToken?: string;
+  request: ApiRequestLike;
+  response: ApiResponseLike;
+}): Promise<void> {
+  if (!authorizeOpsApiRequest(options)) {
+    return;
+  }
+
+  const candidateId = parseKnowledgeCandidateId(options.candidateId);
+  const payload = parseKnowledgeCandidateReviewPayload(
+    await readJsonBody(options.request, options.maxBodyBytes),
+  );
+  const store = await options.getKnowledgeCandidateStore();
+  const candidate = await store.reviewCandidate(candidateId, payload);
+  sendJson(options.response, 200, { candidate });
+}
+
+function authorizeOpsApiRequest(options: {
+  opsToken?: string;
+  request: ApiRequestLike;
+  response: ApiResponseLike;
+}): boolean {
+  if (options.opsToken === undefined) {
+    sendJson(options.response, 404, {
+      error: 'ops_disabled',
+      message: 'Ops summary API is disabled.',
+    });
+    return false;
+  }
+
+  if (!isOpsRequestAuthorized(options.request, options.opsToken)) {
+    sendJson(options.response, 401, {
+      error: 'ops_unauthorized',
+      message: 'A valid ops token is required.',
+    });
+    return false;
+  }
+
+  return true;
+}
+
 function validateTxAnalysisReportQueryReference(input: {
   chain: TxAnalysisChain | undefined;
   txHash: string | undefined;
@@ -592,6 +731,12 @@ function validateTxAnalysisReportQueryReference(input: {
 
 function extractTxAnalysisReportReviewId(pathname: string): string {
   const prefix = '/api/tx-analysis/reports/';
+  const suffix = '/review';
+  return pathname.slice(prefix.length, -suffix.length);
+}
+
+function extractKnowledgeCandidateReviewId(pathname: string): string {
+  const prefix = '/api/knowledge/candidates/';
   const suffix = '/review';
   return pathname.slice(prefix.length, -suffix.length);
 }
@@ -685,6 +830,15 @@ function parseTxAnalysisReportId(reportId: string): string {
   const normalized = reportId.trim();
   if (normalized.length === 0 || normalized.includes('/')) {
     throw new BadRequestError('Invalid transaction analysis report id.');
+  }
+
+  return normalized;
+}
+
+function parseKnowledgeCandidateId(candidateId: string): string {
+  const normalized = candidateId.trim();
+  if (normalized.length === 0 || normalized.includes('/')) {
+    throw new BadRequestError('Invalid knowledge candidate id.');
   }
 
   return normalized;
@@ -865,6 +1019,25 @@ function parseOptionalTxAnalysisReportFailureReason(
   return reason === undefined ? undefined : parseTxAnalysisReportFailureReasonValue(reason);
 }
 
+function parseOptionalKnowledgeCandidateStatus(
+  value: string | null,
+): KnowledgeCandidateStatus | undefined {
+  const status = parseOptionalQueryString(value);
+  return status === undefined ? undefined : parseKnowledgeCandidateStatus(status);
+}
+
+function parseOptionalKnowledgeCandidateType(
+  value: string | null,
+): KnowledgeCandidateType | undefined {
+  const type = parseOptionalQueryString(value);
+  return type === undefined ? undefined : parseKnowledgeCandidateType(type);
+}
+
+function parseOptionalKnowledgeRiskLevel(value: string | null): KnowledgeRiskLevel | undefined {
+  const riskLevel = parseOptionalQueryString(value);
+  return riskLevel === undefined ? undefined : parseKnowledgeRiskLevel(riskLevel);
+}
+
 function parseOptionalPositiveQueryInteger(value: string | null): number | undefined {
   const normalized = parseOptionalQueryString(value);
   if (normalized === undefined) {
@@ -909,6 +1082,32 @@ function parseTxAnalysisReportFailureReasonValue(reason: string): TxAnalysisUnav
   return reason as TxAnalysisUnavailableReason;
 }
 
+function parseKnowledgeCandidateStatus(status: string): KnowledgeCandidateStatus {
+  if (!supportedKnowledgeCandidateStatuses.includes(status as KnowledgeCandidateStatus)) {
+    throw new BadRequestError(
+      'status must be one of: draft, needs_review, approved, rejected, published, ingested, eval_passed, eval_failed.',
+    );
+  }
+
+  return status as KnowledgeCandidateStatus;
+}
+
+function parseKnowledgeCandidateType(type: string): KnowledgeCandidateType {
+  if (!supportedKnowledgeCandidateTypes.includes(type as KnowledgeCandidateType)) {
+    throw new BadRequestError('type must be one of: faq, doc_patch, boundary_example, eval_case.');
+  }
+
+  return type as KnowledgeCandidateType;
+}
+
+function parseKnowledgeRiskLevel(riskLevel: string): KnowledgeRiskLevel {
+  if (!supportedKnowledgeCandidateRiskLevels.includes(riskLevel as KnowledgeRiskLevel)) {
+    throw new BadRequestError('riskLevel must be one of: low, medium, high.');
+  }
+
+  return riskLevel as KnowledgeRiskLevel;
+}
+
 function parseOptionalQueryString(value: string | null): string | undefined {
   if (value === null) {
     return undefined;
@@ -934,7 +1133,7 @@ function applyCors(
   if (origin !== undefined && isCorsOriginAllowed(origin, config.corsOrigins)) {
     const allowedOrigin = config.corsOrigins.includes('*') ? '*' : origin;
     response.setHeader('Access-Control-Allow-Origin', allowedOrigin);
-    response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
     response.setHeader(
       'Access-Control-Allow-Headers',
       headerValue(request.headers['access-control-request-headers']) ?? 'Content-Type',
@@ -1542,6 +1741,21 @@ function createCachedTxAnalysisReportStoreLoader(
   };
 }
 
+function createCachedKnowledgeCandidateStoreLoader(
+  config: ReturnType<typeof loadRagConfig>,
+): () => Promise<KnowledgeCandidateStore> {
+  let cachedStore: KnowledgeCandidateStore | undefined;
+
+  return () => {
+    if (cachedStore !== undefined) {
+      return Promise.resolve(cachedStore);
+    }
+
+    cachedStore = createPgKnowledgeOpsStore({ client: createPgPool(config.databaseUrl) });
+    return Promise.resolve(cachedStore);
+  };
+}
+
 function createFileTxAnalysisReportReader(reportDir: string): TxAnalysisReportReader {
   return {
     async findReports(options: FindTxAnalysisReportsOptions) {
@@ -1813,6 +2027,53 @@ function parseTxAnalysisReportBatchReviewPayload(value: unknown): {
     ids,
     review: parseTxAnalysisReportReviewPayload(value),
   };
+}
+
+function parseKnowledgeCandidateReviewPayload(value: unknown): ReviewKnowledgeCandidateInput {
+  if (typeof value !== 'object' || value === null) {
+    throw new BadRequestError('Request body must be a JSON object.');
+  }
+
+  const record = value as Record<string, unknown>;
+  const reviewedAt = parseOptionalKnowledgeReviewedAt(record.reviewedAt);
+  const notes = parseOptionalText(record.notes, 'notes', MAX_KNOWLEDGE_REVIEW_NOTES_CHARS);
+
+  return {
+    action: parseKnowledgeCandidateReviewAction(record.action),
+    ...(notes === undefined ? {} : { notes }),
+    ...(reviewedAt === undefined ? {} : { reviewedAt }),
+    reviewer: parseRequiredText(record.reviewer, 'reviewer', MAX_KNOWLEDGE_REVIEW_REVIEWER_CHARS),
+  };
+}
+
+function parseKnowledgeCandidateReviewAction(
+  value: unknown,
+): ReviewKnowledgeCandidateInput['action'] {
+  if (
+    typeof value !== 'string' ||
+    !supportedKnowledgeCandidateReviewActions.includes(
+      value as ReviewKnowledgeCandidateInput['action'],
+    )
+  ) {
+    throw new BadRequestError(
+      'action must be one of: approve, reject, request_changes, merge_duplicate.',
+    );
+  }
+
+  return value as ReviewKnowledgeCandidateInput['action'];
+}
+
+function parseOptionalKnowledgeReviewedAt(value: unknown): string | undefined {
+  const reviewedAt = parseOptionalText(value, 'reviewedAt', 100);
+  if (reviewedAt === undefined) {
+    return undefined;
+  }
+
+  if (Number.isNaN(Date.parse(reviewedAt))) {
+    throw new BadRequestError('reviewedAt must be a valid date-time string.');
+  }
+
+  return reviewedAt;
 }
 
 function parseTxAnalysisReportReviewIds(value: unknown): string[] {
@@ -2169,6 +2430,16 @@ function createApiErrorResponse(error: unknown): {
     return {
       body: { error: 'vector_store_unavailable', message: error.message },
       statusCode: 503,
+    };
+  }
+
+  if (error instanceof KnowledgeCandidateNotFoundError) {
+    return {
+      body: {
+        error: 'knowledge_candidate_not_found',
+        message: 'Knowledge candidate was not found.',
+      },
+      statusCode: 404,
     };
   }
 
