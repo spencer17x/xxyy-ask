@@ -15,7 +15,7 @@
 - [页面级清洗文档](product-features/pages/)
 - [页面元数据 manifest](product-features/manifest.jsonl)
 
-这些文档主要由 `https://docs.xxyy.io/` 的中文产品功能页面整理而来，并补充官方 X 账号历史更新内容，后续可作为 RAG 客服系统的知识库种子。
+这些文档主要由 `https://docs.xxyy.io/` 的中文产品功能页面整理而来，并补充官方 X 账号历史更新内容，当前作为 RAG 客服系统的知识库种子。
 
 ## 产品客服 Agentic RAG
 
@@ -25,8 +25,8 @@
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、索引读写。
 - `packages/rag-core`：意图分类、混合检索、LLM 回答生成、边界回复、反馈存储、评测。
 - `apps/cli`：本地 `ingest` / `sync:x` / `migrate` / `stats` / `feedback` / `ask` / `evaluate`。
-- `apps/api`：`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/feedback`，并在 `/` 提供 Web UI。
-- `apps/web`：静态聊天页，调用同源 `/api/chat`。
+- `apps/api`：`GET /health`、`GET /health/deep`、`GET /ops`、`GET /api/ops/summary`、`POST /api/chat`、`POST /api/chat/stream`、`POST /api/tx-analysis`、`POST /api/feedback`，以及交易分析报告查询和复查接口。
+- `apps/web`：静态聊天页和同源运维页，聊天页调用 `/api/chat/stream` 并提交 `/api/feedback`，运维页调用 ops summary 和交易分析报告接口。
 
 LLM 配置：
 
@@ -37,6 +37,7 @@ export OPENAI_MODEL="你的模型名"
 ```
 
 默认使用 OpenAI 兼容的 Chat Completions 接口，`OPENAI_BASE_URL` 默认是 `https://api.openai.com/v1`。如果使用兼容服务，可以把 `OPENAI_BASE_URL` 改成对应地址。
+完整配置项以仓库根目录 `.env.example` 为准；`README.md` 里的启动配置块也保留了当前常用变量。
 API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 配置 `API_OPS_TOKEN` 后会启用受保护的 `GET /api/ops/summary` 运维摘要接口，请求需带 `Authorization: Bearer <token>` 或 `x-ops-token`。该接口聚合 deep health、知识库 stats 和反馈 stats，适合接生产监控、后台页或告警系统。
 启动 API 后可以打开 `/ops` 查看同源运维页面；页面不会内置 token，需要手动输入 `API_OPS_TOKEN` 后加载 summary。
@@ -98,6 +99,8 @@ GET /api/ops/summary
 
 ```http
 POST /api/chat
+POST /api/chat/stream
+POST /api/tx-analysis
 POST /api/feedback
 ```
 

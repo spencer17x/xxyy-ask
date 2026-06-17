@@ -438,16 +438,18 @@ MVP 可以不持久化完整分析结果，但如果截图需要稳定 URL，需
 - Web 测试：image attachment 可以渲染。
 - CLI 测试：`rag:ask` 可以展示交易分析结果和截图 URL。
 
-## Rollout Plan
+## Rollout Status
+
+以下第一版闭环已经落地：
 
 1. 增加共享类型、intent 和分类测试。
 2. 增加 mock `TxAnalysisProvider` 和分析服务接口。
 3. 让 `ChatService` 支持 `tx_sandwich_detection` 路由。
 4. 扩展 `ChatAttachment` 支持 image。
 5. 更新 API/Web/CLI 展示交易分析结果。
-6. 增加截图 renderer 的 fixture 版本。
-7. 接入真实链上 provider。
-8. 增加生产 health/ops 指标。
+6. 增加 fixture 截图和 browser provider 的 XXYY 原页面截图链路。
+7. 接入 Solana、Base、Ethereum、BSC 浏览器取证初版。
+8. 增加生产 health/ops 指标、报告存储、报告筛选和复查处理状态。
 
 ## Remaining Questions
 

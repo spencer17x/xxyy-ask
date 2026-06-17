@@ -1,6 +1,6 @@
 # Architecture
 
-本文档描述当前 XXYY Ask 的业务架构。当前实现聚焦产品客服 RAG：基于产品文档和官方 X 更新回答产品问题；账户、订单、私有交易记录、泛 MEV/链上取证和投资建议等问题仍走边界回复。交易哈希夹子检测已有专用 MVP 路由，默认未接数据源时返回“暂未启用”，显式配置 mock provider 时只返回 fixture 演示结果，配置 browser provider 时会用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页；当前支持 Solana，并已接入 Base、Ethereum、BSC 浏览器取证初版。
+本文档描述当前 XXYY Ask 的业务架构。当前实现聚焦产品客服 RAG：基于产品文档和官方 X 更新回答产品问题；账户、订单、私有交易记录、泛 MEV/链上取证和投资建议等问题仍走边界回复。单笔交易哈希夹子检测已有专用路由，默认未接数据源时返回“暂未启用”，显式配置 mock provider 时只返回 fixture 演示结果，配置 browser provider 时会用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页；当前支持 Solana，并已接入 Base、Ethereum、BSC 浏览器取证初版。
 
 ## 当前业务架构
 
@@ -22,7 +22,7 @@ flowchart LR
   subgraph Chat["ChatService"]
     Classifier["意图分类"]
     ProductRoute["产品问答 / 操作步骤"]
-    TxRoute["交易哈希检测 MVP"]
+    TxRoute["交易哈希分析"]
     BoundaryRoute["边界问题直接回复"]
   end
 
@@ -33,13 +33,13 @@ flowchart LR
     Response["回答 + 引用 + 附件"]
   end
 
-  subgraph TxAnalysis["交易分析 MVP"]
+  subgraph TxAnalysis["交易分析与复查"]
     HashParser["交易哈希解析"]
     TxProvider["TxAnalysisProvider"]
     MockFixture["Mock Fixture 结果"]
     BrowserProvider["Browser Provider"]
-    Solscan["Solscan 交易页"]
-    XxyyDiscover["XXYY Discover"]
+    Explorers["公开交易浏览器"]
+    XxyyDiscover["XXYY 原池子页 / Discover"]
     ImageAttachment["图片附件"]
     TxReports["交易分析报告<br/>文件 / Postgres"]
   end
@@ -62,8 +62,7 @@ flowchart LR
 
   subgraph Planned["未完成能力"]
     MultiTurn["多轮对话"]
-    TxHash["真实链上夹子检测"]
-    Screenshot["真实截图生成"]
+    ReviewWorkflow["多成员复查 / SLA / 工单联动"]
     Tickets["工单与人工接管"]
     Channels["多渠道接入"]
   end
@@ -90,7 +89,7 @@ flowchart LR
   HashParser --> TxProvider
   TxProvider --> MockFixture
   TxProvider --> BrowserProvider
-  BrowserProvider --> Solscan
+  BrowserProvider --> Explorers
   BrowserProvider --> XxyyDiscover
   BrowserProvider --> TxReports
   MockFixture --> ImageAttachment
@@ -129,4 +128,4 @@ flowchart LR
 - LLM 超时、限流、模型路由不可用或返回不可用答案时，会降级为本地 grounded answer。
 - 知识库由产品文档和官方 X 更新组成，支持全量入库和 X 增量同步。
 - Web UI 支持流式回答、引用展示、视频/图片附件和正负反馈。
-- Base/Ethereum/BSC 更多真实样本稳定性验证、更完整的客服复查后台、工单、人工接管、多轮对话和多渠道接入目前仍是未完成能力。
+- Base/Ethereum/BSC 更多真实样本稳定性验证、多成员复查策略、SLA、工单联动、人工接管、多轮对话和多渠道接入目前仍是未完成能力。
