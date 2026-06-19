@@ -213,8 +213,13 @@ function isShortProductFollowUp(message: string): boolean {
   if (normalized.length > 24 || hasExplicitProductTopic(normalized)) {
     return false;
   }
-  return /^(那|这个|那个|它|刚才|刚才那个|上一条)?(怎么|如何|有哪些|可以|支持|升级|配置|设置|导出|导入)/u.test(
-    normalized,
+  return (
+    /^(那|这个|那个|它|刚才|刚才那个|上一条)?(怎么|如何|有哪些|可以|支持|升级|配置|设置|导出|导入)/u.test(
+      normalized,
+    ) ||
+    /^(那|这个|那个|它|刚才|刚才那个|上一条)?在?(哪里|哪儿|哪|什么地方)(升级|开通|配置|设置|导出|导入|登录)/u.test(
+      normalized,
+    )
   );
 }
 

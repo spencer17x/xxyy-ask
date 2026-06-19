@@ -859,6 +859,54 @@ describe('createCustomerAgentRuntime', () => {
     });
   });
 
+  it('uses session context to resolve product upgrade-location follow-ups', async () => {
+    const registry = createToolRegistry();
+    const sessionContext = createInMemorySessionContextStore();
+    const response: ChatResponse = {
+      answer: '可以在 XXYY Pro 权益页查看升级入口。',
+      citations: [
+        {
+          excerpt: 'XXYY Pro 升级入口。',
+          file: 'docs/product-features/pro-upgrade.md',
+          title: '如何升级为 Pro',
+        },
+      ],
+      confidence: 0.82,
+      intent: 'how_to',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ registry, sessionContext });
+    await runtime.ask({
+      channel: 'web',
+      message: 'XXYY Pro 有哪些权益？',
+      sessionId: 'session-upgrade-location',
+    });
+    const followUpResponse = await runtime.ask({
+      channel: 'web',
+      message: '在哪里升级？',
+      sessionId: 'session-upgrade-location',
+    });
+
+    expect(followUpResponse.answer).toContain('升级入口');
+    expect(execute).toHaveBeenLastCalledWith({
+      channel: 'web',
+      question: 'XXYY Pro 在哪里升级？',
+    });
+  });
+
   it('uses safe session preferences to resolve product follow-ups through the runtime', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

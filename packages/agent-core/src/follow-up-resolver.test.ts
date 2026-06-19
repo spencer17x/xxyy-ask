@@ -41,6 +41,28 @@ describe('resolveFollowUp', () => {
     });
   });
 
+  it('resolves upgrade-location product follow-ups using the most recent product topic', () => {
+    const recentTurns: SessionTurn[] = [
+      {
+        content: 'XXYY Pro 有哪些权益？',
+        createdAt: '2026-06-19T00:00:00.000Z',
+        metadata: { intent: 'product_qa' },
+        role: 'user',
+      },
+    ];
+
+    expect(
+      resolveFollowUp({
+        message: '在哪里升级？',
+        recentTurns,
+      }),
+    ).toEqual({
+      contextSummary: 'resolved product follow-up from previous product turn',
+      resolution: 'resolved_followup',
+      resolvedMessage: 'XXYY Pro 在哪里升级？',
+    });
+  });
+
   it('resolves pronoun product follow-ups using the most recent product topic', () => {
     const recentTurns: SessionTurn[] = [
       {
