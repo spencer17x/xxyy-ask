@@ -11,7 +11,11 @@ import {
 import { createInMemoryAuditSink } from './audit.js';
 import { createCustomerAgentRuntime } from './customer-agent-runtime.js';
 import { createInMemoryQualitySignalSink } from './quality-signals.js';
-import { createInMemorySessionContextStore } from './session-context.js';
+import {
+  createInMemorySessionContextStore,
+  type SessionContextStore,
+  type SessionTurn,
+} from './session-context.js';
 import { createToolRegistry } from './tool-registry.js';
 
 const toolPolicy = {
@@ -1685,6 +1689,85 @@ describe('createCustomerAgentRuntime', () => {
 
     expect(execute).not.toHaveBeenCalled();
     expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.55,
+      intent: 'how_to',
+    });
+    expect(response.answer).toContain('不能确定你想继续咨询哪个具体功能');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        agentRoute: 'clarify',
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.55,
+        intent: 'how_to',
+        reason: 'missing_followup_context',
+        redactedQuestion: '怎么升级？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
+  it('asks for clarification instead of using stale product session context', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        answer: 'tool should not be called',
+        citations: [],
+        confidence: 0.8,
+        intent: 'how_to',
+      } satisfies ChatResponse),
+    );
+    const sessionContext: SessionContextStore = {
+      appendTurn: vi.fn(() => Promise.resolve()),
+      clearSession: vi.fn(() => Promise.resolve()),
+      getRecentTurns: vi.fn(() =>
+        Promise.resolve([
+          {
+            content: 'XXYY Pro 有哪些权益？',
+            createdAt: '2026-06-18T06:00:00.000Z',
+            metadata: { citationCount: 2, intent: 'product_qa' },
+            role: 'assistant',
+          },
+        ] satisfies SessionTurn[]),
+      ),
+      getSessionSummary: vi.fn(() =>
+        Promise.resolve({
+          productTopic: 'XXYY Pro',
+          updatedAt: '2026-06-18T06:00:00.000Z',
+        }),
+      ),
+    };
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createCustomerAgentRuntime({
+      now: () => new Date('2026-06-19T08:00:00.000Z'),
+      qualitySignals,
+      registry,
+      sessionContext,
+      sessionContextMaxAgeMs: 60 * 60 * 1000,
+    }).ask({
+      channel: 'web',
+      message: '怎么升级？',
+      sessionId: 'stale-product-session',
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      agentRoute: 'clarify',
       citations: [],
       confidence: 0.55,
       intent: 'how_to',

@@ -51,17 +51,24 @@ export interface CustomerAgentRuntime {
 export interface CreateCustomerAgentRuntimeOptions {
   registry: ToolRegistry;
   audit?: ToolAuditSink;
+  now?: () => Date;
   qualityConfidenceThreshold?: number;
   qualitySignals?: QualitySignalSink;
   sessionContext?: SessionContextStore;
+  sessionContextMaxAgeMs?: number;
 }
+
+const DEFAULT_SESSION_CONTEXT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export function createCustomerAgentRuntime(
   options: CreateCustomerAgentRuntimeOptions,
 ): CustomerAgentRuntime {
   const audit = options.audit ?? createNoopAuditSink();
+  const now = options.now ?? (() => new Date());
   const qualitySignals = options.qualitySignals ?? createNoopQualitySignalSink();
   const qualityConfidenceThreshold = options.qualityConfidenceThreshold ?? 0.45;
+  const sessionContextMaxAgeMs =
+    options.sessionContextMaxAgeMs ?? DEFAULT_SESSION_CONTEXT_MAX_AGE_MS;
 
   async function answerTransaction(
     request: ChatRequest,
@@ -274,7 +281,10 @@ export function createCustomerAgentRuntime(
       return withAgentRoute(response, 'clarify');
     }
 
-    const recentTurnsResult = await getRecentTurnsForRequest(options.sessionContext, request);
+    const recentTurnsResult = await getRecentTurnsForRequest(options.sessionContext, request, {
+      maxAgeMs: sessionContextMaxAgeMs,
+      nowMs: now().getTime(),
+    });
     if (recentTurnsResult.error !== undefined) {
       const dependency = missingSessionDependencyForRequest(request);
       if (dependency !== undefined) {
@@ -448,6 +458,7 @@ export function createCustomerAgentRuntime(
 async function getRecentTurnsForRequest(
   sessionContext: SessionContextStore | undefined,
   request: ChatRequest,
+  freshness: { maxAgeMs: number; nowMs: number },
 ): Promise<{
   sessionSummary: SessionContextSummary | null;
   turns: SessionTurn[];
@@ -460,12 +471,45 @@ async function getRecentTurnsForRequest(
   try {
     const turns = await sessionContext.getRecentTurns(request.sessionId);
     return {
-      sessionSummary: await getSessionSummaryBestEffort(sessionContext, request.sessionId),
-      turns,
+      sessionSummary: freshSessionSummary(
+        await getSessionSummaryBestEffort(sessionContext, request.sessionId),
+        freshness,
+      ),
+      turns: freshSessionTurns(turns, freshness),
     };
   } catch (error) {
     return { error, sessionSummary: null, turns: [] };
   }
+}
+
+function freshSessionTurns(
+  turns: SessionTurn[],
+  freshness: { maxAgeMs: number; nowMs: number },
+): SessionTurn[] {
+  return turns.filter((turn) => isFreshTimestamp(turn.createdAt, freshness));
+}
+
+function freshSessionSummary(
+  summary: SessionContextSummary | null,
+  freshness: { maxAgeMs: number; nowMs: number },
+): SessionContextSummary | null {
+  if (summary === null) {
+    return null;
+  }
+
+  return isFreshTimestamp(summary.updatedAt, freshness) ? summary : null;
+}
+
+function isFreshTimestamp(
+  timestamp: string,
+  freshness: { maxAgeMs: number; nowMs: number },
+): boolean {
+  const timestampMs = Date.parse(timestamp);
+  if (!Number.isFinite(timestampMs)) {
+    return false;
+  }
+
+  return Math.max(0, freshness.nowMs - timestampMs) <= freshness.maxAgeMs;
 }
 
 async function getSessionSummaryBestEffort(
