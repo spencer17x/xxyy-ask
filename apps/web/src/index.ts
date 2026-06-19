@@ -749,7 +749,7 @@ export function renderChatPage(): string {
       const send = document.querySelector("#send");
       const clear = document.querySelector("#clear");
       const quickPrompts = Array.from(document.querySelectorAll(".quick-prompt"));
-      const sessionId = getSessionId();
+      let sessionId = getSessionId();
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -764,6 +764,7 @@ export function renderChatPage(): string {
       });
 
       clear.addEventListener("click", () => {
+        sessionId = resetSessionId();
         messages.replaceChildren();
         intent.textContent = "intent pending";
         status.textContent = "Ready";
@@ -1245,15 +1246,29 @@ export function renderChatPage(): string {
         try {
           const existing = window.localStorage.getItem(key);
           if (existing) return existing;
-          const next =
-            window.crypto && typeof window.crypto.randomUUID === "function"
-              ? window.crypto.randomUUID()
-              : "session-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+          const next = createSessionId();
           window.localStorage.setItem(key, next);
           return next;
         } catch (_error) {
-          return "session-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+          return createSessionId();
         }
+      }
+
+      function resetSessionId() {
+        const key = "xxyy.ask.sessionId";
+        const next = createSessionId();
+        try {
+          window.localStorage.setItem(key, next);
+        } catch (_error) {
+          // A fresh in-memory id still prevents stale follow-up context in this tab.
+        }
+        return next;
+      }
+
+      function createSessionId() {
+        return window.crypto && typeof window.crypto.randomUUID === "function"
+          ? window.crypto.randomUUID()
+          : "session-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
       }
     </script>
   </body>

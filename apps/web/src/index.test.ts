@@ -50,6 +50,15 @@ describe('renderChatPage', () => {
     );
   });
 
+  it('starts a fresh backend session when the chat is cleared', () => {
+    const html = renderChatPage();
+
+    expect(html).toContain('let sessionId = getSessionId();');
+    expect(html).toContain('sessionId = resetSessionId();');
+    expect(html).toContain('function resetSessionId()');
+    expect(html).toContain('window.localStorage.setItem(key, next)');
+  });
+
   it('does not pretend to handle API routes in standalone mode', async () => {
     const server = startStaticWebServer(0);
     try {
