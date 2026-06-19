@@ -907,6 +907,54 @@ describe('createCustomerAgentRuntime', () => {
     });
   });
 
+  it('uses session context to resolve product entry-location follow-ups', async () => {
+    const registry = createToolRegistry();
+    const sessionContext = createInMemorySessionContextStore();
+    const response: ChatResponse = {
+      answer: 'XXYY Pro 入口在权益页。',
+      citations: [
+        {
+          excerpt: 'XXYY Pro 入口在权益页。',
+          file: 'docs/product-features/pro-upgrade.md',
+          title: '如何升级为 Pro',
+        },
+      ],
+      confidence: 0.82,
+      intent: 'product_qa',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ registry, sessionContext });
+    await runtime.ask({
+      channel: 'web',
+      message: 'XXYY Pro 有哪些权益？',
+      sessionId: 'session-entry-location',
+    });
+    const followUpResponse = await runtime.ask({
+      channel: 'web',
+      message: '入口在哪？',
+      sessionId: 'session-entry-location',
+    });
+
+    expect(followUpResponse.answer).toContain('入口');
+    expect(execute).toHaveBeenLastCalledWith({
+      channel: 'web',
+      question: 'XXYY Pro 入口在哪？',
+    });
+  });
+
   it('uses safe session preferences to resolve product follow-ups through the runtime', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

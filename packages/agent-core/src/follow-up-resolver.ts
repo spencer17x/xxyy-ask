@@ -219,6 +219,9 @@ function isShortProductFollowUp(message: string): boolean {
     ) ||
     /^(那|这个|那个|它|刚才|刚才那个|上一条)?在?(哪里|哪儿|哪|什么地方)(升级|开通|配置|设置|导出|导入|登录)/u.test(
       normalized,
+    ) ||
+    /^(那|这个|那个|它|刚才|刚才那个|上一条)?(入口|页面|按钮)在?(哪里|哪儿|哪|什么地方)/u.test(
+      normalized,
     )
   );
 }
