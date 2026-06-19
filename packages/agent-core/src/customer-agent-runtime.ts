@@ -156,10 +156,14 @@ export function createCustomerAgentRuntime(
 
     const hasMissingCitations = response.citations.length === 0;
     const hasLowConfidence = response.confidence < qualityConfidenceThreshold;
+    const guardedResponse =
+      hasLowConfidence || hasMissingCitations
+        ? createProductKnowledgeInsufficientAnswer(response.intent)
+        : undefined;
 
     if (hasLowConfidence && hasMissingCitations) {
       recordQualitySignal(qualitySignals, request, {
-        answer: response.answer,
+        answer: guardedResponse?.answer ?? response.answer,
         citationCount: 0,
         confidence: response.confidence,
         intent: response.intent,
@@ -168,7 +172,7 @@ export function createCustomerAgentRuntime(
       });
     } else if (hasLowConfidence) {
       recordQualitySignal(qualitySignals, request, {
-        answer: response.answer,
+        answer: guardedResponse?.answer ?? response.answer,
         citationCount: response.citations.length,
         confidence: response.confidence,
         intent: response.intent,
@@ -177,7 +181,7 @@ export function createCustomerAgentRuntime(
       });
     } else if (hasMissingCitations) {
       recordQualitySignal(qualitySignals, request, {
-        answer: response.answer,
+        answer: guardedResponse?.answer ?? response.answer,
         citationCount: 0,
         confidence: response.confidence,
         intent: response.intent,
@@ -186,7 +190,7 @@ export function createCustomerAgentRuntime(
       });
     }
 
-    return response;
+    return guardedResponse ?? response;
   }
 
   const ask: CustomerAgentRuntime['ask'] = async (request) => {
@@ -332,6 +336,16 @@ function createProductKnowledgeUnavailableAnswer(intent: ChatResponse['intent'])
   return {
     answer:
       '当前产品知识库暂时不可用，无法基于 XXYY 文档确认这个问题。为了避免误导，我不会编造产品细节；请稍后重试，或换成更具体的功能、权益或配置步骤提问。',
+    citations: [],
+    confidence: 0.25,
+    intent,
+  };
+}
+
+function createProductKnowledgeInsufficientAnswer(intent: ChatResponse['intent']): ChatResponse {
+  return {
+    answer:
+      '当前知识库没有足够资料确认这个问题。为了避免误导，我不会编造产品细节；请补充更具体的功能、权益或配置步骤，或稍后在知识库更新后再问。',
     citations: [],
     confidence: 0.25,
     intent,

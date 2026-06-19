@@ -19,7 +19,13 @@ describe('createCustomerAgentChatService', () => {
       answer(input) {
         const response: ChatResponse = {
           answer: `agent answered with ${input.retrievedChunks.length} chunk`,
-          citations: [],
+          citations: [
+            {
+              excerpt: input.retrievedChunks[0]?.text ?? '',
+              file: input.retrievedChunks[0]?.metadata.file ?? '',
+              title: input.retrievedChunks[0]?.metadata.title ?? '',
+            },
+          ],
           confidence: 0.82,
           intent: input.classification.intent,
         };

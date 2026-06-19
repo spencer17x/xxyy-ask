@@ -409,7 +409,13 @@ describe('createCustomerAgentRuntime', () => {
     const registry = createToolRegistry();
     const response: ChatResponse = {
       answer: '根据知识库，XXYY 支持 Telegram 提醒。',
-      citations: [],
+      citations: [
+        {
+          excerpt: 'XXYY 支持 Telegram 提醒。',
+          file: 'docs/product-features/telegram.md',
+          title: 'Telegram 提醒',
+        },
+      ],
       confidence: 0.72,
       intent: 'product_qa',
     };
@@ -440,7 +446,7 @@ describe('createCustomerAgentRuntime', () => {
         type: 'answer_delta',
       },
       {
-        citations: [],
+        citations: response.citations,
         confidence: 0.72,
         intent: 'product_qa',
         type: 'metadata',
@@ -703,11 +709,11 @@ describe('createCustomerAgentRuntime', () => {
     ]);
   });
 
-  it('records one combined quality signal for low-confidence no-citation product answers', async () => {
+  it('returns a conservative fallback and records one combined quality signal for low-confidence no-citation product answers', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();
     const response: ChatResponse = {
-      answer: '当前知识库没有足够信息。',
+      answer: 'XXYY Pro 价格是 999 USDT。',
       citations: [],
       confidence: 0.2,
       intent: 'product_qa',
@@ -725,7 +731,7 @@ describe('createCustomerAgentRuntime', () => {
       execute: () => Promise.resolve(response),
     });
 
-    await createCustomerAgentRuntime({
+    const finalResponse = await createCustomerAgentRuntime({
       qualityConfidenceThreshold: 0.5,
       qualitySignals,
       registry,
@@ -735,15 +741,77 @@ describe('createCustomerAgentRuntime', () => {
       sessionId: 'session-quality',
     });
 
+    expect(finalResponse).toMatchObject({
+      citations: [],
+      confidence: 0.25,
+      intent: 'product_qa',
+    });
+    expect(finalResponse.answer).toContain('当前知识库没有足够资料确认这个问题');
+    expect(finalResponse.answer).toContain('不会编造产品细节');
+    expect(finalResponse.answer).not.toContain('999 USDT');
     expect(qualitySignals.signals()).toEqual([
       {
-        answer: '当前知识库没有足够信息。',
+        answer: finalResponse.answer,
         channel: 'web',
         citationCount: 0,
         confidence: 0.2,
         intent: 'product_qa',
         reason: 'low_confidence_missing_citations',
         redactedQuestion: 'XXYY Pro 价格是多少？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
+  it('returns a conservative fallback for no-citation product answers even when confidence is high', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const response: ChatResponse = {
+      answer: 'XXYY 一定支持这个未引用功能。',
+      citations: [],
+      confidence: 0.9,
+      intent: 'product_qa',
+    };
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute: () => Promise.resolve(response),
+    });
+
+    const finalResponse = await createCustomerAgentRuntime({
+      qualityConfidenceThreshold: 0.5,
+      qualitySignals,
+      registry,
+    }).ask({
+      channel: 'web',
+      message: 'XXYY 支持这个功能吗？',
+      sessionId: 'session-missing-citations',
+    });
+
+    expect(finalResponse).toMatchObject({
+      citations: [],
+      confidence: 0.25,
+      intent: 'product_qa',
+    });
+    expect(finalResponse.answer).toContain('当前知识库没有足够资料确认这个问题');
+    expect(finalResponse.answer).not.toContain('一定支持');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: finalResponse.answer,
+        channel: 'web',
+        citationCount: 0,
+        confidence: 0.9,
+        intent: 'product_qa',
+        reason: 'missing_citations',
+        redactedQuestion: 'XXYY 支持这个功能吗？',
         sessionIdPresent: true,
         userIdPresent: false,
       },
