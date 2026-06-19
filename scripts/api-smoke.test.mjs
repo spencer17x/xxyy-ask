@@ -884,6 +884,45 @@ describe('runApiSmoke', () => {
     ]);
   });
 
+  it('validates ops summary knowledge candidate queue fields', async () => {
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(opsSummaryPayload()));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: () => {},
+    });
+
+    expect(exitCode).toBe(0);
+  });
+
+  it('fails ops summary smoke when quality gap queue fields are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.knowledgeCandidateQueues.recentQualitySignals;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include knowledge candidate queue counts and recent quality gaps.',
+    );
+  });
+
   it('fails ops summary smoke when transaction analysis browser runtime settings are missing', async () => {
     const messages = [];
     const exitCode = await runApiSmoke({
@@ -5122,6 +5161,41 @@ function jsonResponse(payload, status = 200) {
     status,
     json: () => Promise.resolve(payload),
     text: () => Promise.resolve(JSON.stringify(payload)),
+  };
+}
+
+function opsSummaryPayload(overrides = {}) {
+  return {
+    knowledgeCandidateQueues: {
+      approvedEvalCaseCount: 1,
+      evalFailedCount: 0,
+      needsReviewCount: 2,
+      qualitySignalNeedsReviewCount: 1,
+      recentEvalFailures: [],
+      recentQualitySignals: [
+        {
+          candidateId: 'kc_quality_gap_1',
+          createdAt: '2026-06-19T07:30:00.000Z',
+          question: 'XXYY Pro 价格是多少？',
+          riskLevel: 'medium',
+          targetCategory: 'eval_case',
+          type: 'eval_case',
+        },
+      ],
+    },
+    txAnalysisRuntime: {
+      browser: {
+        headless: false,
+        maxConcurrency: 1,
+        maxRetries: 1,
+        screenshotBaseUrl: '/assets',
+        timeoutMs: 60000,
+      },
+      provider: 'browser',
+      reportStore: 'file',
+      reviewer: 'none',
+    },
+    ...overrides,
   };
 }
 

@@ -985,7 +985,43 @@ function validateOpsSummaryPayload(payload) {
     return 'ops summary must include transaction analysis browser mode and screenshot base URL.';
   }
 
+  const knowledgeCandidateQueues = payload.knowledgeCandidateQueues;
+  if (!hasKnowledgeCandidateQueueSummary(knowledgeCandidateQueues)) {
+    return 'ops summary must include knowledge candidate queue counts and recent quality gaps.';
+  }
+
   return undefined;
+}
+
+function hasKnowledgeCandidateQueueSummary(value) {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (
+    !isNonNegativeInteger(value.needsReviewCount) ||
+    !isNonNegativeInteger(value.qualitySignalNeedsReviewCount) ||
+    !isNonNegativeInteger(value.approvedEvalCaseCount) ||
+    !isNonNegativeInteger(value.evalFailedCount) ||
+    !Array.isArray(value.recentEvalFailures) ||
+    !Array.isArray(value.recentQualitySignals)
+  ) {
+    return false;
+  }
+
+  return value.recentQualitySignals.every(isQualitySignalCandidateSummary);
+}
+
+function isQualitySignalCandidateSummary(value) {
+  return (
+    isRecord(value) &&
+    isCleanNonEmptyString(value.candidateId) &&
+    isCleanNonEmptyString(value.createdAt) &&
+    isCleanNonEmptyString(value.question) &&
+    isCleanNonEmptyString(value.riskLevel) &&
+    isCleanNonEmptyString(value.targetCategory) &&
+    isCleanNonEmptyString(value.type)
+  );
 }
 
 function isPositiveInteger(value) {
