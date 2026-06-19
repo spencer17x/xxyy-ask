@@ -1226,6 +1226,67 @@ describe('createCustomerAgentRuntime', () => {
     ]);
   });
 
+  it('does not claim a safe product preference was recorded when session append fails', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        answer: 'tool should not be called',
+        citations: [],
+        confidence: 0.8,
+        intent: 'product_qa',
+      } satisfies ChatResponse),
+    );
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createCustomerAgentRuntime({
+      qualitySignals,
+      registry,
+      sessionContext: {
+        appendTurn: () => Promise.reject(new Error('session append unavailable')),
+        getRecentTurns: () => Promise.resolve([]),
+      },
+    }).ask({
+      channel: 'web',
+      message: '我主要用手机端。',
+      sessionId: 'session-mobile-preference-fails',
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.45,
+      intent: 'product_qa',
+    });
+    expect(response.answer).toContain('无法把这个偏好保存到后续追问');
+    expect(response.answer).toContain('移动端');
+    expect(response.answer).not.toContain('已记录');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.45,
+        errorCode: 'Error',
+        intent: 'product_qa',
+        reason: 'session_unavailable',
+        redactedQuestion: '我主要用手机端。',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('records session_unavailable when a product follow-up has no session context store', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

@@ -278,9 +278,21 @@ export function createCustomerAgentRuntime(
           return response;
         }
         const response = createProductPreferenceCapturedAnswer(preference);
-        await appendSessionTurns(options.sessionContext, request, response, {
+        const appendResult = await appendSessionTurns(options.sessionContext, request, response, {
           userContent: followUp.resolvedMessage,
         });
+        if (!appendResult.ok) {
+          const unavailableResponse = createProductPreferenceUnavailableAnswer(preference);
+          recordQualitySignal(qualitySignals, request, {
+            answer: unavailableResponse.answer,
+            confidence: unavailableResponse.confidence,
+            errorCode: errorCodeFrom(appendResult.error),
+            intent: unavailableResponse.intent,
+            reason: 'session_unavailable',
+            redactedQuestion: followUp.resolvedMessage,
+          });
+          return unavailableResponse;
+        }
         return response;
       }
     }
@@ -589,9 +601,9 @@ async function appendSessionTurns(
   request: ChatRequest,
   response: ChatResponse,
   options: { userContent: string },
-): Promise<void> {
+): Promise<{ error?: unknown; ok: boolean }> {
   if (sessionContext === undefined || request.sessionId === undefined) {
-    return;
+    return { ok: false };
   }
   const now = new Date().toISOString();
   const userTransactionMetadata =
@@ -614,8 +626,10 @@ async function appendSessionTurns(
       metadata: metadataFromResponse(response, userTransactionMetadata),
       role: 'assistant',
     });
-  } catch {
+    return { ok: true };
+  } catch (error) {
     // Session history is best-effort; answering must not depend on persistence.
+    return { error, ok: false };
   }
 }
 
