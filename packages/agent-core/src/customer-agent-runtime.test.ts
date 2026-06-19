@@ -550,6 +550,53 @@ describe('createCustomerAgentRuntime', () => {
     });
   });
 
+  it('asks for clarification without calling analyze_transaction when a message has multiple transaction hashes', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const firstTxHash = '0x1111111111111111111111111111111111111111111111111111111111111111';
+    const secondTxHash = '0x2222222222222222222222222222222222222222222222222222222222222222';
+    const execute = vi.fn(() => {
+      throw new Error('transaction tool should not be called');
+    });
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createCustomerAgentRuntime({ qualitySignals, registry }).ask({
+      channel: 'web',
+      message: ['帮我查这两笔哪个被夹了', firstTxHash, secondTxHash].join(' '),
+      sessionId: 'session-multi-tx',
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.55,
+      intent: 'tx_sandwich_detection',
+    });
+    expect(response.answer).toContain('一次只能分析一笔交易');
+    expect(response.answer).toContain('单笔完整交易哈希');
+    expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.55,
+        intent: 'tx_sandwich_detection',
+        reason: 'ambiguous_transaction_reference',
+        redactedQuestion: '帮我查这两笔哪个被夹了 [evm_tx_hash] [evm_tx_hash]',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('returns an automatic transaction fallback when analyze_transaction fails', async () => {
     const registry = createToolRegistry();
     const audit = createInMemoryAuditSink();

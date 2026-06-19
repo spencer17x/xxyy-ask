@@ -51,7 +51,7 @@ export {
   createTxAnalysisUnavailableAnswer,
   TxAnalysisProviderUnavailableError,
 } from './tx-analysis.js';
-export { parseTransactionReference } from './tx-hash.js';
+export { hasAmbiguousTransactionReferences, parseTransactionReference } from './tx-hash.js';
 
 export type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
 export type {

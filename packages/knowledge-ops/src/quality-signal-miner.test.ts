@@ -450,6 +450,50 @@ describe('mineAnswerQualitySignals', () => {
     ]);
   });
 
+  it('creates a needs-review eval candidate from an ambiguous transaction reference signal', () => {
+    const answer =
+      '一次只能分析一笔交易。请发送单笔完整交易哈希或对应主网浏览器链接，我会自动继续分析。';
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer,
+          channel: 'web',
+          confidence: 0.55,
+          intent: 'tx_sandwich_detection',
+          reason: 'ambiguous_transaction_reference',
+          redactedQuestion: '帮我查这两笔哪个被夹了 [evm_tx_hash] [evm_tx_hash]',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.55,
+      proposedAnswer: answer,
+      question: '帮我查这两笔哪个被夹了 [evm_tx_hash] [evm_tx_hash]',
+      status: 'needs_review',
+      targetCategory: 'policy_boundary',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer: answer,
+        expectedIntent: 'tx_sandwich_detection',
+        minCitations: 0,
+        question: '帮我查这两笔哪个被夹了 [evm_tx_hash] [evm_tx_hash]',
+        requireExpectedAnswerText: false,
+      },
+    ]);
+  });
+
   it('creates a needs-review eval candidate from a missing follow-up context signal', () => {
     const result = mineAnswerQualitySignals({
       now,

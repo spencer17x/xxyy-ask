@@ -271,14 +271,14 @@ export function createCustomerAgentRuntime(
       const response: ChatResponse = {
         answer: plan.clarificationQuestion,
         citations: [],
-        confidence: 0.45,
+        confidence: plan.clarificationReason === 'ambiguous_transaction_reference' ? 0.55 : 0.45,
         intent: plan.classification.intent,
       };
       recordQualitySignal(qualitySignals, request, {
         answer: response.answer,
         confidence: response.confidence,
         intent: response.intent,
-        reason: 'unknown_intent',
+        reason: plan.clarificationReason,
         redactedQuestion: followUp.resolvedMessage,
       });
       await appendSessionTurns(options.sessionContext, request, response, {

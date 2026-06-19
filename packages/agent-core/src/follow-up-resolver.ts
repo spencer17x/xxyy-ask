@@ -1,5 +1,5 @@
 import type { TxAnalysisChain } from '@xxyy/shared';
-import { parseTransactionReference } from '@xxyy/rag-core';
+import { hasAmbiguousTransactionReferences, parseTransactionReference } from '@xxyy/rag-core';
 
 import type { SessionTurn } from './session-context.js';
 
@@ -95,7 +95,11 @@ export function resolveFollowUp(input: ResolveFollowUpInput): ResolveFollowUpOut
 
 export function detectFollowUpDependency(message: string): FollowUpDependency | undefined {
   const normalized = message.trim();
-  if (normalized.length === 0 || parseTransactionReference(normalized) !== undefined) {
+  if (
+    normalized.length === 0 ||
+    parseTransactionReference(normalized) !== undefined ||
+    hasAmbiguousTransactionReferences(normalized)
+  ) {
     return undefined;
   }
 

@@ -40,6 +40,31 @@ describe('planAnswer', () => {
     });
   });
 
+  it('routes ambiguous multi-transaction questions to clarification', () => {
+    expect(
+      planAnswer({
+        classification: {
+          confidence: 0.86,
+          intent: 'tx_sandwich_detection',
+          reason:
+            'asks to analyze multiple transaction hashes and needs a single hash clarification',
+        },
+        resolvedMessage:
+          '帮我查这两笔哪个被夹了 0x1111111111111111111111111111111111111111111111111111111111111111 0x2222222222222222222222222222222222222222222222222222222222222222',
+      }),
+    ).toEqual({
+      clarificationQuestion:
+        '一次只能分析一笔交易。请发送单笔完整交易哈希或对应主网浏览器链接，我会自动继续分析。',
+      clarificationReason: 'ambiguous_transaction_reference',
+      classification: {
+        confidence: 0.86,
+        intent: 'tx_sandwich_detection',
+        reason: 'asks to analyze multiple transaction hashes and needs a single hash clarification',
+      },
+      route: 'clarify',
+    });
+  });
+
   it('routes unknown intent to clarification', () => {
     expect(
       planAnswer({
@@ -53,6 +78,7 @@ describe('planAnswer', () => {
     ).toEqual({
       clarificationQuestion:
         '我还不确定你想咨询 XXYY 的哪个功能。请补充具体功能、配置步骤、Pro 权益，或发送单笔交易哈希。',
+      clarificationReason: 'unknown_intent',
       classification: {
         confidence: 0.25,
         intent: 'unknown',
