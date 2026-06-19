@@ -18,6 +18,7 @@ import {
 import { createNoopAuditSink, type ToolAuditEvent, type ToolAuditSink } from './audit.js';
 import {
   detectFollowUpDependency,
+  inferProductPreferenceFromText,
   resolveFollowUp,
   type FollowUpDependency,
 } from './follow-up-resolver.js';
@@ -261,6 +262,17 @@ export function createCustomerAgentRuntime(
       return response;
     }
 
+    if (followUp.resolution === 'unchanged') {
+      const preference = detectProductPreferenceCapture(followUp.resolvedMessage);
+      if (preference !== undefined) {
+        const response = createProductPreferenceCapturedAnswer(preference);
+        await appendSessionTurns(options.sessionContext, request, response, {
+          userContent: followUp.resolvedMessage,
+        });
+        return response;
+      }
+    }
+
     const classification = classifyQuestion(followUp.resolvedMessage);
     const plan = planAnswer({
       classification,
@@ -424,6 +436,22 @@ function createProductKnowledgeInsufficientAnswer(intent: ChatResponse['intent']
     citations: [],
     confidence: 0.25,
     intent,
+  };
+}
+
+function detectProductPreferenceCapture(message: string): string | undefined {
+  if (/怎么|如何|怎样|哪些|什么|支持|配置|设置|登录|升级|导出|导入|[？?]/u.test(message)) {
+    return undefined;
+  }
+  return inferProductPreferenceFromText(message);
+}
+
+function createProductPreferenceCapturedAnswer(preference: string): ChatResponse {
+  return {
+    answer: `已记录：后续我会优先按${preference}相关问题理解你的短追问。你可以继续问登录、配置、权益或操作步骤。`,
+    citations: [],
+    confidence: 0.6,
+    intent: 'product_qa',
   };
 }
 

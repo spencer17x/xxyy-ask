@@ -802,6 +802,65 @@ describe('createCustomerAgentRuntime', () => {
     });
   });
 
+  it('uses safe session preferences to resolve product follow-ups through the runtime', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const sessionContext = createInMemorySessionContextStore();
+    const response: ChatResponse = {
+      answer: '可以在 XXYY 移动端登录页完成登录。',
+      citations: [
+        {
+          excerpt: '移动端登录步骤。',
+          file: 'docs/product-features/mobile-login.md',
+          title: '移动端登录',
+        },
+      ],
+      confidence: 0.82,
+      intent: 'how_to',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ qualitySignals, registry, sessionContext });
+    const preferenceResponse = await runtime.ask({
+      channel: 'web',
+      message: '我主要用手机端。',
+      sessionId: 'session-mobile-preference',
+    });
+
+    expect(preferenceResponse).toMatchObject({
+      citations: [],
+      confidence: 0.6,
+      intent: 'product_qa',
+    });
+    expect(preferenceResponse.answer).toContain('已记录');
+    expect(preferenceResponse.answer).toContain('移动端');
+    expect(qualitySignals.signals()).toEqual([]);
+
+    await runtime.ask({
+      channel: 'web',
+      message: '怎么登录？',
+      sessionId: 'session-mobile-preference',
+    });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenLastCalledWith({
+      channel: 'web',
+      question: 'XXYY 移动端登录 怎么登录？',
+    });
+  });
+
   it('records session_unavailable when a product follow-up has no session context store', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

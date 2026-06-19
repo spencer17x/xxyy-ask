@@ -264,13 +264,20 @@ function inferRecentProductPreference(turns: SessionTurn[]): string | undefined 
     if (turn.role !== 'user' || turn.metadata?.intent === 'tx_sandwich_detection') {
       continue;
     }
-    const content = turn.content;
-    if (hasMobileProductPreference(content)) {
-      return 'XXYY 移动端登录';
+    const preference = inferProductPreferenceFromText(turn.content);
+    if (preference !== undefined) {
+      return preference;
     }
-    if (hasTelegramProductPreference(content)) {
-      return 'Telegram 钱包监控';
-    }
+  }
+  return undefined;
+}
+
+export function inferProductPreferenceFromText(content: string): string | undefined {
+  if (hasMobileProductPreference(content)) {
+    return 'XXYY 移动端登录';
+  }
+  if (hasTelegramProductPreference(content)) {
+    return 'Telegram 钱包监控';
   }
   return undefined;
 }
