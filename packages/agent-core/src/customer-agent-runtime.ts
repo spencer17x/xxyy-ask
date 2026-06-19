@@ -5,6 +5,7 @@ import {
   createTxAnalysisAnswer,
   createTxAnalysisUnavailableAnswer,
   LlmConfigurationError,
+  parseTransactionReference,
   type AnalyzeTransactionOutput,
   VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
@@ -433,24 +434,34 @@ async function appendSessionTurns(
     return;
   }
   const now = new Date().toISOString();
+  const userTransactionMetadata =
+    response.intent === 'tx_sandwich_detection'
+      ? transactionMetadataFromText(options.userContent)
+      : undefined;
   await sessionContext.appendTurn(request.sessionId, {
     content: options.userContent,
     createdAt: now,
-    metadata: { intent: response.intent },
+    metadata: {
+      intent: response.intent,
+      ...(userTransactionMetadata === undefined ? {} : userTransactionMetadata),
+    },
     role: 'user',
   });
   await sessionContext.appendTurn(request.sessionId, {
     content: response.answer,
     createdAt: now,
-    metadata: metadataFromResponse(response),
+    metadata: metadataFromResponse(response, userTransactionMetadata),
     role: 'assistant',
   });
 }
 
-function metadataFromResponse(response: ChatResponse): SessionTurnMetadata {
+function metadataFromResponse(
+  response: ChatResponse,
+  fallbackTransactionMetadata: Pick<SessionTurnMetadata, 'chain' | 'txHash'> | undefined,
+): SessionTurnMetadata {
   const relatedUserTransaction =
     response.intent === 'tx_sandwich_detection'
-      ? extractUserTransactionFromAnswer(response)
+      ? (transactionMetadataFromText(response.answer) ?? fallbackTransactionMetadata)
       : undefined;
   return {
     citationCount: response.citations.length,
@@ -460,14 +471,18 @@ function metadataFromResponse(response: ChatResponse): SessionTurnMetadata {
   };
 }
 
-function extractUserTransactionFromAnswer(
-  response: ChatResponse,
-): Pick<SessionTurnMetadata, 'txHash'> | undefined {
-  const hashMatch = response.answer.match(/\b0x[a-fA-F0-9]{64}\b/u);
-  if (hashMatch === null) {
+function transactionMetadataFromText(
+  text: string,
+): Pick<SessionTurnMetadata, 'chain' | 'txHash'> | undefined {
+  const reference = parseTransactionReference(text);
+  if (reference === undefined) {
     return undefined;
   }
-  return { txHash: hashMatch[0] };
+
+  return {
+    chain: reference.chain,
+    txHash: reference.txHash,
+  };
 }
 
 function errorCodeFrom(error: unknown): string {

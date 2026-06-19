@@ -589,6 +589,48 @@ describe('createCustomerAgentRuntime', () => {
     expect(execute).toHaveBeenLastCalledWith({ txHash: `${txHash} 这笔被夹了吗？` });
   });
 
+  it('uses session context to resolve one recent Solana transaction follow-up', async () => {
+    const registry = createToolRegistry();
+    const sessionContext = createInMemorySessionContextStore();
+    const txHash =
+      '5uTPyzPctFriE2wPTpvvvduS451Dd32zDr6RrEheuYHYh1M4SptKd7jqcVoHBjPX3CkvHPxj7ecTNjVMYfQBZ4MH';
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        result: {
+          analyzedAt: '2026-06-19T00:00:00.000Z',
+          chain: 'solana',
+          confidence: 0.7,
+          dataSource: 'fixture',
+          evidence: [],
+          relatedTransactions: [{ hash: txHash, role: 'user', summary: '目标交易' }],
+          summary: '未发现典型夹子模式。',
+          txHash,
+          verdict: 'not_sandwiched',
+        },
+        status: 'success',
+      } satisfies AnalyzeTransactionOutput),
+    );
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ registry, sessionContext });
+    await runtime.ask({ channel: 'web', message: txHash, sessionId: 'session-solana-tx' });
+    await runtime.ask({
+      channel: 'web',
+      message: '这笔被夹了吗？',
+      sessionId: 'session-solana-tx',
+    });
+
+    expect(execute).toHaveBeenLastCalledWith({ txHash: `${txHash} 这笔被夹了吗？` });
+  });
+
   it('records session_unavailable when a transaction follow-up has no session context store', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();
