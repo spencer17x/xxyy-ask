@@ -18,6 +18,7 @@ export type AnswerQualitySignalReason =
   | 'ambiguous_followup'
   | 'boundary_investment_advice'
   | 'boundary_private_data'
+  | 'boundary_unsafe_request'
   | 'low_confidence'
   | 'low_confidence_missing_citations'
   | 'missing_citations'
@@ -98,6 +99,7 @@ function createCandidateFromSignal(
   if (
     signal.reason === 'ambiguous_followup' ||
     signal.reason === 'boundary_chain_forensics' ||
+    signal.reason === 'boundary_unsafe_request' ||
     signal.reason === 'missing_followup_context' ||
     signal.reason === 'unknown_intent' ||
     signal.reason === 'session_unavailable'

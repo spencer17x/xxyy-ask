@@ -5,6 +5,7 @@ export type QualitySignalReason =
   | 'ambiguous_followup'
   | 'boundary_investment_advice'
   | 'boundary_private_data'
+  | 'boundary_unsafe_request'
   | 'low_confidence'
   | 'low_confidence_missing_citations'
   | 'missing_citations'

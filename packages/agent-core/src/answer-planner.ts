@@ -40,6 +40,13 @@ export function planAnswer(input: PlanAnswerInput): AnswerPlan {
     };
   }
 
+  if (isUnsafeUnsupportedClassification(input.classification)) {
+    return {
+      classification: input.classification,
+      route: 'boundary',
+    };
+  }
+
   if (input.classification.intent === 'unknown') {
     return {
       clarificationQuestion:
@@ -53,4 +60,11 @@ export function planAnswer(input: PlanAnswerInput): AnswerPlan {
     classification: input.classification,
     route: 'boundary',
   };
+}
+
+export function isUnsafeUnsupportedClassification(classification: Classification): boolean {
+  return (
+    classification.intent === 'unknown' &&
+    classification.reason === 'unsafe or unsupported operation request'
+  );
 }

@@ -104,6 +104,62 @@ describe('createCustomerAgentRuntime', () => {
     expect(audit.events()).toEqual([]);
   });
 
+  it('returns unsafe request boundary answers without tool calls or human handoff', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const productExecute = vi.fn(() => {
+      throw new Error('product tool should not be called');
+    });
+    const txExecute = vi.fn(() => {
+      throw new Error('transaction tool should not be called');
+    });
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      policy: toolPolicy,
+      execute: productExecute,
+    });
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute: txExecute,
+    });
+
+    const response = await createCustomerAgentRuntime({ qualitySignals, registry }).ask({
+      channel: 'web',
+      message: 'How to hack XXYY account?',
+      sessionId: 'session-unsafe',
+    });
+
+    expect(productExecute).not.toHaveBeenCalled();
+    expect(txExecute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.3,
+      intent: 'unknown',
+    });
+    expect(response.answer).toContain('不能帮助攻击、盗号、破解或钓鱼');
+    expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.3,
+        intent: 'unknown',
+        reason: 'boundary_unsafe_request',
+        redactedQuestion: 'How to hack XXYY account?',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('records chain-forensics boundary answers as quality signals', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

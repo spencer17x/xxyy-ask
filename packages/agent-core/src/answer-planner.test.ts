@@ -62,6 +62,21 @@ describe('planAnswer', () => {
     });
   });
 
+  it('routes unsafe unknown requests to boundary', () => {
+    expect(
+      planAnswer({
+        classification: {
+          confidence: 0.3,
+          intent: 'unknown',
+          reason: 'unsafe or unsupported operation request',
+        },
+        resolvedMessage: 'How to hack XXYY account?',
+      }),
+    ).toMatchObject({
+      route: 'boundary',
+    });
+  });
+
   it('routes private account queries to boundary', () => {
     expect(
       planAnswer({

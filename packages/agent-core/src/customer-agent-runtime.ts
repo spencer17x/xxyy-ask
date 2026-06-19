@@ -1,4 +1,4 @@
-import type { ChatRequest, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
+import type { ChatRequest, ChatResponse, ChatStreamEvent, Classification } from '@xxyy/shared';
 import {
   classifyQuestion,
   createBoundaryAnswer,
@@ -10,7 +10,7 @@ import {
   VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
 
-import { planAnswer } from './answer-planner.js';
+import { isUnsafeUnsupportedClassification, planAnswer } from './answer-planner.js';
 import { createNoopAuditSink, type ToolAuditEvent, type ToolAuditSink } from './audit.js';
 import {
   detectFollowUpDependency,
@@ -270,8 +270,14 @@ export function createCustomerAgentRuntime(
     }
 
     if (plan.route === 'boundary') {
-      const response = createBoundaryAnswer(plan.classification);
-      recordBoundaryQualitySignal(qualitySignals, request, response, followUp.resolvedMessage);
+      const response = createRuntimeBoundaryAnswer(plan.classification);
+      recordBoundaryQualitySignal(
+        qualitySignals,
+        request,
+        response,
+        followUp.resolvedMessage,
+        plan.classification,
+      );
       await appendSessionTurns(options.sessionContext, request, response, {
         userContent: followUp.resolvedMessage,
       });
@@ -412,14 +418,30 @@ function createSessionUnavailableClarification(
   };
 }
 
+function createRuntimeBoundaryAnswer(classification: Classification): ChatResponse {
+  if (isUnsafeUnsupportedClassification(classification)) {
+    return {
+      answer:
+        '我不能帮助攻击、盗号、破解或钓鱼，也不会提供绕过安全保护的步骤。可以继续问我 XXYY 产品功能、配置步骤、权益说明，或发送单笔公开交易哈希做夹子检测。',
+      citations: [],
+      confidence: Math.min(classification.confidence, 0.7),
+      intent: classification.intent,
+    };
+  }
+
+  return createBoundaryAnswer(classification);
+}
+
 function recordBoundaryQualitySignal(
   qualitySignals: QualitySignalSink,
   request: ChatRequest,
   response: ChatResponse,
   redactedQuestion: string,
+  classification: Classification,
 ): void {
-  const reason: QualitySignalReason =
-    response.intent === 'investment_advice'
+  const reason: QualitySignalReason = isUnsafeUnsupportedClassification(classification)
+    ? 'boundary_unsafe_request'
+    : response.intent === 'investment_advice'
       ? 'boundary_investment_advice'
       : response.intent === 'realtime_account_query'
         ? 'boundary_private_data'
