@@ -1003,6 +1003,54 @@ describe('createCustomerAgentRuntime', () => {
     });
   });
 
+  it('uses session context to resolve product validity-period follow-ups', async () => {
+    const registry = createToolRegistry();
+    const sessionContext = createInMemorySessionContextStore();
+    const response: ChatResponse = {
+      answer: 'XXYY Pro 有效期以产品页面展示为准。',
+      citations: [
+        {
+          excerpt: 'XXYY Pro 有效期以产品页面展示为准。',
+          file: 'docs/product-features/pro-upgrade.md',
+          title: 'XXYY Pro',
+        },
+      ],
+      confidence: 0.78,
+      intent: 'product_qa',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ registry, sessionContext });
+    await runtime.ask({
+      channel: 'web',
+      message: 'XXYY Pro 有哪些权益？',
+      sessionId: 'session-validity-followup',
+    });
+    const followUpResponse = await runtime.ask({
+      channel: 'web',
+      message: '有效期多久？',
+      sessionId: 'session-validity-followup',
+    });
+
+    expect(followUpResponse.answer).toContain('有效期');
+    expect(execute).toHaveBeenLastCalledWith({
+      channel: 'web',
+      question: 'XXYY Pro 有效期多久？',
+    });
+  });
+
   it('uses safe session preferences to resolve product follow-ups through the runtime', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

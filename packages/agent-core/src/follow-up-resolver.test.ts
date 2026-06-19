@@ -107,6 +107,28 @@ describe('resolveFollowUp', () => {
     });
   });
 
+  it('resolves validity-period product follow-ups using the most recent product topic', () => {
+    const recentTurns: SessionTurn[] = [
+      {
+        content: 'XXYY Pro 有哪些权益？',
+        createdAt: '2026-06-19T00:00:00.000Z',
+        metadata: { intent: 'product_qa' },
+        role: 'user',
+      },
+    ];
+
+    expect(
+      resolveFollowUp({
+        message: '有效期多久？',
+        recentTurns,
+      }),
+    ).toEqual({
+      contextSummary: 'resolved product follow-up from previous product turn',
+      resolution: 'resolved_followup',
+      resolvedMessage: 'XXYY Pro 有效期多久？',
+    });
+  });
+
   it('resolves pronoun product follow-ups using the most recent product topic', () => {
     const recentTurns: SessionTurn[] = [
       {
