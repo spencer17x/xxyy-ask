@@ -266,6 +266,17 @@ export function createCustomerAgentRuntime(
     if (followUp.resolution === 'unchanged') {
       const preference = detectProductPreferenceCapture(followUp.resolvedMessage);
       if (preference !== undefined) {
+        if (options.sessionContext === undefined || request.sessionId === undefined) {
+          const response = createProductPreferenceUnavailableAnswer(preference);
+          recordQualitySignal(qualitySignals, request, {
+            answer: response.answer,
+            confidence: response.confidence,
+            intent: response.intent,
+            reason: 'session_unavailable',
+            redactedQuestion: followUp.resolvedMessage,
+          });
+          return response;
+        }
         const response = createProductPreferenceCapturedAnswer(preference);
         await appendSessionTurns(options.sessionContext, request, response, {
           userContent: followUp.resolvedMessage,
@@ -452,6 +463,15 @@ function createProductPreferenceCapturedAnswer(preference: string): ChatResponse
     answer: `已记录：后续我会优先按${preference}相关问题理解你的短追问。你可以继续问登录、配置、权益或操作步骤。`,
     citations: [],
     confidence: 0.6,
+    intent: 'product_qa',
+  };
+}
+
+function createProductPreferenceUnavailableAnswer(preference: string): ChatResponse {
+  return {
+    answer: `我理解你主要关注${preference}，但当前请求没有可保存的会话上下文，无法把这个偏好保存到后续追问。你可以继续直接问${preference}的登录、配置、权益或操作步骤。`,
+    citations: [],
+    confidence: 0.45,
     intent: 'product_qa',
   };
 }
