@@ -18,6 +18,17 @@ export type {
   KnowledgeOpsAgentRuntime,
 } from './knowledge-ops-agent-runtime.js';
 export {
+  createInMemorySessionContextStore,
+  sanitizeSessionText,
+} from './session-context.js';
+export type {
+  InMemorySessionContextStoreOptions,
+  SessionContextStore,
+  SessionTurn,
+  SessionTurnMetadata,
+  SessionTurnRole,
+} from './session-context.js';
+export {
   KNOWLEDGE_OPS_TOOL_NAMES,
   createKnowledgeOpsTools,
   listKnowledgeCandidatesInputSchema,
