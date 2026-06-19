@@ -148,7 +148,7 @@ export function createInMemoryKnowledgeCandidateStore(
       if (candidate === undefined) {
         return Promise.reject(new KnowledgeCandidateNotFoundError(candidateId));
       }
-      if (candidate.status !== 'ingested') {
+      if (!canMarkEvalResult(candidate)) {
         return Promise.reject(
           new KnowledgeCandidateInvalidStatusTransitionError(
             candidateId,
@@ -274,6 +274,18 @@ function matchesFilter(
   }
 
   return true;
+}
+
+function canMarkEvalResult(candidate: KnowledgeCandidate): boolean {
+  return candidate.status === 'ingested' || isApprovedEvalOnlyCandidate(candidate);
+}
+
+function isApprovedEvalOnlyCandidate(candidate: KnowledgeCandidate): boolean {
+  return (
+    candidate.status === 'approved' &&
+    candidate.type === 'eval_case' &&
+    candidate.targetCategory === 'eval_case'
+  );
 }
 
 function applyReview(

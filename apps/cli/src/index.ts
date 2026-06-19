@@ -12,6 +12,7 @@ import {
 } from '@xxyy/knowledge';
 import {
   KnowledgeCandidateInvalidPublishStatusError,
+  KnowledgeCandidateInvalidPublishTypeError,
   KnowledgeCandidateInvalidStatusTransitionError,
   KnowledgeCandidateNotFoundError,
   KnowledgePublishTargetError,
@@ -113,7 +114,7 @@ interface KnowledgeGateSummary {
   evalPassed: boolean;
   evalRunId: string;
   evaluation: EvaluationReport;
-  ingestion: IngestSummary;
+  ingestion?: IngestSummary;
 }
 
 interface CliIo {
@@ -636,9 +637,12 @@ export function formatPublishKnowledgeSummary(summary: PublishKnowledgeSummary):
 }
 
 export function formatKnowledgeGateSummary(summary: KnowledgeGateSummary): string {
+  const ingestRun =
+    summary.ingestion === undefined ? 'skipped' : (summary.ingestion.runId ?? 'none');
+
   return [
     `Knowledge gate ${summary.evalPassed ? 'passed' : 'failed'} for candidate ${summary.candidateId}.`,
-    `Ingest run: ${summary.ingestion.runId ?? 'none'}`,
+    `Ingest run: ${ingestRun}`,
     `Eval run: ${summary.evalRunId}`,
     formatEvaluationSummary(summary.evaluation),
   ].join('\n');
@@ -1146,7 +1150,17 @@ async function runKnowledgeGate(
     if (candidate === undefined) {
       throw new KnowledgeCandidateNotFoundError(options.candidateId);
     }
-    if (candidate.status !== 'published') {
+    const evalOnly = isEvalOnlyKnowledgeCandidate(candidate);
+    if (evalOnly) {
+      if (candidate.status !== 'approved' && candidate.status !== 'ingested') {
+        throw new KnowledgeCandidateInvalidStatusTransitionError(
+          options.candidateId,
+          'eval',
+          candidate.status,
+          'approved',
+        );
+      }
+    } else if (candidate.status !== 'published') {
       throw new KnowledgeCandidateInvalidStatusTransitionError(
         options.candidateId,
         'ingested',
@@ -1155,22 +1169,25 @@ async function runKnowledgeGate(
       );
     }
 
-    const ingestion = await ingest(io);
-    await store.markCandidateIngested(options.candidateId, {
-      ingestedAt: new Date().toISOString(),
-    });
-    if (ingestion.runId !== undefined) {
-      await store.recordCandidateRun({
-        candidateId: options.candidateId,
-        metadata: {
-          chunkCount: ingestion.chunkCount,
-          documentCount: ingestion.documentCount,
-          indexPath: ingestion.indexPath,
-        },
-        runId: ingestion.runId,
-        runType: 'ingest',
-        status: 'completed',
+    let ingestion: IngestSummary | undefined;
+    if (!evalOnly) {
+      ingestion = await ingest(io);
+      await store.markCandidateIngested(options.candidateId, {
+        ingestedAt: new Date().toISOString(),
       });
+      if (ingestion.runId !== undefined) {
+        await store.recordCandidateRun({
+          candidateId: options.candidateId,
+          metadata: {
+            chunkCount: ingestion.chunkCount,
+            documentCount: ingestion.documentCount,
+            indexPath: ingestion.indexPath,
+          },
+          runId: ingestion.runId,
+          runType: 'ingest',
+          status: 'completed',
+        });
+      }
     }
 
     const cases = createKnowledgeGateEvaluationCases(candidate);
@@ -1209,7 +1226,7 @@ async function runKnowledgeGate(
       evalPassed,
       evalRunId,
       evaluation,
-      ingestion,
+      ...(ingestion === undefined ? {} : { ingestion }),
     };
   } finally {
     await pool.end();
@@ -1272,6 +1289,10 @@ function expectedIntentForKnowledgeCandidate(
 
 function shouldRequireExpectedAnswerText(candidate: KnowledgeCandidate): boolean {
   return candidate.targetCategory !== 'policy_boundary';
+}
+
+function isEvalOnlyKnowledgeCandidate(candidate: KnowledgeCandidate): boolean {
+  return candidate.type === 'eval_case' && candidate.targetCategory === 'eval_case';
 }
 
 function createEvaluationRunId(candidateId: string, evaluation: EvaluationReport): string {
@@ -1611,6 +1632,7 @@ function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): 
 function writeConfigurationError(io: CliIo, error: unknown): boolean {
   if (
     error instanceof KnowledgeCandidateInvalidPublishStatusError ||
+    error instanceof KnowledgeCandidateInvalidPublishTypeError ||
     error instanceof KnowledgeCandidateInvalidStatusTransitionError ||
     error instanceof KnowledgeCandidateNotFoundError ||
     error instanceof KnowledgePublishTargetError

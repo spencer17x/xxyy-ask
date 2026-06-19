@@ -1620,6 +1620,223 @@ describe('runCli', () => {
     }
   });
 
+  it('runs the knowledge gate for approved eval-only candidates without ingesting knowledge', async () => {
+    vi.resetModules();
+
+    const events: string[] = [];
+    const evalCandidate = {
+      confidence: 0.35,
+      createdAt: '2026-06-19T08:00:00.000Z',
+      existingKnowledgeMatches: [],
+      generatedEvalCases: [
+        {
+          expectedAnswer:
+            '交易哈希夹子检测功能暂未启用。当前不会编造链上分析结论；接入正式链上数据源后才能判断是否被夹并生成截图。',
+          expectedIntent: 'tx_sandwich_detection',
+          minCitations: 0,
+          question: '[evm_tx_hash]',
+          requireExpectedAnswerText: false,
+        },
+      ],
+      id: 'kc_tx_eval',
+      proposedAnswer:
+        '交易哈希夹子检测功能暂未启用。当前不会编造链上分析结论；接入正式链上数据源后才能判断是否被夹并生成截图。',
+      question: '[evm_tx_hash]',
+      redactionReport: { entities: [], riskFlags: [], riskLevel: 'low' },
+      reviewer: 'ops@example.com',
+      riskLevel: 'low',
+      sourceRefs: [
+        { source: 'answer_quality_signal', chatIdHash: 'session_present', messageId: 'aqs_tx' },
+      ],
+      status: 'approved',
+      targetCategory: 'eval_case',
+      type: 'eval_case',
+      updatedAt: '2026-06-19T09:00:00.000Z',
+    };
+    const storeMigrate = vi.fn(() => {
+      events.push('knowledge-ops:migrate:gate');
+      return Promise.resolve();
+    });
+    const getCandidate = vi.fn((candidateId: string) => {
+      events.push(`candidate:get:${candidateId}`);
+      return Promise.resolve(evalCandidate);
+    });
+    const markCandidateIngested = vi.fn(() => {
+      throw new Error('eval-only gate should not ingest knowledge');
+    });
+    const markCandidateEvalResult = vi.fn(
+      (candidateId: string, input: { evaluatedAt?: string; passed: boolean }) => {
+        events.push(`candidate:eval:${candidateId}:${input.passed ? 'passed' : 'failed'}`);
+        return Promise.resolve({
+          ...evalCandidate,
+          status: input.passed ? 'eval_passed' : 'eval_failed',
+          updatedAt: '2026-06-19T09:10:00.000Z',
+        });
+      },
+    );
+    const recordCandidateRun = vi.fn((input: { runId: string; runType: string }) => {
+      const runIdPrefix = input.runId.startsWith('eval_') ? 'eval_' : input.runId;
+      events.push(`candidate:run:${input.runType}:${runIdPrefix}`);
+      return Promise.resolve({
+        candidateId: 'kc_tx_eval',
+        createdAt: '2026-06-19T09:10:00.000Z',
+        metadata: {},
+        runId: input.runId,
+        runType: input.runType,
+        status: input.runType === 'eval' ? 'passed' : 'completed',
+      });
+    });
+    const end = vi.fn(() => {
+      events.push('pool.end');
+      return Promise.resolve();
+    });
+    const createCustomerAgentChatService = vi.fn(
+      (_options: CreateCustomerAgentChatServiceOptions) => ({
+        ask: vi.fn(),
+        stream: vi.fn(),
+      }),
+    );
+    const evaluateCases = vi.fn(
+      (
+        cases: EvaluationCase[],
+        _service: unknown,
+        options?: EvaluateCasesOptions,
+      ): Promise<EvaluationReport> => {
+        events.push(`evaluate:${cases.map((item) => item.name).join('|')}`);
+        expect(cases).toEqual([
+          expect.objectContaining({
+            expectedIntent: 'tx_sandwich_detection',
+            minCitations: 0,
+            name: 'knowledge candidate kc_tx_eval / [evm_tx_hash]',
+            request: {
+              channel: 'cli',
+              message: '[evm_tx_hash]',
+            },
+          }),
+        ]);
+        expect(cases[0]).not.toHaveProperty('requiredAnswerIncludes');
+        const result: EvaluationResult = {
+          actualIntent: 'tx_sandwich_detection',
+          citationCount: 0,
+          expectedIntent: 'tx_sandwich_detection',
+          failureReasons: [],
+          minCitations: 0,
+          name: cases[0]?.name ?? 'knowledge candidate',
+          passed: true,
+        };
+        options?.onResult?.(result, 1, 1);
+        return Promise.resolve({
+          passed: 1,
+          total: 1,
+          results: [result],
+        });
+      },
+    );
+
+    vi.doMock('@xxyy/agent-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createCustomerAgentChatService,
+      };
+    });
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        loadProductDocuments: vi.fn(() => {
+          throw new Error('eval-only gate should not load product documents');
+        }),
+      };
+    });
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgPool: vi.fn(() => ({ end })),
+        evaluateCases,
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+          txAnalysisProvider: 'none',
+          txAnalysisReportStore: 'file',
+          txAnalysisReviewer: 'none',
+        })),
+      };
+    });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgKnowledgeOpsStore: vi.fn(() => ({
+          getCandidate,
+          markCandidateEvalResult,
+          markCandidateIngested,
+          migrate: storeMigrate,
+          recordCandidateRun,
+        })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+      const stdout: string[] = [];
+
+      const exitCode = await runCliWithMocks(['gate:knowledge', '--id', 'kc_tx_eval', '--fast'], {
+        cwd: process.cwd(),
+        env: { DATABASE_URL: 'postgres://example.test/db' },
+        stderr: { write: () => true },
+        stdout: {
+          write: (message: string) => {
+            stdout.push(message);
+            return true;
+          },
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(events).toEqual([
+        'knowledge-ops:migrate:gate',
+        'candidate:get:kc_tx_eval',
+        'evaluate:knowledge candidate kc_tx_eval / [evm_tx_hash]',
+        'candidate:eval:kc_tx_eval:passed',
+        'candidate:run:eval:eval_',
+        'pool.end',
+      ]);
+      expect(markCandidateIngested).not.toHaveBeenCalled();
+      expect(createCustomerAgentChatService).toHaveBeenCalledTimes(1);
+      expect(recordCandidateRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          candidateId: 'kc_tx_eval',
+          metadata: {
+            failures: [],
+            passed: 1,
+            total: 1,
+          },
+          runType: 'eval',
+          status: 'passed',
+        }),
+      );
+      expect(stdout.join('')).toContain('Knowledge gate passed for candidate kc_tx_eval.');
+      expect(stdout.join('')).toContain('Ingest run: skipped');
+      expect(stdout.join('')).toContain('Eval run: eval_');
+      expect(stdout.join('')).toContain('Evaluation: 1/1 passed');
+    } finally {
+      vi.doUnmock('@xxyy/agent-core');
+      vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
+    }
+  });
+
   it('runs database migrations without generating embeddings', async () => {
     vi.resetModules();
 

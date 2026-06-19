@@ -39,6 +39,7 @@ export {
 } from './pg-store.js';
 export {
   DEFAULT_REVIEWED_SUPPORT_KNOWLEDGE_TARGET,
+  KnowledgeCandidateInvalidPublishTypeError,
   KnowledgePublishTargetError,
   publishKnowledgeCandidate,
   type PublishKnowledgeCandidateInput,

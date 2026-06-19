@@ -398,6 +398,56 @@ describe('createPgKnowledgeOpsStore', () => {
     );
   });
 
+  it('marks approved eval-only Postgres candidates with eval results without requiring ingest', async () => {
+    const client = new FakePgClient();
+    client.queuedRows = [
+      [
+        toPgCandidateRow(
+          candidate({
+            status: 'approved',
+            targetCategory: 'eval_case',
+            type: 'eval_case',
+          }),
+        ),
+      ],
+      [
+        toPgCandidateRow(
+          candidate({
+            status: 'eval_passed',
+            targetCategory: 'eval_case',
+            type: 'eval_case',
+            updatedAt: '2026-06-17T06:10:00.000Z',
+          }),
+        ),
+      ],
+      [toPgCandidateRow(candidate({ id: 'kc_product', status: 'approved' }))],
+    ];
+    const store = createPgKnowledgeOpsStore({ client });
+
+    const evaluated = await store.markCandidateEvalResult('kc_telegram_setup', {
+      evaluatedAt: '2026-06-17T06:10:00.000Z',
+      passed: true,
+    });
+
+    expect(client.queries[1]?.values).toEqual([
+      'eval_passed',
+      '2026-06-17T06:10:00.000Z',
+      'kc_telegram_setup',
+    ]);
+    expect(evaluated).toMatchObject({
+      status: 'eval_passed',
+      updatedAt: '2026-06-17T06:10:00.000Z',
+    });
+    await expect(
+      store.markCandidateEvalResult('kc_product', {
+        evaluatedAt: '2026-06-17T06:10:00.000Z',
+        passed: true,
+      }),
+    ).rejects.toThrow(
+      'Knowledge candidate kc_product cannot be marked eval_passed from approved; expected status is ingested.',
+    );
+  });
+
   it('records and lists Postgres candidate publish, ingest, and eval runs', async () => {
     const client = new FakePgClient();
     client.queuedRows = [

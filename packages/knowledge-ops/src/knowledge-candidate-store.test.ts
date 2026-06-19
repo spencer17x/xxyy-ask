@@ -180,6 +180,36 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
     ).rejects.toThrow('Knowledge candidate not found: missing');
   });
 
+  it('marks approved eval-only candidates with eval results without requiring ingest', async () => {
+    const store = createInMemoryKnowledgeCandidateStore();
+    await store.addCandidates([
+      candidate({
+        status: 'approved',
+        targetCategory: 'eval_case',
+        type: 'eval_case',
+      }),
+      candidate({ id: 'candidate_2', status: 'approved' }),
+    ]);
+
+    const evaluated = await store.markCandidateEvalResult('candidate_1', {
+      evaluatedAt: '2026-06-17T06:10:00.000Z',
+      passed: true,
+    });
+
+    expect(evaluated).toMatchObject({
+      status: 'eval_passed',
+      updatedAt: '2026-06-17T06:10:00.000Z',
+    });
+    await expect(
+      store.markCandidateEvalResult('candidate_2', {
+        evaluatedAt: '2026-06-17T06:10:00.000Z',
+        passed: true,
+      }),
+    ).rejects.toThrow(
+      'Knowledge candidate candidate_2 cannot be marked eval_passed from approved; expected status is ingested.',
+    );
+  });
+
   it('records publish, ingest, and eval runs for a candidate', async () => {
     const store = createInMemoryKnowledgeCandidateStore();
     await store.addCandidates([candidate({ status: 'published' })]);

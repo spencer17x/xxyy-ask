@@ -28,12 +28,24 @@ export class KnowledgePublishTargetError extends Error {
   }
 }
 
+export class KnowledgeCandidateInvalidPublishTypeError extends Error {
+  constructor(candidateId: string) {
+    super(
+      `Knowledge candidate ${candidateId} is an eval-only candidate and cannot be published into product knowledge.`,
+    );
+    this.name = 'KnowledgeCandidateInvalidPublishTypeError';
+  }
+}
+
 export async function publishKnowledgeCandidate(
   input: PublishKnowledgeCandidateInput,
 ): Promise<PublishKnowledgeCandidateResult> {
   const { candidate } = input;
   if (candidate.status !== 'approved') {
     throw new KnowledgeCandidateInvalidPublishStatusError(candidate.id, candidate.status);
+  }
+  if (isEvalOnlyCandidate(candidate)) {
+    throw new KnowledgeCandidateInvalidPublishTypeError(candidate.id);
   }
 
   const publishedAt = input.now ?? new Date().toISOString();
@@ -154,6 +166,10 @@ function formatCandidateEntry(input: {
 
 function createCandidateMarker(candidateId: string): string {
   return `<!-- xxyy-knowledge-candidate:${candidateId} -->`;
+}
+
+function isEvalOnlyCandidate(candidate: KnowledgeCandidate): boolean {
+  return candidate.type === 'eval_case' && candidate.targetCategory === 'eval_case';
 }
 
 function formatSourceRefs(sourceRefs: KnowledgeCandidateSourceRef[]): string {

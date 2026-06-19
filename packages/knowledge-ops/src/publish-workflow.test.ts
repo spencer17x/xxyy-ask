@@ -94,4 +94,21 @@ describe('publishKnowledgeCandidate', () => {
       'Knowledge candidate kc_telegram_setup must be approved before publishing; current status is needs_review.',
     );
   });
+
+  it('rejects eval-only candidates so they do not contaminate product knowledge', async () => {
+    const productFeaturesDir = await mkdtemp(path.join(tmpdir(), 'xxyy-publish-'));
+
+    await expect(
+      publishKnowledgeCandidate({
+        candidate: candidate({
+          targetCategory: 'eval_case',
+          type: 'eval_case',
+        }),
+        now: '2026-06-17T05:00:00.000Z',
+        productFeaturesDir,
+      }),
+    ).rejects.toThrow(
+      'Knowledge candidate kc_telegram_setup is an eval-only candidate and cannot be published into product knowledge.',
+    );
+  });
 });
