@@ -1690,6 +1690,10 @@ export function renderOpsPage(): string {
           <div id="feedback" class="panel-body"></div>
         </article>
         <article class="panel">
+          <h2>Alerts</h2>
+          <div id="ops-alerts" class="panel-body"></div>
+        </article>
+        <article class="panel">
           <h2>Sessions</h2>
           <div id="session-context" class="panel-body"></div>
         </article>
@@ -1888,6 +1892,7 @@ export function renderOpsPage(): string {
       const healthTarget = document.querySelector("#health");
       const knowledgeTarget = document.querySelector("#knowledge");
       const feedbackTarget = document.querySelector("#feedback");
+      const alertsTarget = document.querySelector("#ops-alerts");
       const sessionContextTarget = document.querySelector("#session-context");
       const toolAuditTarget = document.querySelector("#tool-audit");
       const txAnalysisTarget = document.querySelector("#tx-analysis");
@@ -2072,6 +2077,7 @@ export function renderOpsPage(): string {
           renderHealth(summary.health);
           renderKnowledge(summary.knowledge);
           renderFeedback(summary.feedback);
+          renderAlerts(summary.alerts || []);
           renderSessionContext(summary.sessionContext);
           renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || []);
           renderEvalFailureReasons(summary.knowledgeCandidateQueues?.evalFailureReasonCounts || {});
@@ -2098,6 +2104,7 @@ export function renderOpsPage(): string {
       function renderSummary(summary) {
         summaryTarget.replaceChildren(
           metric("Health", summary.health.status, summary.health.status),
+          metric("Alerts", summary.alerts?.length || 0, alertMetricState(summary.alerts || [])),
           metric("Documents", summary.knowledge.documentCount, "ok"),
           metric("Chunks", summary.knowledge.chunkCount, "ok"),
           metric("Negative", summary.feedback.negativeCount, summary.feedback.negativeCount > 0 ? "warn" : "ok"),
@@ -2195,6 +2202,33 @@ export function renderOpsPage(): string {
           ...errorRows,
           ...(failureRows.length === 0 ? [empty("No recent tool failures.")] : failureRows),
         );
+      }
+
+      function renderAlerts(alerts) {
+        if (alerts.length === 0) {
+          alertsTarget.replaceChildren(empty("No active alerts."));
+          return;
+        }
+
+        alertsTarget.replaceChildren(
+          ...alerts.map((alert) =>
+            rowWithMetaNodes("source-row", "Alert · " + alert.code, String(alert.count || 0), [
+              text("Severity " + alert.severity),
+              text(alert.message || ""),
+            ]),
+          ),
+        );
+      }
+
+      function alertMetricState(alerts) {
+        if (alerts.some((alert) => alert.severity === "error")) {
+          return "error";
+        }
+        if (alerts.some((alert) => alert.severity === "warning")) {
+          return "warn";
+        }
+
+        return "ok";
       }
 
       function toolCostMetricState(cost) {

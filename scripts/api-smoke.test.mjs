@@ -1530,6 +1530,56 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when alerts are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.alerts;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain('Failed ops summary: ops summary must include valid alerts.');
+  });
+
+  it('fails ops summary smoke when alerts are malformed', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      alerts: [
+        {
+          code: '',
+          count: -1,
+          message: 'Broken alert',
+          severity: 'maybe',
+        },
+      ],
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain('Failed ops summary: ops summary must include valid alerts.');
+  });
+
   it('fails ops summary smoke when tool audit summary is missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -6523,6 +6573,20 @@ function jsonResponse(payload, status = 200) {
 
 function opsSummaryPayload(overrides = {}) {
   return {
+    alerts: [
+      {
+        code: 'eval_failures',
+        count: 1,
+        message: '1 eval candidate is failing quality gates.',
+        severity: 'error',
+      },
+      {
+        code: 'tool_cost_budget',
+        count: 1,
+        message: 'Tool audit cost is at 70% of the configured 24h budget.',
+        severity: 'warning',
+      },
+    ],
     knowledgeCandidateQueues: {
       approvedBacklogCount: 3,
       approvedBacklogTypeCounts: {

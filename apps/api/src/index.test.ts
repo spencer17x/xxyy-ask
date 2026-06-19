@@ -313,6 +313,7 @@ describe('createRequestHandler', () => {
 
   it('returns protected ops summary data for monitoring dashboards', async () => {
     const summary = {
+      alerts: [],
       feedback: {
         latest: [
           {
@@ -489,6 +490,7 @@ describe('createRequestHandler', () => {
 
   it('adds transaction analysis runtime settings to ops summary responses', async () => {
     const summary = {
+      alerts: [],
       feedback: {
         latest: [],
         negativeCount: 0,
@@ -1042,6 +1044,38 @@ describe('createRequestHandler', () => {
         sessionContext: { recentSummaries: Array<{ sessionIdHash: string }> };
       };
       expect(responseBody).toMatchObject({
+        alerts: [
+          {
+            code: 'eval_failures',
+            count: 3,
+            message: '3 eval candidates are failing quality gates.',
+            severity: 'error',
+          },
+          {
+            code: 'tool_cost_budget',
+            count: 1,
+            message: 'Tool audit cost is at 70% of the configured 24h budget.',
+            severity: 'warning',
+          },
+          {
+            code: 'tool_failures',
+            count: 1,
+            message: '1 tool audit failure in the last 24h.',
+            severity: 'warning',
+          },
+          {
+            code: 'stale_session_summaries',
+            count: 1,
+            message: '1 session summary is stale.',
+            severity: 'warning',
+          },
+          {
+            code: 'approved_knowledge_backlog',
+            count: 4,
+            message: '4 approved knowledge candidates are waiting for publish or gate.',
+            severity: 'warning',
+          },
+        ],
         generatedAt: '2026-06-19T08:00:00.000Z',
         knowledgeCandidateQueues: {
           approvedBacklogCount: 4,

@@ -1246,6 +1246,10 @@ function validateOpsSummaryPayload(payload) {
     return 'ops summary must include transaction analysis browser mode and screenshot base URL.';
   }
 
+  if (!Array.isArray(payload.alerts) || !payload.alerts.every(isOpsAlertSummary)) {
+    return 'ops summary must include valid alerts.';
+  }
+
   const knowledgeCandidateQueues = payload.knowledgeCandidateQueues;
   const knowledgeCandidateQueueError =
     validateKnowledgeCandidateQueueSummary(knowledgeCandidateQueues);
@@ -1637,6 +1641,16 @@ function hasToolCostEstimate(value) {
   }
 
   return true;
+}
+
+function isOpsAlertSummary(value) {
+  return (
+    isRecord(value) &&
+    isCleanNonEmptyString(value.code) &&
+    isPositiveInteger(value.count) &&
+    isCleanNonEmptyString(value.message) &&
+    (value.severity === 'error' || value.severity === 'warning')
+  );
 }
 
 function isToolAuditBudgetStatus(value) {

@@ -100,6 +100,7 @@ describe('renderOpsPage', () => {
     expect(html).toContain(
       'renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || [])',
     );
+    expect(html).toContain('renderAlerts(summary.alerts || [])');
     expect(html).toContain(
       'renderEvalFailureReasons(summary.knowledgeCandidateQueues?.evalFailureReasonCounts || {})',
     );
@@ -132,6 +133,7 @@ describe('renderOpsPage', () => {
     );
     expect(html).toContain('renderToolAudit(summary.toolAudit)');
     expect(html).toContain('summary.knowledgeCandidateQueues?.needsReviewCount || 0');
+    expect(html).toContain('summary.alerts?.length || 0');
     expect(html).toContain('summary.toolAudit?.tokenUsage?.totalTokens || 0');
     expect(html).toContain('summary.toolAudit?.costEstimate?.totalCostUsd');
     expect(html).toContain('summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0');
@@ -156,6 +158,7 @@ describe('renderOpsPage', () => {
     expect(html).toContain('id="knowledge-approved-backlog"');
     expect(html).toContain('id="session-context"');
     expect(html).toContain('id="tool-audit"');
+    expect(html).toContain('id="ops-alerts"');
     expect(html).toContain('id="knowledge-eval-failures"');
     expect(html).toContain('id="knowledge-eval-failure-reasons"');
     expect(html).toContain('id="knowledge-eval-failure-clusters"');
@@ -209,6 +212,8 @@ describe('renderOpsPage', () => {
     expect(html).toContain('Tool Cost');
     expect(html).toContain('summary.costEstimate');
     expect(html).toContain('Cost budget · " + cost.budgetStatus');
+    expect(html).toContain('Alert · " + alert.code');
+    expect(html).toContain('alert.severity');
     expect(html).toContain('Recent failure · " + failure.toolName');
     expect(html).toContain('failure.errorCode');
     expect(html).toContain('recent.agentRoute');

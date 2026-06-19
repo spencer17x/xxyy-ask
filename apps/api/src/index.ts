@@ -237,6 +237,7 @@ interface DeepHealthStatus {
 }
 
 interface OpsSummary {
+  alerts: OpsAlertSummary[];
   feedback: FeedbackStats;
   generatedAt: string;
   health: DeepHealthStatus;
@@ -246,6 +247,23 @@ interface OpsSummary {
   toolAudit: ToolAuditOpsSummary;
   txAnalysis: TxAnalysisReportSummary;
   txAnalysisRuntime?: TxAnalysisRuntimeSummary;
+}
+
+type OpsAlertCode =
+  | 'approved_knowledge_backlog'
+  | 'eval_failures'
+  | 'stale_quality_gaps'
+  | 'stale_session_summaries'
+  | 'tool_cost_budget'
+  | 'tool_failures'
+  | 'tx_analysis_failures';
+type OpsAlertSeverity = 'error' | 'warning';
+
+interface OpsAlertSummary {
+  code: OpsAlertCode;
+  count: number;
+  message: string;
+  severity: OpsAlertSeverity;
 }
 
 type ToolAuditBudgetStatus = 'exceeded' | 'not_configured' | 'ok' | 'warning';
@@ -1762,6 +1780,12 @@ async function createOpsSummary(
     const toolAudit = addToolAuditCostEstimate(rawToolAudit, apiConfig.toolAuditCost);
 
     return {
+      alerts: summarizeOpsAlerts({
+        knowledgeCandidateQueues,
+        sessionContext,
+        toolAudit,
+        txAnalysis,
+      }),
       feedback,
       generatedAt: new Date(generatedAtMs).toISOString(),
       health,
@@ -1774,6 +1798,112 @@ async function createOpsSummary(
   } finally {
     await pool.end();
   }
+}
+
+function summarizeOpsAlerts(input: {
+  knowledgeCandidateQueues: KnowledgeCandidateQueueSummary;
+  sessionContext: PgSessionContextOpsSummary;
+  toolAudit: ToolAuditOpsSummary;
+  txAnalysis: TxAnalysisReportSummary;
+}): OpsAlertSummary[] {
+  const alerts: OpsAlertSummary[] = [];
+
+  if (input.knowledgeCandidateQueues.evalFailedCount > 0) {
+    alerts.push({
+      code: 'eval_failures',
+      count: input.knowledgeCandidateQueues.evalFailedCount,
+      message:
+        formatCount(input.knowledgeCandidateQueues.evalFailedCount, 'eval candidate') +
+        ' failing quality gates.',
+      severity: 'error',
+    });
+  }
+
+  if (input.toolAudit.costEstimate.budgetStatus === 'exceeded') {
+    alerts.push({
+      code: 'tool_cost_budget',
+      count: 1,
+      message: 'Tool audit cost has exceeded the configured 24h budget.',
+      severity: 'error',
+    });
+  } else if (input.toolAudit.costEstimate.budgetStatus === 'warning') {
+    const utilization = input.toolAudit.costEstimate.budgetUtilization ?? 0;
+    alerts.push({
+      code: 'tool_cost_budget',
+      count: 1,
+      message:
+        'Tool audit cost is at ' +
+        formatAlertPercent(utilization) +
+        ' of the configured 24h budget.',
+      severity: 'warning',
+    });
+  }
+
+  if (input.toolAudit.failureCount > 0) {
+    alerts.push({
+      code: 'tool_failures',
+      count: input.toolAudit.failureCount,
+      message:
+        formatPlainCount(input.toolAudit.failureCount, 'tool audit failure') + ' in the last 24h.',
+      severity: 'warning',
+    });
+  }
+
+  if (input.sessionContext.staleSummaryCount > 0) {
+    alerts.push({
+      code: 'stale_session_summaries',
+      count: input.sessionContext.staleSummaryCount,
+      message: formatCount(input.sessionContext.staleSummaryCount, 'session summary') + ' stale.',
+      severity: 'warning',
+    });
+  }
+
+  const staleQualityGapCount = input.knowledgeCandidateQueues.qualitySignalAgeBuckets.gte24h;
+  if (staleQualityGapCount > 0) {
+    alerts.push({
+      code: 'stale_quality_gaps',
+      count: staleQualityGapCount,
+      message: formatCount(staleQualityGapCount, 'quality gap') + ' older than 24h.',
+      severity: 'error',
+    });
+  }
+
+  if (input.knowledgeCandidateQueues.approvedBacklogCount > 0) {
+    alerts.push({
+      code: 'approved_knowledge_backlog',
+      count: input.knowledgeCandidateQueues.approvedBacklogCount,
+      message:
+        formatCount(
+          input.knowledgeCandidateQueues.approvedBacklogCount,
+          'approved knowledge candidate',
+        ) + ' waiting for publish or gate.',
+      severity: 'warning',
+    });
+  }
+
+  if (input.txAnalysis.failureCount > 0) {
+    alerts.push({
+      code: 'tx_analysis_failures',
+      count: input.txAnalysis.failureCount,
+      message:
+        formatPlainCount(input.txAnalysis.failureCount, 'transaction analysis failure') + '.',
+      severity: 'warning',
+    });
+  }
+
+  return alerts;
+}
+
+function formatCount(count: number, singular: string): string {
+  return String(count) + ' ' + singular + (count === 1 ? ' is' : 's are');
+}
+
+function formatPlainCount(count: number, singular: string): string {
+  return String(count) + ' ' + singular + (count === 1 ? '' : 's');
+}
+
+function formatAlertPercent(value: number): string {
+  return String(Math.round(value * 1000) / 10) + '%';
 }
 
 function addToolAuditCostEstimate(
