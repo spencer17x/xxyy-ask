@@ -11,6 +11,7 @@ export type QualitySignalReason =
   | 'unknown_intent';
 
 export interface QualitySignal {
+  answer?: string;
   channel: ChatChannel;
   citationCount?: number;
   confidence?: number;

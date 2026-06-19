@@ -142,6 +142,7 @@ export function createCustomerAgentRuntime(
 
     if (response.confidence < qualityConfidenceThreshold) {
       recordQualitySignal(qualitySignals, request, {
+        answer: response.answer,
         citationCount: response.citations.length,
         confidence: response.confidence,
         intent: response.intent,
@@ -151,6 +152,7 @@ export function createCustomerAgentRuntime(
     }
     if (response.citations.length === 0) {
       recordQualitySignal(qualitySignals, request, {
+        answer: response.answer,
         citationCount: 0,
         confidence: response.confidence,
         intent: response.intent,
@@ -290,6 +292,7 @@ function recordQualitySignal(
   qualitySignals: QualitySignalSink,
   request: ChatRequest,
   signal: {
+    answer?: string;
     citationCount?: number;
     confidence?: number;
     errorCode?: string;
@@ -299,6 +302,7 @@ function recordQualitySignal(
   },
 ): void {
   qualitySignals.record({
+    ...(signal.answer === undefined ? {} : { answer: sanitizeSessionText(signal.answer) }),
     channel: request.channel,
     ...(signal.citationCount === undefined ? {} : { citationCount: signal.citationCount }),
     ...(signal.confidence === undefined ? {} : { confidence: signal.confidence }),

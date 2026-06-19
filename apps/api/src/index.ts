@@ -4,11 +4,17 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { createCustomerAgentChatService } from '@xxyy/agent-core';
+import {
+  createCustomerAgentChatService,
+  createInMemoryQualitySignalSink,
+  createInMemorySessionContextStore,
+  type QualitySignalSink,
+} from '@xxyy/agent-core';
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
   KnowledgeCandidateNotFoundError,
   createPgKnowledgeOpsStore,
+  mineAnswerQualitySignals,
   type KnowledgeCandidateStore,
   type KnowledgeCandidateStatus,
   type KnowledgeCandidateType,
@@ -1689,10 +1695,40 @@ function createCachedChatServiceLoader(
     cachedService = createCustomerAgentChatService({
       answerProvider: createLazyAnswerProvider(config),
       config,
+      qualitySignals: createApiQualitySignalSink(config),
       retriever,
+      sessionContext: createInMemorySessionContextStore(),
       txAnalysisProvider: createConfiguredTxAnalysisProvider(config),
     });
     return Promise.resolve(cachedService);
+  };
+}
+
+function createApiQualitySignalSink(config: ReturnType<typeof loadRagConfig>): QualitySignalSink {
+  const memory = createInMemoryQualitySignalSink();
+  let candidateStore: KnowledgeCandidateStore | undefined;
+
+  function getCandidateStore(): KnowledgeCandidateStore {
+    candidateStore ??= createPgKnowledgeOpsStore({ client: createPgPool(config.databaseUrl) });
+    return candidateStore;
+  }
+
+  return {
+    record(signal) {
+      memory.record(signal);
+      const mined = mineAnswerQualitySignals({ signals: [signal] });
+      if (mined.candidates.length === 0) {
+        return;
+      }
+
+      try {
+        void getCandidateStore()
+          .addCandidates(mined.candidates)
+          .catch(() => undefined);
+      } catch {
+        // Quality-gap capture is best-effort and must never block customer answers.
+      }
+    },
   };
 }
 

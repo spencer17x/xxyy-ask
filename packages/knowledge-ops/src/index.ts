@@ -38,6 +38,13 @@ export {
   type PublishKnowledgeCandidateResult,
 } from './publish-workflow.js';
 export {
+  mineAnswerQualitySignals,
+  type AnswerQualitySignal,
+  type AnswerQualitySignalReason,
+  type MineAnswerQualitySignalsInput,
+  type MineAnswerQualitySignalsOutput,
+} from './quality-signal-miner.js';
+export {
   redactSupportMessage,
   redactSupportText,
   type RedactSupportTextResult,
@@ -51,6 +58,7 @@ export type {
   ExistingKnowledgeMatch,
   GeneratedEvalCase,
   KnowledgeCandidate,
+  KnowledgeCandidateSource,
   KnowledgeCandidateSourceRef,
   KnowledgeCandidateStatus,
   KnowledgeCandidateType,

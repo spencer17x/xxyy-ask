@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import type { CreateCustomerAgentChatServiceOptions } from '@xxyy/agent-core';
 import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import type { KnowledgeCandidate, KnowledgeCandidateStore } from '@xxyy/knowledge-ops';
 import { KnowledgeCandidateNotFoundError } from '@xxyy/knowledge-ops';
@@ -2981,10 +2982,12 @@ describe('createRequestHandler', () => {
         intent: 'product_qa' as const,
       }),
     );
-    const createCustomerAgentChatService = vi.fn(() => ({
-      ask: agentAsk,
-      stream: vi.fn(),
-    }));
+    const createCustomerAgentChatService = vi.fn(
+      (_options: CreateCustomerAgentChatServiceOptions) => ({
+        ask: agentAsk,
+        stream: vi.fn(),
+      }),
+    );
     const createLegacyChatService = vi.fn(() => ({
       ask: vi.fn(() =>
         Promise.resolve({
@@ -2996,12 +2999,29 @@ describe('createRequestHandler', () => {
       ),
       stream: vi.fn(),
     }));
+    const candidateFromSignal = { id: 'kc_quality_signal' };
+    const addCandidates = vi.fn(() => Promise.resolve([candidateFromSignal]));
+    const createPgKnowledgeOpsStore = vi.fn(() => ({ addCandidates }));
+    const mineAnswerQualitySignals = vi.fn(() => ({
+      candidates: [candidateFromSignal],
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    }));
 
     vi.doMock('@xxyy/agent-core', async (importOriginal) => {
       const actual = await importOriginal<Record<string, unknown>>();
       return {
         ...actual,
         createCustomerAgentChatService,
+      };
+    });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgKnowledgeOpsStore,
+        mineAnswerQualitySignals,
       };
     });
     vi.doMock('@xxyy/knowledge', async (importOriginal) => {
@@ -3017,6 +3037,7 @@ describe('createRequestHandler', () => {
         ...actual,
         createChatService: createLegacyChatService,
         createLazyRetriever: vi.fn(() => ({ retrieve: vi.fn() })),
+        createPgPool: vi.fn(() => ({ end: vi.fn(), query: vi.fn() })),
         loadRagConfig: vi.fn(() => createRuntimeConfigForTest()),
       };
     });
@@ -3047,12 +3068,35 @@ describe('createRequestHandler', () => {
       });
       expect(createLegacyChatService).not.toHaveBeenCalled();
       expect(createCustomerAgentChatService).toHaveBeenCalledTimes(1);
+      const serviceOptions = createCustomerAgentChatService.mock.calls[0]?.[0];
+      expect(serviceOptions).toBeDefined();
+      if (serviceOptions === undefined) {
+        throw new Error('Expected Customer Agent service options to be captured.');
+      }
+      expect(typeof serviceOptions.qualitySignals?.record).toBe('function');
+      expect(typeof serviceOptions.sessionContext?.appendTurn).toBe('function');
+      expect(typeof serviceOptions.sessionContext?.getRecentTurns).toBe('function');
+      const signal = {
+        answer: '当前知识库没有足够信息。',
+        channel: 'web',
+        confidence: 0.2,
+        intent: 'product_qa',
+        reason: 'low_confidence',
+        redactedQuestion: 'XXYY Pro 价格是多少？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      } as const;
+      serviceOptions.qualitySignals?.record(signal);
+      expect(mineAnswerQualitySignals).toHaveBeenCalledWith({ signals: [signal] });
+      expect(createPgKnowledgeOpsStore).toHaveBeenCalledTimes(1);
+      expect(addCandidates).toHaveBeenCalledWith([candidateFromSignal]);
       expect(agentAsk).toHaveBeenCalledWith({
         channel: 'web',
         message: 'XXYY Pro 有哪些权益？',
       });
     } finally {
       vi.doUnmock('@xxyy/agent-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
       vi.doUnmock('@xxyy/knowledge');
       vi.doUnmock('@xxyy/rag-core');
     }

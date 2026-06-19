@@ -1,4 +1,5 @@
 export type SupportSource = 'telegram';
+export type KnowledgeCandidateSource = SupportSource | 'answer_quality_signal';
 
 export type SupportMessageSenderRole = 'user' | 'support' | 'system' | 'unknown';
 
@@ -54,7 +55,7 @@ export type KnowledgeCandidateStatus =
   | 'eval_failed';
 
 export interface KnowledgeCandidateSourceRef {
-  source: SupportSource;
+  source: KnowledgeCandidateSource;
   chatIdHash: string;
   messageId: string;
   threadId?: string;

@@ -1,0 +1,133 @@
+import { describe, expect, it } from 'vitest';
+
+import { mineAnswerQualitySignals } from './quality-signal-miner.js';
+
+const now = '2026-06-19T08:00:00.000Z';
+
+describe('mineAnswerQualitySignals', () => {
+  it('creates a needs-review FAQ candidate from a low-confidence product answer', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer: 'XXYY Pro 可以在会员页面升级，升级后会提升监控上限。',
+          channel: 'web',
+          citationCount: 0,
+          confidence: 0.32,
+          intent: 'product_qa',
+          reason: 'low_confidence',
+          redactedQuestion: 'XXYY Pro 怎么升级？我的邮箱是 me@example.com',
+          sessionIdPresent: true,
+          userIdPresent: true,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.32,
+      createdAt: now,
+      proposedAnswer: 'XXYY Pro 可以在会员页面升级，升级后会提升监控上限。',
+      question: 'XXYY Pro 怎么升级？我的邮箱是 [REDACTED_EMAIL]',
+      riskLevel: 'medium',
+      status: 'needs_review',
+      targetCategory: 'product_faq',
+      type: 'faq',
+      updatedAt: now,
+    });
+    const candidate = result.candidates[0];
+    expect(candidate).toBeDefined();
+    if (candidate === undefined) {
+      throw new Error('Expected a quality-signal candidate to be created.');
+    }
+    const sourceRef = candidate.sourceRefs[0];
+    expect(sourceRef).toBeDefined();
+    if (sourceRef === undefined) {
+      throw new Error('Expected a quality-signal source ref.');
+    }
+    expect(sourceRef.messageId).toMatch(/^aqs_[a-f0-9]{16}$/u);
+    expect(candidate.sourceRefs).toEqual([
+      {
+        chatIdHash: 'session_present',
+        messageId: sourceRef.messageId,
+        source: 'answer_quality_signal',
+      },
+    ]);
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer: 'XXYY Pro 可以在会员页面升级，升级后会提升监控上限。',
+        question: 'XXYY Pro 怎么升级？我的邮箱是 [REDACTED_EMAIL]',
+      },
+    ]);
+  });
+
+  it('creates a high-risk boundary candidate from a private-data boundary signal', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          channel: 'telegram',
+          confidence: 0.8,
+          intent: 'realtime_account_query',
+          reason: 'boundary_private_data',
+          redactedQuestion: '帮我查一下钱包余额 0x1111111111111111111111111111111111111111',
+          sessionIdPresent: false,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.8,
+      proposedAnswer:
+        'XXYY 客服 Agent 不能查询账户、订单、钱包余额或私有交易记录。请在已登录的 XXYY 产品页面或你的钱包/交易所内自行核对。',
+      question: '帮我查一下钱包余额 [REDACTED_EVM_ADDRESS]',
+      riskLevel: 'high',
+      status: 'needs_review',
+      targetCategory: 'policy_boundary',
+      type: 'boundary_example',
+    });
+    expect(result.candidates[0]?.redactionReport.riskFlags).toEqual(
+      expect.arrayContaining(['private_account_query']),
+    );
+  });
+
+  it('skips quality signals that do not yet contain publishable knowledge', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          channel: 'web',
+          errorCode: 'TxAnalysisProviderUnavailableError',
+          intent: 'tx_sandwich_detection',
+          reason: 'tx_analysis_failure',
+          redactedQuestion: '0x2222222222222222222222222222222222222222222222222222222222222222',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+        {
+          channel: 'web',
+          confidence: 0.2,
+          intent: 'unknown',
+          reason: 'unknown_intent',
+          redactedQuestion: '   ',
+          sessionIdPresent: false,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      candidates: [],
+      candidatesCreated: 0,
+      signalsRead: 2,
+      signalsSkipped: 2,
+    });
+  });
+});

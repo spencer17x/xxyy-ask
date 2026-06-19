@@ -419,6 +419,7 @@ describe('createCustomerAgentRuntime', () => {
 
     expect(qualitySignals.signals()).toEqual([
       {
+        answer: '当前知识库没有足够信息。',
         channel: 'web',
         citationCount: 0,
         confidence: 0.2,
@@ -429,6 +430,7 @@ describe('createCustomerAgentRuntime', () => {
         userIdPresent: false,
       },
       {
+        answer: '当前知识库没有足够信息。',
         channel: 'web',
         citationCount: 0,
         confidence: 0.2,

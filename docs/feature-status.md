@@ -113,6 +113,8 @@
 - [x] 浏览器安全验证标记识别：公开浏览器或 XXYY 页面文本里出现 `cf-mitigated: challenge`、`challenge-platform`、`cf_clearance`、`cf-chl` / `cf_chl`、`cf-challenge-running`、`Cloudflare Ray ID`、`cf-turnstile-response`、`g-recaptcha`、`h-captcha`、`DataDome`、`Akamai Bot Manager`、`_abck`、`bm_sz`、`PerimeterX`、`_px3`、`pxvid`、`Kasada`、`x-kpsdk`、`Press & Hold to confirm you are a human`、`prove you are human`、`Human verification required`、`verify you are not a bot`、`security service to protect itself from online attacks` 或 `triggered the security solution` 这类 Cloudflare / WAF / 人机验证标记时，也会提示需要完成浏览器验证，不会误报成交易不存在或普通数据源不可用。
 - [x] 交易分析数据库报告：配置 `TX_ANALYSIS_REPORT_STORE=postgres` 后，浏览器取证成功/失败报告会写入 `tx_analysis_reports` 表；报告链接可通过 `/api/tx-analysis/reports/:id` 打开，列表、摘要和 `/ops` 会从数据库读取。
 - [x] 交易分析报告筛选复查：`/ops` 运维页支持查看最近报告，也支持按交易哈希、链、报告状态、处理状态、负责人、失败原因和数量上限查询历史报告，并直接打开报告、截图、交易浏览器、XXYY 原池子页和前置/用户/后置交易 explorer 链接；相关交易链接标签会展示可用的交易方向、交易者和时间，方便客服不打开 JSON 报告也能先看前后腿上下文；成功报告会展示判断规则版本，EVM 成功或失败报告如果已解析到路由合约，也会在列表中展示；裸 EVM 自动探测失败时会展示每条链的 Probe 结果，方便客服快速判断是未找到、验证、超时还是公开站点不可用；缺失或历史异常处理状态按 open 筛选，保存处理记录时会清理负责人、备注和更新人的首尾空格，避免筛选队列被空白文本污染。
+- [x] 自动回答 Runtime 第一版：`CustomerAgentRuntime` 已统一产品问答、交易分析、边界回复和澄清问题路由，API 默认启用内存会话上下文和质量信号 sink，可基于 `sessionId` 解析简单追问；该能力不创建用户侧工单，也不承诺人工接管。
+- [x] 自动质量候选生成第一版：低置信度、无引用和边界类回答会记录脱敏质量信号；`@xxyy/knowledge-ops` 可把可发布前审核的质量信号转换为 `needs_review` 候选，API 会尽力写入候选 store，失败不会影响用户回答，未审核内容仍不会进入正式 RAG 知识库。
 - [ ] 多轮对话：支持基于当前会话继续追问、引用上下文、解析省略指代和保留非敏感用户偏好。
 - [ ] 自动回答总调度：在同一个客服 Agent Runtime 内统一产品问答、交易分析、边界回复和澄清问题，不依赖人工接管。
 - [ ] 回答质量策略：对低置信度、检索不足、工具不可用、实时私有数据请求和投资建议请求输出一致的自动降级或拒答回复。
