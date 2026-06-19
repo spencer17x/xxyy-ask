@@ -174,7 +174,7 @@ describe('mineAnswerQualitySignals', () => {
       proposedAnswer: answer,
       question: '什么是 MEV sandwich？',
       status: 'needs_review',
-      targetCategory: 'policy_boundary',
+      targetCategory: 'eval_case',
       type: 'eval_case',
     });
     expect(result.candidates[0]?.generatedEvalCases).toEqual([
@@ -218,7 +218,7 @@ describe('mineAnswerQualitySignals', () => {
       proposedAnswer: answer,
       question: 'How to hack XXYY account?',
       status: 'needs_review',
-      targetCategory: 'policy_boundary',
+      targetCategory: 'eval_case',
       type: 'eval_case',
     });
     expect(result.candidates[0]?.generatedEvalCases).toEqual([
@@ -299,7 +299,7 @@ describe('mineAnswerQualitySignals', () => {
       proposedAnswer: answer,
       question: '帮我开通 XXYY Pro',
       status: 'needs_review',
-      targetCategory: 'policy_boundary',
+      targetCategory: 'eval_case',
       type: 'eval_case',
     });
     expect(result.candidates[0]?.generatedEvalCases).toEqual([
@@ -391,7 +391,7 @@ describe('mineAnswerQualitySignals', () => {
       question: '帮我看看这个，我的邮箱是 [REDACTED_EMAIL]',
       riskLevel: 'medium',
       status: 'needs_review',
-      targetCategory: 'policy_boundary',
+      targetCategory: 'eval_case',
       type: 'eval_case',
       updatedAt: now,
     });
@@ -437,7 +437,7 @@ describe('mineAnswerQualitySignals', () => {
         '我缺少这次会话的上一轮上下文，不能确定“这笔”指哪一笔交易。请发送单笔完整交易哈希或对应主网浏览器链接，我会自动继续分析。',
       question: '这笔呢？',
       status: 'needs_review',
-      targetCategory: 'policy_boundary',
+      targetCategory: 'eval_case',
       type: 'eval_case',
     });
     expect(result.candidates[0]?.generatedEvalCases).toEqual([
@@ -480,7 +480,7 @@ describe('mineAnswerQualitySignals', () => {
       proposedAnswer: '你想分析哪一笔交易？请发送单笔完整交易哈希或对应主网浏览器链接。',
       question: '这笔呢？',
       status: 'needs_review',
-      targetCategory: 'policy_boundary',
+      targetCategory: 'eval_case',
       type: 'eval_case',
     });
     expect(result.candidates[0]?.generatedEvalCases).toEqual([
@@ -524,7 +524,7 @@ describe('mineAnswerQualitySignals', () => {
       proposedAnswer: answer,
       question: '帮我查这两笔哪个被夹了 [evm_tx_hash] [evm_tx_hash]',
       status: 'needs_review',
-      targetCategory: 'policy_boundary',
+      targetCategory: 'eval_case',
       type: 'eval_case',
     });
     expect(result.candidates[0]?.generatedEvalCases).toEqual([
@@ -568,7 +568,7 @@ describe('mineAnswerQualitySignals', () => {
         '我还不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
       question: '怎么升级？',
       status: 'needs_review',
-      targetCategory: 'policy_boundary',
+      targetCategory: 'eval_case',
       type: 'eval_case',
     });
     expect(result.candidates[0]?.generatedEvalCases).toEqual([

@@ -312,7 +312,7 @@ function createUnknownIntentCandidate(
     riskLevel: redactionReport.riskLevel,
     sourceRefs: [createSourceRef(signalIdentity)],
     status: 'needs_review',
-    targetCategory: 'policy_boundary',
+    targetCategory: 'eval_case',
     type: 'eval_case',
     updatedAt: now,
   };
