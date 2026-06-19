@@ -228,6 +228,7 @@ interface OpsSummary {
 interface KnowledgeCandidateQueueSummary {
   approvedEvalCaseCount: number;
   evalFailedCount: number;
+  evalFailureReasonCounts: Record<string, number>;
   needsReviewCount: number;
   qualitySignalNeedsReviewCount: number;
   qualitySignalReasonCounts: Record<string, number>;
@@ -1506,22 +1507,40 @@ async function summarizeKnowledgeCandidateQueues(
     }),
   ]);
 
-  const recentEvalFailures = await summarizeRecentEvalFailures(
-    store,
-    evalFailed.slice(0, OPS_RECENT_EVAL_FAILURE_LIMIT),
-  );
+  const evalFailureSummaries = await summarizeRecentEvalFailures(store, evalFailed);
 
   return {
     approvedEvalCaseCount: approvedEvalCases.length,
     evalFailedCount: evalFailed.length,
+    evalFailureReasonCounts: summarizeEvalFailureReasonCounts(evalFailureSummaries),
     needsReviewCount: needsReview.length,
     qualitySignalNeedsReviewCount: qualitySignalNeedsReview.length,
     qualitySignalReasonCounts: summarizeQualitySignalReasonCounts(qualitySignalNeedsReview),
-    recentEvalFailures,
+    recentEvalFailures: evalFailureSummaries.slice(0, OPS_RECENT_EVAL_FAILURE_LIMIT),
     recentQualitySignals: summarizeRecentQualitySignals(
       qualitySignalNeedsReview.slice(0, OPS_RECENT_QUALITY_SIGNAL_LIMIT),
     ),
   };
+}
+
+function summarizeEvalFailureReasonCounts(
+  failures: RecentKnowledgeEvalFailureSummary[],
+): Record<string, number> {
+  const counts = new Map<string, number>();
+
+  for (const failure of failures) {
+    for (const reason of failure.failureReasons) {
+      const normalized = reason.trim();
+      if (normalized.length === 0) {
+        continue;
+      }
+      counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+    }
+  }
+
+  return Object.fromEntries(
+    [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  );
 }
 
 function summarizeQualitySignalReasonCounts(

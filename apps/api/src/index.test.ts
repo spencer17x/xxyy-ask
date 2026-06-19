@@ -336,6 +336,7 @@ describe('createRequestHandler', () => {
       knowledgeCandidateQueues: {
         approvedEvalCaseCount: 0,
         evalFailedCount: 0,
+        evalFailureReasonCounts: {},
         needsReviewCount: 0,
         qualitySignalNeedsReviewCount: 0,
         qualitySignalReasonCounts: {},
@@ -422,6 +423,7 @@ describe('createRequestHandler', () => {
       knowledgeCandidateQueues: {
         approvedEvalCaseCount: 0,
         evalFailedCount: 0,
+        evalFailureReasonCounts: {},
         needsReviewCount: 0,
         qualitySignalNeedsReviewCount: 0,
         qualitySignalReasonCounts: {},
@@ -717,6 +719,10 @@ describe('createRequestHandler', () => {
         knowledgeCandidateQueues: {
           approvedEvalCaseCount: 1,
           evalFailedCount: 3,
+          evalFailureReasonCounts: {
+            'expected tx_sandwich_detection, got unknown': 1,
+            'missing expected answer text': 1,
+          },
           recentEvalFailures: [
             {
               candidateId: 'kc_eval_failed_1',

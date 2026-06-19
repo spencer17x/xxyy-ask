@@ -1034,6 +1034,58 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when eval failure reason counts are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.knowledgeCandidateQueues.evalFailureReasonCounts;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid eval failure reason counts.',
+    );
+  });
+
+  it('fails ops summary smoke when eval failure reason counts are invalid', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      knowledgeCandidateQueues: {
+        ...opsSummaryPayload().knowledgeCandidateQueues,
+        evalFailureReasonCounts: {
+          'missing expected answer text': -1,
+        },
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid eval failure reason counts.',
+    );
+  });
+
   it('fails ops summary smoke when quality reason totals drift from the queue count', async () => {
     const messages = [];
     const payload = opsSummaryPayload({
@@ -5308,7 +5360,10 @@ function opsSummaryPayload(overrides = {}) {
   return {
     knowledgeCandidateQueues: {
       approvedEvalCaseCount: 1,
-      evalFailedCount: 0,
+      evalFailedCount: 1,
+      evalFailureReasonCounts: {
+        'missing expected answer text': 1,
+      },
       needsReviewCount: 2,
       qualitySignalNeedsReviewCount: 1,
       qualitySignalReasonCounts: {

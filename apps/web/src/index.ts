@@ -1735,6 +1735,10 @@ export function renderOpsPage(): string {
               <div id="knowledge-quality-reasons" class="tx-report-results"></div>
             </div>
             <div class="knowledge-candidate-section">
+              <h3>Eval Failure Reasons</h3>
+              <div id="knowledge-eval-failure-reasons" class="tx-report-results"></div>
+            </div>
+            <div class="knowledge-candidate-section">
               <h3>Recent Eval Failures</h3>
               <div id="knowledge-eval-failures" class="tx-report-results"></div>
             </div>
@@ -1859,6 +1863,7 @@ export function renderOpsPage(): string {
       const knowledgeCandidateStatus = document.querySelector("#knowledge-candidate-status");
       const knowledgeCandidatesTarget = document.querySelector("#knowledge-candidates");
       const knowledgeEvalFailuresTarget = document.querySelector("#knowledge-eval-failures");
+      const knowledgeEvalFailureReasonsTarget = document.querySelector("#knowledge-eval-failure-reasons");
       const knowledgeQualitySignalsTarget = document.querySelector("#knowledge-quality-signals");
       const knowledgeQualityReasonsTarget = document.querySelector("#knowledge-quality-reasons");
       const queryTxReports = document.querySelector("#tx-report-form");
@@ -1950,6 +1955,7 @@ export function renderOpsPage(): string {
           renderKnowledge(summary.knowledge);
           renderFeedback(summary.feedback);
           renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || []);
+          renderEvalFailureReasons(summary.knowledgeCandidateQueues?.evalFailureReasonCounts || {});
           renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || []);
           renderQualitySignalReasons(summary.knowledgeCandidateQueues?.qualitySignalReasonCounts || {});
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
@@ -2042,6 +2048,22 @@ export function renderOpsPage(): string {
                 .filter(Boolean)
                 .join(" · "),
             ),
+          ),
+        );
+      }
+
+      function renderEvalFailureReasons(reasonCounts) {
+        const rows = Object.entries(reasonCounts)
+          .filter((entry) => Number(entry[1]) > 0)
+          .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
+        if (rows.length === 0) {
+          knowledgeEvalFailureReasonsTarget.replaceChildren(empty("No eval failure reason counts."));
+          return;
+        }
+
+        knowledgeEvalFailureReasonsTarget.replaceChildren(
+          ...rows.map(([reason, count]) =>
+            row("knowledge-candidate-item", "Eval reason · " + reason, String(count), "Eval failed"),
           ),
         );
       }

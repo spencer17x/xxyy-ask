@@ -1087,11 +1087,15 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary must include knowledge candidate queue counts and recent quality gaps.';
   }
 
+  if (!hasReasonCounts(value.evalFailureReasonCounts)) {
+    return 'ops summary must include valid eval failure reason counts.';
+  }
+
   if (!value.recentQualitySignals.every(isQualitySignalCandidateSummary)) {
     return 'ops summary must include knowledge candidate queue counts and recent quality gaps.';
   }
 
-  if (!hasQualitySignalReasonCounts(value.qualitySignalReasonCounts)) {
+  if (!hasReasonCounts(value.qualitySignalReasonCounts)) {
     return 'ops summary must include valid quality signal reason counts.';
   }
 
@@ -1106,7 +1110,7 @@ function validateKnowledgeCandidateQueueSummary(value) {
   return undefined;
 }
 
-function hasQualitySignalReasonCounts(value) {
+function hasReasonCounts(value) {
   if (!isRecord(value)) {
     return false;
   }

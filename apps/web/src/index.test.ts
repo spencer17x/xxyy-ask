@@ -100,6 +100,9 @@ describe('renderOpsPage', () => {
       'renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || [])',
     );
     expect(html).toContain(
+      'renderEvalFailureReasons(summary.knowledgeCandidateQueues?.evalFailureReasonCounts || {})',
+    );
+    expect(html).toContain(
       'renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || [])',
     );
     expect(html).toContain(
@@ -110,9 +113,11 @@ describe('renderOpsPage', () => {
     expect(html).toContain('summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.evalFailedCount || 0');
     expect(html).toContain('id="knowledge-eval-failures"');
+    expect(html).toContain('id="knowledge-eval-failure-reasons"');
     expect(html).toContain('id="knowledge-quality-signals"');
     expect(html).toContain('id="knowledge-quality-reasons"');
     expect(html).toContain('recent.failureReasons');
+    expect(html).toContain('Eval reason · " + reason');
     expect(html).toContain('Quality gap · " + recent.candidateId');
     expect(html).toContain('Quality reason · " + reason');
     expect(html).toContain('recent.targetCategory');
