@@ -10,6 +10,7 @@ import {
 import type { ProductQaToolHandlers } from './tools.js';
 
 export const PRODUCT_QA_MCP_TOOL_NAMES = PRODUCT_TOOL_NAMES;
+const PRODUCT_ANSWER_CONFIDENCE_THRESHOLD = 0.45;
 
 export const PRODUCT_QA_MCP_INSTRUCTIONS = [
   'Use this server for XXYY product support questions, feature explanations, setup steps, and public documentation lookup.',
@@ -17,6 +18,7 @@ export const PRODUCT_QA_MCP_INSTRUCTIONS = [
   'Do not execute business actions such as opening, canceling, modifying, or recovering user account/order/product state; answer only general product steps when asked how to do it.',
   'Do not provide investment advice.',
   'Do not invent live product data when retrieval or answering is unavailable.',
+  'Do not return low-confidence product answers or product answers without citations as confirmed facts.',
   'Do not promise a person will take over the conversation or create a case for the user.',
 ].join(' ');
 
@@ -79,17 +81,39 @@ export function createProductQaMcpServer(options: CreateProductQaMcpServerOption
 }
 
 function guardProductAnswerOutput(output: ChatResponse): ChatResponse {
-  if (!containsCustomerHandoffPromise(output.answer)) {
-    return output;
+  if (containsCustomerHandoffPromise(output.answer)) {
+    return {
+      answer:
+        '当前知识库回答包含不适合自动回复的处理路径。为了避免误导，我不会替你创建处理流程；可以继续问我 XXYY 产品功能、配置步骤或权益说明。',
+      citations: [],
+      confidence: 0.25,
+      intent: output.intent,
+    };
   }
 
+  if (isGroundedProductIntent(output.intent) && hasInsufficientProductGrounding(output)) {
+    return createProductKnowledgeInsufficientAnswer(output.intent);
+  }
+
+  return output;
+}
+
+function createProductKnowledgeInsufficientAnswer(intent: ChatResponse['intent']): ChatResponse {
   return {
     answer:
-      '当前知识库回答包含不适合自动回复的处理路径。为了避免误导，我不会替你创建处理流程；可以继续问我 XXYY 产品功能、配置步骤或权益说明。',
+      '当前知识库没有足够资料确认这个问题。为了避免误导，我不会编造产品细节；请补充更具体的功能、权益或配置步骤，或稍后在知识库更新后再问。',
     citations: [],
     confidence: 0.25,
-    intent: output.intent,
+    intent,
   };
+}
+
+function isGroundedProductIntent(intent: ChatResponse['intent']): boolean {
+  return intent === 'product_qa' || intent === 'how_to';
+}
+
+function hasInsufficientProductGrounding(output: ChatResponse): boolean {
+  return output.citations.length === 0 || output.confidence < PRODUCT_ANSWER_CONFIDENCE_THRESHOLD;
 }
 
 function containsCustomerHandoffPromise(answer: string): boolean {

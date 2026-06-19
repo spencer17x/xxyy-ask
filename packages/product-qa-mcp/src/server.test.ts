@@ -132,7 +132,13 @@ describe('product QA MCP server', () => {
           receivedInput = input;
           return Promise.resolve({
             answer: 'XXYY Pro 提供更多权益。',
-            citations: [],
+            citations: [
+              {
+                excerpt: 'XXYY Pro 提供更多权益。',
+                file: 'docs/product-features/pro.md',
+                title: 'XXYY Pro',
+              },
+            ],
             confidence: 0.8,
             intent: 'product_qa',
           });
@@ -156,6 +162,74 @@ describe('product QA MCP server', () => {
         intent: 'product_qa',
       },
     });
+  });
+
+  it('blocks answer_product_question output with missing citations', async () => {
+    const server = createProductQaMcpServer({
+      handlers: {
+        answerProductQuestion() {
+          return Promise.resolve({
+            answer: 'XXYY 一定支持这个未引用功能。',
+            citations: [],
+            confidence: 0.9,
+            intent: 'product_qa',
+          });
+        },
+        searchProductDocs() {
+          throw new Error('search should not be called');
+        },
+      },
+    });
+
+    const handler = getToolHandler<{ question: string }>(server, 'answer_product_question');
+    const output = await handler({ question: 'XXYY 支持这个功能吗？' }, {});
+
+    expect(output).toMatchObject({
+      structuredContent: {
+        citations: [],
+        confidence: 0.25,
+        intent: 'product_qa',
+      },
+    });
+    expect(JSON.stringify(output)).toContain('当前知识库没有足够资料确认这个问题');
+    expect(JSON.stringify(output)).not.toContain('一定支持');
+  });
+
+  it('blocks answer_product_question output with low confidence', async () => {
+    const server = createProductQaMcpServer({
+      handlers: {
+        answerProductQuestion() {
+          return Promise.resolve({
+            answer: 'XXYY Pro 价格是 999 USDT。',
+            citations: [
+              {
+                excerpt: 'XXYY Pro 权益说明。',
+                file: 'docs/product-features/pro.md',
+                title: 'XXYY Pro',
+              },
+            ],
+            confidence: 0.2,
+            intent: 'product_qa',
+          });
+        },
+        searchProductDocs() {
+          throw new Error('search should not be called');
+        },
+      },
+    });
+
+    const handler = getToolHandler<{ question: string }>(server, 'answer_product_question');
+    const output = await handler({ question: 'XXYY Pro 价格是多少？' }, {});
+
+    expect(output).toMatchObject({
+      structuredContent: {
+        citations: [],
+        confidence: 0.25,
+        intent: 'product_qa',
+      },
+    });
+    expect(JSON.stringify(output)).toContain('当前知识库没有足够资料确认这个问题');
+    expect(JSON.stringify(output)).not.toContain('999 USDT');
   });
 
   it('blocks answer_product_question output that promises ticket or human handoff handling', async () => {
