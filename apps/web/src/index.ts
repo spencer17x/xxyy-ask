@@ -1686,6 +1686,7 @@ export function renderOpsPage(): string {
               <label for="knowledge-candidate-source">
                 Source
                 <select id="knowledge-candidate-source" name="source">
+                  <option value="">Any source</option>
                   <option value="answer_feedback">Answer feedback</option>
                   <option value="answer_quality_signal">Quality signals</option>
                   <option value="telegram">Telegram support</option>
@@ -1925,6 +1926,7 @@ export function renderOpsPage(): string {
           metric("Chunks", summary.knowledge.chunkCount, "ok"),
           metric("Negative", summary.feedback.negativeCount, summary.feedback.negativeCount > 0 ? "warn" : "ok"),
           metric("Candidates", summary.knowledgeCandidateQueues?.needsReviewCount || 0, (summary.knowledgeCandidateQueues?.needsReviewCount || 0) > 0 ? "warn" : "ok"),
+          metric("Quality Gaps", summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0, (summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Eval Ready", summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0, (summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0) > 0 ? "warn" : "ok"),
           metric("Eval Failed", summary.knowledgeCandidateQueues?.evalFailedCount || 0, (summary.knowledgeCandidateQueues?.evalFailedCount || 0) > 0 ? "error" : "ok"),
           metric("Tx Failures", summary.txAnalysis?.failureCount || 0, (summary.txAnalysis?.failureCount || 0) > 0 ? "warn" : "ok"),
@@ -2071,7 +2073,9 @@ export function renderOpsPage(): string {
         if (knowledgeCandidateType.value) {
           params.set("type", knowledgeCandidateType.value);
         }
-        params.set("source", knowledgeCandidateSource.value);
+        if (knowledgeCandidateSource.value) {
+          params.set("source", knowledgeCandidateSource.value);
+        }
         const limit = knowledgeCandidateLimit.value.trim();
         if (limit) {
           params.set("limit", limit);
@@ -2152,7 +2156,7 @@ export function renderOpsPage(): string {
           return "Telegram support";
         }
 
-        return String(source || "unknown");
+        return String(source || "all sources");
       }
 
       function renderTxAnalysisRuntimeRows(runtime) {

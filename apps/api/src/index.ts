@@ -228,6 +228,7 @@ interface KnowledgeCandidateQueueSummary {
   approvedEvalCaseCount: number;
   evalFailedCount: number;
   needsReviewCount: number;
+  qualitySignalNeedsReviewCount: number;
   recentEvalFailures: RecentKnowledgeEvalFailureSummary[];
 }
 
@@ -1473,8 +1474,13 @@ const OPS_RECENT_EVAL_FAILURE_LIMIT = 5;
 async function summarizeKnowledgeCandidateQueues(
   store: KnowledgeCandidateStore,
 ): Promise<KnowledgeCandidateQueueSummary> {
-  const [needsReview, approvedEvalCases, evalFailed] = await Promise.all([
+  const [needsReview, qualitySignalNeedsReview, approvedEvalCases, evalFailed] = await Promise.all([
     store.listCandidates({ limit: OPS_CANDIDATE_QUEUE_LIMIT, status: 'needs_review' }),
+    store.listCandidates({
+      limit: OPS_CANDIDATE_QUEUE_LIMIT,
+      source: 'answer_quality_signal',
+      status: 'needs_review',
+    }),
     store.listCandidates({
       limit: OPS_CANDIDATE_QUEUE_LIMIT,
       status: 'approved',
@@ -1496,6 +1502,7 @@ async function summarizeKnowledgeCandidateQueues(
     approvedEvalCaseCount: approvedEvalCases.length,
     evalFailedCount: evalFailed.length,
     needsReviewCount: needsReview.length,
+    qualitySignalNeedsReviewCount: qualitySignalNeedsReview.length,
     recentEvalFailures,
   };
 }

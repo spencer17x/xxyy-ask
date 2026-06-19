@@ -337,6 +337,7 @@ describe('createRequestHandler', () => {
         approvedEvalCaseCount: 0,
         evalFailedCount: 0,
         needsReviewCount: 0,
+        qualitySignalNeedsReviewCount: 0,
         recentEvalFailures: [],
       },
       txAnalysis: {
@@ -420,6 +421,7 @@ describe('createRequestHandler', () => {
         approvedEvalCaseCount: 0,
         evalFailedCount: 0,
         needsReviewCount: 0,
+        qualitySignalNeedsReviewCount: 0,
         recentEvalFailures: [],
       },
       txAnalysis: {
@@ -506,6 +508,21 @@ describe('createRequestHandler', () => {
     const listCandidates = vi.fn((filter: Record<string, unknown>) => {
       listFilters.push(filter);
       if (filter.status === 'needs_review') {
+        if (filter.source === 'answer_quality_signal') {
+          return Promise.resolve([
+            knowledgeCandidate({
+              id: 'kc_quality_gap_1',
+              sourceRefs: [
+                {
+                  chatIdHash: 'session_present',
+                  messageId: 'aqs_missing_citations',
+                  source: 'answer_quality_signal',
+                },
+              ],
+              status: 'needs_review',
+            }),
+          ]);
+        }
         return Promise.resolve([
           knowledgeCandidate({ id: 'kc_needs_review_1', status: 'needs_review' }),
           knowledgeCandidate({ id: 'kc_needs_review_2', status: 'needs_review' }),
@@ -690,10 +707,16 @@ describe('createRequestHandler', () => {
             },
           ],
           needsReviewCount: 2,
+          qualitySignalNeedsReviewCount: 1,
         },
       });
       expect(listFilters).toEqual([
         { limit: 200, status: 'needs_review' },
+        {
+          limit: 200,
+          source: 'answer_quality_signal',
+          status: 'needs_review',
+        },
         { limit: 200, status: 'approved', type: 'eval_case' },
         { limit: 200, status: 'eval_failed', type: 'eval_case' },
       ]);

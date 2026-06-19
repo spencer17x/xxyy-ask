@@ -91,6 +91,7 @@ describe('renderOpsPage', () => {
       'renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || [])',
     );
     expect(html).toContain('summary.knowledgeCandidateQueues?.needsReviewCount || 0');
+    expect(html).toContain('summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.evalFailedCount || 0');
     expect(html).toContain('id="knowledge-eval-failures"');
@@ -228,12 +229,14 @@ describe('renderOpsPage', () => {
     expect(html).toContain('id="knowledge-candidate-type"');
     expect(html).toContain('<option value="eval_case">Eval cases</option>');
     expect(html).toContain('id="knowledge-candidate-source"');
+    expect(html).toContain('<option value="">Any source</option>');
     expect(html).toContain('<option value="answer_feedback">Answer feedback</option>');
     expect(html).toContain('<option value="answer_quality_signal">Quality signals</option>');
     expect(html).toContain('function loadKnowledgeCandidates()');
     expect(html).toContain('params.set("status", knowledgeCandidateStatusFilter.value)');
     expect(html).toContain('if (knowledgeCandidateType.value) {');
     expect(html).toContain('params.set("type", knowledgeCandidateType.value)');
+    expect(html).toContain('if (knowledgeCandidateSource.value) {');
     expect(html).toContain('params.set("source", knowledgeCandidateSource.value)');
     expect(html).toContain('fetch("/api/knowledge/candidates?" + params.toString()');
     expect(html).toContain('Authorization: "Bearer " + token');
