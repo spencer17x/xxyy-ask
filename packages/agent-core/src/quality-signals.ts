@@ -7,6 +7,7 @@ export type QualitySignalReason =
   | 'low_confidence'
   | 'low_confidence_missing_citations'
   | 'missing_citations'
+  | 'missing_followup_context'
   | 'session_unavailable'
   | 'tool_failure'
   | 'tx_analysis_failure'

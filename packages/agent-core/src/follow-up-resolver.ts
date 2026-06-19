@@ -5,6 +5,7 @@ import type { SessionTurn } from './session-context.js';
 
 export type FollowUpResolution = 'needs_clarification' | 'resolved_followup' | 'unchanged';
 export type FollowUpDependency = 'product_topic' | 'transaction_reference';
+export type FollowUpClarificationReason = 'ambiguous_reference' | 'missing_context';
 
 export interface ResolveFollowUpInput {
   message: string;
@@ -24,6 +25,8 @@ export type ResolveFollowUpOutput =
     }
   | {
       clarificationQuestion: string;
+      clarificationReason: FollowUpClarificationReason;
+      dependency: FollowUpDependency;
       resolution: 'needs_clarification';
     };
 
@@ -55,9 +58,18 @@ export function resolveFollowUp(input: ResolveFollowUpInput): ResolveFollowUpOut
     if (transactionReferences.length > 1) {
       return {
         clarificationQuestion: '你想分析哪一笔交易？请发送单笔完整交易哈希或对应主网浏览器链接。',
+        clarificationReason: 'ambiguous_reference',
+        dependency,
         resolution: 'needs_clarification',
       };
     }
+    return {
+      clarificationQuestion:
+        '我还不能确定“这笔”指哪一笔交易。请发送单笔完整交易哈希或对应主网浏览器链接。',
+      clarificationReason: 'missing_context',
+      dependency,
+      resolution: 'needs_clarification',
+    };
   }
 
   if (dependency === 'product_topic') {
@@ -69,6 +81,13 @@ export function resolveFollowUp(input: ResolveFollowUpInput): ResolveFollowUpOut
         resolvedMessage: `${topic} ${message}`,
       };
     }
+    return {
+      clarificationQuestion:
+        '我还不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
+      clarificationReason: 'missing_context',
+      dependency,
+      resolution: 'needs_clarification',
+    };
   }
 
   return { resolution: 'unchanged', resolvedMessage: input.message };

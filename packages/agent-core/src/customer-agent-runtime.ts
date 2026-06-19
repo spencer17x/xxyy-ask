@@ -225,13 +225,16 @@ export function createCustomerAgentRuntime(
         answer: followUp.clarificationQuestion,
         citations: [],
         confidence: 0.55,
-        intent: 'tx_sandwich_detection',
+        intent: intentForFollowUpDependency(followUp.dependency, request.message),
       };
       recordQualitySignal(qualitySignals, request, {
         answer: response.answer,
         confidence: response.confidence,
         intent: response.intent,
-        reason: 'ambiguous_followup',
+        reason:
+          followUp.clarificationReason === 'missing_context'
+            ? 'missing_followup_context'
+            : 'ambiguous_followup',
         redactedQuestion: request.message,
       });
       await appendSessionTurns(options.sessionContext, request, response, {
@@ -301,6 +304,18 @@ export function createCustomerAgentRuntime(
       yield* streamChatResponse(await ask(request));
     },
   };
+}
+
+function intentForFollowUpDependency(
+  dependency: FollowUpDependency,
+  message: string,
+): ChatResponse['intent'] {
+  if (dependency === 'transaction_reference') {
+    return 'tx_sandwich_detection';
+  }
+
+  const classification = classifyQuestion(message);
+  return classification.intent === 'how_to' ? 'how_to' : 'product_qa';
 }
 
 function missingSessionDependencyForRequest(request: ChatRequest): FollowUpDependency | undefined {

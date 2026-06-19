@@ -644,6 +644,62 @@ describe('createCustomerAgentRuntime', () => {
     });
   });
 
+  it('records missing_followup_context when a product follow-up has no usable session context', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const sessionContext = createInMemorySessionContextStore();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        answer: 'tool should not be called',
+        citations: [],
+        confidence: 0.8,
+        intent: 'how_to',
+      } satisfies ChatResponse),
+    );
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createCustomerAgentRuntime({
+      qualitySignals,
+      registry,
+      sessionContext,
+    }).ask({
+      channel: 'web',
+      message: '怎么升级？',
+      sessionId: 'empty-product-session',
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.55,
+      intent: 'how_to',
+    });
+    expect(response.answer).toContain('不能确定你想继续咨询哪个具体功能');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.55,
+        intent: 'how_to',
+        reason: 'missing_followup_context',
+        redactedQuestion: '怎么升级？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('uses session context to resolve one recent transaction follow-up', async () => {
     const registry = createToolRegistry();
     const sessionContext = createInMemorySessionContextStore();
@@ -800,6 +856,52 @@ describe('createCustomerAgentRuntime', () => {
         reason: 'session_unavailable',
         redactedQuestion: '这笔呢？',
         sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
+  it('records missing_followup_context when a transaction follow-up has no usable session context', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const sessionContext = createInMemorySessionContextStore();
+    const execute = vi.fn();
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createCustomerAgentRuntime({
+      qualitySignals,
+      registry,
+      sessionContext,
+    }).ask({
+      channel: 'web',
+      message: '这笔呢？',
+      sessionId: 'empty-tx-session',
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.55,
+      intent: 'tx_sandwich_detection',
+    });
+    expect(response.answer).toContain('不能确定“这笔”指哪一笔交易');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.55,
+        intent: 'tx_sandwich_detection',
+        reason: 'missing_followup_context',
+        redactedQuestion: '这笔呢？',
+        sessionIdPresent: true,
         userIdPresent: false,
       },
     ]);

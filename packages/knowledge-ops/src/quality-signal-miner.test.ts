@@ -279,6 +279,51 @@ describe('mineAnswerQualitySignals', () => {
     ]);
   });
 
+  it('creates a needs-review eval candidate from a missing follow-up context signal', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer:
+            '我还不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
+          channel: 'web',
+          confidence: 0.55,
+          intent: 'how_to',
+          reason: 'missing_followup_context',
+          redactedQuestion: '怎么升级？',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.55,
+      proposedAnswer:
+        '我还不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
+      question: '怎么升级？',
+      status: 'needs_review',
+      targetCategory: 'policy_boundary',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer:
+          '我还不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
+        expectedIntent: 'how_to',
+        minCitations: 0,
+        question: '怎么升级？',
+        requireExpectedAnswerText: false,
+      },
+    ]);
+  });
+
   it('creates a needs-review eval candidate from a transaction analysis failure signal', () => {
     const result = mineAnswerQualitySignals({
       now,
