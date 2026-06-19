@@ -120,6 +120,7 @@
 - [x] 自动质量原因聚合：质量信号生成的候选会保留 `qualitySignalReason`，受保护 `/api/ops/summary` 会返回 `qualitySignalReasonCounts`，`/ops` 运维页可看到 needs-review 自动回答质量缺口按原因聚合后的数量，`pnpm ops:smoke -- --ops-token` 会校验原因聚合存在且合计匹配质量缺口数量，方便优先处理缺引用、低置信度、会话上下文缺失、工具失败或边界策略漂移。
 - [x] Eval 失败原因聚合：受保护 `/api/ops/summary` 会返回 `evalFailureReasonCounts`，`/ops` 运维页可看到 `eval_failed` 候选的最新 eval 失败原因聚合数量，并保留最近失败样本列表；`pnpm ops:smoke -- --ops-token` 会校验原因聚合字段形状，方便按缺引用、分类漂移、期望答案缺失或边界策略退化等失败类型优先修正和回归。
 - [x] 多轮自动回答 smoke 验收：`pnpm ops:smoke -- --chat-follow-up` 会使用同一个 `sessionId` 连续请求产品问题和省略追问，校验追问仍自动回答、保留引用且没有人工接管措辞，便于发布前固定会话上下文和自动回答总调度的基础行为。
+- [x] 自动回答边界 smoke 验收：`pnpm ops:smoke -- --chat` 会校验产品问答回答、引用和无人工接管措辞，`pnpm ops:smoke -- --chat-boundary` 会请求默认“帮我查一下钱包余额”的边界问题，校验返回 `realtime_account_query`、允许无引用且没有人工接管措辞，可用 `--boundary-question` 或 `API_SMOKE_CHAT_BOUNDARY_QUESTION` 固定其它边界样本。
 - [ ] 多轮对话增强：在已有 `sessionId` 追问、上一轮引用、省略指代和非敏感产品偏好基础上，继续补会话摘要、长期上下文保留/删除策略、多渠道上下文一致性和更多指代样例。
 - [ ] 自动回答总调度增强：在已有 `CustomerAgentRuntime` 产品问答、交易分析、边界回复和澄清问题统一路由基础上，继续补端到端 smoke、路由观测、更多工具权限审计和渠道接入一致性。
 - [ ] 回答质量策略增强：在已有低置信度、无引用、工具不可用、边界回复和负反馈质量信号基础上，继续补质量队列可视化、自动重跑、失败聚类和趋势/成本观测。

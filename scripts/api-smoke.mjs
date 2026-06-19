@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const DEFAULT_BASE_URL = 'http://localhost:3000';
+const DEFAULT_CHAT_BOUNDARY_QUESTION = '帮我查一下钱包余额';
 const DEFAULT_CHAT_QUESTION = 'XXYY Pro 有哪些权益？';
 const DEFAULT_CHAT_FOLLOW_UP_QUESTION = '怎么升级？';
 const DEFAULT_CHAT_SESSION_ID = 'api-smoke-session';
@@ -92,6 +93,16 @@ function createApiSmokeChecksFromOptions(options) {
     checks.push(
       createCheck('chat', 'chat', options.baseUrl, '/api/chat', {
         body: JSON.stringify({ channel: 'cli', message: options.question }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      }),
+    );
+  }
+
+  if (options.chatBoundary) {
+    checks.push(
+      createCheck('chatBoundary', 'chat boundary', options.baseUrl, '/api/chat', {
+        body: JSON.stringify({ channel: 'cli', message: options.boundaryQuestion }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       }),
@@ -223,6 +234,9 @@ function parseApiSmokeArgs(args, env) {
   const normalizedArgs = args[0] === '--' ? args.slice(1) : args;
   let baseUrl = normalizeBaseUrl(env.API_BASE_URL ?? DEFAULT_BASE_URL);
   let chat = false;
+  let chatBoundary = parseBoolean(env.API_SMOKE_CHAT_BOUNDARY);
+  let boundaryQuestion =
+    normalizeOptionalText(env.API_SMOKE_CHAT_BOUNDARY_QUESTION) ?? DEFAULT_CHAT_BOUNDARY_QUESTION;
   let chatFollowUp = parseBoolean(env.API_SMOKE_CHAT_FOLLOW_UP);
   let chatSessionId =
     normalizeOptionalText(env.API_SMOKE_CHAT_SESSION_ID) ?? DEFAULT_CHAT_SESSION_ID;
@@ -244,6 +258,11 @@ function parseApiSmokeArgs(args, env) {
 
     if (option === '--chat') {
       chat = true;
+      continue;
+    }
+
+    if (option === '--chat-boundary') {
+      chatBoundary = true;
       continue;
     }
 
@@ -284,6 +303,16 @@ function parseApiSmokeArgs(args, env) {
         throw new Error('Missing value for --question.');
       }
       question = rawQuestion;
+      index += 1;
+      continue;
+    }
+
+    if (option === '--boundary-question' || option === '--chat-boundary-question') {
+      const rawQuestion = normalizedArgs[index + 1];
+      if (rawQuestion === undefined) {
+        throw new Error(`Missing value for ${option}.`);
+      }
+      boundaryQuestion = rawQuestion;
       index += 1;
       continue;
     }
@@ -379,9 +408,11 @@ function parseApiSmokeArgs(args, env) {
   return {
     baseUrl,
     chat,
+    chatBoundary,
     chatFollowUp,
     chatSessionId,
     continueOnError,
+    boundaryQuestion,
     followUpQuestion,
     opsToken,
     question,
@@ -981,7 +1012,7 @@ function validatePayload(check, payload) {
     return validateOpsSummaryPayload(payload);
   }
 
-  if (check.kind === 'chat' || check.kind === 'chatFollowUp') {
+  if (check.kind === 'chat' || check.kind === 'chatBoundary' || check.kind === 'chatFollowUp') {
     return validateChatPayload(payload, check);
   }
 
@@ -1019,14 +1050,17 @@ function validateChatPayload(payload, check) {
   if (typeof payload.answer !== 'string' || payload.answer.trim().length === 0) {
     return 'chat response must include an answer.';
   }
-  if (!Array.isArray(payload.citations) || payload.citations.length === 0) {
+  if (!Array.isArray(payload.citations)) {
     return 'chat response must include citations.';
   }
-  if (
-    check.kind === 'chatFollowUp' &&
-    CHAT_HANDOFF_WORDING_PATTERNS.some((pattern) => pattern.test(payload.answer))
-  ) {
-    return 'chat follow-up response must not ask for manual handoff.';
+  if (check.kind !== 'chatBoundary' && payload.citations.length === 0) {
+    return 'chat response must include citations.';
+  }
+  if (check.kind === 'chatBoundary' && payload.intent !== 'realtime_account_query') {
+    return 'chat boundary response must use realtime_account_query intent.';
+  }
+  if (CHAT_HANDOFF_WORDING_PATTERNS.some((pattern) => pattern.test(payload.answer))) {
+    return `${check.label} response must not ask for manual handoff.`;
   }
 
   return undefined;
