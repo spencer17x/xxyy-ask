@@ -4,7 +4,9 @@ import {
   createBoundaryAnswer,
   createTxAnalysisAnswer,
   createTxAnalysisUnavailableAnswer,
+  LlmConfigurationError,
   type AnalyzeTransactionOutput,
+  VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
 
 import { planAnswer } from './answer-planner.js';
@@ -66,7 +68,7 @@ export function createCustomerAgentRuntime(
         reason: 'tool_failure',
         redactedQuestion: messageForTool,
       });
-      throw error;
+      return createTxAnalysisUnavailableAnswer('provider_unavailable');
     }
 
     const response =
@@ -120,13 +122,16 @@ export function createCustomerAgentRuntime(
         startedAt,
         toolName: 'answer_product_question',
       });
+      if (isProductConfigurationError(error)) {
+        throw error;
+      }
       recordQualitySignal(qualitySignals, request, {
         errorCode: errorCodeFrom(error),
         intent,
         reason: 'tool_failure',
         redactedQuestion: messageForTool,
       });
-      throw error;
+      return createProductKnowledgeUnavailableAnswer(intent);
     }
 
     audit.record({
@@ -266,6 +271,31 @@ function recordToolFailure(
     toolName: event.toolName,
     userIdPresent: request.userId !== undefined,
   });
+}
+
+function isProductConfigurationError(error: unknown): boolean {
+  if (error instanceof LlmConfigurationError || error instanceof VectorStoreConfigurationError) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.constructor.name === 'EmbeddingConfigurationError' ||
+    error.message.includes('required for embedding generation')
+  );
+}
+
+function createProductKnowledgeUnavailableAnswer(intent: ChatResponse['intent']): ChatResponse {
+  return {
+    answer:
+      '当前产品知识库暂时不可用，无法基于 XXYY 文档确认这个问题。为了避免误导，我不会编造产品细节；请稍后重试，或换成更具体的功能、权益或配置步骤提问。',
+    citations: [],
+    confidence: 0.25,
+    intent,
+  };
 }
 
 function recordBoundaryQualitySignal(

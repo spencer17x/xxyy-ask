@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { ChatResponse } from '@xxyy/shared';
-import type { AnalyzeTransactionOutput } from '@xxyy/rag-core';
+import {
+  LlmConfigurationError,
+  VectorStoreConfigurationError,
+  type AnalyzeTransactionOutput,
+} from '@xxyy/rag-core';
 
 import { createInMemoryAuditSink } from './audit.js';
 import { createCustomerAgentRuntime } from './customer-agent-runtime.js';
@@ -100,9 +104,11 @@ describe('createCustomerAgentRuntime', () => {
     expect(audit.events()).toEqual([]);
   });
 
-  it('records failure audit and rethrows when answer_product_question fails', async () => {
+  it('returns an automatic product fallback when answer_product_question fails', async () => {
     const registry = createToolRegistry();
     const audit = createInMemoryAuditSink();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const sessionContext = createInMemorySessionContextStore();
     const error = new Error('product tool failed');
     error.name = 'ProductToolFailure';
 
@@ -118,14 +124,26 @@ describe('createCustomerAgentRuntime', () => {
       execute: () => Promise.reject(error),
     });
 
-    await expect(
-      createCustomerAgentRuntime({ audit, registry }).ask({
-        channel: 'web',
-        message: 'XXYY Pro 有哪些权益？',
-        sessionId: 'session-1',
-        userId: 'user-1',
-      }),
-    ).rejects.toBe(error);
+    const response = await createCustomerAgentRuntime({
+      audit,
+      qualitySignals,
+      registry,
+      sessionContext,
+    }).ask({
+      channel: 'web',
+      message: 'XXYY Pro 有哪些权益？',
+      sessionId: 'session-1',
+      userId: 'user-1',
+    });
+
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.25,
+      intent: 'product_qa',
+    });
+    expect(response.answer).toContain('产品知识库暂时不可用');
+    expect(response.answer).toContain('不会编造产品细节');
+    expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
 
     const auditEvents = audit.events();
     expect(auditEvents).toHaveLength(1);
@@ -140,6 +158,73 @@ describe('createCustomerAgentRuntime', () => {
       toolName: 'answer_product_question',
       userIdPresent: true,
     });
+    expect(qualitySignals.signals()).toEqual([
+      {
+        channel: 'web',
+        errorCode: 'ProductToolFailure',
+        intent: 'product_qa',
+        reason: 'tool_failure',
+        redactedQuestion: 'XXYY Pro 有哪些权益？',
+        sessionIdPresent: true,
+        userIdPresent: true,
+      },
+    ]);
+    const sessionTurns = await sessionContext.getRecentTurns('session-1');
+    expect(sessionTurns).toHaveLength(2);
+    expect(sessionTurns[0]).toMatchObject({
+      content: 'XXYY Pro 有哪些权益？',
+      metadata: { intent: 'product_qa' },
+      role: 'user',
+    });
+    expect(typeof sessionTurns[0]?.createdAt).toBe('string');
+    expect(sessionTurns[1]).toMatchObject({
+      content: response.answer,
+      metadata: {
+        citationCount: 0,
+        confidence: 0.25,
+        intent: 'product_qa',
+      },
+      role: 'assistant',
+    });
+    expect(typeof sessionTurns[1]?.createdAt).toBe('string');
+  });
+
+  it('keeps product configuration errors visible to API and CLI callers', async () => {
+    const registry = createToolRegistry();
+    const vectorError = new VectorStoreConfigurationError(
+      'DATABASE_URL is required for pgvector retrieval.',
+    );
+    const llmError = new LlmConfigurationError(
+      'OPENAI_API_KEY is required for LLM answer generation.',
+    );
+    const execute = vi.fn().mockRejectedValueOnce(vectorError).mockRejectedValueOnce(llmError);
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ registry });
+
+    await expect(
+      runtime.ask({
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？',
+      }),
+    ).rejects.toBe(vectorError);
+    await expect(
+      runtime.ask({
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？',
+      }),
+    ).rejects.toBe(llmError);
   });
 
   it('uses analyze_transaction for transaction hash questions and returns tx analysis answers', async () => {
@@ -208,6 +293,64 @@ describe('createCustomerAgentRuntime', () => {
       toolName: 'analyze_transaction',
       userIdPresent: true,
     });
+  });
+
+  it('returns an automatic transaction fallback when analyze_transaction fails', async () => {
+    const registry = createToolRegistry();
+    const audit = createInMemoryAuditSink();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const txHash = '0x1111111111111111111111111111111111111111111111111111111111111111';
+    const error = new Error('tx tool failed');
+    error.name = 'TxToolFailure';
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute: () => Promise.reject(error),
+    });
+
+    const response = await createCustomerAgentRuntime({
+      audit,
+      qualitySignals,
+      registry,
+    }).ask({
+      channel: 'web',
+      message: txHash,
+    });
+
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.35,
+      intent: 'tx_sandwich_detection',
+    });
+    expect(response.answer).toContain('交易分析数据源暂时不可用');
+    expect(response.answer).toContain('当前不会编造链上分析结论');
+    expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
+    expect(audit.events()).toMatchObject([
+      {
+        channel: 'web',
+        errorCode: 'TxToolFailure',
+        intent: 'tx_sandwich_detection',
+        sessionIdPresent: false,
+        status: 'failure',
+        toolName: 'analyze_transaction',
+        userIdPresent: false,
+      },
+    ]);
+    expect(qualitySignals.signals()).toEqual([
+      {
+        channel: 'web',
+        errorCode: 'TxToolFailure',
+        intent: 'tx_sandwich_detection',
+        reason: 'tool_failure',
+        redactedQuestion: '[evm_tx_hash]',
+        sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
   });
 
   it('streams ask responses as answer_delta and metadata events', async () => {
