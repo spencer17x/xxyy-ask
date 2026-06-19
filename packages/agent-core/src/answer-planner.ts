@@ -54,7 +54,8 @@ export function planAnswer(input: PlanAnswerInput): AnswerPlan {
 
   if (
     isUnsafeUnsupportedClassification(input.classification) ||
-    isPrivateCredentialClassification(input.classification)
+    isPrivateCredentialClassification(input.classification) ||
+    isBusinessActionClassification(input.classification)
   ) {
     return {
       classification: input.classification,
@@ -89,6 +90,13 @@ export function isPrivateCredentialClassification(classification: Classification
   return (
     classification.intent === 'unknown' &&
     classification.reason === 'private credential or seed phrase disclosure'
+  );
+}
+
+export function isBusinessActionClassification(classification: Classification): boolean {
+  return (
+    classification.intent === 'unknown' &&
+    classification.reason === 'business action execution request'
   );
 }
 

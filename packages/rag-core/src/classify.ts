@@ -31,6 +31,11 @@ const unsafeOperationPatterns = [
   /盗号|攻击|破解|钓鱼/u,
 ];
 
+const businessActionRequestPatterns = [
+  /(?:帮我|替我|给我|帮忙|麻烦(?:你)?帮我|请(?:你)?帮我).*(?:开通|升级|取消|关闭|解绑|修改|更改|重置|恢复|处理|执行|下单|挂单|提现|转账|认领)/u,
+  /\b(?:please|can you|could you|i need you to)\b.*\b(?:open|activate|enable|upgrade|cancel|close|change|modify|reset|recover|execute|place|withdraw|transfer|claim)\b/u,
+];
+
 const privateCredentialPatterns = [
   /\b(private\s+key|seed\s+phrase|mnemonic|secret\s+recovery\s+phrase)\b/u,
   /(?:我的)?(?:密码|登录密码)\s*(?:是|为|:|：|=)\s*\S+/u,
@@ -113,6 +118,10 @@ export function classifyQuestion(question: string): Classification {
 
   if (unsafeOperationPatterns.some((pattern) => pattern.test(normalized))) {
     return createClassification('unknown', 0.3, 'unsafe or unsupported operation request');
+  }
+
+  if (businessActionRequestPatterns.some((pattern) => pattern.test(normalized))) {
+    return createClassification('unknown', 0.4, 'business action execution request');
   }
 
   if (privateCredentialPatterns.some((pattern) => pattern.test(normalized))) {

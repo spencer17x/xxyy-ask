@@ -4,6 +4,7 @@ export type QualitySignalReason =
   | 'boundary_chain_forensics'
   | 'ambiguous_transaction_reference'
   | 'ambiguous_followup'
+  | 'boundary_business_action'
   | 'boundary_investment_advice'
   | 'boundary_private_data'
   | 'boundary_private_credentials'

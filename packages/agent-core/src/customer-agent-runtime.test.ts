@@ -160,6 +160,63 @@ describe('createCustomerAgentRuntime', () => {
     ]);
   });
 
+  it('returns business-action boundary answers without executing tools or promising handoff', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const productExecute = vi.fn(() => {
+      throw new Error('product tool should not be called');
+    });
+    const txExecute = vi.fn(() => {
+      throw new Error('transaction tool should not be called');
+    });
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      policy: toolPolicy,
+      execute: productExecute,
+    });
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute: txExecute,
+    });
+
+    const response = await createCustomerAgentRuntime({ qualitySignals, registry }).ask({
+      channel: 'web',
+      message: '帮我开通 XXYY Pro',
+      sessionId: 'session-business-action',
+    });
+
+    expect(productExecute).not.toHaveBeenCalled();
+    expect(txExecute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.4,
+      intent: 'unknown',
+    });
+    expect(response.answer).toContain('不能代你开通、取消、修改或执行账户内操作');
+    expect(response.answer).toContain('可以继续问我开通或升级的操作步骤');
+    expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.4,
+        intent: 'unknown',
+        reason: 'boundary_business_action',
+        redactedQuestion: '帮我开通 XXYY Pro',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('returns private credential boundary answers without storing pasted seed phrases', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

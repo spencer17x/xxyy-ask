@@ -269,6 +269,50 @@ describe('mineAnswerQualitySignals', () => {
     );
   });
 
+  it('creates a needs-review eval candidate from a business-action boundary signal', () => {
+    const answer =
+      '我不能代你开通、取消、修改或执行账户内操作，也不会在客服对话里完成这类处理。可以继续问我开通、升级、取消或配置的操作步骤，我会基于 XXYY 知识库回答。';
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer,
+          channel: 'web',
+          confidence: 0.4,
+          intent: 'unknown',
+          reason: 'boundary_business_action',
+          redactedQuestion: '帮我开通 XXYY Pro',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.4,
+      proposedAnswer: answer,
+      question: '帮我开通 XXYY Pro',
+      status: 'needs_review',
+      targetCategory: 'policy_boundary',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer: answer,
+        expectedIntent: 'unknown',
+        minCitations: 0,
+        question: '帮我开通 XXYY Pro',
+        requireExpectedAnswerText: false,
+      },
+    ]);
+  });
+
   it('derives quality candidate ids from redacted text instead of raw secrets', () => {
     const first = mineAnswerQualitySignals({
       now,

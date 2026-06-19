@@ -17,6 +17,7 @@ export type AnswerQualitySignalReason =
   | 'boundary_chain_forensics'
   | 'ambiguous_transaction_reference'
   | 'ambiguous_followup'
+  | 'boundary_business_action'
   | 'boundary_investment_advice'
   | 'boundary_private_data'
   | 'boundary_private_credentials'
@@ -108,6 +109,7 @@ function createCandidateFromSignal(
   if (
     signal.reason === 'ambiguous_followup' ||
     signal.reason === 'ambiguous_transaction_reference' ||
+    signal.reason === 'boundary_business_action' ||
     signal.reason === 'boundary_chain_forensics' ||
     signal.reason === 'boundary_unsafe_request' ||
     signal.reason === 'missing_followup_context' ||

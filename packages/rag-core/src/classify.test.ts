@@ -42,6 +42,20 @@ describe('classifyQuestion', () => {
     expect(classifyQuestion('帮我查 XXYY 钱包余额').intent).toBe('realtime_account_query');
   });
 
+  it('classifies business action execution requests as an unsupported boundary', () => {
+    expect(classifyQuestion('帮我开通 XXYY Pro')).toMatchObject({
+      confidence: 0.4,
+      intent: 'unknown',
+      reason: 'business action execution request',
+    });
+    expect(classifyQuestion('请帮我取消订单')).toMatchObject({
+      confidence: 0.4,
+      intent: 'unknown',
+      reason: 'business action execution request',
+    });
+    expect(classifyQuestion('如何开通 XXYY Pro？').intent).toBe('how_to');
+  });
+
   it('prefers concrete transaction hash analysis over realtime transaction lookup wording', () => {
     expect(
       classifyQuestion(

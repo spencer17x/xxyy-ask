@@ -119,6 +119,21 @@ describe('planAnswer', () => {
     });
   });
 
+  it('routes business action execution requests to boundary', () => {
+    expect(
+      planAnswer({
+        classification: {
+          confidence: 0.4,
+          intent: 'unknown',
+          reason: 'business action execution request',
+        },
+        resolvedMessage: '帮我开通 XXYY Pro',
+      }),
+    ).toMatchObject({
+      route: 'boundary',
+    });
+  });
+
   it('routes private account queries to boundary', () => {
     expect(
       planAnswer({
