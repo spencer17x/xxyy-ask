@@ -13,6 +13,7 @@ export const PRODUCT_QA_MCP_TOOL_NAMES = PRODUCT_TOOL_NAMES;
 export const PRODUCT_QA_MCP_INSTRUCTIONS = [
   'Use this server for XXYY product support questions, feature explanations, setup steps, and public documentation lookup.',
   'Do not use this server for private account, wallet balance, order, private transaction history, or user identity lookup.',
+  'Do not execute business actions such as opening, canceling, modifying, or recovering user account/order/product state; answer only general product steps when asked how to do it.',
   'Do not provide investment advice.',
   'Do not invent live product data when retrieval or answering is unavailable.',
 ].join(' ');

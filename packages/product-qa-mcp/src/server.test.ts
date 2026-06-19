@@ -49,6 +49,10 @@ describe('product QA MCP server', () => {
     expect(server).toBeDefined();
     expect(PRODUCT_QA_MCP_INSTRUCTIONS).toContain('XXYY product');
     expect(PRODUCT_QA_MCP_INSTRUCTIONS).toContain('Do not use this server for private account');
+    expect(PRODUCT_QA_MCP_INSTRUCTIONS).toContain('Do not execute business actions');
+    expect(PRODUCT_QA_MCP_INSTRUCTIONS).not.toMatch(
+      /human handoff|ticket|support channel|authenticated support/iu,
+    );
   });
 
   it('registers all declared tools', () => {
