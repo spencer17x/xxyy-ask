@@ -22,7 +22,7 @@ import {
   migratePgKnowledgeOpsStore,
   publishKnowledgeCandidate,
 } from '@xxyy/knowledge-ops';
-import type { KnowledgeCandidate } from '@xxyy/knowledge-ops';
+import type { KnowledgeCandidate, KnowledgeCandidateStore } from '@xxyy/knowledge-ops';
 import {
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
@@ -70,6 +70,7 @@ type CliCommand =
   | { command: 'ask'; question: string }
   | { command: 'evaluate'; fast: boolean }
   | { command: 'feedback'; json: boolean; limit: number; rating?: FeedbackRating }
+  | { command: 'gate:knowledge'; approvedEvalOnly: true; fast: boolean }
   | { command: 'gate:knowledge'; candidateId: string; fast: boolean }
   | { command: 'ingest' }
   | { command: 'migrate' }
@@ -117,6 +118,14 @@ interface KnowledgeGateSummary {
   ingestion?: IngestSummary;
 }
 
+interface ApprovedEvalKnowledgeGateSummary {
+  evalPassed: boolean;
+  failedCount: number;
+  passedCount: number;
+  results: KnowledgeGateSummary[];
+  totalCount: number;
+}
+
 interface CliIo {
   cwd: string;
   env: CliEnv;
@@ -141,6 +150,7 @@ const HELP_TEXT = [
   '  pnpm rag:ingest',
   '  pnpm rag:publish:knowledge -- --id <candidate-id> [--target pages/support-faq.md]',
   '  pnpm rag:gate:knowledge -- --id <candidate-id> [--fast]',
+  '  pnpm rag:gate:knowledge -- --approved-eval [--fast]',
   '  pnpm rag:sync:telegram',
   '  pnpm rag:sync:x',
   '  pnpm rag:migrate',
@@ -151,6 +161,7 @@ const HELP_TEXT = [
 ].join('\n');
 
 const EMBEDDING_BATCH_SIZE = 64;
+const APPROVED_EVAL_KNOWLEDGE_GATE_LIMIT = 200;
 const PRODUCT_FORBIDDEN_TEXT = ['保证盈利', '推荐买币'];
 const DEFAULT_TELEGRAM_UPDATES_LIMIT = 100;
 
@@ -501,6 +512,7 @@ function parsePublishKnowledgeArgs(rawArgs: readonly string[]): CliCommand {
 
 function parseKnowledgeGateArgs(rawArgs: readonly string[]): CliCommand {
   const args = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs;
+  let approvedEvalOnly = false;
   let candidateId: string | undefined;
   let fast = false;
 
@@ -508,6 +520,11 @@ function parseKnowledgeGateArgs(rawArgs: readonly string[]): CliCommand {
     const option = args[index];
     if (option === '--fast') {
       fast = true;
+      continue;
+    }
+
+    if (option === '--approved-eval') {
+      approvedEvalOnly = true;
       continue;
     }
 
@@ -522,6 +539,21 @@ function parseKnowledgeGateArgs(rawArgs: readonly string[]): CliCommand {
     }
 
     return { command: 'help', error: `Unknown option for gate:knowledge: ${option}` };
+  }
+
+  if (candidateId !== undefined && approvedEvalOnly) {
+    return {
+      command: 'help',
+      error: 'gate:knowledge --id cannot be combined with --approved-eval.',
+    };
+  }
+
+  if (approvedEvalOnly) {
+    return {
+      approvedEvalOnly: true,
+      command: 'gate:knowledge',
+      fast,
+    };
   }
 
   if (candidateId === undefined) {
@@ -645,6 +677,24 @@ export function formatKnowledgeGateSummary(summary: KnowledgeGateSummary): strin
     `Ingest run: ${ingestRun}`,
     `Eval run: ${summary.evalRunId}`,
     formatEvaluationSummary(summary.evaluation),
+  ].join('\n');
+}
+
+export function formatApprovedEvalKnowledgeGateSummary(
+  summary: ApprovedEvalKnowledgeGateSummary,
+): string {
+  if (summary.totalCount === 0) {
+    return 'Approved eval knowledge gate: no approved eval candidates.';
+  }
+
+  return [
+    `Approved eval knowledge gate ${summary.evalPassed ? 'passed' : 'failed'}: ${
+      summary.passedCount
+    }/${summary.totalCount} candidates passed.`,
+    ...summary.results.map((result) => {
+      const status = result.evalPassed ? 'passed' : 'failed';
+      return `Candidate ${result.candidateId}: ${status} (${result.evaluation.passed}/${result.evaluation.total} cases)`;
+    }),
   ].join('\n');
 }
 
@@ -861,13 +911,18 @@ export async function runCli(
 
   if (parsed.command === 'gate:knowledge') {
     try {
-      const summary = await runKnowledgeGate(
-        { ...io, cwd: workspaceCwd },
-        {
-          candidateId: parsed.candidateId,
-          fast: parsed.fast,
-        },
-      );
+      if ('approvedEvalOnly' in parsed) {
+        const summary = await runApprovedEvalKnowledgeGate(
+          { ...io, cwd: workspaceCwd },
+          {
+            fast: parsed.fast,
+          },
+        );
+        writeLine(io.stdout, formatApprovedEvalKnowledgeGateSummary(summary));
+        return summary.evalPassed ? 0 : 1;
+      }
+
+      const summary = await runKnowledgeGate({ ...io, cwd: workspaceCwd }, parsed);
       writeLine(io.stdout, formatKnowledgeGateSummary(summary));
       return summary.evalPassed ? 0 : 1;
     } catch (error) {
@@ -1150,87 +1205,141 @@ async function runKnowledgeGate(
     if (candidate === undefined) {
       throw new KnowledgeCandidateNotFoundError(options.candidateId);
     }
-    const evalOnly = isEvalOnlyKnowledgeCandidate(candidate);
-    if (evalOnly) {
-      if (candidate.status !== 'approved' && candidate.status !== 'ingested') {
-        throw new KnowledgeCandidateInvalidStatusTransitionError(
-          options.candidateId,
-          'eval',
-          candidate.status,
-          'approved',
-        );
-      }
-    } else if (candidate.status !== 'published') {
-      throw new KnowledgeCandidateInvalidStatusTransitionError(
-        options.candidateId,
-        'ingested',
-        candidate.status,
-        'published',
+    return await runKnowledgeGateForCandidate(io, config, store, candidate, {
+      fast: options.fast,
+    });
+  } finally {
+    await pool.end();
+  }
+}
+
+async function runApprovedEvalKnowledgeGate(
+  io: CliIo,
+  options: { fast: boolean },
+): Promise<ApprovedEvalKnowledgeGateSummary> {
+  const config = loadRagConfig(io.env);
+  const pool = createPgPool(config.databaseUrl);
+
+  try {
+    const store = createPgKnowledgeOpsStore({ client: pool });
+    await store.migrate();
+    const candidates = (
+      await store.listCandidates({
+        limit: APPROVED_EVAL_KNOWLEDGE_GATE_LIMIT,
+        status: 'approved',
+        type: 'eval_case',
+      })
+    ).filter(isEvalOnlyKnowledgeCandidate);
+    const results: KnowledgeGateSummary[] = [];
+
+    for (const candidate of candidates) {
+      results.push(
+        await runKnowledgeGateForCandidate(io, config, store, candidate, {
+          fast: options.fast,
+        }),
       );
     }
 
-    let ingestion: IngestSummary | undefined;
-    if (!evalOnly) {
-      ingestion = await ingest(io);
-      await store.markCandidateIngested(options.candidateId, {
-        ingestedAt: new Date().toISOString(),
-      });
-      if (ingestion.runId !== undefined) {
-        await store.recordCandidateRun({
-          candidateId: options.candidateId,
-          metadata: {
-            chunkCount: ingestion.chunkCount,
-            documentCount: ingestion.documentCount,
-            indexPath: ingestion.indexPath,
-          },
-          runId: ingestion.runId,
-          runType: 'ingest',
-          status: 'completed',
-        });
-      }
-    }
-
-    const cases = createKnowledgeGateEvaluationCases(candidate);
-    const runtime = createCliChatRuntime(config, { fastAnswers: options.fast });
-    let evaluation: EvaluationReport;
-    try {
-      evaluation = await evaluateCases(cases, runtime.service, {
-        onResult: (result, index, total) => {
-          writeLine(io.stdout, formatEvaluationProgress(result, index, total));
-        },
-      });
-    } finally {
-      await runtime.close();
-    }
-
-    const evalPassed = evaluation.passed === evaluation.total;
-    const evalRunId = createEvaluationRunId(options.candidateId, evaluation);
-    await store.markCandidateEvalResult(options.candidateId, {
-      evaluatedAt: new Date().toISOString(),
-      passed: evalPassed,
-    });
-    await store.recordCandidateRun({
-      candidateId: options.candidateId,
-      metadata: {
-        failures: collectEvaluationFailures(evaluation),
-        passed: evaluation.passed,
-        total: evaluation.total,
-      },
-      runId: evalRunId,
-      runType: 'eval',
-      status: evalPassed ? 'passed' : 'failed',
-    });
+    const passedCount = results.filter((result) => result.evalPassed).length;
+    const totalCount = results.length;
 
     return {
-      candidateId: options.candidateId,
-      evalPassed,
-      evalRunId,
-      evaluation,
-      ...(ingestion === undefined ? {} : { ingestion }),
+      evalPassed: passedCount === totalCount,
+      failedCount: totalCount - passedCount,
+      passedCount,
+      results,
+      totalCount,
     };
   } finally {
     await pool.end();
   }
+}
+
+async function runKnowledgeGateForCandidate(
+  io: CliIo,
+  config: ReturnType<typeof loadRagConfig>,
+  store: KnowledgeCandidateStore,
+  candidate: KnowledgeCandidate,
+  options: { fast: boolean },
+): Promise<KnowledgeGateSummary> {
+  const evalOnly = isEvalOnlyKnowledgeCandidate(candidate);
+  if (evalOnly) {
+    if (candidate.status !== 'approved' && candidate.status !== 'ingested') {
+      throw new KnowledgeCandidateInvalidStatusTransitionError(
+        candidate.id,
+        'eval',
+        candidate.status,
+        'approved',
+      );
+    }
+  } else if (candidate.status !== 'published') {
+    throw new KnowledgeCandidateInvalidStatusTransitionError(
+      candidate.id,
+      'ingested',
+      candidate.status,
+      'published',
+    );
+  }
+
+  let ingestion: IngestSummary | undefined;
+  if (!evalOnly) {
+    ingestion = await ingest(io);
+    await store.markCandidateIngested(candidate.id, {
+      ingestedAt: new Date().toISOString(),
+    });
+    if (ingestion.runId !== undefined) {
+      await store.recordCandidateRun({
+        candidateId: candidate.id,
+        metadata: {
+          chunkCount: ingestion.chunkCount,
+          documentCount: ingestion.documentCount,
+          indexPath: ingestion.indexPath,
+        },
+        runId: ingestion.runId,
+        runType: 'ingest',
+        status: 'completed',
+      });
+    }
+  }
+
+  const cases = createKnowledgeGateEvaluationCases(candidate);
+  const runtime = createCliChatRuntime(config, { fastAnswers: options.fast });
+  let evaluation: EvaluationReport;
+  try {
+    evaluation = await evaluateCases(cases, runtime.service, {
+      onResult: (result, index, total) => {
+        writeLine(io.stdout, formatEvaluationProgress(result, index, total));
+      },
+    });
+  } finally {
+    await runtime.close();
+  }
+
+  const evalPassed = evaluation.passed === evaluation.total;
+  const evalRunId = createEvaluationRunId(candidate.id, evaluation);
+  await store.markCandidateEvalResult(candidate.id, {
+    evaluatedAt: new Date().toISOString(),
+    passed: evalPassed,
+  });
+  await store.recordCandidateRun({
+    candidateId: candidate.id,
+    metadata: {
+      failures: collectEvaluationFailures(evaluation),
+      passed: evaluation.passed,
+      total: evaluation.total,
+    },
+    runId: evalRunId,
+    runType: 'eval',
+    status: evalPassed ? 'passed' : 'failed',
+  });
+
+  return {
+    candidateId: candidate.id,
+    evalPassed,
+    evalRunId,
+    evaluation,
+    ...(ingestion === undefined ? {} : { ingestion }),
+  };
 }
 
 function createKnowledgeGateEvaluationCases(candidate: KnowledgeCandidate): EvaluationCase[] {
