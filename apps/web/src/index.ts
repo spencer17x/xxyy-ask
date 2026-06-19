@@ -1538,6 +1538,19 @@ export function renderOpsPage(): string {
         white-space: nowrap;
       }
 
+      .knowledge-candidate-section {
+        display: grid;
+        gap: 8px;
+      }
+
+      .knowledge-candidate-section h3 {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
       .tx-report-results {
         display: grid;
         gap: 10px;
@@ -1698,7 +1711,14 @@ export function renderOpsPage(): string {
               </label>
               <button id="knowledge-candidate-submit" type="submit">Load</button>
             </form>
-            <div id="knowledge-eval-failures" class="tx-report-results"></div>
+            <div class="knowledge-candidate-section">
+              <h3>Recent Quality Gaps</h3>
+              <div id="knowledge-quality-signals" class="tx-report-results"></div>
+            </div>
+            <div class="knowledge-candidate-section">
+              <h3>Recent Eval Failures</h3>
+              <div id="knowledge-eval-failures" class="tx-report-results"></div>
+            </div>
             <div id="knowledge-candidate-status" class="status-line" role="status" aria-live="polite">Enter token to load needs-review candidates.</div>
             <div id="knowledge-candidates" class="tx-report-results"></div>
           </div>
@@ -1820,6 +1840,7 @@ export function renderOpsPage(): string {
       const knowledgeCandidateStatus = document.querySelector("#knowledge-candidate-status");
       const knowledgeCandidatesTarget = document.querySelector("#knowledge-candidates");
       const knowledgeEvalFailuresTarget = document.querySelector("#knowledge-eval-failures");
+      const knowledgeQualitySignalsTarget = document.querySelector("#knowledge-quality-signals");
       const queryTxReports = document.querySelector("#tx-report-form");
       const txReportHash = document.querySelector("#tx-report-hash");
       const txReportChain = document.querySelector("#tx-report-chain");
@@ -1909,6 +1930,7 @@ export function renderOpsPage(): string {
           renderKnowledge(summary.knowledge);
           renderFeedback(summary.feedback);
           renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || []);
+          renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || []);
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
           void loadKnowledgeCandidates();
           status.textContent = "Updated " + summary.generatedAt;
@@ -1995,6 +2017,31 @@ export function renderOpsPage(): string {
                 ...(recent.failureReasons || []),
                 recent.evaluatedAt ? "Evaluated " + recent.evaluatedAt : "",
                 recent.runId ? "Run " + recent.runId : "",
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            ),
+          ),
+        );
+      }
+
+      function renderQualitySignals(recentSignals) {
+        if (recentSignals.length === 0) {
+          knowledgeQualitySignalsTarget.replaceChildren(empty("No recent quality gaps."));
+          return;
+        }
+
+        knowledgeQualitySignalsTarget.replaceChildren(
+          ...recentSignals.map((recent) =>
+            row(
+              "knowledge-candidate-item",
+              "Quality gap · " + recent.candidateId,
+              recent.question,
+              [
+                recent.targetCategory ? "Target " + recent.targetCategory : "",
+                recent.type ? "Type " + recent.type : "",
+                recent.riskLevel ? "Risk " + recent.riskLevel : "",
+                recent.createdAt ? "Created " + recent.createdAt : "",
               ]
                 .filter(Boolean)
                 .join(" · "),

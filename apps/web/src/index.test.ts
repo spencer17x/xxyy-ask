@@ -90,12 +90,19 @@ describe('renderOpsPage', () => {
     expect(html).toContain(
       'renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || [])',
     );
+    expect(html).toContain(
+      'renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || [])',
+    );
     expect(html).toContain('summary.knowledgeCandidateQueues?.needsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.evalFailedCount || 0');
     expect(html).toContain('id="knowledge-eval-failures"');
+    expect(html).toContain('id="knowledge-quality-signals"');
     expect(html).toContain('recent.failureReasons');
+    expect(html).toContain('Quality gap · " + recent.candidateId');
+    expect(html).toContain('recent.targetCategory');
+    expect(html).toContain('recent.riskLevel');
     expect(html).toContain('Transaction Analysis');
     expect(html).toContain('renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime)');
     expect(html).toContain('summary.byReviewStatus || {}');
