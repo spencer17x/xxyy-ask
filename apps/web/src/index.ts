@@ -1529,7 +1529,7 @@ export function renderOpsPage(): string {
 
       .knowledge-candidate-form {
         display: grid;
-        grid-template-columns: minmax(180px, 1fr) minmax(100px, 140px) auto;
+        grid-template-columns: minmax(150px, 1fr) minmax(140px, 0.8fr) minmax(130px, 0.8fr) minmax(100px, 140px) auto;
         gap: 10px;
         align-items: end;
       }
@@ -1665,6 +1665,24 @@ export function renderOpsPage(): string {
           <h2>Knowledge Candidates</h2>
           <div class="panel-body">
             <form id="knowledge-candidate-form" class="knowledge-candidate-form">
+              <label for="knowledge-candidate-status-filter">
+                Status
+                <select id="knowledge-candidate-status-filter" name="status">
+                  <option value="needs_review">Needs review</option>
+                  <option value="approved">Approved</option>
+                  <option value="eval_failed">Eval failed</option>
+                </select>
+              </label>
+              <label for="knowledge-candidate-type">
+                Type
+                <select id="knowledge-candidate-type" name="type">
+                  <option value="">Any type</option>
+                  <option value="faq">FAQ</option>
+                  <option value="doc_patch">Doc patch</option>
+                  <option value="boundary_example">Boundary examples</option>
+                  <option value="eval_case">Eval cases</option>
+                </select>
+              </label>
               <label for="knowledge-candidate-source">
                 Source
                 <select id="knowledge-candidate-source" name="source">
@@ -1792,6 +1810,8 @@ export function renderOpsPage(): string {
       const txAnalysisTarget = document.querySelector("#tx-analysis");
       const latestFeedbackTarget = document.querySelector("#latest-feedback");
       const queryKnowledgeCandidates = document.querySelector("#knowledge-candidate-form");
+      const knowledgeCandidateStatusFilter = document.querySelector("#knowledge-candidate-status-filter");
+      const knowledgeCandidateType = document.querySelector("#knowledge-candidate-type");
       const knowledgeCandidateSource = document.querySelector("#knowledge-candidate-source");
       const knowledgeCandidateLimit = document.querySelector("#knowledge-candidate-limit");
       const knowledgeCandidateSubmit = document.querySelector("#knowledge-candidate-submit");
@@ -1831,6 +1851,18 @@ export function renderOpsPage(): string {
       });
 
       knowledgeCandidateSource.addEventListener("change", () => {
+        if (tokenInput.value.trim()) {
+          void loadKnowledgeCandidates();
+        }
+      });
+
+      knowledgeCandidateStatusFilter.addEventListener("change", () => {
+        if (tokenInput.value.trim()) {
+          void loadKnowledgeCandidates();
+        }
+      });
+
+      knowledgeCandidateType.addEventListener("change", () => {
         if (tokenInput.value.trim()) {
           void loadKnowledgeCandidates();
         }
@@ -2005,7 +2037,10 @@ export function renderOpsPage(): string {
         }
 
         const params = new URLSearchParams();
-        params.set("status", "needs_review");
+        params.set("status", knowledgeCandidateStatusFilter.value);
+        if (knowledgeCandidateType.value) {
+          params.set("type", knowledgeCandidateType.value);
+        }
         params.set("source", knowledgeCandidateSource.value);
         const limit = knowledgeCandidateLimit.value.trim();
         if (limit) {

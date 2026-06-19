@@ -215,11 +215,17 @@ describe('renderOpsPage', () => {
     const html = renderOpsPage();
 
     expect(html).toContain('Knowledge Candidates');
+    expect(html).toContain('id="knowledge-candidate-status-filter"');
+    expect(html).toContain('<option value="approved">Approved</option>');
+    expect(html).toContain('id="knowledge-candidate-type"');
+    expect(html).toContain('<option value="eval_case">Eval cases</option>');
     expect(html).toContain('id="knowledge-candidate-source"');
     expect(html).toContain('<option value="answer_feedback">Answer feedback</option>');
     expect(html).toContain('<option value="answer_quality_signal">Quality signals</option>');
     expect(html).toContain('function loadKnowledgeCandidates()');
-    expect(html).toContain('params.set("status", "needs_review")');
+    expect(html).toContain('params.set("status", knowledgeCandidateStatusFilter.value)');
+    expect(html).toContain('if (knowledgeCandidateType.value) {');
+    expect(html).toContain('params.set("type", knowledgeCandidateType.value)');
     expect(html).toContain('params.set("source", knowledgeCandidateSource.value)');
     expect(html).toContain('fetch("/api/knowledge/candidates?" + params.toString()');
     expect(html).toContain('Authorization: "Bearer " + token');
