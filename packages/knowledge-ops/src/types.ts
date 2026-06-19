@@ -68,9 +68,21 @@ export interface ExistingKnowledgeMatch {
   sourceUrl?: string;
 }
 
+export type GeneratedEvalIntent =
+  | 'product_qa'
+  | 'how_to'
+  | 'tx_sandwich_detection'
+  | 'realtime_account_query'
+  | 'mev_or_chain_forensics'
+  | 'investment_advice'
+  | 'unknown';
+
 export interface GeneratedEvalCase {
   question: string;
   expectedAnswer: string;
+  expectedIntent?: GeneratedEvalIntent;
+  minCitations?: number;
+  requireExpectedAnswerText?: boolean;
 }
 
 export interface KnowledgeCandidate {

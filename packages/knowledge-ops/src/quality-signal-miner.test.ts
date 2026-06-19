@@ -138,7 +138,10 @@ describe('mineAnswerQualitySignals', () => {
       {
         expectedAnswer:
           '我还不确定你想咨询 XXYY 的哪个功能。请补充具体功能、配置步骤、Pro 权益，或发送单笔交易哈希。',
+        expectedIntent: 'unknown',
+        minCitations: 0,
         question: '帮我看看这个，我的邮箱是 [REDACTED_EMAIL]',
+        requireExpectedAnswerText: false,
       },
     ]);
   });
@@ -180,7 +183,97 @@ describe('mineAnswerQualitySignals', () => {
       {
         expectedAnswer:
           '我缺少这次会话的上一轮上下文，不能确定“这笔”指哪一笔交易。请发送单笔完整交易哈希或对应主网浏览器链接，我会自动继续分析。',
+        expectedIntent: 'tx_sandwich_detection',
+        minCitations: 0,
         question: '这笔呢？',
+        requireExpectedAnswerText: false,
+      },
+    ]);
+  });
+
+  it('creates a needs-review eval candidate from a transaction analysis failure signal', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer:
+            '交易哈希夹子检测功能暂未启用。当前不会编造链上分析结论；接入正式链上数据源后才能判断是否被夹并生成截图。',
+          channel: 'web',
+          confidence: 0.35,
+          intent: 'tx_sandwich_detection',
+          reason: 'tx_analysis_failure',
+          redactedQuestion: '[evm_tx_hash]',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.35,
+      proposedAnswer:
+        '交易哈希夹子检测功能暂未启用。当前不会编造链上分析结论；接入正式链上数据源后才能判断是否被夹并生成截图。',
+      question: '[evm_tx_hash]',
+      status: 'needs_review',
+      targetCategory: 'eval_case',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer:
+          '交易哈希夹子检测功能暂未启用。当前不会编造链上分析结论；接入正式链上数据源后才能判断是否被夹并生成截图。',
+        expectedIntent: 'tx_sandwich_detection',
+        minCitations: 0,
+        question: '[evm_tx_hash]',
+        requireExpectedAnswerText: false,
+      },
+    ]);
+  });
+
+  it('creates a needs-review eval candidate from a transaction tool failure signal', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer:
+            '交易分析数据源暂时不可用，无法确认这笔交易是否被夹。当前不会编造链上分析结论，请稍后重试。',
+          channel: 'web',
+          errorCode: 'TxToolFailure',
+          intent: 'tx_sandwich_detection',
+          reason: 'tool_failure',
+          redactedQuestion: '[evm_tx_hash]',
+          sessionIdPresent: false,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates[0]).toMatchObject({
+      proposedAnswer:
+        '交易分析数据源暂时不可用，无法确认这笔交易是否被夹。当前不会编造链上分析结论，请稍后重试。',
+      question: '[evm_tx_hash]',
+      targetCategory: 'eval_case',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer:
+          '交易分析数据源暂时不可用，无法确认这笔交易是否被夹。当前不会编造链上分析结论，请稍后重试。',
+        expectedIntent: 'tx_sandwich_detection',
+        minCitations: 0,
+        question: '[evm_tx_hash]',
+        requireExpectedAnswerText: false,
       },
     ]);
   });
@@ -199,6 +292,17 @@ describe('mineAnswerQualitySignals', () => {
           userIdPresent: false,
         },
         {
+          answer:
+            '当前产品知识库暂时不可用，无法基于 XXYY 文档确认这个问题。为了避免误导，我不会编造产品细节；请稍后重试。',
+          channel: 'web',
+          errorCode: 'ProductToolFailure',
+          intent: 'product_qa',
+          reason: 'tool_failure',
+          redactedQuestion: 'XXYY Pro 有哪些权益？',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+        {
           channel: 'web',
           confidence: 0.2,
           intent: 'unknown',
@@ -213,8 +317,8 @@ describe('mineAnswerQualitySignals', () => {
     expect(result).toEqual({
       candidates: [],
       candidatesCreated: 0,
-      signalsRead: 2,
-      signalsSkipped: 2,
+      signalsRead: 3,
+      signalsSkipped: 3,
     });
   });
 });

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { redactSupportText } from './redaction.js';
 import type {
   GeneratedEvalCase,
+  GeneratedEvalIntent,
   KnowledgeCandidate,
   KnowledgeCandidateSourceRef,
   KnowledgeCandidateType,
@@ -51,6 +52,15 @@ const PRODUCT_GAP_REASONS = new Set<AnswerQualitySignalReason>([
   'low_confidence',
   'missing_citations',
 ]);
+const SUPPORTED_GENERATED_EVAL_INTENTS = new Set<GeneratedEvalIntent>([
+  'product_qa',
+  'how_to',
+  'tx_sandwich_detection',
+  'realtime_account_query',
+  'mev_or_chain_forensics',
+  'investment_advice',
+  'unknown',
+]);
 
 export function mineAnswerQualitySignals(
   input: MineAnswerQualitySignalsInput,
@@ -82,6 +92,9 @@ function createCandidateFromSignal(
   }
   if (signal.reason === 'unknown_intent' || signal.reason === 'session_unavailable') {
     return createUnknownIntentCandidate(signal, now);
+  }
+  if (isTransactionFailureSignal(signal)) {
+    return createTransactionFailureCandidate(signal, now);
   }
 
   return undefined;
@@ -184,10 +197,13 @@ function createUnknownIntentCandidate(
     createdAt: now,
     existingKnowledgeMatches: [],
     generatedEvalCases: [
-      {
-        expectedAnswer: answerText,
-        question: questionText,
-      },
+      createGeneratedEvalCase({
+        answerText,
+        expectedIntent: toSupportedIntent(signal.intent),
+        minCitations: 0,
+        questionText,
+        requireExpectedAnswerText: false,
+      }),
     ],
     id: createCandidateId(signal),
     proposedAnswer: answerText,
@@ -197,6 +213,65 @@ function createUnknownIntentCandidate(
     sourceRefs: [createSourceRef(signal)],
     status: 'needs_review',
     targetCategory: 'policy_boundary',
+    type: 'eval_case',
+    updatedAt: now,
+  };
+}
+
+function createGeneratedEvalCase(input: {
+  answerText: string;
+  expectedIntent: GeneratedEvalIntent | undefined;
+  minCitations: number | undefined;
+  questionText: string;
+  requireExpectedAnswerText: boolean | undefined;
+}): GeneratedEvalCase {
+  return {
+    expectedAnswer: input.answerText,
+    ...(input.expectedIntent === undefined ? {} : { expectedIntent: input.expectedIntent }),
+    ...(input.minCitations === undefined ? {} : { minCitations: input.minCitations }),
+    question: input.questionText,
+    ...(input.requireExpectedAnswerText === undefined
+      ? {}
+      : { requireExpectedAnswerText: input.requireExpectedAnswerText }),
+  };
+}
+
+function createTransactionFailureCandidate(
+  signal: AnswerQualitySignal,
+  now: string,
+): KnowledgeCandidate | undefined {
+  const question = redactSupportText(signal.redactedQuestion);
+  const answer = redactSupportText(signal.answer ?? '');
+  const questionText = question.text.trim();
+  const answerText = answer.text.trim();
+
+  if (questionText.length === 0 || answerText.length === 0) {
+    return undefined;
+  }
+
+  const redactionReport = mergeRedactionReports([question.report, answer.report]);
+
+  return {
+    confidence: normalizeConfidence(signal.confidence),
+    createdAt: now,
+    existingKnowledgeMatches: [],
+    generatedEvalCases: [
+      {
+        expectedAnswer: answerText,
+        expectedIntent: 'tx_sandwich_detection',
+        minCitations: 0,
+        question: questionText,
+        requireExpectedAnswerText: false,
+      },
+    ],
+    id: createCandidateId(signal),
+    proposedAnswer: answerText,
+    question: questionText,
+    redactionReport,
+    riskLevel: redactionReport.riskLevel,
+    sourceRefs: [createSourceRef(signal)],
+    status: 'needs_review',
+    targetCategory: 'eval_case',
     type: 'eval_case',
     updatedAt: now,
   };
@@ -216,6 +291,21 @@ function boundaryAnswerFor(reason: AnswerQualitySignalReason): string {
 
 function selectProductCandidateType(riskLevel: KnowledgeRiskLevel): KnowledgeCandidateType {
   return riskLevel === 'high' ? 'boundary_example' : 'faq';
+}
+
+function isTransactionFailureSignal(signal: AnswerQualitySignal): boolean {
+  return (
+    signal.intent === 'tx_sandwich_detection' &&
+    (signal.reason === 'tx_analysis_failure' || signal.reason === 'tool_failure')
+  );
+}
+
+function toSupportedIntent(intent: string): GeneratedEvalIntent | undefined {
+  if (SUPPORTED_GENERATED_EVAL_INTENTS.has(intent as GeneratedEvalIntent)) {
+    return intent as GeneratedEvalIntent;
+  }
+
+  return undefined;
 }
 
 function ensureBoundaryRisk(

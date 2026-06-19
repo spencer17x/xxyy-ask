@@ -1226,22 +1226,27 @@ function createKnowledgeGateEvaluationCases(candidate: KnowledgeCandidate): Eval
             question: candidate.question,
           },
         ];
-  const expectedIntent = expectedIntentForKnowledgeCandidate(candidate);
-  const minCitations = candidate.targetCategory === 'policy_boundary' ? 0 : 1;
+  const defaultExpectedIntent = expectedIntentForKnowledgeCandidate(candidate);
+  const defaultMinCitations = candidate.targetCategory === 'policy_boundary' ? 0 : 1;
 
-  return generatedCases.map((generatedCase) => ({
-    expectedIntent,
-    forbiddenAnswerIncludes: PRODUCT_FORBIDDEN_TEXT,
-    minCitations,
-    name: `knowledge candidate ${candidate.id} / ${generatedCase.question}`,
-    request: {
-      channel: 'cli',
-      message: generatedCase.question,
-    },
-    ...(shouldRequireExpectedAnswerText(candidate)
-      ? { requiredAnswerIncludes: [generatedCase.expectedAnswer] }
-      : {}),
-  }));
+  return generatedCases.map((generatedCase) => {
+    const requireExpectedAnswerText =
+      generatedCase.requireExpectedAnswerText ?? shouldRequireExpectedAnswerText(candidate);
+
+    return {
+      expectedIntent: generatedCase.expectedIntent ?? defaultExpectedIntent,
+      forbiddenAnswerIncludes: PRODUCT_FORBIDDEN_TEXT,
+      minCitations: generatedCase.minCitations ?? defaultMinCitations,
+      name: `knowledge candidate ${candidate.id} / ${generatedCase.question}`,
+      request: {
+        channel: 'cli',
+        message: generatedCase.question,
+      },
+      ...(requireExpectedAnswerText
+        ? { requiredAnswerIncludes: [generatedCase.expectedAnswer] }
+        : {}),
+    };
+  });
 }
 
 function expectedIntentForKnowledgeCandidate(

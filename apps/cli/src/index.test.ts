@@ -1318,7 +1318,10 @@ describe('runCli', () => {
       generatedEvalCases: [
         {
           expectedAnswer: '在钱包监控里配置 Telegram Bot。',
+          expectedIntent: 'how_to',
+          minCitations: 0,
           question: 'Telegram 通知怎么设置？',
+          requireExpectedAnswerText: false,
         },
       ],
       id: 'kc_telegram_setup',
@@ -1446,22 +1449,22 @@ describe('runCli', () => {
         events.push(`evaluate:${cases.map((item) => item.name).join('|')}`);
         expect(cases).toEqual([
           expect.objectContaining({
-            expectedIntent: 'product_qa',
-            minCitations: 1,
+            expectedIntent: 'how_to',
+            minCitations: 0,
             name: 'knowledge candidate kc_telegram_setup / Telegram 通知怎么设置？',
             request: {
               channel: 'cli',
               message: 'Telegram 通知怎么设置？',
             },
-            requiredAnswerIncludes: ['在钱包监控里配置 Telegram Bot。'],
           }),
         ]);
+        expect(cases[0]).not.toHaveProperty('requiredAnswerIncludes');
         const result: EvaluationResult = {
-          actualIntent: 'product_qa',
-          citationCount: 1,
-          expectedIntent: 'product_qa',
+          actualIntent: 'how_to',
+          citationCount: 0,
+          expectedIntent: 'how_to',
           failureReasons: [],
-          minCitations: 1,
+          minCitations: 0,
           name: cases[0]?.name ?? 'knowledge candidate',
           passed: true,
         };
