@@ -230,6 +230,7 @@ interface KnowledgeCandidateQueueSummary {
   evalFailedCount: number;
   needsReviewCount: number;
   qualitySignalNeedsReviewCount: number;
+  qualitySignalReasonCounts: Record<string, number>;
   recentEvalFailures: RecentKnowledgeEvalFailureSummary[];
   recentQualitySignals: RecentQualitySignalCandidateSummary[];
 }
@@ -1515,11 +1516,33 @@ async function summarizeKnowledgeCandidateQueues(
     evalFailedCount: evalFailed.length,
     needsReviewCount: needsReview.length,
     qualitySignalNeedsReviewCount: qualitySignalNeedsReview.length,
+    qualitySignalReasonCounts: summarizeQualitySignalReasonCounts(qualitySignalNeedsReview),
     recentEvalFailures,
     recentQualitySignals: summarizeRecentQualitySignals(
       qualitySignalNeedsReview.slice(0, OPS_RECENT_QUALITY_SIGNAL_LIMIT),
     ),
   };
+}
+
+function summarizeQualitySignalReasonCounts(
+  candidates: KnowledgeCandidate[],
+): Record<string, number> {
+  const counts = new Map<string, number>();
+
+  for (const candidate of candidates) {
+    const reason = extractQualitySignalReason(candidate);
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+
+  return Object.fromEntries(
+    [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function extractQualitySignalReason(candidate: KnowledgeCandidate): string {
+  const sourceRef = candidate.sourceRefs.find((ref) => ref.source === 'answer_quality_signal');
+  const reason = sourceRef?.qualitySignalReason?.trim();
+  return reason === undefined || reason.length === 0 ? 'unknown' : reason;
 }
 
 function summarizeRecentQualitySignals(

@@ -523,6 +523,7 @@ function createSourceRef(signal: QualitySignalIdentity): KnowledgeCandidateSourc
   return {
     chatIdHash: signal.sessionIdPresent ? 'session_present' : 'session_absent',
     messageId: createQualitySignalMessageId(signal),
+    qualitySignalReason: signal.reason,
     source: 'answer_quality_signal',
   };
 }

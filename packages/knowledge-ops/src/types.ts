@@ -66,6 +66,7 @@ export interface KnowledgeCandidateSourceRef {
   chatIdHash: string;
   messageId: string;
   threadId?: string;
+  qualitySignalReason?: string;
 }
 
 export interface ExistingKnowledgeMatch {

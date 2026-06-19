@@ -55,6 +55,7 @@ describe('mineAnswerQualitySignals', () => {
       {
         chatIdHash: 'session_present',
         messageId: sourceRef.messageId,
+        qualitySignalReason: 'low_confidence',
         source: 'answer_quality_signal',
       },
     ]);

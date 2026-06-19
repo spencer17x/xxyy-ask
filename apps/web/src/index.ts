@@ -1731,6 +1731,10 @@ export function renderOpsPage(): string {
               <div id="knowledge-quality-signals" class="tx-report-results"></div>
             </div>
             <div class="knowledge-candidate-section">
+              <h3>Quality Gap Reasons</h3>
+              <div id="knowledge-quality-reasons" class="tx-report-results"></div>
+            </div>
+            <div class="knowledge-candidate-section">
               <h3>Recent Eval Failures</h3>
               <div id="knowledge-eval-failures" class="tx-report-results"></div>
             </div>
@@ -1856,6 +1860,7 @@ export function renderOpsPage(): string {
       const knowledgeCandidatesTarget = document.querySelector("#knowledge-candidates");
       const knowledgeEvalFailuresTarget = document.querySelector("#knowledge-eval-failures");
       const knowledgeQualitySignalsTarget = document.querySelector("#knowledge-quality-signals");
+      const knowledgeQualityReasonsTarget = document.querySelector("#knowledge-quality-reasons");
       const queryTxReports = document.querySelector("#tx-report-form");
       const txReportHash = document.querySelector("#tx-report-hash");
       const txReportChain = document.querySelector("#tx-report-chain");
@@ -1946,6 +1951,7 @@ export function renderOpsPage(): string {
           renderFeedback(summary.feedback);
           renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || []);
           renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || []);
+          renderQualitySignalReasons(summary.knowledgeCandidateQueues?.qualitySignalReasonCounts || {});
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
           void loadKnowledgeCandidates();
           status.textContent = "Updated " + summary.generatedAt;
@@ -2036,6 +2042,22 @@ export function renderOpsPage(): string {
                 .filter(Boolean)
                 .join(" · "),
             ),
+          ),
+        );
+      }
+
+      function renderQualitySignalReasons(reasonCounts) {
+        const rows = Object.entries(reasonCounts)
+          .filter((entry) => Number(entry[1]) > 0)
+          .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
+        if (rows.length === 0) {
+          knowledgeQualityReasonsTarget.replaceChildren(empty("No quality reason counts."));
+          return;
+        }
+
+        knowledgeQualityReasonsTarget.replaceChildren(
+          ...rows.map(([reason, count]) =>
+            row("knowledge-candidate-item", "Quality reason · " + reason, String(count), "Needs review"),
           ),
         );
       }
