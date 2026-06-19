@@ -37,7 +37,7 @@ export function createInMemorySessionContextStore(
   const turnsBySession = new Map<string, SessionTurn[]>();
 
   return {
-    async appendTurn(sessionId, turn) {
+    appendTurn(sessionId, turn) {
       const existingTurns = turnsBySession.get(sessionId) ?? [];
       const storedTurn = {
         ...turn,
@@ -46,11 +46,12 @@ export function createInMemorySessionContextStore(
       };
       const nextTurns = [...existingTurns, storedTurn].slice(-maxTurnsPerSession);
       turnsBySession.set(sessionId, nextTurns);
+      return Promise.resolve();
     },
 
-    async getRecentTurns(sessionId, limit) {
+    getRecentTurns(sessionId, limit) {
       const turns = turnsBySession.get(sessionId) ?? [];
-      return turns.slice(-(limit ?? maxTurnsPerSession));
+      return Promise.resolve(turns.slice(-(limit ?? maxTurnsPerSession)));
     },
   };
 }
