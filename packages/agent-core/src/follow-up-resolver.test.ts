@@ -63,6 +63,67 @@ describe('resolveFollowUp', () => {
     });
   });
 
+  it('resolves membership plan comparison follow-ups using the previous benefits question', () => {
+    const recentTurns: SessionTurn[] = [
+      {
+        content: 'XXYY Pro 有哪些权益？',
+        createdAt: '2026-06-19T00:00:00.000Z',
+        metadata: { intent: 'product_qa' },
+        role: 'user',
+      },
+    ];
+
+    expect(
+      resolveFollowUp({
+        message: '那 Basic 呢？',
+        recentTurns,
+      }),
+    ).toEqual({
+      contextSummary: 'resolved product follow-up from previous product turn',
+      resolution: 'resolved_followup',
+      resolvedMessage: 'XXYY Basic 有哪些权益？',
+    });
+  });
+
+  it('asks for clarification when a membership plan follow-up has no previous product context', () => {
+    expect(
+      resolveFollowUp({
+        message: '那 Basic 呢？',
+        recentTurns: [],
+      }),
+    ).toEqual({
+      clarificationQuestion:
+        '我还不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
+      clarificationReason: 'missing_context',
+      dependency: 'product_topic',
+      resolution: 'needs_clarification',
+    });
+  });
+
+  it('asks for clarification when a membership plan follow-up has unrelated product context', () => {
+    const recentTurns: SessionTurn[] = [
+      {
+        content: 'Telegram 钱包监控配置步骤。',
+        createdAt: '2026-06-19T00:00:00.000Z',
+        metadata: { intent: 'how_to' },
+        role: 'assistant',
+      },
+    ];
+
+    expect(
+      resolveFollowUp({
+        message: '那 Basic 呢？',
+        recentTurns,
+      }),
+    ).toEqual({
+      clarificationQuestion:
+        '我还不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
+      clarificationReason: 'missing_context',
+      dependency: 'product_topic',
+      resolution: 'needs_clarification',
+    });
+  });
+
   it('asks for clarification when a pronoun product follow-up has no usable product context', () => {
     expect(
       resolveFollowUp({

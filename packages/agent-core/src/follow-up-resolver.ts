@@ -73,6 +73,20 @@ export function resolveFollowUp(input: ResolveFollowUpInput): ResolveFollowUpOut
   }
 
   if (dependency === 'product_topic') {
+    if (isMembershipPlanComparisonFollowUp(message)) {
+      const membershipPlanFollowUp = resolveMembershipPlanFollowUp(message, input.recentTurns);
+      if (membershipPlanFollowUp !== undefined) {
+        return membershipPlanFollowUp;
+      }
+      return {
+        clarificationQuestion:
+          '我还不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
+        clarificationReason: 'missing_context',
+        dependency,
+        resolution: 'needs_clarification',
+      };
+    }
+
     const topic = inferRecentProductTopic(input.recentTurns);
     if (topic !== undefined) {
       return {
@@ -185,6 +199,9 @@ function isDefinitionQuestion(message: string): boolean {
 
 function isShortProductFollowUp(message: string): boolean {
   const normalized = message.normalize('NFKC').trim();
+  if (isMembershipPlanComparisonFollowUp(normalized)) {
+    return true;
+  }
   if (normalized.length > 24 || hasExplicitProductTopic(normalized)) {
     return false;
   }
@@ -193,10 +210,54 @@ function isShortProductFollowUp(message: string): boolean {
   );
 }
 
+function isMembershipPlanComparisonFollowUp(message: string): boolean {
+  return /^(那|那么|这个|那个|刚才那个)?\s*(Basic|Pro|永久\s*Pro|永久\s*PRO)\s*(呢|有哪些|有什么)?[？?]?$/iu.test(
+    message,
+  );
+}
+
 function hasExplicitProductTopic(message: string): boolean {
   return /XXYY|Pro|Telegram|TG|钱包监控|自动交易|Raydium自动卖|开盘狙击|移动端|手机|登录|扫链|打满|趋势|收藏|持仓管理|收益统计|快捷交易|钱包管理|关注钱包/u.test(
     message,
   );
+}
+
+function resolveMembershipPlanFollowUp(
+  message: string,
+  turns: SessionTurn[],
+): ResolveFollowUpOutput | undefined {
+  const plan = extractMembershipPlan(message);
+  if (plan === undefined || !hasRecentMembershipBenefitsContext(turns)) {
+    return undefined;
+  }
+
+  return {
+    contextSummary: 'resolved product follow-up from previous product turn',
+    resolution: 'resolved_followup',
+    resolvedMessage: `${plan} 有哪些权益？`,
+  };
+}
+
+function extractMembershipPlan(message: string): string | undefined {
+  if (/Basic/iu.test(message)) {
+    return 'XXYY Basic';
+  }
+  if (/永久\s*Pro/iu.test(message)) {
+    return 'XXYY 永久 Pro';
+  }
+  if (/Pro/iu.test(message)) {
+    return 'XXYY Pro';
+  }
+  return undefined;
+}
+
+function hasRecentMembershipBenefitsContext(turns: SessionTurn[]): boolean {
+  return [...turns].reverse().some((turn) => {
+    if (turn.metadata?.intent !== 'product_qa' && turn.metadata?.intent !== 'how_to') {
+      return false;
+    }
+    return /权益|福利|会员|套餐|版本|计划|plan|benefit|membership/iu.test(turn.content);
+  });
 }
 
 function inferRecentProductTopic(turns: SessionTurn[]): string | undefined {
