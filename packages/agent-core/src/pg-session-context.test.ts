@@ -25,14 +25,15 @@ describe('createPgSessionContextStore', () => {
     expect(sql).toContain('create table if not exists customer_agent_session_turns');
     expect(sql).toContain("role text not null check (role in ('assistant', 'user'))");
     expect(sql).toContain('customer_agent_session_turns_session_created_idx');
+    expect(sql).toContain('create table if not exists customer_agent_session_summaries');
   });
 
-  it('appends sanitized turns and prunes old turns for the same session', async () => {
+  it('appends sanitized turns, updates safe summaries, and prunes old turns for the same session', async () => {
     const client = new FakePgClient();
     const store = createPgSessionContextStore({ client, maxTurnsPerSession: 4 });
     const turn: SessionTurn = {
       content:
-        '我的钱包 0x1111111111111111111111111111111111111111，交易 0x2222222222222222222222222222222222222222222222222222222222222222',
+        '我主要用手机端，钱包 0x1111111111111111111111111111111111111111，交易 0x2222222222222222222222222222222222222222222222222222222222222222',
       createdAt: '2026-06-19T08:00:00.000Z',
       metadata: { confidence: 0.8, intent: 'product_qa' },
       role: 'user',
@@ -44,12 +45,18 @@ describe('createPgSessionContextStore', () => {
     expect(client.queries[0]?.values).toEqual([
       'session-1',
       'user',
-      '我的钱包 [evm_address]，交易 [evm_tx_hash]',
+      '我主要用手机端，钱包 [evm_address]，交易 [evm_tx_hash]',
       JSON.stringify({ confidence: 0.8, intent: 'product_qa' }),
       '2026-06-19T08:00:00.000Z',
     ]);
-    expect(client.queries[1]?.sql).toContain('delete from customer_agent_session_turns');
-    expect(client.queries[1]?.values).toEqual(['session-1', 4]);
+    expect(client.queries[1]?.sql).toContain('insert into customer_agent_session_summaries');
+    expect(client.queries[1]?.values).toEqual([
+      'session-1',
+      JSON.stringify({ productPreference: 'XXYY 移动端登录' }),
+      '2026-06-19T08:00:00.000Z',
+    ]);
+    expect(client.queries[2]?.sql).toContain('delete from customer_agent_session_turns');
+    expect(client.queries[2]?.values).toEqual(['session-1', 4]);
   });
 
   it('returns recent turns in chronological order', async () => {
@@ -86,5 +93,29 @@ describe('createPgSessionContextStore', () => {
     ]);
     expect(client.queries[0]?.sql).toContain('order by created_at desc, id desc');
     expect(client.queries[0]?.values).toEqual(['session-1', 2]);
+  });
+
+  it('returns safe session summaries', async () => {
+    const client = new FakePgClient();
+    client.rows = [
+      {
+        summary: { productPreference: 'XXYY 移动端登录' },
+        updated_at: '2026-06-19T08:00:00.000Z',
+      },
+    ];
+    const store = createPgSessionContextStore({ client, maxTurnsPerSession: 12 });
+    const summaryStore = store as typeof store & {
+      getSessionSummary(sessionId: string): Promise<{
+        productPreference?: string;
+        updatedAt: string;
+      } | null>;
+    };
+
+    await expect(summaryStore.getSessionSummary('session-1')).resolves.toEqual({
+      productPreference: 'XXYY 移动端登录',
+      updatedAt: '2026-06-19T08:00:00.000Z',
+    });
+    expect(client.queries[0]?.sql).toContain('from customer_agent_session_summaries');
+    expect(client.queries[0]?.values).toEqual(['session-1']);
   });
 });

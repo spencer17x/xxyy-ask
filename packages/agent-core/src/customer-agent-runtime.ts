@@ -36,6 +36,7 @@ import {
 } from './quality-signals.js';
 import {
   sanitizeSessionText,
+  type SessionContextSummary,
   type SessionContextStore,
   type SessionTurn,
   type SessionTurnMetadata,
@@ -267,7 +268,11 @@ export function createCustomerAgentRuntime(
       }
     }
     const recentTurns = recentTurnsResult.turns;
-    const followUp = resolveFollowUp({ message: request.message, recentTurns });
+    const followUp = resolveFollowUp({
+      message: request.message,
+      recentTurns,
+      sessionSummary: recentTurnsResult.sessionSummary,
+    });
 
     if (followUp.resolution === 'needs_clarification') {
       const response: ChatResponse = withAgentRoute(
@@ -419,15 +424,34 @@ export function createCustomerAgentRuntime(
 async function getRecentTurnsForRequest(
   sessionContext: SessionContextStore | undefined,
   request: ChatRequest,
-): Promise<{ turns: SessionTurn[]; error?: unknown }> {
+): Promise<{
+  sessionSummary: SessionContextSummary | null;
+  turns: SessionTurn[];
+  error?: unknown;
+}> {
   if (request.sessionId === undefined || sessionContext === undefined) {
-    return { turns: [] };
+    return { sessionSummary: null, turns: [] };
   }
 
   try {
-    return { turns: await sessionContext.getRecentTurns(request.sessionId) };
+    const turns = await sessionContext.getRecentTurns(request.sessionId);
+    return {
+      sessionSummary: await getSessionSummaryBestEffort(sessionContext, request.sessionId),
+      turns,
+    };
   } catch (error) {
-    return { error, turns: [] };
+    return { error, sessionSummary: null, turns: [] };
+  }
+}
+
+async function getSessionSummaryBestEffort(
+  sessionContext: SessionContextStore,
+  sessionId: string,
+): Promise<SessionContextSummary | null> {
+  try {
+    return await sessionContext.getSessionSummary(sessionId);
+  } catch {
+    return null;
   }
 }
 

@@ -173,6 +173,30 @@ describe('resolveFollowUp', () => {
     });
   });
 
+  it('resolves short product follow-ups using the safe session summary when recent turns have no product context', () => {
+    expect(
+      resolveFollowUp({
+        message: '怎么登录？',
+        recentTurns: [
+          {
+            content: '不能查询账户余额。',
+            createdAt: '2026-06-19T00:01:00.000Z',
+            metadata: { intent: 'realtime_account_query' },
+            role: 'assistant',
+          },
+        ],
+        sessionSummary: {
+          productPreference: 'XXYY 移动端登录',
+          updatedAt: '2026-06-19T00:00:00.000Z',
+        },
+      }),
+    ).toEqual({
+      contextSummary: 'resolved product follow-up from session summary preference',
+      resolution: 'resolved_followup',
+      resolvedMessage: 'XXYY 移动端登录 怎么登录？',
+    });
+  });
+
   it('does not treat redacted contact remnants as product preferences', () => {
     const recentTurns: SessionTurn[] = [
       {

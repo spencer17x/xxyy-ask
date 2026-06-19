@@ -1,7 +1,7 @@
 import type { TxAnalysisChain } from '@xxyy/shared';
 import { hasAmbiguousTransactionReferences, parseTransactionReference } from '@xxyy/rag-core';
 
-import type { SessionTurn } from './session-context.js';
+import type { SessionContextSummary, SessionTurn } from './session-context.js';
 
 export type FollowUpResolution = 'needs_clarification' | 'resolved_followup' | 'unchanged';
 export type FollowUpDependency = 'product_topic' | 'transaction_reference';
@@ -10,6 +10,7 @@ export type FollowUpClarificationReason = 'ambiguous_reference' | 'missing_conte
 export interface ResolveFollowUpInput {
   message: string;
   recentTurns: SessionTurn[];
+  sessionSummary?: SessionContextSummary | null;
 }
 
 interface RecentTransactionReference {
@@ -101,6 +102,20 @@ export function resolveFollowUp(input: ResolveFollowUpInput): ResolveFollowUpOut
         contextSummary: 'resolved product follow-up from recent product preference',
         resolution: 'resolved_followup',
         resolvedMessage: `${preference} ${message}`,
+      };
+    }
+    if (input.sessionSummary?.productPreference !== undefined) {
+      return {
+        contextSummary: 'resolved product follow-up from session summary preference',
+        resolution: 'resolved_followup',
+        resolvedMessage: `${input.sessionSummary.productPreference} ${message}`,
+      };
+    }
+    if (input.sessionSummary?.productTopic !== undefined) {
+      return {
+        contextSummary: 'resolved product follow-up from session summary topic',
+        resolution: 'resolved_followup',
+        resolvedMessage: `${input.sessionSummary.productTopic} ${message}`,
       };
     }
     return {

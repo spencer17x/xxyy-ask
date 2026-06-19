@@ -41,6 +41,7 @@ export type {
 export { createInMemorySessionContextStore, sanitizeSessionText } from './session-context.js';
 export type {
   InMemorySessionContextStoreOptions,
+  SessionContextSummary,
   SessionContextStore,
   SessionTurn,
   SessionTurnMetadata,

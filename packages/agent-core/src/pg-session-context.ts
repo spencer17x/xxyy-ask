@@ -1,5 +1,10 @@
-import type { SessionContextStore, SessionTurn, SessionTurnMetadata } from './session-context.js';
-import { sanitizeSessionText } from './session-context.js';
+import type {
+  SessionContextStore,
+  SessionContextSummary,
+  SessionTurn,
+  SessionTurnMetadata,
+} from './session-context.js';
+import { sanitizeSessionText, summarizeSessionTurn } from './session-context.js';
 
 export interface PgClientLike {
   query<T = unknown>(sql: string, values?: readonly unknown[]): Promise<{ rows: T[] }>;
@@ -17,6 +22,11 @@ interface SessionTurnRow {
   role: SessionTurn['role'];
 }
 
+interface SessionSummaryRow {
+  summary: SessionContextSummary | string | null;
+  updated_at: Date | string;
+}
+
 const DEFAULT_MAX_TURNS_PER_SESSION = 12;
 
 export function createPgSessionContextStore(
@@ -26,6 +36,10 @@ export function createPgSessionContextStore(
 
   return {
     async appendTurn(sessionId, turn) {
+      const storedTurn: SessionTurn = {
+        ...turn,
+        content: sanitizeSessionText(turn.content),
+      };
       await options.client.query(
         `
         insert into customer_agent_session_turns (
@@ -39,12 +53,16 @@ export function createPgSessionContextStore(
         `,
         [
           sessionId,
-          turn.role,
-          sanitizeSessionText(turn.content),
-          JSON.stringify(turn.metadata ?? {}),
-          turn.createdAt,
+          storedTurn.role,
+          storedTurn.content,
+          JSON.stringify(storedTurn.metadata ?? {}),
+          storedTurn.createdAt,
         ],
       );
+      const summaryPatch = summarizeSessionTurn(storedTurn);
+      if (summaryPatch !== undefined) {
+        await upsertSessionSummary(options.client, sessionId, summaryPatch, storedTurn.createdAt);
+      }
       await pruneOldSessionTurns(options.client, sessionId, maxTurnsPerSession);
     },
 
@@ -66,6 +84,22 @@ export function createPgSessionContextStore(
 
       return response.rows.map(mapSessionTurnRow).reverse();
     },
+
+    async getSessionSummary(sessionId) {
+      const response = await options.client.query<SessionSummaryRow>(
+        `
+        select
+          summary,
+          updated_at
+        from customer_agent_session_summaries
+        where session_id = $1
+        limit 1
+        `,
+        [sessionId],
+      );
+      const row = response.rows[0];
+      return row === undefined ? null : mapSessionSummaryRow(row);
+    },
   };
 }
 
@@ -84,6 +118,35 @@ export async function migratePgSessionContextStore(client: PgClientLike): Promis
     create index if not exists customer_agent_session_turns_session_created_idx
       on customer_agent_session_turns (session_id, created_at desc, id desc)
   `);
+  await client.query(`
+    create table if not exists customer_agent_session_summaries (
+      session_id text primary key,
+      summary jsonb not null default '{}'::jsonb,
+      updated_at timestamptz not null
+    )
+  `);
+}
+
+async function upsertSessionSummary(
+  client: PgClientLike,
+  sessionId: string,
+  summaryPatch: Omit<SessionContextSummary, 'updatedAt'>,
+  updatedAt: string,
+): Promise<void> {
+  await client.query(
+    `
+    insert into customer_agent_session_summaries (
+      session_id,
+      summary,
+      updated_at
+    )
+    values ($1, $2::jsonb, $3)
+    on conflict (session_id) do update
+      set summary = customer_agent_session_summaries.summary || excluded.summary,
+          updated_at = greatest(customer_agent_session_summaries.updated_at, excluded.updated_at)
+    `,
+    [sessionId, JSON.stringify(summaryPatch), updatedAt],
+  );
 }
 
 async function pruneOldSessionTurns(
@@ -132,6 +195,38 @@ function parseMetadata(metadata: SessionTurnRow['metadata']): SessionTurnMetadat
   try {
     const parsed = JSON.parse(metadata) as SessionTurnMetadata;
     return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function mapSessionSummaryRow(row: SessionSummaryRow): SessionContextSummary {
+  const parsed = parseSummary(row.summary);
+  return {
+    ...parsed,
+    updatedAt: normalizeCreatedAt(row.updated_at),
+  };
+}
+
+function parseSummary(
+  summary: SessionSummaryRow['summary'],
+): Omit<SessionContextSummary, 'updatedAt'> {
+  const parsed = typeof summary === 'string' ? parseSummaryJson(summary) : summary;
+  if (parsed === null || typeof parsed !== 'object') {
+    return {};
+  }
+
+  return {
+    ...(typeof parsed.productPreference === 'string'
+      ? { productPreference: parsed.productPreference }
+      : {}),
+    ...(typeof parsed.productTopic === 'string' ? { productTopic: parsed.productTopic } : {}),
+  };
+}
+
+function parseSummaryJson(summary: string): Omit<SessionContextSummary, 'updatedAt'> {
+  try {
+    return JSON.parse(summary) as Omit<SessionContextSummary, 'updatedAt'>;
   } catch {
     return {};
   }

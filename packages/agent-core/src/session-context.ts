@@ -17,9 +17,16 @@ export interface SessionTurn {
   role: SessionTurnRole;
 }
 
+export interface SessionContextSummary {
+  productPreference?: string;
+  productTopic?: string;
+  updatedAt: string;
+}
+
 export interface SessionContextStore {
   appendTurn(sessionId: string, turn: SessionTurn): Promise<void>;
   getRecentTurns(sessionId: string, limit?: number): Promise<SessionTurn[]>;
+  getSessionSummary(sessionId: string): Promise<SessionContextSummary | null>;
 }
 
 export interface InMemorySessionContextStoreOptions {
@@ -34,6 +41,7 @@ export function createInMemorySessionContextStore(
 ): SessionContextStore {
   const maxTurnsPerSession = options.maxTurnsPerSession ?? DEFAULT_MAX_TURNS_PER_SESSION;
   const now = options.now ?? (() => new Date());
+  const summariesBySession = new Map<string, SessionContextSummary>();
   const turnsBySession = new Map<string, SessionTurn[]>();
 
   return {
@@ -46,6 +54,14 @@ export function createInMemorySessionContextStore(
       };
       const nextTurns = [...existingTurns, storedTurn].slice(-maxTurnsPerSession);
       turnsBySession.set(sessionId, nextTurns);
+      const summaryPatch = summarizeSessionTurn(storedTurn);
+      if (summaryPatch !== undefined) {
+        summariesBySession.set(sessionId, {
+          ...(summariesBySession.get(sessionId) ?? {}),
+          ...summaryPatch,
+          updatedAt: storedTurn.createdAt,
+        });
+      }
       return Promise.resolve();
     },
 
@@ -53,7 +69,32 @@ export function createInMemorySessionContextStore(
       const turns = turnsBySession.get(sessionId) ?? [];
       return Promise.resolve(turns.slice(-(limit ?? maxTurnsPerSession)));
     },
+
+    getSessionSummary(sessionId) {
+      return Promise.resolve(summariesBySession.get(sessionId) ?? null);
+    },
   };
+}
+
+export function summarizeSessionTurn(
+  turn: SessionTurn,
+): Omit<SessionContextSummary, 'updatedAt'> | undefined {
+  if (turn.metadata?.intent === 'tx_sandwich_detection') {
+    return undefined;
+  }
+
+  const summary: Omit<SessionContextSummary, 'updatedAt'> = {};
+  const productPreference = inferProductPreferenceFromText(turn.content);
+  if (productPreference !== undefined) {
+    summary.productPreference = productPreference;
+  }
+
+  const productTopic = inferProductTopicFromTurn(turn);
+  if (productTopic !== undefined) {
+    summary.productTopic = productTopic;
+  }
+
+  return Object.keys(summary).length === 0 ? undefined : summary;
 }
 
 export function sanitizeSessionText(text: string): string {
@@ -87,4 +128,52 @@ function redactSensitiveCredentials(text: string): string {
     .replace(/(\bbearer\s+)[^\s,，。；;]+/giu, '$1[sensitive_credential]')
     .replace(/(\bsecret\s+key\s*(?:is|:|=)\s*)[^\s,，。；;]+/giu, '$1[sensitive_credential]')
     .replace(/(\b(?:my\s+)?password\s*(?:is|:|=)\s*)[^\s,，。；;]+/giu, '$1[sensitive_credential]');
+}
+
+function inferProductPreferenceFromText(content: string): string | undefined {
+  if (hasMobileProductPreference(content)) {
+    return 'XXYY 移动端登录';
+  }
+  if (hasTelegramProductPreference(content)) {
+    return 'Telegram 钱包监控';
+  }
+  return undefined;
+}
+
+function hasMobileProductPreference(content: string): boolean {
+  return /(?:主要|平时|通常|默认|偏好|习惯|用|使用|入口|版本).*(?:移动端|手机端|手机|mobile|app)|(?:移动端|手机端|mobile|app).*(?:用|使用|入口|版本)/iu.test(
+    content,
+  );
+}
+
+function hasTelegramProductPreference(content: string): boolean {
+  return /(?:主要|平时|通常|默认|偏好|习惯|用|使用|入口|通知).*(?:Telegram|TG)|(?:Telegram|TG).*(?:用|使用|入口|通知|机器人|bot)/iu.test(
+    content,
+  );
+}
+
+function inferProductTopicFromTurn(turn: SessionTurn): string | undefined {
+  if (
+    turn.role !== 'assistant' ||
+    (turn.metadata?.intent !== 'product_qa' && turn.metadata?.intent !== 'how_to') ||
+    turn.metadata.citationCount === undefined ||
+    turn.metadata.citationCount <= 0
+  ) {
+    return undefined;
+  }
+
+  const content = turn.content;
+  if (/XXYY\s*Pro|Pro/u.test(content)) {
+    return 'XXYY Pro';
+  }
+  if (/Telegram|TG|钱包监控/u.test(content)) {
+    return 'Telegram 钱包监控';
+  }
+  if (/自动交易|Raydium自动卖|开盘狙击/u.test(content)) {
+    return 'XXYY 自动交易';
+  }
+  if (/移动端|手机|登录/u.test(content)) {
+    return 'XXYY 移动端登录';
+  }
+  return undefined;
 }

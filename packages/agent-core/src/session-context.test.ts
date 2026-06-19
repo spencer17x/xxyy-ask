@@ -40,6 +40,58 @@ describe('session context', () => {
     await expect(store.getRecentTurns('missing-session')).resolves.toEqual([]);
   });
 
+  it('keeps a safe product summary after older turns are pruned', async () => {
+    const store = createInMemorySessionContextStore({
+      maxTurnsPerSession: 2,
+      now: () => new Date('2026-06-19T00:00:00.000Z'),
+    });
+    const summaryStore = store as typeof store & {
+      getSessionSummary(sessionId: string): Promise<{
+        productPreference?: string;
+        updatedAt: string;
+      } | null>;
+    };
+
+    await store.appendTurn('session-1', {
+      content: '我主要用手机端。',
+      createdAt: '2026-06-19T00:00:00.000Z',
+      metadata: { intent: 'product_qa' },
+      role: 'user',
+    });
+    await store.appendTurn('session-1', {
+      content: '已记录移动端偏好。',
+      createdAt: '2026-06-19T00:00:01.000Z',
+      metadata: { intent: 'product_qa' },
+      role: 'assistant',
+    });
+    await store.appendTurn('session-1', {
+      content: '帮我查一下钱包余额',
+      createdAt: '2026-06-19T00:00:02.000Z',
+      metadata: { intent: 'realtime_account_query' },
+      role: 'user',
+    });
+
+    await expect(store.getRecentTurns('session-1')).resolves.toEqual([
+      {
+        content: '已记录移动端偏好。',
+        createdAt: '2026-06-19T00:00:01.000Z',
+        metadata: { intent: 'product_qa' },
+        role: 'assistant',
+      },
+      {
+        content: '帮我查一下钱包余额',
+        createdAt: '2026-06-19T00:00:02.000Z',
+        metadata: { intent: 'realtime_account_query' },
+        role: 'user',
+      },
+    ]);
+    await expect(summaryStore.getSessionSummary('session-1')).resolves.toEqual({
+      productPreference: 'XXYY 移动端登录',
+      updatedAt: '2026-06-19T00:00:00.000Z',
+    });
+    await expect(summaryStore.getSessionSummary('missing-session')).resolves.toBeNull();
+  });
+
   it('redacts private-looking identifiers while preserving public transaction marker usefulness', () => {
     expect(
       sanitizeSessionText(

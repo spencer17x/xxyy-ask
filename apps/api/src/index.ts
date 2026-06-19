@@ -2285,6 +2285,14 @@ function createApiSessionContextStore(
           return fallback.getRecentTurns(sessionId, limit);
         }
       },
+
+      async getSessionSummary(sessionId) {
+        try {
+          return await primary.getSessionSummary(sessionId);
+        } catch {
+          return fallback.getSessionSummary(sessionId);
+        }
+      },
     };
   } catch {
     return fallback;

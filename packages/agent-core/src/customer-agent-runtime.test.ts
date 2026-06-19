@@ -936,6 +936,58 @@ describe('createCustomerAgentRuntime', () => {
     });
   });
 
+  it('uses safe session summaries to resolve product follow-ups after older turns are pruned', async () => {
+    const registry = createToolRegistry();
+    const sessionContext = createInMemorySessionContextStore({ maxTurnsPerSession: 2 });
+    const response: ChatResponse = {
+      answer: '移动端可以使用手机号或钱包入口登录。',
+      citations: [
+        {
+          excerpt: '移动端登录入口说明。',
+          file: 'docs/product-features/mobile.md',
+          title: '移动端登录',
+        },
+      ],
+      confidence: 0.82,
+      intent: 'how_to',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ registry, sessionContext });
+    await runtime.ask({
+      channel: 'web',
+      message: '我主要用手机端。',
+      sessionId: 'session-product-summary',
+    });
+    await runtime.ask({
+      channel: 'web',
+      message: '帮我查一下钱包余额',
+      sessionId: 'session-product-summary',
+    });
+    await runtime.ask({
+      channel: 'web',
+      message: '怎么登录？',
+      sessionId: 'session-product-summary',
+    });
+
+    expect(execute).toHaveBeenLastCalledWith({
+      channel: 'web',
+      question: 'XXYY 移动端登录 怎么登录？',
+    });
+  });
+
   it('uses session context to resolve product upgrade-location follow-ups', async () => {
     const registry = createToolRegistry();
     const sessionContext = createInMemorySessionContextStore();
@@ -1275,6 +1327,7 @@ describe('createCustomerAgentRuntime', () => {
       sessionContext: {
         appendTurn: () => Promise.reject(new Error('session append unavailable')),
         getRecentTurns: () => Promise.resolve([]),
+        getSessionSummary: () => Promise.resolve(null),
       },
     }).ask({
       channel: 'web',
@@ -1955,6 +2008,7 @@ describe('createCustomerAgentRuntime', () => {
       sessionContext: {
         appendTurn: () => Promise.resolve(),
         getRecentTurns: () => Promise.reject(new Error('session store unavailable')),
+        getSessionSummary: () => Promise.resolve(null),
       },
     }).ask({
       channel: 'web',
@@ -2021,6 +2075,7 @@ describe('createCustomerAgentRuntime', () => {
         sessionContext: {
           appendTurn: () => Promise.reject(new Error('session append unavailable')),
           getRecentTurns: () => Promise.resolve([]),
+          getSessionSummary: () => Promise.resolve(null),
         },
       }).ask({
         channel: 'web',
