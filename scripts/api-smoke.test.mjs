@@ -1614,6 +1614,62 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when tool audit token usage is missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.toolAudit.tokenUsage;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid tool audit token usage.',
+    );
+  });
+
+  it('fails ops summary smoke when tool audit by-tool token usage totals drift', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      toolAudit: {
+        ...opsSummaryPayload().toolAudit,
+        toolTokenUsage: {
+          answer_product_question: {
+            completionTokens: 100,
+            promptTokens: 299,
+            totalTokens: 400,
+          },
+        },
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary tool audit by-tool token usage must match total token usage.',
+    );
+  });
+
   it('fails ops summary smoke when recent tool audit failures are malformed', async () => {
     const messages = [];
     const payload = opsSummaryPayload({
@@ -6503,10 +6559,22 @@ function opsSummaryPayload(overrides = {}) {
         },
       ],
       successCount: 2,
+      tokenUsage: {
+        completionTokens: 100,
+        promptTokens: 300,
+        totalTokens: 400,
+      },
       toolStatusCounts: {
         answer_product_question: {
           failure: 1,
           success: 2,
+        },
+      },
+      toolTokenUsage: {
+        answer_product_question: {
+          completionTokens: 100,
+          promptTokens: 300,
+          totalTokens: 400,
         },
       },
       totalCount: 3,

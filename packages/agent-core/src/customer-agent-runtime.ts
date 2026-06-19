@@ -171,6 +171,7 @@ export function createCustomerAgentRuntime(
     audit.record({
       channel: request.channel,
       citationCount: response.citations.length,
+      ...toolAuditTokenUsage(response),
       intent,
       latencyMs: Date.now() - startedAt,
       sessionIdPresent: request.sessionId !== undefined,
@@ -570,6 +571,24 @@ function recordToolFailure(
   });
 }
 
+function toolAuditTokenUsage(
+  response: ChatResponse,
+): Pick<ToolAuditEvent, 'completionTokenCount' | 'promptTokenCount' | 'totalTokenCount'> {
+  if (response.tokenUsage === undefined) {
+    return {};
+  }
+
+  return {
+    ...(response.tokenUsage.completionTokens === undefined
+      ? {}
+      : { completionTokenCount: response.tokenUsage.completionTokens }),
+    ...(response.tokenUsage.promptTokens === undefined
+      ? {}
+      : { promptTokenCount: response.tokenUsage.promptTokens }),
+    totalTokenCount: response.tokenUsage.totalTokens,
+  };
+}
+
 function isProductConfigurationError(error: unknown): boolean {
   if (error instanceof LlmConfigurationError || error instanceof VectorStoreConfigurationError) {
     return true;
@@ -894,6 +913,7 @@ function streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEve
       citations: response.citations,
       confidence: response.confidence,
       intent: response.intent,
+      ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
     },
   ]);
 }

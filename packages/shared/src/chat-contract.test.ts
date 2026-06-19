@@ -44,11 +44,17 @@ describe('chat contract', () => {
       ],
       confidence: 0.8,
       intent: 'product_qa',
+      tokenUsage: {
+        completionTokens: 36,
+        promptTokens: 120,
+        totalTokens: 156,
+      },
     };
 
     expect(request.channel).toBe('web');
     expect(response.citations[0]?.title).toBe('Pro');
     expect(response.attachments?.[0]?.kind).toBe('video');
+    expect(response.tokenUsage?.totalTokens).toBe(156);
   });
 
   it('allows image attachments for transaction analysis screenshots', () => {

@@ -1,4 +1,4 @@
-import type { ChatAttachment, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
+import type { ChatAttachment, ChatResponse, ChatStreamEvent, ChatTokenUsage } from '@xxyy/shared';
 
 import {
   createAttachmentsFromChunks,
@@ -23,6 +23,11 @@ interface ChatCompletionResponse {
       content?: string;
     };
   }>;
+  usage?: {
+    completion_tokens?: unknown;
+    prompt_tokens?: unknown;
+    total_tokens?: unknown;
+  };
 }
 
 interface ChatCompletionStreamResponse {
@@ -119,12 +124,15 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
       }
 
       return withOptionalAttachments(
-        {
-          answer,
-          citations,
-          confidence: calculateLlmConfidence(input.classification.confidence),
-          intent: input.classification.intent,
-        },
+        withOptionalTokenUsage(
+          {
+            answer,
+            citations,
+            confidence: calculateLlmConfidence(input.classification.confidence),
+            intent: input.classification.intent,
+          },
+          parseChatTokenUsage(payload.usage),
+        ),
         attachments,
       );
     },
@@ -321,6 +329,13 @@ function withOptionalAttachments(
   return { ...response, attachments };
 }
 
+function withOptionalTokenUsage(
+  response: ChatResponse,
+  tokenUsage: ChatTokenUsage | undefined,
+): ChatResponse {
+  return tokenUsage === undefined ? response : { ...response, tokenUsage };
+}
+
 function withOptionalMetadataAttachments(
   event: Extract<ChatStreamEvent, { type: 'metadata' }>,
   attachments: ChatAttachment[],
@@ -343,8 +358,41 @@ function streamStaticAnswer(response: ChatResponse): AsyncIterable<ChatStreamEve
       citations: response.citations,
       confidence: response.confidence,
       intent: response.intent,
+      ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
     },
   ]);
+}
+
+function parseChatTokenUsage(
+  usage: ChatCompletionResponse['usage'] | undefined,
+): ChatTokenUsage | undefined {
+  if (usage === undefined) {
+    return undefined;
+  }
+
+  const promptTokens = parseTokenCount(usage.prompt_tokens);
+  const completionTokens = parseTokenCount(usage.completion_tokens);
+  const totalTokens =
+    parseTokenCount(usage.total_tokens) ??
+    (promptTokens === undefined && completionTokens === undefined
+      ? undefined
+      : (promptTokens ?? 0) + (completionTokens ?? 0));
+
+  if (totalTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(completionTokens === undefined ? {} : { completionTokens }),
+    ...(promptTokens === undefined ? {} : { promptTokens }),
+    totalTokens,
+  };
+}
+
+function parseTokenCount(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.trunc(value)
+    : undefined;
 }
 
 async function* toAsyncIterable<T>(items: Iterable<T>): AsyncIterable<T> {

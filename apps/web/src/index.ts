@@ -2100,6 +2100,7 @@ export function renderOpsPage(): string {
           metric("Session Summaries", summary.sessionContext?.summarizedSessionCount || 0, (summary.sessionContext?.summarizedSessionCount || 0) > 0 ? "ok" : "warn"),
           metric("Stale Sessions", summary.sessionContext?.staleSummaryCount || 0, (summary.sessionContext?.staleSummaryCount || 0) > 0 ? "warn" : "ok"),
           metric("Tool Failures", summary.toolAudit?.failureCount || 0, (summary.toolAudit?.failureCount || 0) > 0 ? "warn" : "ok"),
+          metric("Tool Tokens", summary.toolAudit?.tokenUsage?.totalTokens || 0, "ok"),
           metric("Candidates", summary.knowledgeCandidateQueues?.needsReviewCount || 0, (summary.knowledgeCandidateQueues?.needsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Quality Gaps", summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0, (summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Stale Gaps", summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0, (summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0) > 0 ? "error" : "ok"),
@@ -2125,7 +2126,12 @@ export function renderOpsPage(): string {
               "source-row",
               "Tool · " + toolName,
               String((counts.success || 0) + (counts.failure || 0)),
-              "success " + String(counts.success || 0) + " · failure " + String(counts.failure || 0),
+              "success " +
+                String(counts.success || 0) +
+                " · failure " +
+                String(counts.failure || 0) +
+                " · tokens " +
+                String(summary.toolTokenUsage?.[toolName]?.totalTokens || 0),
             ),
           );
         const errorRows = Object.entries(summary.failureErrorCodeCounts || {})
@@ -2153,6 +2159,12 @@ export function renderOpsPage(): string {
             "Total tool calls",
             String(summary.totalCount || 0),
             "success " + String(summary.successCount || 0) + " · failure " + String(summary.failureCount || 0),
+          ),
+          row(
+            "source-row",
+            "Tokens " + String(summary.tokenUsage?.totalTokens || 0),
+            "prompt " + String(summary.tokenUsage?.promptTokens || 0),
+            "completion " + String(summary.tokenUsage?.completionTokens || 0),
           ),
           ...(toolRows.length === 0 ? [empty("No audited tool calls.")] : toolRows),
           ...errorRows,

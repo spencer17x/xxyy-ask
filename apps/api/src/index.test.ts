@@ -399,10 +399,22 @@ describe('createRequestHandler', () => {
           },
         ],
         successCount: 2,
+        tokenUsage: {
+          completionTokens: 100,
+          promptTokens: 300,
+          totalTokens: 400,
+        },
         toolStatusCounts: {
           answer_product_question: {
             failure: 1,
             success: 2,
+          },
+        },
+        toolTokenUsage: {
+          answer_product_question: {
+            completionTokens: 100,
+            promptTokens: 300,
+            totalTokens: 400,
           },
         },
         totalCount: 3,
@@ -525,7 +537,13 @@ describe('createRequestHandler', () => {
         failureErrorCodeCounts: {},
         recentFailures: [],
         successCount: 0,
+        tokenUsage: {
+          completionTokens: 0,
+          promptTokens: 0,
+          totalTokens: 0,
+        },
         toolStatusCounts: {},
+        toolTokenUsage: {},
         totalCount: 0,
         windowStartedAt: '2026-06-05T02:04:05.000Z',
       },
@@ -607,9 +625,12 @@ describe('createRequestHandler', () => {
           return Promise.resolve({
             rows: [
               {
+                completion_token_count: '100',
                 failure_count: '1',
                 latest_event_created_at: '2026-06-19T07:58:00.000Z',
+                prompt_token_count: '300',
                 success_count: '2',
+                total_token_count: '400',
                 total_count: '3',
               },
             ],
@@ -623,8 +644,11 @@ describe('createRequestHandler', () => {
           return Promise.resolve({
             rows: [
               {
+                completion_token_count: '100',
                 failure_count: '1',
+                prompt_token_count: '300',
                 success_count: '2',
+                total_token_count: '400',
                 tool_name: 'answer_product_question',
               },
             ],
@@ -1193,10 +1217,22 @@ describe('createRequestHandler', () => {
             },
           ],
           successCount: 2,
+          tokenUsage: {
+            completionTokens: 100,
+            promptTokens: 300,
+            totalTokens: 400,
+          },
           toolStatusCounts: {
             answer_product_question: {
               failure: 1,
               success: 2,
+            },
+          },
+          toolTokenUsage: {
+            answer_product_question: {
+              completionTokens: 100,
+              promptTokens: 300,
+              totalTokens: 400,
             },
           },
           totalCount: 3,

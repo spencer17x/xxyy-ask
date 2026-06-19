@@ -1281,6 +1281,10 @@ function validateToolAuditSummary(value) {
     return 'ops summary must include valid tool audit counts and recent failures.';
   }
 
+  if (!hasToolTokenUsage(value.tokenUsage) || !hasToolTokenUsageByTool(value.toolTokenUsage)) {
+    return 'ops summary must include valid tool audit token usage.';
+  }
+
   if (value.totalCount > 0 && !isCleanNonEmptyString(value.latestEventCreatedAt)) {
     return 'ops summary must include valid tool audit latest timestamps.';
   }
@@ -1298,6 +1302,22 @@ function validateToolAuditSummary(value) {
   );
   if (toolTotals.success !== value.successCount || toolTotals.failure !== value.failureCount) {
     return 'ops summary tool audit by-tool counts must match success and failure totals.';
+  }
+
+  const toolTokenTotals = Object.values(value.toolTokenUsage).reduce(
+    (totals, usage) => ({
+      completionTokens: totals.completionTokens + usage.completionTokens,
+      promptTokens: totals.promptTokens + usage.promptTokens,
+      totalTokens: totals.totalTokens + usage.totalTokens,
+    }),
+    { completionTokens: 0, promptTokens: 0, totalTokens: 0 },
+  );
+  if (
+    toolTokenTotals.completionTokens !== value.tokenUsage.completionTokens ||
+    toolTokenTotals.promptTokens !== value.tokenUsage.promptTokens ||
+    toolTokenTotals.totalTokens !== value.tokenUsage.totalTokens
+  ) {
+    return 'ops summary tool audit by-tool token usage must match total token usage.';
   }
 
   const errorTotal = Object.values(value.failureErrorCodeCounts).reduce(
@@ -1538,6 +1558,25 @@ function hasToolStatusCounts(value) {
       isRecord(counts) &&
       isNonNegativeInteger(counts.success) &&
       isNonNegativeInteger(counts.failure),
+  );
+}
+
+function hasToolTokenUsage(value) {
+  return (
+    isRecord(value) &&
+    isNonNegativeInteger(value.completionTokens) &&
+    isNonNegativeInteger(value.promptTokens) &&
+    isNonNegativeInteger(value.totalTokens)
+  );
+}
+
+function hasToolTokenUsageByTool(value) {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Object.entries(value).every(
+    ([toolName, usage]) => isCleanNonEmptyString(toolName) && hasToolTokenUsage(usage),
   );
 }
 

@@ -44,7 +44,7 @@ export OPENAI_MODEL="你的模型名"
 默认使用 OpenAI 兼容的 Chat Completions 接口，`OPENAI_BASE_URL` 默认是 `https://api.openai.com/v1`。如果使用兼容服务，可以把 `OPENAI_BASE_URL` 改成对应地址。
 完整配置项以仓库根目录 `.env.example` 为准；`README.md` 里的启动配置块也保留了当前常用变量。
 API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
-配置 `API_OPS_TOKEN` 后会启用受保护的 `GET /api/ops/summary` 运维摘要接口，请求需带 `Authorization: Bearer <token>` 或 `x-ops-token`。该接口聚合 deep health、知识库 stats、反馈 stats、候选知识队列、最近 eval 失败和最近自动回答质量缺口摘要，适合接生产监控、后台页或告警系统。
+配置 `API_OPS_TOKEN` 后会启用受保护的 `GET /api/ops/summary` 运维摘要接口，请求需带 `Authorization: Bearer <token>` 或 `x-ops-token`。该接口聚合 deep health、知识库 stats、反馈 stats、候选知识队列、最近 eval 失败、自动回答质量缺口、工具审计和模型 token 使用量摘要，适合接生产监控、后台页或告警系统。
 启动 API 后可以打开 `/ops` 查看同源运维页面；页面不会内置 token，需要手动输入 `API_OPS_TOKEN` 后加载 summary。
 
 常用命令：

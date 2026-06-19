@@ -111,6 +111,13 @@ export interface ChatResponse {
   confidence: number;
   agentRoute?: AgentRoute;
   attachments?: ChatAttachment[];
+  tokenUsage?: ChatTokenUsage;
+}
+
+export interface ChatTokenUsage {
+  completionTokens?: number;
+  promptTokens?: number;
+  totalTokens: number;
 }
 
 export type ChatStreamEvent =
@@ -125,6 +132,7 @@ export type ChatStreamEvent =
       confidence: number;
       agentRoute?: AgentRoute;
       attachments?: ChatAttachment[];
+      tokenUsage?: ChatTokenUsage;
     };
 
 export interface SourceDocument {

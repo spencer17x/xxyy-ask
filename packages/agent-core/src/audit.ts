@@ -8,14 +8,17 @@ export interface ToolAuditEvent {
   candidateId?: string;
   channel?: string;
   citationCount?: number;
+  completionTokenCount?: number;
   errorCode?: string;
   intent?: string;
   latencyMs: number;
+  promptTokenCount?: number;
   reportId?: string;
   sessionIdPresent?: boolean;
   sourceId?: string;
   status: ToolAuditStatus;
   toolName: string;
+  totalTokenCount?: number;
   userIdPresent?: boolean;
 }
 
@@ -43,6 +46,12 @@ export interface ToolAuditStatusCounts {
   success: number;
 }
 
+export interface ToolAuditTokenUsage {
+  completionTokens: number;
+  promptTokens: number;
+  totalTokens: number;
+}
+
 export interface RecentToolAuditFailure {
   channel?: string;
   createdAt: string;
@@ -58,7 +67,9 @@ export interface PgToolAuditOpsSummary {
   latestEventCreatedAt?: string;
   recentFailures: RecentToolAuditFailure[];
   successCount: number;
+  tokenUsage: ToolAuditTokenUsage;
   toolStatusCounts: Record<string, ToolAuditStatusCounts>;
+  toolTokenUsage: Record<string, ToolAuditTokenUsage>;
   totalCount: number;
   windowStartedAt: string;
 }
@@ -66,13 +77,19 @@ export interface PgToolAuditOpsSummary {
 interface ToolAuditSummaryStatsRow {
   failure_count?: number | string | null;
   latest_event_created_at?: Date | string | null;
+  completion_token_count?: number | string | null;
+  prompt_token_count?: number | string | null;
   success_count?: number | string | null;
+  total_token_count?: number | string | null;
   total_count?: number | string | null;
 }
 
 interface ToolAuditStatusCountRow {
+  completion_token_count?: number | string | null;
   failure_count?: number | string | null;
+  prompt_token_count?: number | string | null;
   success_count?: number | string | null;
+  total_token_count?: number | string | null;
   tool_name?: string | null;
 }
 
@@ -120,9 +137,12 @@ export function createPgToolAuditSink(options: CreatePgToolAuditSinkOptions): To
               source_id,
               candidate_id,
               session_id_present,
-              user_id_present
+              user_id_present,
+              prompt_token_count,
+              completion_token_count,
+              total_token_count
             )
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             `,
             [
               normalizeRequiredText(event.toolName),
@@ -137,6 +157,9 @@ export function createPgToolAuditSink(options: CreatePgToolAuditSinkOptions): To
               normalizeOptionalText(event.candidateId),
               event.sessionIdPresent ?? null,
               event.userIdPresent ?? null,
+              normalizeOptionalCount(event.promptTokenCount),
+              normalizeOptionalCount(event.completionTokenCount),
+              normalizeOptionalCount(event.totalTokenCount),
             ],
           )
           .catch(() => undefined);
@@ -163,8 +186,23 @@ export async function migratePgToolAuditStore(client: PgToolAuditClientLike): Pr
       candidate_id text,
       session_id_present boolean,
       user_id_present boolean,
+      prompt_token_count integer,
+      completion_token_count integer,
+      total_token_count integer,
       created_at timestamptz not null default now()
     )
+  `);
+  await client.query(`
+    alter table customer_agent_tool_audit_events
+      add column if not exists prompt_token_count integer
+  `);
+  await client.query(`
+    alter table customer_agent_tool_audit_events
+      add column if not exists completion_token_count integer
+  `);
+  await client.query(`
+    alter table customer_agent_tool_audit_events
+      add column if not exists total_token_count integer
   `);
   await client.query(`
     create index if not exists customer_agent_tool_audit_events_created_idx
@@ -183,9 +221,9 @@ export async function summarizePgToolAudit(
   const recentFailureLimit = options.recentFailureLimit ?? DEFAULT_RECENT_TOOL_FAILURE_LIMIT;
   const windowMs = options.windowMs ?? DEFAULT_TOOL_AUDIT_WINDOW_MS;
   const windowStartedAt = new Date(nowMs - windowMs).toISOString();
-  const [stats, toolStatusCounts, failureErrorCodeCounts, recentFailures] = await Promise.all([
+  const [stats, toolSummary, failureErrorCodeCounts, recentFailures] = await Promise.all([
     queryToolAuditStats(options.client, windowStartedAt),
-    queryToolAuditStatusCounts(options.client, windowStartedAt),
+    queryToolAuditToolSummary(options.client, windowStartedAt),
     queryToolAuditFailureErrorCounts(options.client, windowStartedAt),
     queryRecentToolAuditFailures(options.client, windowStartedAt, recentFailureLimit),
   ]);
@@ -196,7 +234,9 @@ export async function summarizePgToolAudit(
     failureErrorCodeCounts,
     recentFailures,
     successCount: stats.successCount,
-    toolStatusCounts,
+    tokenUsage: stats.tokenUsage,
+    toolStatusCounts: toolSummary.statusCounts,
+    toolTokenUsage: toolSummary.tokenUsage,
     totalCount: stats.totalCount,
     windowStartedAt,
   };
@@ -209,6 +249,7 @@ async function queryToolAuditStats(
   failureCount: number;
   latestEventCreatedAt?: string;
   successCount: number;
+  tokenUsage: ToolAuditTokenUsage;
   totalCount: number;
 }> {
   const response = await client.query<ToolAuditSummaryStatsRow>(
@@ -217,6 +258,9 @@ async function queryToolAuditStats(
       count(*) as total_count,
       count(*) filter (where status = 'success') as success_count,
       count(*) filter (where status = 'failure') as failure_count,
+      coalesce(sum(prompt_token_count), 0) as prompt_token_count,
+      coalesce(sum(completion_token_count), 0) as completion_token_count,
+      coalesce(sum(total_token_count), 0) as total_token_count,
       max(created_at) as latest_event_created_at
     from customer_agent_tool_audit_events
     where created_at >= $1::timestamptz
@@ -229,20 +273,27 @@ async function queryToolAuditStats(
     failureCount: parseCount(row?.failure_count),
     ...optionalDate('latestEventCreatedAt', row?.latest_event_created_at),
     successCount: parseCount(row?.success_count),
+    tokenUsage: tokenUsageFromRow(row),
     totalCount: parseCount(row?.total_count),
   };
 }
 
-async function queryToolAuditStatusCounts(
+async function queryToolAuditToolSummary(
   client: PgToolAuditClientLike,
   windowStartedAt: string,
-): Promise<Record<string, ToolAuditStatusCounts>> {
+): Promise<{
+  statusCounts: Record<string, ToolAuditStatusCounts>;
+  tokenUsage: Record<string, ToolAuditTokenUsage>;
+}> {
   const response = await client.query<ToolAuditStatusCountRow>(
     `
     select
       tool_name,
       count(*) filter (where status = 'success') as success_count,
-      count(*) filter (where status = 'failure') as failure_count
+      count(*) filter (where status = 'failure') as failure_count,
+      coalesce(sum(prompt_token_count), 0) as prompt_token_count,
+      coalesce(sum(completion_token_count), 0) as completion_token_count,
+      coalesce(sum(total_token_count), 0) as total_token_count
     from customer_agent_tool_audit_events
     where created_at >= $1::timestamptz
     group by tool_name
@@ -251,6 +302,7 @@ async function queryToolAuditStatusCounts(
     [windowStartedAt],
   );
   const counts = new Map<string, ToolAuditStatusCounts>();
+  const tokenUsage = new Map<string, ToolAuditTokenUsage>();
   for (const row of response.rows) {
     const toolName = normalizeOptionalText(row.tool_name);
     if (toolName === null) {
@@ -260,9 +312,13 @@ async function queryToolAuditStatusCounts(
       failure: parseCount(row.failure_count),
       success: parseCount(row.success_count),
     });
+    tokenUsage.set(toolName, tokenUsageFromRow(row));
   }
 
-  return Object.fromEntries(counts.entries());
+  return {
+    statusCounts: Object.fromEntries(counts.entries()),
+    tokenUsage: Object.fromEntries(tokenUsage.entries()),
+  };
 }
 
 async function queryToolAuditFailureErrorCounts(
@@ -371,6 +427,22 @@ function parseCount(value: number | string | null | undefined): number {
   }
 
   return 0;
+}
+
+function tokenUsageFromRow(
+  row:
+    | {
+        completion_token_count?: number | string | null;
+        prompt_token_count?: number | string | null;
+        total_token_count?: number | string | null;
+      }
+    | undefined,
+): ToolAuditTokenUsage {
+  return {
+    completionTokens: parseCount(row?.completion_token_count),
+    promptTokens: parseCount(row?.prompt_token_count),
+    totalTokens: parseCount(row?.total_token_count),
+  };
 }
 
 function optionalDate<Key extends string>(

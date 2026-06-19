@@ -50,6 +50,9 @@ describe('createPgToolAuditSink', () => {
     const sql = client.queries.map((query) => query.sql).join('\n');
     expect(sql).toContain('create table if not exists customer_agent_tool_audit_events');
     expect(sql).toContain("status text not null check (status in ('failure', 'success'))");
+    expect(sql).toContain('prompt_token_count integer');
+    expect(sql).toContain('completion_token_count integer');
+    expect(sql).toContain('total_token_count integer');
     expect(sql).toContain('customer_agent_tool_audit_events_created_idx');
     expect(sql).toContain('customer_agent_tool_audit_events_tool_status_idx');
   });
@@ -61,14 +64,17 @@ describe('createPgToolAuditSink', () => {
     sink.record({
       channel: ' web ',
       citationCount: 2,
+      completionTokenCount: 30.7,
       errorCode: ' TimeoutError ',
       intent: ' product_qa ',
       latencyMs: 12.8,
+      promptTokenCount: 100.9,
       reportId: ' report-1 ',
       sessionIdPresent: true,
       sourceId: ' source-1 ',
       status: 'failure',
       toolName: ' answer_product_question ',
+      totalTokenCount: 131.2,
       userIdPresent: false,
     });
 
@@ -87,6 +93,9 @@ describe('createPgToolAuditSink', () => {
       null,
       true,
       false,
+      100,
+      30,
+      131,
     ]);
   });
 
@@ -97,9 +106,12 @@ describe('createPgToolAuditSink', () => {
         expect(values).toEqual(['2026-06-18T08:00:00.000Z']);
         return [
           {
+            completion_token_count: '150',
             failure_count: '2',
             latest_event_created_at: '2026-06-19T07:58:00.000Z',
+            prompt_token_count: '450',
             success_count: '3',
+            total_token_count: '600',
             total_count: '5',
           },
         ];
@@ -108,13 +120,19 @@ describe('createPgToolAuditSink', () => {
         expect(values).toEqual(['2026-06-18T08:00:00.000Z']);
         return [
           {
+            completion_token_count: '100',
             failure_count: '1',
+            prompt_token_count: '300',
             success_count: '2',
+            total_token_count: '400',
             tool_name: 'answer_product_question',
           },
           {
+            completion_token_count: '50',
             failure_count: '1',
+            prompt_token_count: '150',
             success_count: '1',
+            total_token_count: '200',
             tool_name: 'analyze_transaction',
           },
         ];
@@ -183,6 +201,11 @@ describe('createPgToolAuditSink', () => {
         },
       ],
       successCount: 3,
+      tokenUsage: {
+        completionTokens: 150,
+        promptTokens: 450,
+        totalTokens: 600,
+      },
       toolStatusCounts: {
         analyze_transaction: {
           failure: 1,
@@ -191,6 +214,18 @@ describe('createPgToolAuditSink', () => {
         answer_product_question: {
           failure: 1,
           success: 2,
+        },
+      },
+      toolTokenUsage: {
+        analyze_transaction: {
+          completionTokens: 50,
+          promptTokens: 150,
+          totalTokens: 200,
+        },
+        answer_product_question: {
+          completionTokens: 100,
+          promptTokens: 300,
+          totalTokens: 400,
         },
       },
       totalCount: 5,

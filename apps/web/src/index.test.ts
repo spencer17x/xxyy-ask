@@ -129,6 +129,7 @@ describe('renderOpsPage', () => {
     );
     expect(html).toContain('renderToolAudit(summary.toolAudit)');
     expect(html).toContain('summary.knowledgeCandidateQueues?.needsReviewCount || 0');
+    expect(html).toContain('summary.toolAudit?.tokenUsage?.totalTokens || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.oldestQualitySignalCreatedAt');
     expect(html).toContain(
@@ -194,6 +195,9 @@ describe('renderOpsPage', () => {
     expect(html).toContain('summary.productTopicCounts || {}');
     expect(html).toContain('summary.productPreferenceCounts || {}');
     expect(html).toContain('Tool · " + toolName');
+    expect(html).toContain('summary.tokenUsage');
+    expect(html).toContain('summary.toolTokenUsage');
+    expect(html).toContain('Tokens " + String(summary.tokenUsage?.totalTokens || 0)');
     expect(html).toContain('Recent failure · " + failure.toolName');
     expect(html).toContain('failure.errorCode');
     expect(html).toContain('recent.agentRoute');

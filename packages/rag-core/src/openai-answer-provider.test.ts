@@ -29,6 +29,11 @@ describe('createOpenAiAnswerProvider', () => {
               },
             },
           ],
+          usage: {
+            completion_tokens: 32,
+            prompt_tokens: 128,
+            total_tokens: 160,
+          },
         }),
       );
     };
@@ -59,6 +64,11 @@ describe('createOpenAiAnswerProvider', () => {
     expect(response.intent).toBe('how_to');
     expect(response.answer).toContain('Swap 交易页');
     expect(response.citations).toHaveLength(1);
+    expect(response.tokenUsage).toEqual({
+      completionTokens: 32,
+      promptTokens: 128,
+      totalTokens: 160,
+    });
     expect(response.citations[0]).toMatchObject({
       file: 'docs/swap.md',
       title: 'Swap 交易',

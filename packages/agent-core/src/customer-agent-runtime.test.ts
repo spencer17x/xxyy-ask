@@ -38,6 +38,11 @@ describe('createCustomerAgentRuntime', () => {
       ],
       confidence: 0.8,
       intent: 'product_qa',
+      tokenUsage: {
+        completionTokens: 35,
+        promptTokens: 120,
+        totalTokens: 155,
+      },
     };
     const execute = vi.fn(() => Promise.resolve(response));
 
@@ -74,10 +79,13 @@ describe('createCustomerAgentRuntime', () => {
     expect(event).toMatchObject({
       channel: 'web',
       citationCount: 1,
+      completionTokenCount: 35,
       intent: 'product_qa',
       sessionIdPresent: true,
       status: 'success',
       toolName: 'answer_product_question',
+      promptTokenCount: 120,
+      totalTokenCount: 155,
       userIdPresent: false,
     });
   });
