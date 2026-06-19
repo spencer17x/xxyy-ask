@@ -5,6 +5,9 @@ import {
   PRODUCT_TOOL_NAMES,
   answerProductQuestionInputSchema,
   searchProductDocsInputSchema,
+  sanitizeSessionText,
+  type QualitySignalReason,
+  type QualitySignalSink,
 } from '@xxyy/agent-core';
 
 import type { ProductQaToolHandlers } from './tools.js';
@@ -24,6 +27,7 @@ export const PRODUCT_QA_MCP_INSTRUCTIONS = [
 
 export interface CreateProductQaMcpServerOptions {
   handlers: ProductQaToolHandlers;
+  qualitySignals?: QualitySignalSink;
 }
 
 export function createProductQaMcpServer(options: CreateProductQaMcpServerOptions): McpServer {
@@ -64,12 +68,24 @@ export function createProductQaMcpServer(options: CreateProductQaMcpServerOption
       title: 'Answer XXYY Product Question',
     },
     async ({ channel, question }) => {
-      const output = guardProductAnswerOutput(
+      const guarded = guardProductAnswerOutput(
         await options.handlers.answerProductQuestion({
           ...(channel === undefined ? {} : { channel }),
           question,
         }),
       );
+      if (guarded.reason !== undefined) {
+        recordProductQualitySignal(options.qualitySignals, {
+          answer: guarded.response.answer,
+          channel: channel ?? 'agent',
+          citationCount: guarded.original.citations.length,
+          confidence: guarded.original.confidence,
+          intent: guarded.original.intent,
+          question,
+          reason: guarded.reason,
+        });
+      }
+      const output = guarded.response;
       return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
         structuredContent: output as unknown as Record<string, unknown>,
@@ -80,22 +96,61 @@ export function createProductQaMcpServer(options: CreateProductQaMcpServerOption
   return server;
 }
 
-function guardProductAnswerOutput(output: ChatResponse): ChatResponse {
+interface GuardedProductAnswer {
+  original: ChatResponse;
+  reason?: QualitySignalReason;
+  response: ChatResponse;
+}
+
+function guardProductAnswerOutput(output: ChatResponse): GuardedProductAnswer {
   if (containsCustomerHandoffPromise(output.answer)) {
     return {
-      answer:
-        '当前知识库回答包含不适合自动回复的处理路径。为了避免误导，我不会替你创建处理流程；可以继续问我 XXYY 产品功能、配置步骤或权益说明。',
-      citations: [],
-      confidence: 0.25,
-      intent: output.intent,
+      original: output,
+      reason: 'handoff_wording',
+      response: {
+        answer:
+          '当前知识库回答包含不适合自动回复的处理路径。为了避免误导，我不会替你创建处理流程；可以继续问我 XXYY 产品功能、配置步骤或权益说明。',
+        citations: [],
+        confidence: 0.25,
+        intent: output.intent,
+      },
     };
   }
 
   if (isGroundedProductIntent(output.intent) && hasInsufficientProductGrounding(output)) {
-    return createProductKnowledgeInsufficientAnswer(output.intent);
+    return {
+      original: output,
+      reason: productGroundingQualityReason(output),
+      response: createProductKnowledgeInsufficientAnswer(output.intent),
+    };
   }
 
-  return output;
+  return { original: output, response: output };
+}
+
+function recordProductQualitySignal(
+  qualitySignals: QualitySignalSink | undefined,
+  input: {
+    answer: string;
+    channel: 'agent' | 'cli' | 'telegram' | 'web';
+    citationCount: number;
+    confidence: number;
+    intent: ChatResponse['intent'];
+    question: string;
+    reason: QualitySignalReason;
+  },
+): void {
+  qualitySignals?.record({
+    answer: sanitizeSessionText(input.answer),
+    channel: input.channel,
+    citationCount: input.citationCount,
+    confidence: input.confidence,
+    intent: input.intent,
+    reason: input.reason,
+    redactedQuestion: sanitizeSessionText(input.question),
+    sessionIdPresent: false,
+    userIdPresent: false,
+  });
 }
 
 function createProductKnowledgeInsufficientAnswer(intent: ChatResponse['intent']): ChatResponse {
@@ -114,6 +169,17 @@ function isGroundedProductIntent(intent: ChatResponse['intent']): boolean {
 
 function hasInsufficientProductGrounding(output: ChatResponse): boolean {
   return output.citations.length === 0 || output.confidence < PRODUCT_ANSWER_CONFIDENCE_THRESHOLD;
+}
+
+function productGroundingQualityReason(output: ChatResponse): QualitySignalReason {
+  const missingCitations = output.citations.length === 0;
+  const lowConfidence = output.confidence < PRODUCT_ANSWER_CONFIDENCE_THRESHOLD;
+
+  if (missingCitations && lowConfidence) {
+    return 'low_confidence_missing_citations';
+  }
+
+  return missingCitations ? 'missing_citations' : 'low_confidence';
 }
 
 function containsCustomerHandoffPromise(answer: string): boolean {

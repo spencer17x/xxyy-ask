@@ -126,6 +126,9 @@ importers:
       '@xxyy/knowledge':
         specifier: workspace:*
         version: link:../knowledge
+      '@xxyy/knowledge-ops':
+        specifier: workspace:*
+        version: link:../knowledge-ops
       '@xxyy/rag-core':
         specifier: workspace:*
         version: link:../rag-core

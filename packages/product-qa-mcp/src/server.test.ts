@@ -165,6 +165,7 @@ describe('product QA MCP server', () => {
   });
 
   it('blocks answer_product_question output with missing citations', async () => {
+    const qualitySignals: unknown[] = [];
     const server = createProductQaMcpServer({
       handlers: {
         answerProductQuestion() {
@@ -177,6 +178,11 @@ describe('product QA MCP server', () => {
         },
         searchProductDocs() {
           throw new Error('search should not be called');
+        },
+      },
+      qualitySignals: {
+        record(signal) {
+          qualitySignals.push(signal);
         },
       },
     });
@@ -193,9 +199,24 @@ describe('product QA MCP server', () => {
     });
     expect(JSON.stringify(output)).toContain('当前知识库没有足够资料确认这个问题');
     expect(JSON.stringify(output)).not.toContain('一定支持');
+    expect(qualitySignals).toEqual([
+      {
+        answer:
+          '当前知识库没有足够资料确认这个问题。为了避免误导，我不会编造产品细节；请补充更具体的功能、权益或配置步骤，或稍后在知识库更新后再问。',
+        channel: 'agent',
+        citationCount: 0,
+        confidence: 0.9,
+        intent: 'product_qa',
+        reason: 'missing_citations',
+        redactedQuestion: 'XXYY 支持这个功能吗？',
+        sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
   });
 
   it('blocks answer_product_question output with low confidence', async () => {
+    const qualitySignals: unknown[] = [];
     const server = createProductQaMcpServer({
       handlers: {
         answerProductQuestion() {
@@ -216,6 +237,11 @@ describe('product QA MCP server', () => {
           throw new Error('search should not be called');
         },
       },
+      qualitySignals: {
+        record(signal) {
+          qualitySignals.push(signal);
+        },
+      },
     });
 
     const handler = getToolHandler<{ question: string }>(server, 'answer_product_question');
@@ -230,9 +256,24 @@ describe('product QA MCP server', () => {
     });
     expect(JSON.stringify(output)).toContain('当前知识库没有足够资料确认这个问题');
     expect(JSON.stringify(output)).not.toContain('999 USDT');
+    expect(qualitySignals).toEqual([
+      {
+        answer:
+          '当前知识库没有足够资料确认这个问题。为了避免误导，我不会编造产品细节；请补充更具体的功能、权益或配置步骤，或稍后在知识库更新后再问。',
+        channel: 'agent',
+        citationCount: 1,
+        confidence: 0.2,
+        intent: 'product_qa',
+        reason: 'low_confidence',
+        redactedQuestion: 'XXYY Pro 价格是多少？',
+        sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
   });
 
   it('blocks answer_product_question output that promises ticket or human handoff handling', async () => {
+    const qualitySignals: unknown[] = [];
     const server = createProductQaMcpServer({
       handlers: {
         answerProductQuestion() {
@@ -253,6 +294,11 @@ describe('product QA MCP server', () => {
           throw new Error('search should not be called');
         },
       },
+      qualitySignals: {
+        record(signal) {
+          qualitySignals.push(signal);
+        },
+      },
     });
 
     const handler = getToolHandler<{ question: string }>(server, 'answer_product_question');
@@ -267,5 +313,19 @@ describe('product QA MCP server', () => {
     });
     expect(JSON.stringify(output)).toContain('不适合自动回复');
     expect(JSON.stringify(output)).not.toMatch(/提交工单|人工客服|人工接管|转人工/u);
+    expect(qualitySignals).toEqual([
+      {
+        answer:
+          '当前知识库回答包含不适合自动回复的处理路径。为了避免误导，我不会替你创建处理流程；可以继续问我 XXYY 产品功能、配置步骤或权益说明。',
+        channel: 'agent',
+        citationCount: 1,
+        confidence: 0.88,
+        intent: 'product_qa',
+        reason: 'handoff_wording',
+        redactedQuestion: 'XXYY Pro 异常怎么处理？',
+        sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
   });
 });

@@ -1,5 +1,6 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createOpenAiEmbeddingProvider } from '@xxyy/knowledge';
+import { createPgKnowledgeOpsStore } from '@xxyy/knowledge-ops';
 import {
   createLazyRetriever,
   createOpenAiAnswerProvider,
@@ -13,6 +14,7 @@ import {
 
 import { createProductQaMcpServer } from './server.js';
 import { createProductQaToolHandlers } from './tools.js';
+import { createProductQaMcpQualitySignalRuntime } from './quality-signals.js';
 
 const env = loadWorkspaceEnv({
   cwd: resolveWorkspaceCwd(process.cwd(), process.env),
@@ -20,6 +22,7 @@ const env = loadWorkspaceEnv({
 });
 const config = loadRagConfig(env);
 let vectorPool: ReturnType<typeof createPgPool> | undefined;
+let qualityPool: ReturnType<typeof createPgPool> | undefined;
 
 const retriever = createLazyRetriever(async () => {
   const nextPool = createPgPool(config.databaseUrl);
@@ -39,6 +42,12 @@ const retriever = createLazyRetriever(async () => {
     throw error;
   }
 });
+const qualitySignals = createProductQaMcpQualitySignalRuntime({
+  getStore() {
+    qualityPool ??= createPgPool(config.databaseUrl);
+    return createPgKnowledgeOpsStore({ client: qualityPool });
+  },
+});
 
 const server = createProductQaMcpServer({
   handlers: createProductQaToolHandlers({
@@ -46,6 +55,7 @@ const server = createProductQaMcpServer({
     config,
     retriever,
   }),
+  qualitySignals: qualitySignals.sink,
 });
 const transport = new StdioServerTransport();
 
@@ -56,8 +66,12 @@ process.on('SIGINT', () => {
     .close()
     .finally(async () => {
       const pool = vectorPool;
+      const qualitySignalPool = qualityPool;
       vectorPool = undefined;
+      qualityPool = undefined;
+      await qualitySignals.close();
       await pool?.end();
+      await qualitySignalPool?.end();
     })
     .finally(() => {
       process.exit(0);

@@ -29,6 +29,7 @@ export { createInMemoryQualitySignalSink, createNoopQualitySignalSink } from './
 export type {
   InMemoryQualitySignalSink,
   QualitySignal,
+  QualitySignalChannel,
   QualitySignalReason,
   QualitySignalSink,
 } from './quality-signals.js';

@@ -1,5 +1,7 @@
 import type { ChatChannel, Intent } from '@xxyy/shared';
 
+export type QualitySignalChannel = ChatChannel | 'agent';
+
 export type QualitySignalReason =
   | 'boundary_chain_forensics'
   | 'ambiguous_transaction_reference'
@@ -21,7 +23,7 @@ export type QualitySignalReason =
 
 export interface QualitySignal {
   answer?: string;
-  channel: ChatChannel;
+  channel: QualitySignalChannel;
   citationCount?: number;
   confidence?: number;
   errorCode?: string;
