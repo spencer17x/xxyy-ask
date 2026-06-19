@@ -9,6 +9,8 @@ import type {
 
 import type { ToolAuditSink } from './audit.js';
 import { createCustomerAgentRuntime, type CustomerAgentRuntime } from './customer-agent-runtime.js';
+import type { QualitySignalSink } from './quality-signals.js';
+import type { SessionContextStore } from './session-context.js';
 import { createProductTools } from './tools/product-tools.js';
 import { createTxAnalysisTools } from './tools/tx-analysis-tools.js';
 import { createToolRegistry } from './tool-registry.js';
@@ -18,7 +20,10 @@ export interface CreateCustomerAgentChatServiceOptions {
   audit?: ToolAuditSink;
   config?: Partial<RagConfig>;
   index?: RagIndex;
+  qualityConfidenceThreshold?: number;
+  qualitySignals?: QualitySignalSink;
   retriever?: Retriever;
+  sessionContext?: SessionContextStore;
   txAnalysisProvider: TxAnalysisProvider | undefined;
   txAnalysisReportReader?: TxAnalysisReportReader;
 }
@@ -49,5 +54,10 @@ export function createCustomerAgentChatService(
   return createCustomerAgentRuntime({
     registry,
     ...(options.audit === undefined ? {} : { audit: options.audit }),
+    ...(options.qualityConfidenceThreshold === undefined
+      ? {}
+      : { qualityConfidenceThreshold: options.qualityConfidenceThreshold }),
+    ...(options.qualitySignals === undefined ? {} : { qualitySignals: options.qualitySignals }),
+    ...(options.sessionContext === undefined ? {} : { sessionContext: options.sessionContext }),
   });
 }

@@ -6,6 +6,8 @@ import type { AnalyzeTransactionOutput } from '@xxyy/rag-core';
 
 import { createInMemoryAuditSink } from './audit.js';
 import { createCustomerAgentRuntime } from './customer-agent-runtime.js';
+import { createInMemoryQualitySignalSink } from './quality-signals.js';
+import { createInMemorySessionContextStore } from './session-context.js';
 import { createToolRegistry } from './tool-registry.js';
 
 const toolPolicy = {
@@ -247,6 +249,194 @@ describe('createCustomerAgentRuntime', () => {
         confidence: 0.72,
         intent: 'product_qa',
         type: 'metadata',
+      },
+    ]);
+  });
+
+  it('uses session context to resolve product follow-up questions', async () => {
+    const registry = createToolRegistry();
+    const sessionContext = createInMemorySessionContextStore();
+    const response: ChatResponse = {
+      answer: '可以在 Pro 权益页升级。',
+      citations: [
+        {
+          excerpt: '如何升级为 Pro。',
+          file: 'docs/product-features/pro-upgrade.md',
+          title: '如何升级为 Pro',
+        },
+      ],
+      confidence: 0.8,
+      intent: 'how_to',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ registry, sessionContext });
+    await runtime.ask({
+      channel: 'web',
+      message: 'XXYY Pro 有哪些权益？',
+      sessionId: 'session-product',
+    });
+    await runtime.ask({
+      channel: 'web',
+      message: '怎么升级？',
+      sessionId: 'session-product',
+    });
+
+    expect(execute).toHaveBeenLastCalledWith({
+      channel: 'web',
+      question: 'XXYY Pro 怎么升级？',
+    });
+  });
+
+  it('uses session context to resolve one recent transaction follow-up', async () => {
+    const registry = createToolRegistry();
+    const sessionContext = createInMemorySessionContextStore();
+    const txHash = '0x1111111111111111111111111111111111111111111111111111111111111111';
+    const output: AnalyzeTransactionOutput = {
+      result: {
+        analyzedAt: '2026-06-19T00:00:00.000Z',
+        chain: 'base',
+        confidence: 0.7,
+        dataSource: 'fixture',
+        evidence: [],
+        relatedTransactions: [{ hash: txHash, role: 'user', summary: '目标交易' }],
+        summary: '未发现典型夹子模式。',
+        txHash,
+        verdict: 'not_sandwiched',
+      },
+      status: 'success',
+    };
+    const execute = vi.fn(() => Promise.resolve(output));
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ registry, sessionContext });
+    await runtime.ask({ channel: 'web', message: txHash, sessionId: 'session-tx' });
+    await runtime.ask({ channel: 'web', message: '这笔被夹了吗？', sessionId: 'session-tx' });
+
+    expect(execute).toHaveBeenLastCalledWith({ txHash: `${txHash} 这笔被夹了吗？` });
+  });
+
+  it('asks for clarification when a transaction follow-up has multiple recent hashes', async () => {
+    const registry = createToolRegistry();
+    const sessionContext = createInMemorySessionContextStore();
+    const firstTx = '0x1111111111111111111111111111111111111111111111111111111111111111';
+    const secondTx = '0x2222222222222222222222222222222222222222222222222222222222222222';
+    const execute = vi.fn((input: { txHash: string }) =>
+      Promise.resolve({
+        result: {
+          analyzedAt: '2026-06-19T00:00:00.000Z',
+          chain: 'base',
+          confidence: 0.7,
+          dataSource: 'fixture',
+          evidence: [],
+          relatedTransactions: [{ hash: input.txHash, role: 'user', summary: '目标交易' }],
+          summary: '测试样本。',
+          txHash: input.txHash,
+          verdict: 'inconclusive',
+        },
+        status: 'success',
+      } satisfies AnalyzeTransactionOutput),
+    );
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ registry, sessionContext });
+    await runtime.ask({ channel: 'web', message: firstTx, sessionId: 'session-many-tx' });
+    await runtime.ask({ channel: 'web', message: secondTx, sessionId: 'session-many-tx' });
+    const response = await runtime.ask({
+      channel: 'web',
+      message: '这笔呢？',
+      sessionId: 'session-many-tx',
+    });
+
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.55,
+      intent: 'tx_sandwich_detection',
+    });
+    expect(response.answer).toContain('请发送单笔完整交易哈希');
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('records quality signals for low-confidence no-citation product answers', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const response: ChatResponse = {
+      answer: '当前知识库没有足够信息。',
+      citations: [],
+      confidence: 0.2,
+      intent: 'product_qa',
+    };
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute: () => Promise.resolve(response),
+    });
+
+    await createCustomerAgentRuntime({
+      qualityConfidenceThreshold: 0.5,
+      qualitySignals,
+      registry,
+    }).ask({
+      channel: 'web',
+      message: 'XXYY Pro 价格是多少？',
+      sessionId: 'session-quality',
+    });
+
+    expect(qualitySignals.signals()).toEqual([
+      {
+        channel: 'web',
+        citationCount: 0,
+        confidence: 0.2,
+        intent: 'product_qa',
+        reason: 'low_confidence',
+        redactedQuestion: 'XXYY Pro 价格是多少？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+      {
+        channel: 'web',
+        citationCount: 0,
+        confidence: 0.2,
+        intent: 'product_qa',
+        reason: 'missing_citations',
+        redactedQuestion: 'XXYY Pro 价格是多少？',
+        sessionIdPresent: true,
+        userIdPresent: false,
       },
     ]);
   });

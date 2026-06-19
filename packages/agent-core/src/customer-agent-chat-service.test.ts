@@ -4,6 +4,7 @@ import type { ChatResponse } from '@xxyy/shared';
 import type { AnswerProvider, RetrievedChunk, Retriever } from '@xxyy/rag-core';
 
 import { createCustomerAgentChatService } from './customer-agent-chat-service.js';
+import { createInMemorySessionContextStore } from './session-context.js';
 
 describe('createCustomerAgentChatService', () => {
   it('answers product questions through registered product tools', async () => {
@@ -73,6 +74,38 @@ describe('createCustomerAgentChatService', () => {
       citations: [],
       intent: 'realtime_account_query',
     });
+  });
+
+  it('passes optional session context through the customer agent runtime', async () => {
+    const retrieveCalls: string[] = [];
+    const retriever: Retriever = {
+      retrieve(question) {
+        retrieveCalls.push(question);
+        return [createRetrievedChunk()];
+      },
+    };
+    const answerProvider: AnswerProvider = {
+      answer(input) {
+        return Promise.resolve({
+          answer: `answered ${input.question}`,
+          citations: [],
+          confidence: 0.9,
+          intent: input.classification.intent,
+        });
+      },
+    };
+    const sessionContext = createInMemorySessionContextStore();
+    const service = createCustomerAgentChatService({
+      answerProvider,
+      retriever,
+      sessionContext,
+      txAnalysisProvider: undefined,
+    });
+
+    await service.ask({ channel: 'web', message: 'XXYY Pro 有哪些权益？', sessionId: 's1' });
+    await service.ask({ channel: 'web', message: '怎么升级？', sessionId: 's1' });
+
+    expect(retrieveCalls.at(-1)).toBe('XXYY Pro 怎么升级？');
   });
 });
 

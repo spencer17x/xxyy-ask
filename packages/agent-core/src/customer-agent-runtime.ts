@@ -7,7 +7,19 @@ import {
   type AnalyzeTransactionOutput,
 } from '@xxyy/rag-core';
 
+import { planAnswer } from './answer-planner.js';
 import { createNoopAuditSink, type ToolAuditEvent, type ToolAuditSink } from './audit.js';
+import { resolveFollowUp } from './follow-up-resolver.js';
+import {
+  createNoopQualitySignalSink,
+  type QualitySignalReason,
+  type QualitySignalSink,
+} from './quality-signals.js';
+import {
+  sanitizeSessionText,
+  type SessionContextStore,
+  type SessionTurnMetadata,
+} from './session-context.js';
 import type { ToolRegistry } from './tool-registry.js';
 
 export interface CustomerAgentRuntime {
@@ -18,73 +30,99 @@ export interface CustomerAgentRuntime {
 export interface CreateCustomerAgentRuntimeOptions {
   registry: ToolRegistry;
   audit?: ToolAuditSink;
+  qualityConfidenceThreshold?: number;
+  qualitySignals?: QualitySignalSink;
+  sessionContext?: SessionContextStore;
 }
 
 export function createCustomerAgentRuntime(
   options: CreateCustomerAgentRuntimeOptions,
 ): CustomerAgentRuntime {
   const audit = options.audit ?? createNoopAuditSink();
-  const ask: CustomerAgentRuntime['ask'] = async (request) => {
-    const classification = classifyQuestion(request.message);
+  const qualitySignals = options.qualitySignals ?? createNoopQualitySignalSink();
+  const qualityConfidenceThreshold = options.qualityConfidenceThreshold ?? 0.45;
 
-    if (classification.intent === 'tx_sandwich_detection') {
-      const startedAt = Date.now();
-      let output: AnalyzeTransactionOutput;
-      try {
-        output = (await options.registry.execute('analyze_transaction', {
-          txHash: request.message,
-        })) as AnalyzeTransactionOutput;
-      } catch (error) {
-        recordToolFailure(audit, request, {
-          error,
-          intent: classification.intent,
-          startedAt,
-          toolName: 'analyze_transaction',
-        });
-        throw error;
-      }
-      const response =
-        output.status === 'success'
-          ? createTxAnalysisAnswer(output.result)
-          : createTxAnalysisUnavailableAnswer(output.failure.reason, {
-              ...(output.failure.metadata === undefined
-                ? {}
-                : { metadata: output.failure.metadata }),
-              ...(output.failure.reportUrl === undefined
-                ? {}
-                : { reportUrl: output.failure.reportUrl }),
-            });
-
-      audit.record({
-        channel: request.channel,
-        intent: classification.intent,
-        latencyMs: Date.now() - startedAt,
-        sessionIdPresent: request.sessionId !== undefined,
-        status: 'success',
+  async function answerTransaction(
+    request: ChatRequest,
+    messageForTool: string,
+    intent: ChatResponse['intent'],
+  ): Promise<ChatResponse> {
+    const startedAt = Date.now();
+    let output: AnalyzeTransactionOutput;
+    try {
+      output = (await options.registry.execute('analyze_transaction', {
+        txHash: messageForTool,
+      })) as AnalyzeTransactionOutput;
+    } catch (error) {
+      recordToolFailure(audit, request, {
+        error,
+        intent,
+        startedAt,
         toolName: 'analyze_transaction',
-        userIdPresent: request.userId !== undefined,
       });
-
-      return response;
+      recordQualitySignal(qualitySignals, request, {
+        errorCode: errorCodeFrom(error),
+        intent,
+        reason: 'tool_failure',
+        redactedQuestion: messageForTool,
+      });
+      throw error;
     }
 
-    if (!shouldUseProductTool(classification.intent)) {
-      return createBoundaryAnswer(classification);
+    const response =
+      output.status === 'success'
+        ? createTxAnalysisAnswer(output.result)
+        : createTxAnalysisUnavailableAnswer(output.failure.reason, {
+            ...(output.failure.metadata === undefined ? {} : { metadata: output.failure.metadata }),
+            ...(output.failure.reportUrl === undefined ? {} : { reportUrl: output.failure.reportUrl }),
+          });
+
+    if (output.status === 'failure') {
+      recordQualitySignal(qualitySignals, request, {
+        confidence: response.confidence,
+        intent,
+        reason: 'tx_analysis_failure',
+        redactedQuestion: messageForTool,
+      });
     }
 
+    audit.record({
+      channel: request.channel,
+      intent,
+      latencyMs: Date.now() - startedAt,
+      sessionIdPresent: request.sessionId !== undefined,
+      status: 'success',
+      toolName: 'analyze_transaction',
+      userIdPresent: request.userId !== undefined,
+    });
+
+    return response;
+  }
+
+  async function answerProduct(
+    request: ChatRequest,
+    messageForTool: string,
+    intent: ChatResponse['intent'],
+  ): Promise<ChatResponse> {
     const startedAt = Date.now();
     let response: ChatResponse;
     try {
       response = (await options.registry.execute('answer_product_question', {
         channel: request.channel,
-        question: request.message,
+        question: messageForTool,
       })) as ChatResponse;
     } catch (error) {
       recordToolFailure(audit, request, {
         error,
-        intent: classification.intent,
+        intent,
         startedAt,
         toolName: 'answer_product_question',
+      });
+      recordQualitySignal(qualitySignals, request, {
+        errorCode: errorCodeFrom(error),
+        intent,
+        reason: 'tool_failure',
+        redactedQuestion: messageForTool,
       });
       throw error;
     }
@@ -92,7 +130,7 @@ export function createCustomerAgentRuntime(
     audit.record({
       channel: request.channel,
       citationCount: response.citations.length,
-      intent: classification.intent,
+      intent,
       latencyMs: Date.now() - startedAt,
       sessionIdPresent: request.sessionId !== undefined,
       status: 'success',
@@ -100,6 +138,94 @@ export function createCustomerAgentRuntime(
       userIdPresent: request.userId !== undefined,
     });
 
+    if (response.confidence < qualityConfidenceThreshold) {
+      recordQualitySignal(qualitySignals, request, {
+        citationCount: response.citations.length,
+        confidence: response.confidence,
+        intent: response.intent,
+        reason: 'low_confidence',
+        redactedQuestion: messageForTool,
+      });
+    }
+    if (response.citations.length === 0) {
+      recordQualitySignal(qualitySignals, request, {
+        citationCount: 0,
+        confidence: response.confidence,
+        intent: response.intent,
+        reason: 'missing_citations',
+        redactedQuestion: messageForTool,
+      });
+    }
+
+    return response;
+  }
+
+  const ask: CustomerAgentRuntime['ask'] = async (request) => {
+    const recentTurns =
+      request.sessionId === undefined || options.sessionContext === undefined
+        ? []
+        : await options.sessionContext.getRecentTurns(request.sessionId);
+    const followUp = resolveFollowUp({ message: request.message, recentTurns });
+
+    if (followUp.resolution === 'needs_clarification') {
+      const response: ChatResponse = {
+        answer: followUp.clarificationQuestion,
+        citations: [],
+        confidence: 0.55,
+        intent: 'tx_sandwich_detection',
+      };
+      await appendSessionTurns(options.sessionContext, request, response, {
+        userContent: request.message,
+      });
+      return response;
+    }
+
+    const classification = classifyQuestion(followUp.resolvedMessage);
+    const plan = planAnswer({
+      classification,
+      resolvedMessage: followUp.resolvedMessage,
+    });
+
+    if (plan.route === 'clarify') {
+      const response: ChatResponse = {
+        answer: plan.clarificationQuestion,
+        citations: [],
+        confidence: 0.45,
+        intent: plan.classification.intent,
+      };
+      recordQualitySignal(qualitySignals, request, {
+        confidence: response.confidence,
+        intent: response.intent,
+        reason: 'unknown_intent',
+        redactedQuestion: followUp.resolvedMessage,
+      });
+      await appendSessionTurns(options.sessionContext, request, response, {
+        userContent: followUp.resolvedMessage,
+      });
+      return response;
+    }
+
+    if (plan.route === 'boundary') {
+      const response = createBoundaryAnswer(plan.classification);
+      recordBoundaryQualitySignal(qualitySignals, request, response, followUp.resolvedMessage);
+      await appendSessionTurns(options.sessionContext, request, response, {
+        userContent: followUp.resolvedMessage,
+      });
+      return response;
+    }
+
+    if (plan.route === 'transaction_analysis') {
+      const response = await answerTransaction(request, plan.messageForTool, plan.classification.intent);
+      await appendSessionTurns(options.sessionContext, request, response, {
+        userContent: followUp.resolvedMessage,
+      });
+      return response;
+    }
+
+    const response = await answerProduct(request, plan.messageForTool, plan.classification.intent);
+    await appendSessionTurns(options.sessionContext, request, response, {
+      userContent: followUp.resolvedMessage,
+    });
     return response;
   };
 
@@ -110,10 +236,6 @@ export function createCustomerAgentRuntime(
       yield* streamChatResponse(await ask(request));
     },
   };
-}
-
-function shouldUseProductTool(intent: ChatResponse['intent']): boolean {
-  return intent === 'product_qa' || intent === 'how_to';
 }
 
 function recordToolFailure(
@@ -136,6 +258,98 @@ function recordToolFailure(
     toolName: event.toolName,
     userIdPresent: request.userId !== undefined,
   });
+}
+
+function recordBoundaryQualitySignal(
+  qualitySignals: QualitySignalSink,
+  request: ChatRequest,
+  response: ChatResponse,
+  redactedQuestion: string,
+): void {
+  const reason: QualitySignalReason =
+    response.intent === 'investment_advice'
+      ? 'boundary_investment_advice'
+      : response.intent === 'realtime_account_query'
+        ? 'boundary_private_data'
+        : 'unknown_intent';
+  recordQualitySignal(qualitySignals, request, {
+    confidence: response.confidence,
+    intent: response.intent,
+    reason,
+    redactedQuestion,
+  });
+}
+
+function recordQualitySignal(
+  qualitySignals: QualitySignalSink,
+  request: ChatRequest,
+  signal: {
+    citationCount?: number;
+    confidence?: number;
+    errorCode?: string;
+    intent: ChatResponse['intent'];
+    reason: QualitySignalReason;
+    redactedQuestion: string;
+  },
+): void {
+  qualitySignals.record({
+    channel: request.channel,
+    ...(signal.citationCount === undefined ? {} : { citationCount: signal.citationCount }),
+    ...(signal.confidence === undefined ? {} : { confidence: signal.confidence }),
+    ...(signal.errorCode === undefined ? {} : { errorCode: signal.errorCode }),
+    intent: signal.intent,
+    reason: signal.reason,
+    redactedQuestion: sanitizeSessionText(signal.redactedQuestion),
+    sessionIdPresent: request.sessionId !== undefined,
+    userIdPresent: request.userId !== undefined,
+  });
+}
+
+async function appendSessionTurns(
+  sessionContext: SessionContextStore | undefined,
+  request: ChatRequest,
+  response: ChatResponse,
+  options: { userContent: string },
+): Promise<void> {
+  if (sessionContext === undefined || request.sessionId === undefined) {
+    return;
+  }
+  const now = new Date().toISOString();
+  await sessionContext.appendTurn(request.sessionId, {
+    content: options.userContent,
+    createdAt: now,
+    metadata: { intent: response.intent },
+    role: 'user',
+  });
+  await sessionContext.appendTurn(request.sessionId, {
+    content: response.answer,
+    createdAt: now,
+    metadata: metadataFromResponse(response),
+    role: 'assistant',
+  });
+}
+
+function metadataFromResponse(response: ChatResponse): SessionTurnMetadata {
+  const relatedUserTransaction =
+    response.intent === 'tx_sandwich_detection'
+      ? extractUserTransactionFromAnswer(response)
+      : undefined;
+  return {
+    citationCount: response.citations.length,
+    confidence: response.confidence,
+    intent: response.intent,
+    ...(relatedUserTransaction === undefined ? {} : relatedUserTransaction),
+  };
+}
+
+function extractUserTransactionFromAnswer(
+  response: ChatResponse,
+): Pick<SessionTurnMetadata, 'txHash'> | undefined {
+  const hashMatch = response.answer.match(/\b0x[a-fA-F0-9]{64}\b/u);
+  if (hashMatch === null) {
+    return undefined;
+  }
+  return { txHash: hashMatch[0] };
 }
 
 function errorCodeFrom(error: unknown): string {
