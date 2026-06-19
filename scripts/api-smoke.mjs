@@ -5,7 +5,16 @@ import path from 'node:path';
 
 const DEFAULT_BASE_URL = 'http://localhost:3000';
 const DEFAULT_CHAT_QUESTION = 'XXYY Pro 有哪些权益？';
+const DEFAULT_CHAT_FOLLOW_UP_QUESTION = '怎么升级？';
+const DEFAULT_CHAT_SESSION_ID = 'api-smoke-session';
 const DEFAULT_TX_ANALYSIS_CHAIN = 'unknown';
+const CHAT_HANDOFF_WORDING_PATTERNS = [
+  /人工客服/u,
+  /人工处理/u,
+  /转人工/u,
+  /manual handoff/iu,
+  /human support/iu,
+];
 const TX_ANALYSIS_FAILURE_REASONS = new Set([
   'not_configured',
   'provider_unavailable',
@@ -58,7 +67,28 @@ function createApiSmokeChecksFromOptions(options) {
     );
   }
 
-  if (options.chat) {
+  if (options.chatFollowUp) {
+    checks.push(
+      createCheck('chat', 'chat', options.baseUrl, '/api/chat', {
+        body: JSON.stringify({
+          channel: 'cli',
+          message: options.question,
+          sessionId: options.chatSessionId,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      }),
+      createCheck('chatFollowUp', 'chat follow-up', options.baseUrl, '/api/chat', {
+        body: JSON.stringify({
+          channel: 'cli',
+          message: options.followUpQuestion,
+          sessionId: options.chatSessionId,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      }),
+    );
+  } else if (options.chat) {
     checks.push(
       createCheck('chat', 'chat', options.baseUrl, '/api/chat', {
         body: JSON.stringify({ channel: 'cli', message: options.question }),
@@ -193,7 +223,12 @@ function parseApiSmokeArgs(args, env) {
   const normalizedArgs = args[0] === '--' ? args.slice(1) : args;
   let baseUrl = normalizeBaseUrl(env.API_BASE_URL ?? DEFAULT_BASE_URL);
   let chat = false;
+  let chatFollowUp = parseBoolean(env.API_SMOKE_CHAT_FOLLOW_UP);
+  let chatSessionId =
+    normalizeOptionalText(env.API_SMOKE_CHAT_SESSION_ID) ?? DEFAULT_CHAT_SESSION_ID;
   let continueOnError = parseBoolean(env.API_SMOKE_CONTINUE_ON_ERROR);
+  let followUpQuestion =
+    normalizeOptionalText(env.API_SMOKE_CHAT_FOLLOW_UP_QUESTION) ?? DEFAULT_CHAT_FOLLOW_UP_QUESTION;
   let opsToken = normalizeOptionalText(env.API_OPS_TOKEN);
   let question = DEFAULT_CHAT_QUESTION;
   let txAnalysis = false;
@@ -209,6 +244,12 @@ function parseApiSmokeArgs(args, env) {
 
     if (option === '--chat') {
       chat = true;
+      continue;
+    }
+
+    if (option === '--chat-follow-up') {
+      chat = true;
+      chatFollowUp = true;
       continue;
     }
 
@@ -243,6 +284,26 @@ function parseApiSmokeArgs(args, env) {
         throw new Error('Missing value for --question.');
       }
       question = rawQuestion;
+      index += 1;
+      continue;
+    }
+
+    if (option === '--chat-session-id') {
+      const rawSessionId = normalizedArgs[index + 1];
+      if (rawSessionId === undefined) {
+        throw new Error('Missing value for --chat-session-id.');
+      }
+      chatSessionId = normalizeOptionalText(rawSessionId) ?? DEFAULT_CHAT_SESSION_ID;
+      index += 1;
+      continue;
+    }
+
+    if (option === '--follow-up-question') {
+      const rawFollowUpQuestion = normalizedArgs[index + 1];
+      if (rawFollowUpQuestion === undefined) {
+        throw new Error('Missing value for --follow-up-question.');
+      }
+      followUpQuestion = rawFollowUpQuestion;
       index += 1;
       continue;
     }
@@ -318,7 +379,10 @@ function parseApiSmokeArgs(args, env) {
   return {
     baseUrl,
     chat,
+    chatFollowUp,
+    chatSessionId,
     continueOnError,
+    followUpQuestion,
     opsToken,
     question,
     txAnalysis,
@@ -917,16 +981,8 @@ function validatePayload(check, payload) {
     return validateOpsSummaryPayload(payload);
   }
 
-  if (check.kind === 'chat') {
-    if (payload === null || typeof payload !== 'object') {
-      return 'chat response must be JSON.';
-    }
-    if (typeof payload.answer !== 'string' || payload.answer.trim().length === 0) {
-      return 'chat response must include an answer.';
-    }
-    if (!Array.isArray(payload.citations) || payload.citations.length === 0) {
-      return 'chat response must include citations.';
-    }
+  if (check.kind === 'chat' || check.kind === 'chatFollowUp') {
+    return validateChatPayload(payload, check);
   }
 
   if (check.kind === 'txAnalysis') {
@@ -951,6 +1007,26 @@ function validatePayload(check, payload) {
     if (check.requireReport === true && !hasReportLink(payload.answer)) {
       return 'transaction analysis response must include a report link.';
     }
+  }
+
+  return undefined;
+}
+
+function validateChatPayload(payload, check) {
+  if (payload === null || typeof payload !== 'object') {
+    return 'chat response must be JSON.';
+  }
+  if (typeof payload.answer !== 'string' || payload.answer.trim().length === 0) {
+    return 'chat response must include an answer.';
+  }
+  if (!Array.isArray(payload.citations) || payload.citations.length === 0) {
+    return 'chat response must include citations.';
+  }
+  if (
+    check.kind === 'chatFollowUp' &&
+    CHAT_HANDOFF_WORDING_PATTERNS.some((pattern) => pattern.test(payload.answer))
+  ) {
+    return 'chat follow-up response must not ask for manual handoff.';
   }
 
   return undefined;

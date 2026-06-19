@@ -67,6 +67,50 @@ describe('createApiSmokeChecks', () => {
     ]);
   });
 
+  it('supports multi-turn chat follow-up smoke checks with a shared session', () => {
+    const checks = createApiSmokeChecks(
+      [
+        '--base-url',
+        'https://ask.example.com',
+        '--chat-follow-up',
+        '--question',
+        'XXYY Pro 有哪些权益？',
+        '--follow-up-question',
+        '怎么升级？',
+      ],
+      {},
+    );
+
+    expect(checks).toEqual([
+      expect.objectContaining({ kind: 'health' }),
+      expect.objectContaining({ kind: 'deepHealth' }),
+      expect.objectContaining({
+        body: expect.any(String),
+        kind: 'chat',
+        label: 'chat',
+        url: 'https://ask.example.com/api/chat',
+      }),
+      expect.objectContaining({
+        body: expect.any(String),
+        kind: 'chatFollowUp',
+        label: 'chat follow-up',
+        url: 'https://ask.example.com/api/chat',
+      }),
+    ]);
+    const firstBody = JSON.parse(checks[2].body);
+    const followUpBody = JSON.parse(checks[3].body);
+    expect(firstBody).toEqual({
+      channel: 'cli',
+      message: 'XXYY Pro 有哪些权益？',
+      sessionId: 'api-smoke-session',
+    });
+    expect(followUpBody).toEqual({
+      channel: 'cli',
+      message: '怎么升级？',
+      sessionId: 'api-smoke-session',
+    });
+  });
+
   it('supports transaction analysis smoke checks', () => {
     const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
 
@@ -846,6 +890,50 @@ describe('runApiSmoke', () => {
       'http://localhost:3000/health/deep',
       'http://localhost:3000/api/chat',
     ]);
+  });
+
+  it('runs multi-turn chat follow-up smoke and fails on handoff wording', async () => {
+    const messages = [];
+    const calls = [];
+    const exitCode = await runApiSmoke({
+      args: ['--chat-follow-up'],
+      env: {},
+      fetch: (url, request) => {
+        calls.push({ request, url });
+        if (url.endsWith('/api/chat')) {
+          const body = JSON.parse(request.body);
+          if (body.message === '怎么升级？') {
+            return Promise.resolve(
+              jsonResponse({
+                answer: '这个问题需要转人工客服处理。',
+                citations: [{ title: 'XXYY Pro 升级' }],
+                intent: 'how_to',
+              }),
+            );
+          }
+          return Promise.resolve(
+            jsonResponse({
+              answer: 'XXYY Pro 提供更多权益。',
+              citations: [{ title: 'XXYY Pro 权益' }],
+              intent: 'product_qa',
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(calls.map((call) => call.url)).toEqual([
+      'http://localhost:3000/health',
+      'http://localhost:3000/health/deep',
+      'http://localhost:3000/api/chat',
+      'http://localhost:3000/api/chat',
+    ]);
+    expect(messages).toContain(
+      'Failed chat follow-up: chat follow-up response must not ask for manual handoff.',
+    );
   });
 
   it('runs and validates transaction analysis smoke responses when requested', async () => {
