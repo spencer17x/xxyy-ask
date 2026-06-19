@@ -46,6 +46,11 @@ export {
   type PublishKnowledgeCandidateResult,
 } from './publish-workflow.js';
 export {
+  captureAnswerQualitySignals,
+  type CaptureAnswerQualitySignalsInput,
+  type CaptureAnswerQualitySignalsOutput,
+} from './quality-signal-capture.js';
+export {
   mineAnswerQualitySignals,
   type AnswerQualitySignal,
   type AnswerQualitySignalReason,

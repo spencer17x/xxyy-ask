@@ -16,9 +16,9 @@ import {
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
   KnowledgeCandidateNotFoundError,
+  captureAnswerQualitySignals,
   createPgKnowledgeOpsStore,
   mineAnswerFeedback,
-  mineAnswerQualitySignals,
   type KnowledgeCandidate,
   type KnowledgeCandidateRun,
   type KnowledgeCandidateStore,
@@ -1898,15 +1898,11 @@ function createApiQualitySignalSink(config: ReturnType<typeof loadRagConfig>): Q
   return {
     record(signal) {
       memory.record(signal);
-      const mined = mineAnswerQualitySignals({ signals: [signal] });
-      if (mined.candidates.length === 0) {
-        return;
-      }
-
       try {
-        void getCandidateStore()
-          .addCandidates(mined.candidates)
-          .catch(() => undefined);
+        void captureAnswerQualitySignals({
+          signals: [signal],
+          store: getCandidateStore(),
+        }).catch(() => undefined);
       } catch {
         // Quality-gap capture is best-effort and must never block customer answers.
       }

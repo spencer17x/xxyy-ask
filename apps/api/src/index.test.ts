@@ -3402,8 +3402,18 @@ describe('createRequestHandler', () => {
       stream: vi.fn(),
     }));
     const candidateFromSignal = { id: 'kc_quality_signal' };
-    const addCandidates = vi.fn(() => Promise.resolve([candidateFromSignal]));
-    const createPgKnowledgeOpsStore = vi.fn(() => ({ addCandidates }));
+    const addCandidates = vi.fn(() => Promise.resolve([]));
+    const candidateStore = { addCandidates };
+    const createPgKnowledgeOpsStore = vi.fn(() => candidateStore);
+    const captureAnswerQualitySignals = vi.fn(() =>
+      Promise.resolve({
+        candidates: [{ id: 'kc_quality_signal' }],
+        storedCandidates: [{ id: 'kc_quality_signal' }],
+        candidatesCreated: 1,
+        signalsRead: 1,
+        signalsSkipped: 0,
+      }),
+    );
     const mineAnswerQualitySignals = vi.fn(() => ({
       candidates: [candidateFromSignal],
       candidatesCreated: 1,
@@ -3427,6 +3437,7 @@ describe('createRequestHandler', () => {
       const actual = await importOriginal<Record<string, unknown>>();
       return {
         ...actual,
+        captureAnswerQualitySignals,
         createPgKnowledgeOpsStore,
         mineAnswerQualitySignals,
       };
@@ -3500,9 +3511,13 @@ describe('createRequestHandler', () => {
         userIdPresent: false,
       } as const;
       serviceOptions.qualitySignals?.record(signal);
-      expect(mineAnswerQualitySignals).toHaveBeenCalledWith({ signals: [signal] });
+      expect(captureAnswerQualitySignals).toHaveBeenCalledWith({
+        signals: [signal],
+        store: candidateStore,
+      });
+      expect(mineAnswerQualitySignals).not.toHaveBeenCalled();
       expect(createPgKnowledgeOpsStore).toHaveBeenCalledTimes(1);
-      expect(addCandidates).toHaveBeenCalledWith([candidateFromSignal]);
+      expect(addCandidates).not.toHaveBeenCalled();
       expect(agentAsk).toHaveBeenCalledWith({
         channel: 'web',
         message: 'XXYY Pro 有哪些权益？',
