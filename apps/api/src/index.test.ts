@@ -754,6 +754,7 @@ describe('createRequestHandler', () => {
             },
           ],
           needsReviewCount: 2,
+          oldestQualitySignalCreatedAt: '2026-06-19T07:10:00.000Z',
           qualitySignalAgentRouteCounts: {
             clarify: 1,
             product_answer: 2,
@@ -765,6 +766,7 @@ describe('createRequestHandler', () => {
               clusterKey: 'product_answer:missing_citations:eval_case:eval_case',
               count: 2,
               latestCreatedAt: '2026-06-19T07:30:00.000Z',
+              oldestCreatedAt: '2026-06-19T07:10:00.000Z',
               reason: 'missing_citations',
               sampleQuestions: ['XXYY Pro 价格是多少？', 'XXYY 文档打不开怎么办？'],
               targetCategory: 'eval_case',
@@ -776,6 +778,7 @@ describe('createRequestHandler', () => {
               clusterKey: 'clarify:missing_followup_context:eval_case:eval_case',
               count: 1,
               latestCreatedAt: '2026-06-19T07:20:00.000Z',
+              oldestCreatedAt: '2026-06-19T07:20:00.000Z',
               reason: 'missing_followup_context',
               sampleQuestions: ['怎么升级？'],
               targetCategory: 'eval_case',

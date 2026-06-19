@@ -231,6 +231,7 @@ interface KnowledgeCandidateQueueSummary {
   evalFailedCount: number;
   evalFailureReasonCounts: Record<string, number>;
   needsReviewCount: number;
+  oldestQualitySignalCreatedAt?: string;
   qualitySignalAgentRouteCounts: Record<string, number>;
   qualitySignalClusters: QualitySignalClusterSummary[];
   qualitySignalNeedsReviewCount: number;
@@ -263,6 +264,7 @@ interface QualitySignalClusterSummary {
   clusterKey: string;
   count: number;
   latestCreatedAt: string;
+  oldestCreatedAt: string;
   reason: string;
   sampleQuestions: string[];
   targetCategory: KnowledgeCandidate['targetCategory'];
@@ -1553,6 +1555,7 @@ async function summarizeKnowledgeCandidateQueues(
     evalFailedCount: evalFailed.length,
     evalFailureReasonCounts: summarizeEvalFailureReasonCounts(evalFailureSummaries),
     needsReviewCount: needsReview.length,
+    ...optionalOldestQualitySignalCreatedAt(qualitySignalNeedsReview),
     qualitySignalAgentRouteCounts: summarizeQualitySignalAgentRouteCounts(qualitySignalNeedsReview),
     qualitySignalClusters: summarizeQualitySignalClusters(qualitySignalNeedsReview),
     qualitySignalNeedsReviewCount: qualitySignalNeedsReview.length,
@@ -1641,6 +1644,7 @@ function summarizeQualitySignalClusters(
           }),
           count: 0,
           latestCreatedAt: candidate.createdAt,
+          oldestCreatedAt: candidate.createdAt,
           reason,
           sampleQuestions: [],
           targetCategory: candidate.targetCategory,
@@ -1653,6 +1657,9 @@ function summarizeQualitySignalClusters(
     existing.candidates.push(candidate);
     if (candidate.createdAt.localeCompare(existing.summary.latestCreatedAt) > 0) {
       existing.summary.latestCreatedAt = candidate.createdAt;
+    }
+    if (candidate.createdAt.localeCompare(existing.summary.oldestCreatedAt) < 0) {
+      existing.summary.oldestCreatedAt = candidate.createdAt;
     }
   }
 
@@ -1683,6 +1690,17 @@ function summarizeQualitySignalClusters(
         left.targetCategory.localeCompare(right.targetCategory) ||
         left.type.localeCompare(right.type),
     );
+}
+
+function optionalOldestQualitySignalCreatedAt(
+  candidates: KnowledgeCandidate[],
+): Pick<KnowledgeCandidateQueueSummary, 'oldestQualitySignalCreatedAt'> | Record<string, never> {
+  const oldest = candidates
+    .map((candidate) => candidate.createdAt)
+    .filter((createdAt) => createdAt.trim().length > 0)
+    .sort((left, right) => left.localeCompare(right))[0];
+
+  return oldest === undefined ? {} : { oldestQualitySignalCreatedAt: oldest };
 }
 
 function uniqueNonEmptyStrings(values: string[]): string[] {

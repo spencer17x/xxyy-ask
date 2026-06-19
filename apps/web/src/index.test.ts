@@ -116,6 +116,7 @@ describe('renderOpsPage', () => {
     );
     expect(html).toContain('summary.knowledgeCandidateQueues?.needsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0');
+    expect(html).toContain('summary.knowledgeCandidateQueues?.oldestQualitySignalCreatedAt');
     expect(html).toContain('summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.evalFailedCount || 0');
     expect(html).toContain('id="knowledge-eval-failures"');
@@ -130,6 +131,7 @@ describe('renderOpsPage', () => {
     expect(html).toContain('Quality reason · " + reason');
     expect(html).toContain('Quality route · " + route');
     expect(html).toContain('Quality cluster · " + cluster.agentRoute + " / " + cluster.reason');
+    expect(html).toContain('cluster.oldestCreatedAt');
     expect(html).toContain('cluster.sampleQuestions');
     expect(html).toContain('cluster.candidateIds');
     expect(html).toContain('data-quality-cluster-key');

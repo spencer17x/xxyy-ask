@@ -1215,6 +1215,30 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when quality gap oldest timestamps are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.knowledgeCandidateQueues.oldestQualitySignalCreatedAt;
+    delete payload.knowledgeCandidateQueues.qualitySignalClusters[0].oldestCreatedAt;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid quality signal oldest timestamps.',
+    );
+  });
+
   it('fails ops summary smoke when eval failure reason counts are missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -1338,6 +1362,7 @@ describe('runApiSmoke', () => {
             clusterKey: 'product_answer:missing_citations:eval_case:eval_case',
             count: 2,
             latestCreatedAt: '2026-06-19T07:30:00.000Z',
+            oldestCreatedAt: '2026-06-19T07:10:00.000Z',
             reason: 'missing_citations',
             sampleQuestions: ['XXYY Pro 价格是多少？'],
             targetCategory: 'eval_case',
@@ -5615,6 +5640,7 @@ function opsSummaryPayload(overrides = {}) {
         'missing expected answer text': 1,
       },
       needsReviewCount: 2,
+      oldestQualitySignalCreatedAt: '2026-06-19T07:30:00.000Z',
       qualitySignalNeedsReviewCount: 1,
       qualitySignalAgentRouteCounts: {
         product_answer: 1,
@@ -5626,6 +5652,7 @@ function opsSummaryPayload(overrides = {}) {
           clusterKey: 'product_answer:missing_citations:eval_case:eval_case',
           count: 1,
           latestCreatedAt: '2026-06-19T07:30:00.000Z',
+          oldestCreatedAt: '2026-06-19T07:30:00.000Z',
           reason: 'missing_citations',
           sampleQuestions: ['XXYY Pro 价格是多少？'],
           targetCategory: 'eval_case',

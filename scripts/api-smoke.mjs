@@ -1129,6 +1129,13 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary must include knowledge candidate queue counts and recent quality gaps.';
   }
 
+  if (
+    value.qualitySignalNeedsReviewCount > 0 &&
+    !isCleanNonEmptyString(value.oldestQualitySignalCreatedAt)
+  ) {
+    return 'ops summary must include valid quality signal oldest timestamps.';
+  }
+
   if (!Array.isArray(value.qualitySignalClusters)) {
     return 'ops summary must include valid quality signal clusters.';
   }
@@ -1206,6 +1213,7 @@ function isQualitySignalClusterSummary(value) {
     isNonNegativeInteger(value.count) &&
     value.count > 0 &&
     isCleanNonEmptyString(value.latestCreatedAt) &&
+    isCleanNonEmptyString(value.oldestCreatedAt) &&
     isCleanNonEmptyString(value.reason) &&
     Array.isArray(value.sampleQuestions) &&
     value.sampleQuestions.length > 0 &&
