@@ -43,6 +43,7 @@ export type {
   PgSessionContextOpsSummary,
   PgClientLike as PgSessionContextClientLike,
   RecentPgSessionContextSummary,
+  SessionContextAgeBuckets,
   SummarizePgSessionContextOptions,
 } from './pg-session-context.js';
 export { createInMemorySessionContextStore, sanitizeSessionText } from './session-context.js';

@@ -19,7 +19,14 @@ export interface CreatePgSessionContextStoreOptions {
 
 export interface SummarizePgSessionContextOptions {
   client: PgClientLike;
+  nowMs?: number;
   recentLimit?: number;
+}
+
+export interface SessionContextAgeBuckets {
+  gte24h: number;
+  h1to24h: number;
+  lt1h: number;
 }
 
 export interface RecentPgSessionContextSummary {
@@ -33,9 +40,12 @@ export interface PgSessionContextOpsSummary {
   activeSessionCount: number;
   latestSummaryUpdatedAt?: string;
   latestTurnCreatedAt?: string;
+  oldestSummaryUpdatedAt?: string;
   productPreferenceCounts: Record<string, number>;
   productTopicCounts: Record<string, number>;
   recentSummaries: RecentPgSessionContextSummary[];
+  sessionSummaryAgeBuckets: SessionContextAgeBuckets;
+  staleSummaryCount: number;
   storedTurnCount: number;
   summarizedSessionCount: number;
 }
@@ -59,7 +69,11 @@ interface SessionContextTurnStatsRow {
 }
 
 interface SessionContextSummaryStatsRow {
+  gte24h?: number | string | null;
+  h1to24h?: number | string | null;
   latest_summary_updated_at?: Date | string | null;
+  lt1h?: number | string | null;
+  oldest_summary_updated_at?: Date | string | null;
   summarized_session_count?: number | string | null;
 }
 
@@ -193,11 +207,12 @@ export async function migratePgSessionContextStore(client: PgClientLike): Promis
 export async function summarizePgSessionContext(
   options: SummarizePgSessionContextOptions,
 ): Promise<PgSessionContextOpsSummary> {
+  const nowMs = options.nowMs ?? Date.now();
   const recentLimit = options.recentLimit ?? DEFAULT_RECENT_SESSION_SUMMARY_LIMIT;
   const [turnStats, summaryStats, productTopics, productPreferences, recentSummaries] =
     await Promise.all([
       querySessionTurnStats(options.client),
-      querySessionSummaryStats(options.client),
+      querySessionSummaryStats(options.client, nowMs),
       querySessionSummaryLabelCounts(options.client, 'productTopic'),
       querySessionSummaryLabelCounts(options.client, 'productPreference'),
       queryRecentSessionSummaries(options.client, recentLimit),
@@ -206,10 +221,13 @@ export async function summarizePgSessionContext(
   return {
     ...optionalDate('latestSummaryUpdatedAt', summaryStats.latestSummaryUpdatedAt),
     ...optionalDate('latestTurnCreatedAt', turnStats.latestTurnCreatedAt),
+    ...optionalDate('oldestSummaryUpdatedAt', summaryStats.oldestSummaryUpdatedAt),
     activeSessionCount: turnStats.activeSessionCount,
     productPreferenceCounts: productPreferences,
     productTopicCounts: productTopics,
     recentSummaries,
+    sessionSummaryAgeBuckets: summaryStats.sessionSummaryAgeBuckets,
+    staleSummaryCount: summaryStats.sessionSummaryAgeBuckets.gte24h,
     storedTurnCount: turnStats.storedTurnCount,
     summarizedSessionCount: summaryStats.summarizedSessionCount,
   };
@@ -236,20 +254,43 @@ async function querySessionTurnStats(client: PgClientLike): Promise<{
   };
 }
 
-async function querySessionSummaryStats(client: PgClientLike): Promise<{
+async function querySessionSummaryStats(
+  client: PgClientLike,
+  nowMs: number,
+): Promise<{
   latestSummaryUpdatedAt?: string;
+  oldestSummaryUpdatedAt?: string;
+  sessionSummaryAgeBuckets: SessionContextAgeBuckets;
   summarizedSessionCount: number;
 }> {
-  const response = await client.query<SessionContextSummaryStatsRow>(`
+  const oneHourAgo = new Date(nowMs - 60 * 60 * 1000).toISOString();
+  const oneDayAgo = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
+  const response = await client.query<SessionContextSummaryStatsRow>(
+    `
     select
       count(*) as summarized_session_count,
-      max(updated_at) as latest_summary_updated_at
+      max(updated_at) as latest_summary_updated_at,
+      count(*) filter (where updated_at >= $1::timestamptz) as lt1h,
+      count(*) filter (
+        where updated_at < $1::timestamptz
+          and updated_at >= $2::timestamptz
+      ) as h1to24h,
+      count(*) filter (where updated_at < $2::timestamptz) as gte24h,
+      min(updated_at) as oldest_summary_updated_at
     from customer_agent_session_summaries
-  `);
+    `,
+    [oneHourAgo, oneDayAgo],
+  );
   const row = response.rows[0];
 
   return {
     ...optionalDate('latestSummaryUpdatedAt', row?.latest_summary_updated_at),
+    ...optionalDate('oldestSummaryUpdatedAt', row?.oldest_summary_updated_at),
+    sessionSummaryAgeBuckets: {
+      gte24h: parseCount(row?.gte24h),
+      h1to24h: parseCount(row?.h1to24h),
+      lt1h: parseCount(row?.lt1h),
+    },
     summarizedSessionCount: parseCount(row?.summarized_session_count),
   };
 }

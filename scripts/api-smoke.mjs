@@ -1270,11 +1270,16 @@ function validateSessionContextSummary(value) {
     !isNonNegativeInteger(value.activeSessionCount) ||
     !isNonNegativeInteger(value.storedTurnCount) ||
     !isNonNegativeInteger(value.summarizedSessionCount) ||
+    !isNonNegativeInteger(value.staleSummaryCount) ||
     !hasReasonCounts(value.productPreferenceCounts) ||
     !hasReasonCounts(value.productTopicCounts) ||
     !Array.isArray(value.recentSummaries)
   ) {
     return 'ops summary must include valid session context counts and recent summaries.';
+  }
+
+  if (!hasQualitySignalAgeBuckets(value.sessionSummaryAgeBuckets)) {
+    return 'ops summary must include valid session context age buckets and stale counts.';
   }
 
   if (value.activeSessionCount > 0 && !isCleanNonEmptyString(value.latestTurnCreatedAt)) {
@@ -1283,6 +1288,10 @@ function validateSessionContextSummary(value) {
 
   if (value.summarizedSessionCount > 0 && !isCleanNonEmptyString(value.latestSummaryUpdatedAt)) {
     return 'ops summary must include valid session context latest summary timestamps.';
+  }
+
+  if (value.summarizedSessionCount > 0 && !isCleanNonEmptyString(value.oldestSummaryUpdatedAt)) {
+    return 'ops summary must include valid session context oldest summary timestamps.';
   }
 
   if (!value.recentSummaries.every(isRecentSessionContextSummary)) {
@@ -1303,6 +1312,18 @@ function validateSessionContextSummary(value) {
   );
   if (preferenceTotal > value.summarizedSessionCount) {
     return 'ops summary session preference counts cannot exceed the summarized session count.';
+  }
+
+  const ageBucketTotal = Object.values(value.sessionSummaryAgeBuckets).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  if (ageBucketTotal !== value.summarizedSessionCount) {
+    return 'ops summary session age buckets must sum to the summarized session count.';
+  }
+
+  if (value.staleSummaryCount !== value.sessionSummaryAgeBuckets.gte24h) {
+    return 'ops summary stale session count must match 24h+ session summaries.';
   }
 
   return undefined;

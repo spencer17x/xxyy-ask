@@ -10,11 +10,14 @@ import type { SessionTurn } from './session-context.js';
 class FakePgClient {
   queuedRows: unknown[][] = [];
   queries: Array<{ sql: string; values: readonly unknown[] }> = [];
+  queryRows?: (sql: string, values: readonly unknown[]) => unknown[] | undefined;
   rows: unknown[] = [];
 
   query<T>(sql: string, values: readonly unknown[] = []): Promise<{ rows: T[] }> {
     this.queries.push({ sql, values });
-    const rows = this.queuedRows.length > 0 ? (this.queuedRows.shift() ?? []) : this.rows;
+    const matchedRows = this.queryRows?.(sql, values);
+    const rows =
+      matchedRows ?? (this.queuedRows.length > 0 ? (this.queuedRows.shift() ?? []) : this.rows);
     return Promise.resolve({ rows: rows as T[] });
   }
 }
@@ -140,48 +143,69 @@ describe('createPgSessionContextStore', () => {
 
   it('summarizes sanitized session context for ops dashboards without exposing raw session ids', async () => {
     const client = new FakePgClient();
-    client.queuedRows = [
-      [
-        {
-          active_session_count: '3',
-          latest_turn_created_at: '2026-06-19T08:03:00.000Z',
-          stored_turn_count: '7',
-        },
-      ],
-      [
-        {
-          latest_summary_updated_at: '2026-06-19T08:04:00.000Z',
-          summarized_session_count: '2',
-        },
-      ],
-      [
-        { count: '1', label: 'Telegram 钱包监控' },
-        { count: '1', label: 'XXYY Pro' },
-      ],
-      [{ count: '2', label: 'XXYY 移动端登录' }],
-      [
-        {
-          session_id: 'session-1',
-          summary: {
-            productPreference: 'XXYY 移动端登录',
-            productTopic: 'XXYY Pro',
+    client.queryRows = (sql) => {
+      if (sql.includes('count(distinct session_id)')) {
+        return [
+          {
+            active_session_count: '3',
+            latest_turn_created_at: '2026-06-19T08:03:00.000Z',
+            stored_turn_count: '7',
           },
-          updated_at: '2026-06-19T08:04:00.000Z',
-        },
-        {
-          session_id: 'session-secret',
-          summary: '{"productTopic":"Telegram 钱包监控"}',
-          updated_at: '2026-06-19T08:02:00.000Z',
-        },
-      ],
-    ];
+        ];
+      }
+      if (sql.includes('max(updated_at) as latest_summary_updated_at')) {
+        return [
+          {
+            gte24h: '1',
+            h1to24h: '1',
+            latest_summary_updated_at: '2026-06-19T08:04:00.000Z',
+            lt1h: '1',
+            oldest_summary_updated_at: '2026-06-18T07:59:59.000Z',
+            summarized_session_count: '3',
+          },
+        ];
+      }
+      if (sql.includes("summary ->> 'productTopic'")) {
+        return [
+          { count: '1', label: 'Telegram 钱包监控' },
+          { count: '1', label: 'XXYY Pro' },
+        ];
+      }
+      if (sql.includes("summary ->> 'productPreference'")) {
+        return [{ count: '2', label: 'XXYY 移动端登录' }];
+      }
+      if (sql.includes('order by updated_at desc')) {
+        return [
+          {
+            session_id: 'session-1',
+            summary: {
+              productPreference: 'XXYY 移动端登录',
+              productTopic: 'XXYY Pro',
+            },
+            updated_at: '2026-06-19T08:04:00.000Z',
+          },
+          {
+            session_id: 'session-secret',
+            summary: '{"productTopic":"Telegram 钱包监控"}',
+            updated_at: '2026-06-19T08:02:00.000Z',
+          },
+        ];
+      }
 
-    const summary = await summarizePgSessionContext({ client, recentLimit: 2 });
+      return [];
+    };
+
+    const summary = await summarizePgSessionContext({
+      client,
+      nowMs: Date.parse('2026-06-19T08:00:00.000Z'),
+      recentLimit: 2,
+    });
 
     expect(summary).toEqual({
       activeSessionCount: 3,
       latestSummaryUpdatedAt: '2026-06-19T08:04:00.000Z',
       latestTurnCreatedAt: '2026-06-19T08:03:00.000Z',
+      oldestSummaryUpdatedAt: '2026-06-18T07:59:59.000Z',
       productPreferenceCounts: {
         'XXYY 移动端登录': 2,
       },
@@ -202,8 +226,14 @@ describe('createPgSessionContextStore', () => {
           updatedAt: '2026-06-19T08:02:00.000Z',
         },
       ],
+      sessionSummaryAgeBuckets: {
+        gte24h: 1,
+        h1to24h: 1,
+        lt1h: 1,
+      },
+      staleSummaryCount: 1,
       storedTurnCount: 7,
-      summarizedSessionCount: 2,
+      summarizedSessionCount: 3,
     });
     expect(summary.recentSummaries[0]?.sessionIdHash).toMatch(/^[a-f0-9]{12}$/u);
     expect(summary.recentSummaries[1]?.sessionIdHash).toMatch(/^[a-f0-9]{12}$/u);
@@ -213,6 +243,11 @@ describe('createPgSessionContextStore', () => {
     );
     expect(client.queries[0]?.sql).toContain('from customer_agent_session_turns');
     expect(client.queries[1]?.sql).toContain('from customer_agent_session_summaries');
+    expect(client.queries[1]?.sql).toContain('count(*) filter');
+    expect(client.queries[1]?.values).toEqual([
+      '2026-06-19T07:00:00.000Z',
+      '2026-06-18T08:00:00.000Z',
+    ]);
     expect(client.queries[2]?.sql).toContain("summary ->> 'productTopic'");
     expect(client.queries[3]?.sql).toContain("summary ->> 'productPreference'");
     expect(client.queries[4]?.values).toEqual([2]);

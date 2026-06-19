@@ -1628,7 +1628,7 @@ async function createOpsSummary(
         knowledgeStore.getStats(),
         feedbackStore.getFeedbackStats({ limit: 10 }),
         summarizeKnowledgeCandidateQueues(candidateStore, generatedAtMs),
-        summarizePgSessionContext({ client: pool }),
+        summarizePgSessionContext({ client: pool, nowMs: generatedAtMs }),
         getTxAnalysisReportStore().then((reportStore) => reportStore.summarizeReports({})),
       ]);
 

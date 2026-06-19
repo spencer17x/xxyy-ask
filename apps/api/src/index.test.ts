@@ -357,6 +357,7 @@ describe('createRequestHandler', () => {
         activeSessionCount: 2,
         latestSummaryUpdatedAt: '2026-06-06T02:04:00.000Z',
         latestTurnCreatedAt: '2026-06-06T02:04:01.000Z',
+        oldestSummaryUpdatedAt: '2026-06-05T01:59:59.000Z',
         productPreferenceCounts: {
           'XXYY 移动端登录': 1,
         },
@@ -371,6 +372,12 @@ describe('createRequestHandler', () => {
             updatedAt: '2026-06-06T02:04:00.000Z',
           },
         ],
+        sessionSummaryAgeBuckets: {
+          gte24h: 1,
+          h1to24h: 0,
+          lt1h: 0,
+        },
+        staleSummaryCount: 1,
         storedTurnCount: 6,
         summarizedSessionCount: 1,
       },
@@ -476,6 +483,12 @@ describe('createRequestHandler', () => {
         productPreferenceCounts: {},
         productTopicCounts: {},
         recentSummaries: [],
+        sessionSummaryAgeBuckets: {
+          gte24h: 0,
+          h1to24h: 0,
+          lt1h: 0,
+        },
+        staleSummaryCount: 0,
         storedTurnCount: 0,
         summarizedSessionCount: 0,
       },
@@ -550,11 +563,16 @@ describe('createRequestHandler', () => {
           });
         }
         if (sql.includes('max(updated_at) as latest_summary_updated_at')) {
+          expect(values).toEqual(['2026-06-19T07:00:00.000Z', '2026-06-18T08:00:00.000Z']);
           return Promise.resolve({
             rows: [
               {
+                gte24h: '1',
+                h1to24h: '1',
                 latest_summary_updated_at: '2026-06-19T07:56:00.000Z',
-                summarized_session_count: '2',
+                lt1h: '1',
+                oldest_summary_updated_at: '2026-06-18T07:59:59.000Z',
+                summarized_session_count: '3',
               },
             ],
           });
@@ -983,6 +1001,7 @@ describe('createRequestHandler', () => {
           activeSessionCount: 2,
           latestSummaryUpdatedAt: '2026-06-19T07:56:00.000Z',
           latestTurnCreatedAt: '2026-06-19T07:55:00.000Z',
+          oldestSummaryUpdatedAt: '2026-06-18T07:59:59.000Z',
           productPreferenceCounts: {
             'XXYY 移动端登录': 1,
           },
@@ -1003,8 +1022,14 @@ describe('createRequestHandler', () => {
               updatedAt: '2026-06-19T07:54:00.000Z',
             },
           ],
+          sessionSummaryAgeBuckets: {
+            gte24h: 1,
+            h1to24h: 1,
+            lt1h: 1,
+          },
+          staleSummaryCount: 1,
           storedTurnCount: 5,
-          summarizedSessionCount: 2,
+          summarizedSessionCount: 3,
         },
       });
       expect(responseBody.sessionContext.recentSummaries[0]?.sessionIdHash).toMatch(

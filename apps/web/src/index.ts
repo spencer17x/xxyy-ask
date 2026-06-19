@@ -2086,6 +2086,7 @@ export function renderOpsPage(): string {
           metric("Sessions", summary.sessionContext?.activeSessionCount || 0, (summary.sessionContext?.activeSessionCount || 0) > 0 ? "ok" : "warn"),
           metric("Session Turns", summary.sessionContext?.storedTurnCount || 0, (summary.sessionContext?.storedTurnCount || 0) > 0 ? "ok" : "warn"),
           metric("Session Summaries", summary.sessionContext?.summarizedSessionCount || 0, (summary.sessionContext?.summarizedSessionCount || 0) > 0 ? "ok" : "warn"),
+          metric("Stale Sessions", summary.sessionContext?.staleSummaryCount || 0, (summary.sessionContext?.staleSummaryCount || 0) > 0 ? "warn" : "ok"),
           metric("Candidates", summary.knowledgeCandidateQueues?.needsReviewCount || 0, (summary.knowledgeCandidateQueues?.needsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Quality Gaps", summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0, (summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Stale Gaps", summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0, (summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0) > 0 ? "error" : "ok"),
@@ -2112,6 +2113,12 @@ export function renderOpsPage(): string {
           .filter((entry) => Number(entry[1]) > 0)
           .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]))
           .map(([preference, count]) => row("source-row", "Preference · " + preference, String(count), "sessions"));
+        const ageBuckets = summary.sessionSummaryAgeBuckets || {};
+        const ageRows = [
+          row("source-row", "Session Age · <1h", String(ageBuckets.lt1h || 0), "summaries"),
+          row("source-row", "Session Age · 1-24h", String(ageBuckets.h1to24h || 0), "summaries"),
+          row("source-row", "Session Age · 24h+", String(ageBuckets.gte24h || 0), "summaries"),
+        ];
         const recentRows = (summary.recentSummaries || []).map((summary) =>
           rowWithMetaNodes(
             "source-row",
@@ -2128,6 +2135,8 @@ export function renderOpsPage(): string {
           row("source-row", "Active sessions", String(summary.activeSessionCount || 0), ""),
           row("source-row", "Stored turns", String(summary.storedTurnCount || 0), ""),
           row("source-row", "Summaries", String(summary.summarizedSessionCount || 0), summary.latestSummaryUpdatedAt || ""),
+          row("source-row", "Stale summaries", String(summary.staleSummaryCount || 0), summary.oldestSummaryUpdatedAt || ""),
+          ...ageRows,
           ...(topicRows.length === 0 ? [empty("No product topics summarized.")] : topicRows),
           ...preferenceRows,
           ...(recentRows.length === 0 ? [empty("No recent session summaries.")] : recentRows),

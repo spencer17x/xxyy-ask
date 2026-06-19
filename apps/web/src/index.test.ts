@@ -137,6 +137,12 @@ describe('renderOpsPage', () => {
     expect(html).toContain('summary.sessionContext?.activeSessionCount || 0');
     expect(html).toContain('summary.sessionContext?.storedTurnCount || 0');
     expect(html).toContain('summary.sessionContext?.summarizedSessionCount || 0');
+    expect(html).toContain('summary.sessionContext?.staleSummaryCount || 0');
+    expect(html).toContain('const ageBuckets = summary.sessionSummaryAgeBuckets || {}');
+    expect(html).toContain('ageBuckets.gte24h || 0');
+    expect(html).toContain('Session Age · <1h');
+    expect(html).toContain('Session Age · 1-24h');
+    expect(html).toContain('Session Age · 24h+');
     expect(html).toContain('id="knowledge-approved-backlog"');
     expect(html).toContain('id="session-context"');
     expect(html).toContain('id="knowledge-eval-failures"');

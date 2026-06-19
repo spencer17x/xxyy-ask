@@ -1442,6 +1442,94 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when session context age buckets are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.sessionContext.sessionSummaryAgeBuckets;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid session context age buckets and stale counts.',
+    );
+  });
+
+  it('fails ops summary smoke when session context age buckets do not match summaries', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      sessionContext: {
+        ...opsSummaryPayload().sessionContext,
+        sessionSummaryAgeBuckets: {
+          gte24h: 1,
+          h1to24h: 1,
+          lt1h: 1,
+        },
+        summarizedSessionCount: 2,
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary session age buckets must sum to the summarized session count.',
+    );
+  });
+
+  it('fails ops summary smoke when stale session count differs from the 24h age bucket', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      sessionContext: {
+        ...opsSummaryPayload().sessionContext,
+        sessionSummaryAgeBuckets: {
+          gte24h: 1,
+          h1to24h: 1,
+          lt1h: 0,
+        },
+        staleSummaryCount: 2,
+        summarizedSessionCount: 2,
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary stale session count must match 24h+ session summaries.',
+    );
+  });
+
   it('fails ops summary smoke when quality reason counts are missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -6150,6 +6238,7 @@ function opsSummaryPayload(overrides = {}) {
       activeSessionCount: 2,
       latestSummaryUpdatedAt: '2026-06-19T07:56:00.000Z',
       latestTurnCreatedAt: '2026-06-19T07:55:00.000Z',
+      oldestSummaryUpdatedAt: '2026-06-18T07:59:59.000Z',
       productPreferenceCounts: {
         'XXYY 移动端登录': 1,
       },
@@ -6165,6 +6254,12 @@ function opsSummaryPayload(overrides = {}) {
           updatedAt: '2026-06-19T07:56:00.000Z',
         },
       ],
+      sessionSummaryAgeBuckets: {
+        gte24h: 1,
+        h1to24h: 1,
+        lt1h: 0,
+      },
+      staleSummaryCount: 1,
       storedTurnCount: 5,
       summarizedSessionCount: 2,
     },
