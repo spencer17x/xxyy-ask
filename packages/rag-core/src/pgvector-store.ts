@@ -609,6 +609,10 @@ async function getLatestFeedback(
 }
 
 async function recordFeedback(client: PgClientLike, input: RecordFeedbackInput): Promise<void> {
+  const question = sanitizeFeedbackText(input.question);
+  const answer = sanitizeFeedbackText(input.answer);
+  const comment = input.comment === undefined ? null : sanitizeFeedbackText(input.comment);
+
   await queryDatabase(
     client,
     `
@@ -621,13 +625,44 @@ async function recordFeedback(client: PgClientLike, input: RecordFeedbackInput):
       input.channel,
       input.sessionId ?? null,
       input.rating,
-      input.question,
-      input.answer,
+      question,
+      answer,
       input.intent,
       input.citationCount,
-      input.comment ?? null,
+      comment,
     ],
   );
+}
+
+function sanitizeFeedbackText(text: string): string {
+  return redactFeedbackCredentials(text)
+    .replace(/\b0x[a-fA-F0-9]{64}\b/gu, '[evm_tx_hash]')
+    .replace(/\b0x[a-fA-F0-9]{40}\b/gu, '[evm_address]')
+    .replace(/[1-9A-HJ-NP-Za-km-z]{64,88}/gu, '[solana_signature]')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, '[email]')
+    .replace(/\+?\d[\d\s().-]{7,}\d/gu, '[phone]')
+    .trim();
+}
+
+function redactFeedbackCredentials(text: string): string {
+  return text
+    .replace(
+      /((?:私钥|助记词|恢复词|密钥)\s*(?:是|为|:|：)?\s*)((?:0x)?[a-fA-F0-9]{64}\b|(?:[a-z]{3,}\s+){11,23}[a-z]{3,})/giu,
+      '$1[sensitive_credential]',
+    )
+    .replace(
+      /((?:private\s+key|seed\s+phrase|mnemonic|secret\s+recovery\s+phrase)\s*(?:is|:|：)?\s*)((?:0x)?[a-fA-F0-9]{64}\b|(?:[a-z]{3,}\s+){11,23}[a-z]{3,})/giu,
+      '$1[sensitive_credential]',
+    )
+    .replace(
+      /((?:我的)?(?:密码|登录密码)\s*(?:是|为|:|：|=)\s*)[^\s,，。；;]+/giu,
+      '$1[sensitive_credential]',
+    )
+    .replace(
+      /((?:api\s*key|access\s*token|auth\s*token|访问令牌)\s*(?:是|为|:|：|=)\s*)[^\s,，。；;]+/giu,
+      '$1[sensitive_credential]',
+    )
+    .replace(/(\b(?:my\s+)?password\s*(?:is|:|=)\s*)[^\s,，。；;]+/giu, '$1[sensitive_credential]');
 }
 
 async function getKnowledgeTotals(client: PgClientLike): Promise<KnowledgeStatsRow> {

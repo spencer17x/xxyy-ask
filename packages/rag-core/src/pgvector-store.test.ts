@@ -109,6 +109,38 @@ describe('createPgVectorStore', () => {
     ]);
   });
 
+  it('redacts sensitive support data before recording chat feedback', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await store.recordFeedback({
+      answer: '不要发送私钥、助记词或 seed phrase。api key: sk-answer-123',
+      channel: 'web',
+      citationCount: 0,
+      comment: '我的密码是 hunter2',
+      intent: 'unknown',
+      question:
+        '我的密码是 hunter2 api key: sk-test-123456 邮箱 test@example.com 手机 +1 415-555-0100',
+      rating: 'negative',
+      sessionId: 'session-1',
+    });
+
+    const values = client.queries[0]?.values ?? [];
+    expect(values[3]).toBe(
+      '我的密码是 [sensitive_credential] api key: [sensitive_credential] 邮箱 [email] 手机 [phone]',
+    );
+    expect(values[4]).toBe('不要发送私钥、助记词或 seed phrase。api key: [sensitive_credential]');
+    expect(values[7]).toBe('我的密码是 [sensitive_credential]');
+    expect(JSON.stringify(values)).not.toContain('hunter2');
+    expect(JSON.stringify(values)).not.toContain('sk-test-123456');
+    expect(JSON.stringify(values)).not.toContain('sk-answer-123');
+    expect(JSON.stringify(values)).not.toContain('test@example.com');
+    expect(JSON.stringify(values)).not.toContain('415-555-0100');
+  });
+
   it('returns feedback stats for quality operations', async () => {
     const client = new FakePgClient();
     client.queuedRows = [
