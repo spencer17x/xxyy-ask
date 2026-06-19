@@ -683,6 +683,11 @@ function buildListCandidatesQuery(filter: ListKnowledgeCandidatesFilter): {
     clauses.push(`risk_level = $${values.length}`);
   }
 
+  if (filter.source !== undefined) {
+    values.push(JSON.stringify([{ source: filter.source }]));
+    clauses.push(`source_refs @> $${values.length}::jsonb`);
+  }
+
   const limit = normalizeLimit(filter.limit);
   values.push(limit);
   const whereClause = clauses.length === 0 ? '' : `where ${clauses.join(' and ')}`;

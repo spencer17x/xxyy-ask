@@ -2823,13 +2823,14 @@ describe('createRequestHandler', () => {
     const response = await callHandler(handler, {
       headers: { Authorization: 'Bearer secret-token' },
       method: 'GET',
-      url: '/api/knowledge/candidates?status=needs_review&type=boundary_example&riskLevel=high&limit=5',
+      url: '/api/knowledge/candidates?status=needs_review&type=boundary_example&riskLevel=high&source=answer_feedback&limit=5',
     });
 
     expect(response.statusCode).toBe(200);
     expect(listFilter).toEqual({
       limit: 5,
       riskLevel: 'high',
+      source: 'answer_feedback',
       status: 'needs_review',
       type: 'boundary_example',
     });
@@ -2842,6 +2843,58 @@ describe('createRequestHandler', () => {
           type: 'boundary_example',
         }),
       ],
+    });
+  });
+
+  it('rejects unsupported knowledge candidate source filters', async () => {
+    const handler = createRequestHandler({
+      env: { API_OPS_TOKEN: 'secret-token' },
+      getKnowledgeCandidateStore: () =>
+        Promise.resolve({
+          addCandidates: () => Promise.resolve([]),
+          getCandidate() {
+            throw new Error('getCandidate should not be called for invalid source filters');
+          },
+          listCandidates() {
+            throw new Error('listCandidates should not be called for invalid source filters');
+          },
+          listCandidateRuns() {
+            throw new Error('listCandidateRuns should not be called for invalid source filters');
+          },
+          markCandidateEvalResult() {
+            throw new Error(
+              'markCandidateEvalResult should not be called for invalid source filters',
+            );
+          },
+          markCandidateIngested() {
+            throw new Error(
+              'markCandidateIngested should not be called for invalid source filters',
+            );
+          },
+          markCandidatePublished() {
+            throw new Error(
+              'markCandidatePublished should not be called for invalid source filters',
+            );
+          },
+          recordCandidateRun() {
+            throw new Error('recordCandidateRun should not be called for invalid source filters');
+          },
+          reviewCandidate() {
+            throw new Error('reviewCandidate should not be called for invalid source filters');
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      headers: { Authorization: 'Bearer secret-token' },
+      method: 'GET',
+      url: '/api/knowledge/candidates?source=manual_ticket',
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'bad_request',
+      message: 'source must be one of: telegram, answer_feedback, answer_quality_signal.',
     });
   });
 

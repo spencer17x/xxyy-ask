@@ -19,6 +19,7 @@ import {
   mineAnswerFeedback,
   mineAnswerQualitySignals,
   type KnowledgeCandidateStore,
+  type KnowledgeCandidateSource,
   type KnowledgeCandidateStatus,
   type KnowledgeCandidateType,
   type KnowledgeRiskLevel,
@@ -276,6 +277,11 @@ const supportedKnowledgeCandidateTypes = [
   'eval_case',
 ] as const;
 const supportedKnowledgeCandidateRiskLevels = ['low', 'medium', 'high'] as const;
+const supportedKnowledgeCandidateSources = [
+  'telegram',
+  'answer_feedback',
+  'answer_quality_signal',
+] as const;
 const supportedKnowledgeCandidateReviewActions = [
   'approve',
   'reject',
@@ -666,11 +672,15 @@ async function handleKnowledgeCandidatesRequest(options: {
   const riskLevel = parseOptionalKnowledgeRiskLevel(
     options.requestUrl.searchParams.get('riskLevel'),
   );
+  const source = parseOptionalKnowledgeCandidateSource(
+    options.requestUrl.searchParams.get('source'),
+  );
   const limit = parseOptionalPositiveQueryInteger(options.requestUrl.searchParams.get('limit'));
   const store = await options.getKnowledgeCandidateStore();
   const candidates = await store.listCandidates({
     ...(limit === undefined ? {} : { limit }),
     ...(riskLevel === undefined ? {} : { riskLevel }),
+    ...(source === undefined ? {} : { source }),
     ...(status === undefined ? {} : { status }),
     ...(type === undefined ? {} : { type }),
   });
@@ -1056,6 +1066,13 @@ function parseOptionalKnowledgeRiskLevel(value: string | null): KnowledgeRiskLev
   return riskLevel === undefined ? undefined : parseKnowledgeRiskLevel(riskLevel);
 }
 
+function parseOptionalKnowledgeCandidateSource(
+  value: string | null,
+): KnowledgeCandidateSource | undefined {
+  const source = parseOptionalQueryString(value);
+  return source === undefined ? undefined : parseKnowledgeCandidateSource(source);
+}
+
 function parseOptionalPositiveQueryInteger(value: string | null): number | undefined {
   const normalized = parseOptionalQueryString(value);
   if (normalized === undefined) {
@@ -1124,6 +1141,16 @@ function parseKnowledgeRiskLevel(riskLevel: string): KnowledgeRiskLevel {
   }
 
   return riskLevel as KnowledgeRiskLevel;
+}
+
+function parseKnowledgeCandidateSource(source: string): KnowledgeCandidateSource {
+  if (!supportedKnowledgeCandidateSources.includes(source as KnowledgeCandidateSource)) {
+    throw new BadRequestError(
+      'source must be one of: telegram, answer_feedback, answer_quality_signal.',
+    );
+  }
+
+  return source as KnowledgeCandidateSource;
 }
 
 function parseOptionalQueryString(value: string | null): string | undefined {

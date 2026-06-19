@@ -229,12 +229,21 @@ describe('createPgKnowledgeOpsStore', () => {
     const candidates = await store.listCandidates({
       limit: 10,
       riskLevel: 'high',
+      source: 'answer_feedback',
       status: 'needs_review',
       type: 'boundary_example',
     });
 
-    expect(client.queries[0]?.sql).toContain('where status = $1 and type = $2 and risk_level = $3');
-    expect(client.queries[0]?.values).toEqual(['needs_review', 'boundary_example', 'high', 10]);
+    expect(client.queries[0]?.sql).toContain(
+      'where status = $1 and type = $2 and risk_level = $3 and source_refs @> $4::jsonb',
+    );
+    expect(client.queries[0]?.values).toEqual([
+      'needs_review',
+      'boundary_example',
+      'high',
+      JSON.stringify([{ source: 'answer_feedback' }]),
+      10,
+    ]);
     expect(candidates).toEqual([
       candidate({
         confidence: 0.65,

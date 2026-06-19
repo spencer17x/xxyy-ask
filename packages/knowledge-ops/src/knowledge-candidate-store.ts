@@ -1,7 +1,12 @@
-import type { KnowledgeCandidate, KnowledgeCandidateStatus } from './types.js';
+import type {
+  KnowledgeCandidate,
+  KnowledgeCandidateSource,
+  KnowledgeCandidateStatus,
+} from './types.js';
 
 export interface ListKnowledgeCandidatesFilter {
   limit?: number;
+  source?: KnowledgeCandidateSource;
   status?: KnowledgeCandidateStatus;
   type?: KnowledgeCandidate['type'];
   riskLevel?: KnowledgeCandidate['riskLevel'];
@@ -258,6 +263,13 @@ function matchesFilter(
   }
 
   if (filter.riskLevel !== undefined && candidate.riskLevel !== filter.riskLevel) {
+    return false;
+  }
+
+  if (
+    filter.source !== undefined &&
+    !candidate.sourceRefs.some((sourceRef) => sourceRef.source === filter.source)
+  ) {
     return false;
   }
 

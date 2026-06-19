@@ -42,6 +42,30 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
     await expect(store.getCandidate('missing')).resolves.toBeUndefined();
   });
 
+  it('lists candidates by source for automatic quality queues', async () => {
+    const feedbackCandidate = candidate({
+      id: 'candidate_feedback',
+      sourceRefs: [{ source: 'answer_feedback', chatIdHash: 'session_present', messageId: 'fb_1' }],
+      type: 'eval_case',
+    });
+    const qualitySignalCandidate = candidate({
+      id: 'candidate_quality',
+      sourceRefs: [
+        { source: 'answer_quality_signal', chatIdHash: 'session_present', messageId: 'aqs_1' },
+      ],
+      type: 'faq',
+    });
+    const store = createInMemoryKnowledgeCandidateStore([
+      candidate(),
+      feedbackCandidate,
+      qualitySignalCandidate,
+    ]);
+
+    await expect(store.listCandidates({ source: 'answer_feedback' })).resolves.toEqual([
+      feedbackCandidate,
+    ]);
+  });
+
   it('records human review decisions without publishing approved candidates', async () => {
     const store = createInMemoryKnowledgeCandidateStore();
     await store.addCandidates([candidate()]);
