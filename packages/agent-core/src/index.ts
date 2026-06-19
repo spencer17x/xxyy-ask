@@ -32,6 +32,11 @@ export type {
   QualitySignalReason,
   QualitySignalSink,
 } from './quality-signals.js';
+export { createPgSessionContextStore, migratePgSessionContextStore } from './pg-session-context.js';
+export type {
+  CreatePgSessionContextStoreOptions,
+  PgClientLike as PgSessionContextClientLike,
+} from './pg-session-context.js';
 export { createInMemorySessionContextStore, sanitizeSessionText } from './session-context.js';
 export type {
   InMemorySessionContextStoreOptions,

@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 
-import { createCustomerAgentChatService } from '@xxyy/agent-core';
+import { createCustomerAgentChatService, migratePgSessionContextStore } from '@xxyy/agent-core';
 import {
   EmbeddingConfigurationError,
   createOpenAiEmbeddingProvider,
@@ -972,6 +972,7 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
     const store = createPgVectorStore({ client: pool, embeddingProvider });
     await store.migrate();
     await migratePgKnowledgeOpsStore(pool);
+    await migratePgSessionContextStore(pool);
     const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
     const ingestionRun = createIngestionRun({
       chunks: embeddedChunks,
@@ -1008,6 +1009,7 @@ async function syncXUpdates(io: CliIo): Promise<SyncXUpdatesSummary> {
     const store = createPgVectorStore({ client: pool, embeddingProvider });
     await store.migrate();
     await migratePgKnowledgeOpsStore(pool);
+    await migratePgSessionContextStore(pool);
     const existingHashes = await store.getChunkContentHashes(chunks.map((chunk) => chunk.id));
     const changedChunks = chunks.filter(
       (chunk) => existingHashes.get(chunk.id) !== chunk.contentHash,
@@ -1305,6 +1307,7 @@ async function migrateDatabase(config: ReturnType<typeof loadRagConfig>): Promis
     });
     await store.migrate();
     await migratePgKnowledgeOpsStore(pool);
+    await migratePgSessionContextStore(pool);
   } finally {
     await pool.end();
   }

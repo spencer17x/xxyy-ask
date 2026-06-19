@@ -3008,6 +3008,11 @@ describe('createRequestHandler', () => {
       signalsRead: 1,
       signalsSkipped: 0,
     }));
+    const pgClient = {
+      end: vi.fn(),
+      query: vi.fn(() => Promise.resolve({ rows: [] })),
+    };
+    const createPgPool = vi.fn(() => pgClient);
 
     vi.doMock('@xxyy/agent-core', async (importOriginal) => {
       const actual = await importOriginal<Record<string, unknown>>();
@@ -3037,7 +3042,7 @@ describe('createRequestHandler', () => {
         ...actual,
         createChatService: createLegacyChatService,
         createLazyRetriever: vi.fn(() => ({ retrieve: vi.fn() })),
-        createPgPool: vi.fn(() => ({ end: vi.fn(), query: vi.fn() })),
+        createPgPool,
         loadRagConfig: vi.fn(() => createRuntimeConfigForTest()),
       };
     });
@@ -3076,6 +3081,12 @@ describe('createRequestHandler', () => {
       expect(typeof serviceOptions.qualitySignals?.record).toBe('function');
       expect(typeof serviceOptions.sessionContext?.appendTurn).toBe('function');
       expect(typeof serviceOptions.sessionContext?.getRecentTurns).toBe('function');
+      await serviceOptions.sessionContext?.getRecentTurns('session-1');
+      expect(createPgPool).toHaveBeenCalledWith('postgres://xxyy:secret@example.test/xxyy_ask');
+      expect(pgClient.query).toHaveBeenCalledWith(
+        expect.stringContaining('from customer_agent_session_turns'),
+        ['session-1', 12],
+      );
       const signal = {
         answer: '当前知识库没有足够信息。',
         channel: 'web',

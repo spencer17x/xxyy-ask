@@ -8,7 +8,9 @@ import {
   createCustomerAgentChatService,
   createInMemoryQualitySignalSink,
   createInMemorySessionContextStore,
+  createPgSessionContextStore,
   type QualitySignalSink,
+  type SessionContextStore,
 } from '@xxyy/agent-core';
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
@@ -1697,11 +1699,40 @@ function createCachedChatServiceLoader(
       config,
       qualitySignals: createApiQualitySignalSink(config),
       retriever,
-      sessionContext: createInMemorySessionContextStore(),
+      sessionContext: createApiSessionContextStore(config),
       txAnalysisProvider: createConfiguredTxAnalysisProvider(config),
     });
     return Promise.resolve(cachedService);
   };
+}
+
+function createApiSessionContextStore(
+  config: ReturnType<typeof loadRagConfig>,
+): SessionContextStore {
+  const fallback = createInMemorySessionContextStore();
+
+  try {
+    const primary = createPgSessionContextStore({ client: createPgPool(config.databaseUrl) });
+    return {
+      async appendTurn(sessionId, turn) {
+        try {
+          await primary.appendTurn(sessionId, turn);
+        } catch {
+          await fallback.appendTurn(sessionId, turn);
+        }
+      },
+
+      async getRecentTurns(sessionId, limit) {
+        try {
+          return await primary.getRecentTurns(sessionId, limit);
+        } catch {
+          return fallback.getRecentTurns(sessionId, limit);
+        }
+      },
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 function createApiQualitySignalSink(config: ReturnType<typeof loadRagConfig>): QualitySignalSink {
