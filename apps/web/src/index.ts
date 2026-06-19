@@ -1755,6 +1755,10 @@ export function renderOpsPage(): string {
               <div id="knowledge-quality-age-buckets" class="tx-report-results"></div>
             </div>
             <div class="knowledge-candidate-section">
+              <h3>Quality Gap Trend</h3>
+              <div id="knowledge-quality-trend" class="tx-report-results"></div>
+            </div>
+            <div class="knowledge-candidate-section">
               <h3>Quality Gap Clusters</h3>
               <div id="knowledge-quality-clusters" class="tx-report-results"></div>
             </div>
@@ -1899,6 +1903,7 @@ export function renderOpsPage(): string {
       const knowledgeQualityRoutesTarget = document.querySelector("#knowledge-quality-routes");
       const knowledgeQualityRiskLevelsTarget = document.querySelector("#knowledge-quality-risk-levels");
       const knowledgeQualityAgeBucketsTarget = document.querySelector("#knowledge-quality-age-buckets");
+      const knowledgeQualityTrendTarget = document.querySelector("#knowledge-quality-trend");
       const knowledgeQualityClustersTarget = document.querySelector("#knowledge-quality-clusters");
       const knowledgeApprovedBacklogTarget = document.querySelector("#knowledge-approved-backlog");
       const queryTxReports = document.querySelector("#tx-report-form");
@@ -2070,6 +2075,7 @@ export function renderOpsPage(): string {
           renderQualitySignalRoutes(summary.knowledgeCandidateQueues?.qualitySignalAgentRouteCounts || {});
           renderQualitySignalRiskLevels(summary.knowledgeCandidateQueues?.qualitySignalRiskLevelCounts || {});
           renderQualitySignalAgeBuckets(summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets || {});
+          renderQualitySignalTrend(summary.knowledgeCandidateQueues?.qualitySignalDailyTrend || []);
           renderQualitySignalClusters(summary.knowledgeCandidateQueues?.qualitySignalClusters || []);
           renderApprovedBacklog(summary.knowledgeCandidateQueues?.approvedBacklogTypeCounts || {});
           renderToolAudit(summary.toolAudit);
@@ -2433,6 +2439,35 @@ export function renderOpsPage(): string {
         button.setAttribute("data-quality-age-bucket", bucket.key);
         button.textContent = "Load age";
         return button;
+      }
+
+      function renderQualitySignalTrend(trendBuckets) {
+        if (trendBuckets.length === 0) {
+          knowledgeQualityTrendTarget.replaceChildren(empty("No quality trend buckets."));
+          return;
+        }
+
+        knowledgeQualityTrendTarget.replaceChildren(
+          ...trendBuckets.map((bucket) =>
+            rowWithMetaNodes(
+              "knowledge-candidate-item",
+              "Quality trend · " + bucket.date,
+              String(bucket.count || 0),
+              [
+                countMapMeta("Reasons", bucket.reasonCounts),
+                countMapMeta("Routes", bucket.routeCounts),
+              ],
+            ),
+          ),
+        );
+      }
+
+      function countMapMeta(label, counts) {
+        const parts = Object.entries(counts || {})
+          .filter((entry) => Number(entry[1]) > 0)
+          .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]))
+          .map(([name, count]) => name + " " + String(count));
+        return text(parts.length === 0 ? label + " none" : label + " " + parts.join(", "));
       }
 
       function renderQualitySignalClusters(clusters) {

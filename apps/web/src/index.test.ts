@@ -119,6 +119,9 @@ describe('renderOpsPage', () => {
       'renderQualitySignalAgeBuckets(summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets || {})',
     );
     expect(html).toContain(
+      'renderQualitySignalTrend(summary.knowledgeCandidateQueues?.qualitySignalDailyTrend || [])',
+    );
+    expect(html).toContain(
       'renderQualitySignalClusters(summary.knowledgeCandidateQueues?.qualitySignalClusters || [])',
     );
     expect(html).toContain(
@@ -169,6 +172,10 @@ describe('renderOpsPage', () => {
     expect(html).toContain('await loadQualitySignalRouteCandidates(route)');
     expect(html).toContain('await loadQualitySignalRiskLevelCandidates(riskLevel)');
     expect(html).toContain('Quality age · " + bucket.label');
+    expect(html).toContain('id="knowledge-quality-trend"');
+    expect(html).toContain('Quality trend · " + bucket.date');
+    expect(html).toContain('bucket.reasonCounts');
+    expect(html).toContain('bucket.routeCounts');
     expect(html).toContain('data-quality-age-bucket');
     expect(html).toContain('await loadQualitySignalAgeBucketCandidates(ageBucket)');
     expect(html).toContain('Quality cluster · " + cluster.agentRoute + " / " + cluster.reason');

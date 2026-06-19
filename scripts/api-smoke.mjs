@@ -1446,6 +1446,26 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary must include valid quality signal age buckets.';
   }
 
+  if (
+    !Array.isArray(value.qualitySignalDailyTrend) ||
+    value.qualitySignalDailyTrend.length === 0 ||
+    !value.qualitySignalDailyTrend.every(isQualitySignalTrendBucket)
+  ) {
+    return 'ops summary must include valid quality signal daily trend buckets.';
+  }
+
+  const trendCountsMatch = value.qualitySignalDailyTrend.every((bucket) => {
+    const reasonTotal = Object.values(bucket.reasonCounts).reduce(
+      (total, count) => total + count,
+      0,
+    );
+    const routeTotal = Object.values(bucket.routeCounts).reduce((total, count) => total + count, 0);
+    return reasonTotal === bucket.count && routeTotal === bucket.count;
+  });
+  if (!trendCountsMatch) {
+    return 'ops summary quality signal daily trend bucket counts must match reason and route totals.';
+  }
+
   const reasonTotal = Object.values(value.qualitySignalReasonCounts).reduce(
     (total, count) => total + count,
     0,
@@ -1527,6 +1547,16 @@ function hasQualitySignalAgeBuckets(value) {
     isNonNegativeInteger(value.lt1h) &&
     isNonNegativeInteger(value.h1to24h) &&
     isNonNegativeInteger(value.gte24h)
+  );
+}
+
+function isQualitySignalTrendBucket(value) {
+  return (
+    isRecord(value) &&
+    /^\d{4}-\d{2}-\d{2}$/u.test(value.date) &&
+    isNonNegativeInteger(value.count) &&
+    hasReasonCounts(value.reasonCounts) &&
+    hasReasonCounts(value.routeCounts)
   );
 }
 

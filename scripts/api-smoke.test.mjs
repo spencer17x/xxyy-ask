@@ -1740,6 +1740,63 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when quality trend buckets are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.knowledgeCandidateQueues.qualitySignalDailyTrend;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid quality signal daily trend buckets.',
+    );
+  });
+
+  it('fails ops summary smoke when quality trend totals do not match bucket counts', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    payload.knowledgeCandidateQueues.qualitySignalDailyTrend = [
+      {
+        count: 2,
+        date: '2026-06-19',
+        reasonCounts: {
+          missing_citations: 1,
+        },
+        routeCounts: {
+          product_answer: 2,
+        },
+      },
+    ];
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary quality signal daily trend bucket counts must match reason and route totals.',
+    );
+  });
+
   it('fails ops summary smoke when quality clusters are missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -6311,6 +6368,54 @@ function opsSummaryPayload(overrides = {}) {
       oldestApprovedBacklogCreatedAt: '2026-06-19T07:00:00.000Z',
       oldestQualitySignalCreatedAt: '2026-06-19T07:30:00.000Z',
       qualitySignalNeedsReviewCount: 1,
+      qualitySignalDailyTrend: [
+        {
+          count: 0,
+          date: '2026-06-13',
+          reasonCounts: {},
+          routeCounts: {},
+        },
+        {
+          count: 0,
+          date: '2026-06-14',
+          reasonCounts: {},
+          routeCounts: {},
+        },
+        {
+          count: 0,
+          date: '2026-06-15',
+          reasonCounts: {},
+          routeCounts: {},
+        },
+        {
+          count: 0,
+          date: '2026-06-16',
+          reasonCounts: {},
+          routeCounts: {},
+        },
+        {
+          count: 0,
+          date: '2026-06-17',
+          reasonCounts: {},
+          routeCounts: {},
+        },
+        {
+          count: 0,
+          date: '2026-06-18',
+          reasonCounts: {},
+          routeCounts: {},
+        },
+        {
+          count: 1,
+          date: '2026-06-19',
+          reasonCounts: {
+            missing_citations: 1,
+          },
+          routeCounts: {
+            product_answer: 1,
+          },
+        },
+      ],
       qualitySignalAgeBuckets: {
         gte24h: 0,
         h1to24h: 0,

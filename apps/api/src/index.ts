@@ -248,6 +248,7 @@ interface KnowledgeCandidateQueueSummary {
   qualitySignalAgeBuckets: QualitySignalAgeBuckets;
   qualitySignalAgentRouteCounts: Record<string, number>;
   qualitySignalClusters: QualitySignalClusterSummary[];
+  qualitySignalDailyTrend: QualitySignalDailyTrendBucket[];
   qualitySignalNeedsReviewCount: number;
   qualitySignalReasonCounts: Record<string, number>;
   qualitySignalRiskLevelCounts: Record<string, number>;
@@ -259,6 +260,13 @@ interface QualitySignalAgeBuckets {
   gte24h: number;
   h1to24h: number;
   lt1h: number;
+}
+
+interface QualitySignalDailyTrendBucket {
+  count: number;
+  date: string;
+  reasonCounts: Record<string, number>;
+  routeCounts: Record<string, number>;
 }
 
 interface RecentKnowledgeEvalFailureSummary {
@@ -1665,6 +1673,7 @@ const OPS_CANDIDATE_QUEUE_LIMIT = 200;
 const OPS_RECENT_EVAL_FAILURE_LIMIT = 5;
 const OPS_RECENT_QUALITY_SIGNAL_LIMIT = 5;
 const OPS_QUALITY_SIGNAL_CLUSTER_SAMPLE_LIMIT = 5;
+const OPS_QUALITY_SIGNAL_TREND_DAY_COUNT = 7;
 const QUALITY_SIGNAL_AGE_ONE_HOUR_MS = 60 * 60 * 1000;
 const QUALITY_SIGNAL_AGE_ONE_DAY_MS = 24 * QUALITY_SIGNAL_AGE_ONE_HOUR_MS;
 
@@ -1710,6 +1719,7 @@ async function summarizeKnowledgeCandidateQueues(
     qualitySignalAgeBuckets: summarizeQualitySignalAgeBuckets(qualitySignalNeedsReview, nowMs),
     qualitySignalAgentRouteCounts: summarizeQualitySignalAgentRouteCounts(qualitySignalNeedsReview),
     qualitySignalClusters: summarizeQualitySignalClusters(qualitySignalNeedsReview),
+    qualitySignalDailyTrend: summarizeQualitySignalDailyTrend(qualitySignalNeedsReview, nowMs),
     qualitySignalNeedsReviewCount: qualitySignalNeedsReview.length,
     qualitySignalReasonCounts: summarizeQualitySignalReasonCounts(qualitySignalNeedsReview),
     qualitySignalRiskLevelCounts: summarizeQualitySignalRiskLevelCounts(qualitySignalNeedsReview),
@@ -1746,6 +1756,61 @@ function summarizeQualitySignalAgeBuckets(
   }
 
   return buckets;
+}
+
+function summarizeQualitySignalDailyTrend(
+  candidates: KnowledgeCandidate[],
+  nowMs: number,
+): QualitySignalDailyTrendBucket[] {
+  const now = new Date(nowMs);
+  const todayStartMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const buckets: QualitySignalDailyTrendBucket[] = [];
+
+  for (let offset = OPS_QUALITY_SIGNAL_TREND_DAY_COUNT - 1; offset >= 0; offset -= 1) {
+    buckets.push({
+      count: 0,
+      date: formatUtcDate(todayStartMs - offset * QUALITY_SIGNAL_AGE_ONE_DAY_MS),
+      reasonCounts: {},
+      routeCounts: {},
+    });
+  }
+
+  const bucketsByDate = new Map(buckets.map((bucket) => [bucket.date, bucket]));
+  for (const candidate of candidates) {
+    const createdAtMs = Date.parse(candidate.createdAt);
+    if (!Number.isFinite(createdAtMs)) {
+      continue;
+    }
+
+    const bucket = bucketsByDate.get(formatUtcDate(createdAtMs));
+    if (bucket === undefined) {
+      continue;
+    }
+
+    bucket.count += 1;
+    incrementCount(bucket.reasonCounts, extractQualitySignalReason(candidate));
+    incrementCount(bucket.routeCounts, extractQualitySignalAgentRoute(candidate));
+  }
+
+  return buckets.map((bucket) => ({
+    ...bucket,
+    reasonCounts: sortCountRecord(bucket.reasonCounts),
+    routeCounts: sortCountRecord(bucket.routeCounts),
+  }));
+}
+
+function formatUtcDate(timestampMs: number): string {
+  return new Date(timestampMs).toISOString().slice(0, 10);
+}
+
+function incrementCount(counts: Record<string, number>, key: string): void {
+  counts[key] = (counts[key] ?? 0) + 1;
+}
+
+function sortCountRecord(counts: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)),
+  );
 }
 
 function summarizeEvalFailureReasonCounts(

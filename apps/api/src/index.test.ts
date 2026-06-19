@@ -340,6 +340,7 @@ describe('createRequestHandler', () => {
         evalFailedCount: 0,
         evalFailureReasonCounts: {},
         needsReviewCount: 0,
+        qualitySignalDailyTrend: [],
         qualitySignalAgeBuckets: {
           gte24h: 0,
           h1to24h: 0,
@@ -491,6 +492,7 @@ describe('createRequestHandler', () => {
         evalFailedCount: 0,
         evalFailureReasonCounts: {},
         needsReviewCount: 0,
+        qualitySignalDailyTrend: [],
         qualitySignalAgeBuckets: {
           gte24h: 0,
           h1to24h: 0,
@@ -1060,6 +1062,56 @@ describe('createRequestHandler', () => {
             low: 2,
             medium: 1,
           },
+          qualitySignalDailyTrend: [
+            {
+              count: 0,
+              date: '2026-06-13',
+              reasonCounts: {},
+              routeCounts: {},
+            },
+            {
+              count: 0,
+              date: '2026-06-14',
+              reasonCounts: {},
+              routeCounts: {},
+            },
+            {
+              count: 0,
+              date: '2026-06-15',
+              reasonCounts: {},
+              routeCounts: {},
+            },
+            {
+              count: 0,
+              date: '2026-06-16',
+              reasonCounts: {},
+              routeCounts: {},
+            },
+            {
+              count: 0,
+              date: '2026-06-17',
+              reasonCounts: {},
+              routeCounts: {},
+            },
+            {
+              count: 0,
+              date: '2026-06-18',
+              reasonCounts: {},
+              routeCounts: {},
+            },
+            {
+              count: 3,
+              date: '2026-06-19',
+              reasonCounts: {
+                missing_citations: 2,
+                missing_followup_context: 1,
+              },
+              routeCounts: {
+                clarify: 1,
+                product_answer: 2,
+              },
+            },
+          ],
           recentQualitySignals: [
             {
               agentRoute: 'product_answer',
