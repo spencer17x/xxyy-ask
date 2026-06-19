@@ -1,5 +1,7 @@
 export const workspacePackageName = '@xxyy/agent-core';
 
+export { planAnswer } from './answer-planner.js';
+export type { AnswerPlan, AnswerPlanRoute, PlanAnswerInput } from './answer-planner.js';
 export { createInMemoryAuditSink, createNoopAuditSink } from './audit.js';
 export type { InMemoryAuditSink, ToolAuditEvent, ToolAuditSink, ToolAuditStatus } from './audit.js';
 export { createCustomerAgentChatService } from './customer-agent-chat-service.js';
@@ -23,6 +25,16 @@ export type {
   CreateKnowledgeOpsAgentRuntimeOptions,
   KnowledgeOpsAgentRuntime,
 } from './knowledge-ops-agent-runtime.js';
+export {
+  createInMemoryQualitySignalSink,
+  createNoopQualitySignalSink,
+} from './quality-signals.js';
+export type {
+  InMemoryQualitySignalSink,
+  QualitySignal,
+  QualitySignalReason,
+  QualitySignalSink,
+} from './quality-signals.js';
 export {
   createInMemorySessionContextStore,
   sanitizeSessionText,
