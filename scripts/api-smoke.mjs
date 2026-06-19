@@ -5,6 +5,9 @@ import path from 'node:path';
 
 const DEFAULT_BASE_URL = 'http://localhost:3000';
 const DEFAULT_CHAT_BOUNDARY_QUESTION = '帮我查一下钱包余额';
+const DEFAULT_CHAT_CLEAR_SESSION_CLEAR_QUESTION = '清除本次会话上下文';
+const DEFAULT_CHAT_CLEAR_SESSION_FOLLOW_UP_QUESTION = '怎么登录？';
+const DEFAULT_CHAT_CLEAR_SESSION_SETUP_QUESTION = '我主要用手机端。';
 const DEFAULT_CHAT_QUESTION = 'XXYY Pro 有哪些权益？';
 const DEFAULT_CHAT_FOLLOW_UP_QUESTION = '怎么升级？';
 const DEFAULT_CHAT_SESSION_ID = 'api-smoke-session';
@@ -96,6 +99,56 @@ function createApiSmokeChecksFromOptions(options) {
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       }),
+    );
+  }
+
+  if (options.chatClearSession) {
+    checks.push(
+      createCheck(
+        'chatClearSessionSetup',
+        'chat clear-session setup',
+        options.baseUrl,
+        '/api/chat',
+        {
+          body: JSON.stringify({
+            channel: 'cli',
+            message: options.clearSessionSetupQuestion,
+            sessionId: options.chatSessionId,
+          }),
+          headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+        },
+      ),
+      createCheck(
+        'chatClearSessionClear',
+        'chat clear-session clear',
+        options.baseUrl,
+        '/api/chat',
+        {
+          body: JSON.stringify({
+            channel: 'cli',
+            message: options.clearSessionQuestion,
+            sessionId: options.chatSessionId,
+          }),
+          headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+        },
+      ),
+      createCheck(
+        'chatClearSessionFollowUp',
+        'chat clear-session follow-up',
+        options.baseUrl,
+        '/api/chat',
+        {
+          body: JSON.stringify({
+            channel: 'cli',
+            message: options.clearSessionFollowUpQuestion,
+            sessionId: options.chatSessionId,
+          }),
+          headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+        },
+      ),
     );
   }
 
@@ -237,9 +290,19 @@ function parseApiSmokeArgs(args, env) {
   let chatBoundary = parseBoolean(env.API_SMOKE_CHAT_BOUNDARY);
   let boundaryQuestion =
     normalizeOptionalText(env.API_SMOKE_CHAT_BOUNDARY_QUESTION) ?? DEFAULT_CHAT_BOUNDARY_QUESTION;
+  let chatClearSession = parseBoolean(env.API_SMOKE_CHAT_CLEAR_SESSION);
   let chatFollowUp = parseBoolean(env.API_SMOKE_CHAT_FOLLOW_UP);
   let chatSessionId =
     normalizeOptionalText(env.API_SMOKE_CHAT_SESSION_ID) ?? DEFAULT_CHAT_SESSION_ID;
+  let clearSessionFollowUpQuestion =
+    normalizeOptionalText(env.API_SMOKE_CHAT_CLEAR_SESSION_FOLLOW_UP_QUESTION) ??
+    DEFAULT_CHAT_CLEAR_SESSION_FOLLOW_UP_QUESTION;
+  let clearSessionQuestion =
+    normalizeOptionalText(env.API_SMOKE_CHAT_CLEAR_SESSION_QUESTION) ??
+    DEFAULT_CHAT_CLEAR_SESSION_CLEAR_QUESTION;
+  let clearSessionSetupQuestion =
+    normalizeOptionalText(env.API_SMOKE_CHAT_CLEAR_SESSION_SETUP_QUESTION) ??
+    DEFAULT_CHAT_CLEAR_SESSION_SETUP_QUESTION;
   let continueOnError = parseBoolean(env.API_SMOKE_CONTINUE_ON_ERROR);
   let followUpQuestion =
     normalizeOptionalText(env.API_SMOKE_CHAT_FOLLOW_UP_QUESTION) ?? DEFAULT_CHAT_FOLLOW_UP_QUESTION;
@@ -263,6 +326,11 @@ function parseApiSmokeArgs(args, env) {
 
     if (option === '--chat-boundary') {
       chatBoundary = true;
+      continue;
+    }
+
+    if (option === '--chat-clear-session') {
+      chatClearSession = true;
       continue;
     }
 
@@ -313,6 +381,36 @@ function parseApiSmokeArgs(args, env) {
         throw new Error(`Missing value for ${option}.`);
       }
       boundaryQuestion = rawQuestion;
+      index += 1;
+      continue;
+    }
+
+    if (option === '--clear-session-follow-up-question') {
+      const rawQuestion = normalizedArgs[index + 1];
+      if (rawQuestion === undefined) {
+        throw new Error('Missing value for --clear-session-follow-up-question.');
+      }
+      clearSessionFollowUpQuestion = rawQuestion;
+      index += 1;
+      continue;
+    }
+
+    if (option === '--clear-session-question') {
+      const rawQuestion = normalizedArgs[index + 1];
+      if (rawQuestion === undefined) {
+        throw new Error('Missing value for --clear-session-question.');
+      }
+      clearSessionQuestion = rawQuestion;
+      index += 1;
+      continue;
+    }
+
+    if (option === '--clear-session-setup-question') {
+      const rawQuestion = normalizedArgs[index + 1];
+      if (rawQuestion === undefined) {
+        throw new Error('Missing value for --clear-session-setup-question.');
+      }
+      clearSessionSetupQuestion = rawQuestion;
       index += 1;
       continue;
     }
@@ -409,8 +507,12 @@ function parseApiSmokeArgs(args, env) {
     baseUrl,
     chat,
     chatBoundary,
+    chatClearSession,
     chatFollowUp,
     chatSessionId,
+    clearSessionFollowUpQuestion,
+    clearSessionQuestion,
+    clearSessionSetupQuestion,
     continueOnError,
     boundaryQuestion,
     followUpQuestion,
@@ -1012,7 +1114,7 @@ function validatePayload(check, payload) {
     return validateOpsSummaryPayload(payload);
   }
 
-  if (check.kind === 'chat' || check.kind === 'chatBoundary' || check.kind === 'chatFollowUp') {
+  if (isChatCheckKind(check.kind)) {
     return validateChatPayload(payload, check);
   }
 
@@ -1053,7 +1155,7 @@ function validateChatPayload(payload, check) {
   if (!Array.isArray(payload.citations)) {
     return 'chat response must include citations.';
   }
-  if (check.kind !== 'chatBoundary' && payload.citations.length === 0) {
+  if (requiresChatCitations(check.kind) && payload.citations.length === 0) {
     return 'chat response must include citations.';
   }
   if (check.kind === 'chatBoundary' && payload.intent !== 'realtime_account_query') {
@@ -1062,8 +1164,43 @@ function validateChatPayload(payload, check) {
   if (CHAT_HANDOFF_WORDING_PATTERNS.some((pattern) => pattern.test(payload.answer))) {
     return `${check.label} response must not ask for manual handoff.`;
   }
+  if (
+    check.kind === 'chatClearSessionSetup' &&
+    (payload.agentRoute !== 'preference_capture' || payload.intent !== 'product_qa')
+  ) {
+    return 'chat clear-session setup response must capture a session preference.';
+  }
+  if (
+    check.kind === 'chatClearSessionClear' &&
+    (payload.agentRoute !== 'preference_capture' ||
+      payload.intent !== 'product_qa' ||
+      !/(清除|cleared)/iu.test(payload.answer))
+  ) {
+    return 'chat clear-session clear response must confirm context clearing.';
+  }
+  if (
+    check.kind === 'chatClearSessionFollowUp' &&
+    (payload.agentRoute !== 'clarify' || payload.citations.length !== 0)
+  ) {
+    return 'chat clear-session follow-up response must ask for clarification after clearing context.';
+  }
 
   return undefined;
+}
+
+function isChatCheckKind(kind) {
+  return (
+    kind === 'chat' ||
+    kind === 'chatBoundary' ||
+    kind === 'chatClearSessionClear' ||
+    kind === 'chatClearSessionFollowUp' ||
+    kind === 'chatClearSessionSetup' ||
+    kind === 'chatFollowUp'
+  );
+}
+
+function requiresChatCitations(kind) {
+  return kind === 'chat' || kind === 'chatFollowUp';
 }
 
 function validateOpsSummaryPayload(payload) {
