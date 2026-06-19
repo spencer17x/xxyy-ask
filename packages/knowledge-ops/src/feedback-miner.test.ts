@@ -31,7 +31,8 @@ describe('mineAnswerFeedback', () => {
     expect(result.candidates[0]).toMatchObject({
       confidence: 0.55,
       createdAt: now,
-      proposedAnswer: '根据知识库，XXYY Pro 提供更多权益。',
+      proposedAnswer:
+        '用户负反馈：没有讲清楚监控数量上限，我的邮箱是 [REDACTED_EMAIL]\n原回答：根据知识库，XXYY Pro 提供更多权益。',
       question: 'XXYY Pro 有哪些权益？',
       riskLevel: 'medium',
       status: 'needs_review',
@@ -41,10 +42,14 @@ describe('mineAnswerFeedback', () => {
     });
     expect(result.candidates[0]?.generatedEvalCases).toEqual([
       {
-        expectedAnswer: '根据知识库，XXYY Pro 提供更多权益。',
+        expectedAnswer: '用户负反馈：没有讲清楚监控数量上限，我的邮箱是 [REDACTED_EMAIL]',
+        expectedIntent: 'product_qa',
+        minCitations: 1,
         question: 'XXYY Pro 有哪些权益？',
+        requireExpectedAnswerText: false,
       },
     ]);
+    expect(result.candidates[0]?.proposedAnswer).not.toBe('根据知识库，XXYY Pro 提供更多权益。');
     const sourceRef = result.candidates[0]?.sourceRefs[0];
     expect(sourceRef).toBeDefined();
     if (sourceRef === undefined) {
@@ -86,6 +91,44 @@ describe('mineAnswerFeedback', () => {
     expect(result.candidates[0]?.redactionReport.riskFlags).toEqual(
       expect.arrayContaining(['private_account_query']),
     );
+  });
+
+  it('does not require citations or copied answer text for transaction feedback eval cases', () => {
+    const result = mineAnswerFeedback({
+      feedback: [
+        {
+          answer: '这笔交易暂时无法完成夹子检测。',
+          channel: 'web',
+          citationCount: 0,
+          intent: 'tx_sandwich_detection',
+          question:
+            '这笔 0x1111111111111111111111111111111111111111111111111111111111111111 被夹了吗？',
+          rating: 'negative',
+          sessionIdPresent: true,
+        },
+      ],
+      now,
+    });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      proposedAnswer:
+        '用户负反馈：用户标记该回答未解决问题。\n原回答：这笔交易暂时无法完成夹子检测。',
+      question:
+        '这笔 0x1111111111111111111111111111111111111111111111111111111111111111 被夹了吗？',
+      targetCategory: 'eval_case',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer: '用户负反馈：用户标记该回答未解决问题。',
+        expectedIntent: 'tx_sandwich_detection',
+        minCitations: 0,
+        question:
+          '这笔 0x1111111111111111111111111111111111111111111111111111111111111111 被夹了吗？',
+        requireExpectedAnswerText: false,
+      },
+    ]);
   });
 
   it('skips positive feedback and empty negative feedback', () => {

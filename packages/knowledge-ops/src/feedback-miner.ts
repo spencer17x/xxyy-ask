@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { redactSupportText } from './redaction.js';
 import type {
   GeneratedEvalCase,
+  GeneratedEvalIntent,
   KnowledgeCandidate,
   KnowledgeCandidateSourceRef,
   KnowledgeRiskFlag,
@@ -35,6 +36,16 @@ export interface MineAnswerFeedbackOutput {
   feedbackRead: number;
   feedbackSkipped: number;
 }
+
+const SUPPORTED_GENERATED_EVAL_INTENTS = new Set<GeneratedEvalIntent>([
+  'product_qa',
+  'how_to',
+  'tx_sandwich_detection',
+  'realtime_account_query',
+  'mev_or_chain_forensics',
+  'investment_advice',
+  'unknown',
+]);
 
 export function mineAnswerFeedback(input: MineAnswerFeedbackInput): MineAnswerFeedbackOutput {
   const now = input.now ?? new Date().toISOString();
@@ -87,10 +98,18 @@ function createCandidateFromFeedback(
     });
   }
 
+  const reviewHint = createFeedbackReviewHint(comment?.text.trim());
+  const proposedAnswer = createFeedbackProposedAnswer({
+    answerText,
+    reviewHint,
+  });
   const generatedEvalCases: GeneratedEvalCase[] = [
     {
-      expectedAnswer: answerText,
+      expectedAnswer: reviewHint,
+      expectedIntent: toSupportedIntent(feedback.intent),
+      minCitations: minCitationsForFeedbackIntent(feedback.intent),
       question: questionText,
+      requireExpectedAnswerText: false,
     },
   ];
 
@@ -100,7 +119,7 @@ function createCandidateFromFeedback(
     existingKnowledgeMatches: [],
     generatedEvalCases,
     id: createCandidateId(feedback),
-    proposedAnswer: answerText,
+    proposedAnswer,
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
@@ -110,6 +129,28 @@ function createCandidateFromFeedback(
     type: 'eval_case',
     updatedAt: now,
   };
+}
+
+function createFeedbackReviewHint(commentText: string | undefined): string {
+  if (commentText !== undefined && commentText.length > 0) {
+    return `用户负反馈：${commentText}`;
+  }
+
+  return '用户负反馈：用户标记该回答未解决问题。';
+}
+
+function createFeedbackProposedAnswer(input: { answerText: string; reviewHint: string }): string {
+  return `${input.reviewHint}\n原回答：${input.answerText}`;
+}
+
+function toSupportedIntent(intent: string): GeneratedEvalIntent {
+  return SUPPORTED_GENERATED_EVAL_INTENTS.has(intent as GeneratedEvalIntent)
+    ? (intent as GeneratedEvalIntent)
+    : 'unknown';
+}
+
+function minCitationsForFeedbackIntent(intent: string): number {
+  return intent === 'product_qa' || intent === 'how_to' ? 1 : 0;
 }
 
 function createBoundaryCandidate(
