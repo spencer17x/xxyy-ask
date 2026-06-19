@@ -942,6 +942,7 @@ describe('runApiSmoke', () => {
         if (url.endsWith('/api/chat')) {
           return Promise.resolve(
             jsonResponse({
+              agentRoute: 'product_answer',
               answer: 'XXYY Pro 提供更多权益。',
               citations: [{ title: 'XXYY Pro 权益' }],
               intent: 'product_qa',
@@ -970,6 +971,7 @@ describe('runApiSmoke', () => {
         if (url.endsWith('/api/chat')) {
           return Promise.resolve(
             jsonResponse({
+              agentRoute: 'product_answer',
               answer: '已帮你提交工单，稍后会有人工客服接管处理。',
               citations: [{ title: 'XXYY Pro 权益' }],
               intent: 'product_qa',
@@ -985,6 +987,31 @@ describe('runApiSmoke', () => {
     expect(messages).toContain('Failed chat: chat response must not ask for manual handoff.');
   });
 
+  it('fails chat smoke when the response uses the wrong agent route', async () => {
+    const messages = [];
+    const exitCode = await runApiSmoke({
+      args: ['--chat'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/chat')) {
+          return Promise.resolve(
+            jsonResponse({
+              agentRoute: 'clarify',
+              answer: 'XXYY Pro 提供更多权益。',
+              citations: [{ title: 'XXYY Pro 权益' }],
+              intent: 'product_qa',
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain('Failed chat: chat response must use product_answer agent route.');
+  });
+
   it('runs multi-turn chat follow-up smoke and fails on handoff wording', async () => {
     const messages = [];
     const calls = [];
@@ -998,6 +1025,7 @@ describe('runApiSmoke', () => {
           if (body.message === '怎么升级？') {
             return Promise.resolve(
               jsonResponse({
+                agentRoute: 'product_answer',
                 answer: '这个问题需要转人工客服处理。',
                 citations: [{ title: 'XXYY Pro 升级' }],
                 intent: 'how_to',
@@ -1006,6 +1034,7 @@ describe('runApiSmoke', () => {
           }
           return Promise.resolve(
             jsonResponse({
+              agentRoute: 'product_answer',
               answer: 'XXYY Pro 提供更多权益。',
               citations: [{ title: 'XXYY Pro 权益' }],
               intent: 'product_qa',
@@ -1026,6 +1055,44 @@ describe('runApiSmoke', () => {
     ]);
     expect(messages).toContain(
       'Failed chat follow-up: chat follow-up response must not ask for manual handoff.',
+    );
+  });
+
+  it('fails multi-turn chat follow-up smoke when the follow-up uses the wrong agent route', async () => {
+    const messages = [];
+    const exitCode = await runApiSmoke({
+      args: ['--chat-follow-up'],
+      env: {},
+      fetch: (url, request) => {
+        if (url.endsWith('/api/chat')) {
+          const body = JSON.parse(request.body);
+          if (body.message === '怎么升级？') {
+            return Promise.resolve(
+              jsonResponse({
+                agentRoute: 'clarify',
+                answer: '可以在 Pro 权益页升级。',
+                citations: [{ title: 'XXYY Pro 升级' }],
+                intent: 'how_to',
+              }),
+            );
+          }
+          return Promise.resolve(
+            jsonResponse({
+              agentRoute: 'product_answer',
+              answer: 'XXYY Pro 提供更多权益。',
+              citations: [{ title: 'XXYY Pro 权益' }],
+              intent: 'product_qa',
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed chat follow-up: chat follow-up response must use product_answer agent route.',
     );
   });
 
@@ -1140,6 +1207,7 @@ describe('runApiSmoke', () => {
         if (url.endsWith('/api/chat')) {
           return Promise.resolve(
             jsonResponse({
+              agentRoute: 'boundary',
               answer: '我不能查询钱包余额或账户资产，可以说明 XXYY 产品功能和公开文档内容。',
               citations: [],
               intent: 'realtime_account_query',
@@ -1174,6 +1242,7 @@ describe('runApiSmoke', () => {
         if (url.endsWith('/api/chat')) {
           return Promise.resolve(
             jsonResponse({
+              agentRoute: 'boundary',
               answer: '这个问题需要转人工客服处理。',
               citations: [],
               intent: 'realtime_account_query',
@@ -1188,6 +1257,33 @@ describe('runApiSmoke', () => {
     expect(exitCode).toBe(1);
     expect(messages).toContain(
       'Failed chat boundary: chat boundary response must not ask for manual handoff.',
+    );
+  });
+
+  it('fails boundary chat smoke when the response uses the wrong agent route', async () => {
+    const messages = [];
+    const exitCode = await runApiSmoke({
+      args: ['--chat-boundary'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/chat')) {
+          return Promise.resolve(
+            jsonResponse({
+              agentRoute: 'clarify',
+              answer: '我不能查询钱包余额或账户资产。',
+              citations: [],
+              intent: 'realtime_account_query',
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed chat boundary: chat boundary response must use boundary agent route.',
     );
   });
 

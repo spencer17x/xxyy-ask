@@ -1164,6 +1164,10 @@ function validateChatPayload(payload, check) {
   if (CHAT_HANDOFF_WORDING_PATTERNS.some((pattern) => pattern.test(payload.answer))) {
     return `${check.label} response must not ask for manual handoff.`;
   }
+  const expectedAgentRoute = expectedChatAgentRoute(check.kind);
+  if (expectedAgentRoute !== undefined && payload.agentRoute !== expectedAgentRoute) {
+    return `${check.label} response must use ${expectedAgentRoute} agent route.`;
+  }
   if (
     check.kind === 'chatClearSessionSetup' &&
     (payload.agentRoute !== 'preference_capture' || payload.intent !== 'product_qa')
@@ -1201,6 +1205,16 @@ function isChatCheckKind(kind) {
 
 function requiresChatCitations(kind) {
   return kind === 'chat' || kind === 'chatFollowUp';
+}
+
+function expectedChatAgentRoute(kind) {
+  if (kind === 'chat' || kind === 'chatFollowUp') {
+    return 'product_answer';
+  }
+  if (kind === 'chatBoundary') {
+    return 'boundary';
+  }
+  return undefined;
 }
 
 function validateOpsSummaryPayload(payload) {
