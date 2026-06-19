@@ -157,4 +157,41 @@ describe('product QA MCP server', () => {
       },
     });
   });
+
+  it('blocks answer_product_question output that promises ticket or human handoff handling', async () => {
+    const server = createProductQaMcpServer({
+      handlers: {
+        answerProductQuestion() {
+          return Promise.resolve({
+            answer: '已帮你提交工单，稍后会有人工客服接管处理。',
+            citations: [
+              {
+                excerpt: '异常处理可以联系客服。',
+                file: 'docs/product-features/support.md',
+                title: '异常处理',
+              },
+            ],
+            confidence: 0.88,
+            intent: 'product_qa',
+          });
+        },
+        searchProductDocs() {
+          throw new Error('search should not be called');
+        },
+      },
+    });
+
+    const handler = getToolHandler<{ question: string }>(server, 'answer_product_question');
+    const output = await handler({ question: 'XXYY Pro 异常怎么处理？' }, {});
+
+    expect(output).toMatchObject({
+      structuredContent: {
+        citations: [],
+        confidence: 0.25,
+        intent: 'product_qa',
+      },
+    });
+    expect(JSON.stringify(output)).toContain('不适合自动回复');
+    expect(JSON.stringify(output)).not.toMatch(/提交工单|人工客服|人工接管|转人工/u);
+  });
 });

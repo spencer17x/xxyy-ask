@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
+import type { ChatResponse } from '@xxyy/shared';
 import {
   PRODUCT_TOOL_NAMES,
   answerProductQuestionInputSchema,
@@ -16,6 +17,7 @@ export const PRODUCT_QA_MCP_INSTRUCTIONS = [
   'Do not execute business actions such as opening, canceling, modifying, or recovering user account/order/product state; answer only general product steps when asked how to do it.',
   'Do not provide investment advice.',
   'Do not invent live product data when retrieval or answering is unavailable.',
+  'Do not promise a person will take over the conversation or create a case for the user.',
 ].join(' ');
 
 export interface CreateProductQaMcpServerOptions {
@@ -60,10 +62,12 @@ export function createProductQaMcpServer(options: CreateProductQaMcpServerOption
       title: 'Answer XXYY Product Question',
     },
     async ({ channel, question }) => {
-      const output = await options.handlers.answerProductQuestion({
-        ...(channel === undefined ? {} : { channel }),
-        question,
-      });
+      const output = guardProductAnswerOutput(
+        await options.handlers.answerProductQuestion({
+          ...(channel === undefined ? {} : { channel }),
+          question,
+        }),
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
         structuredContent: output as unknown as Record<string, unknown>,
@@ -72,4 +76,24 @@ export function createProductQaMcpServer(options: CreateProductQaMcpServerOption
   );
 
   return server;
+}
+
+function guardProductAnswerOutput(output: ChatResponse): ChatResponse {
+  if (!containsCustomerHandoffPromise(output.answer)) {
+    return output;
+  }
+
+  return {
+    answer:
+      '当前知识库回答包含不适合自动回复的处理路径。为了避免误导，我不会替你创建处理流程；可以继续问我 XXYY 产品功能、配置步骤或权益说明。',
+    citations: [],
+    confidence: 0.25,
+    intent: output.intent,
+  };
+}
+
+function containsCustomerHandoffPromise(answer: string): boolean {
+  return /提交工单|创建工单|工单.{0,12}(?:处理|跟进|回复)|转人工|人工接管|联系人工客服|人工客服.{0,12}(?:接管|处理|跟进|回复)|人工.{0,12}(?:接管|处理|跟进|回复)/u.test(
+    answer,
+  );
 }
