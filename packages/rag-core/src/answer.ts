@@ -94,7 +94,10 @@ function extractVideoAttachments(text: string): ChatAttachment[] {
 
 export function createBoundaryAnswer(classification: Classification): ChatResponse {
   return {
-    answer: boundaryText(classification.intent),
+    answer:
+      classification.reason === 'business action execution request'
+        ? businessActionBoundaryText()
+        : boundaryText(classification.intent),
     intent: classification.intent,
     citations: [],
     confidence: Math.min(classification.confidence, 0.7),
@@ -117,6 +120,10 @@ function boundaryText(intent: Intent): string {
     case 'how_to':
       return '暂时没有找到可引用的知识库内容。';
   }
+}
+
+function businessActionBoundaryText(): string {
+  return '我不能代你开通、取消、修改或执行账户内操作，也不会在客服对话里完成这类处理。可以继续问我开通或升级的操作步骤、权益说明、配置路径，我会基于 XXYY 知识库回答。';
 }
 
 export function createCitationsFromChunks(retrievedChunks: RetrievedChunk[]): Citation[] {

@@ -825,4 +825,33 @@ describe('createChatService', () => {
     expect(response.answer).not.toContain('一键买卖代币');
     expect(response.citations).toEqual([]);
   });
+
+  it('keeps business-action boundaries out of the legacy product answer path', async () => {
+    const answerProvider: AnswerProvider = {
+      answer() {
+        throw new Error('Answer provider should not be called for business actions');
+      },
+    };
+    const service = createChatService({
+      answerProvider,
+      index: createFixtureIndex([
+        {
+          id: 'official_docs:pro:chunk:0001',
+          title: 'XXYY Pro',
+          sourceType: 'official_docs',
+          text: 'XXYY Pro 有更多权益。',
+        },
+      ]),
+    });
+
+    const response = await service.ask({
+      channel: 'cli',
+      message: '帮我开通 XXYY Pro',
+    });
+
+    expect(response.intent).toBe('unknown');
+    expect(response.answer).toContain('不能代你开通、取消、修改或执行账户内操作');
+    expect(response.answer).not.toContain('更多权益');
+    expect(response.citations).toEqual([]);
+  });
 });

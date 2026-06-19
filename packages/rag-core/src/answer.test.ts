@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Classification } from '@xxyy/shared';
 
-import { createGroundedAnswer } from './answer.js';
+import { createBoundaryAnswer, createGroundedAnswer } from './answer.js';
 import { retrieve } from './retrieve.js';
 import { createFixtureIndex } from './test-fixtures.js';
 
@@ -114,4 +114,23 @@ describe('createGroundedAnswer', () => {
       expect(response.citations).toEqual([]);
     },
   );
+});
+
+describe('createBoundaryAnswer', () => {
+  it('returns a business-action boundary when the unknown reason is action execution', () => {
+    const response = createBoundaryAnswer({
+      confidence: 0.4,
+      intent: 'unknown',
+      reason: 'business action execution request',
+    });
+
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.4,
+      intent: 'unknown',
+    });
+    expect(response.answer).toContain('不能代你开通、取消、修改或执行账户内操作');
+    expect(response.answer).toContain('可以继续问我开通或升级的操作步骤');
+    expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
+  });
 });

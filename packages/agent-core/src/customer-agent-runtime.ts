@@ -502,13 +502,7 @@ function createRuntimeBoundaryAnswer(classification: Classification): ChatRespon
   }
 
   if (isBusinessActionClassification(classification)) {
-    return {
-      answer:
-        '我不能代你开通、取消、修改或执行账户内操作，也不会在客服对话里完成这类处理。可以继续问我开通或升级的操作步骤、权益说明、配置路径，我会基于 XXYY 知识库回答。',
-      citations: [],
-      confidence: Math.min(classification.confidence, 0.7),
-      intent: classification.intent,
-    };
+    return createBoundaryAnswer(classification);
   }
 
   return createBoundaryAnswer(classification);
