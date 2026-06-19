@@ -9,6 +9,7 @@ import {
   createInMemoryQualitySignalSink,
   createInMemorySessionContextStore,
   createPgSessionContextStore,
+  sanitizeSessionText,
   type QualitySignalSink,
   type SessionContextStore,
 } from '@xxyy/agent-core';
@@ -1408,7 +1409,7 @@ function createChatLogBase(
 }
 
 function createMessagePreview(message: string): string {
-  const normalized = message.replace(/\s+/gu, ' ').trim();
+  const normalized = sanitizeSessionText(message).replace(/\s+/gu, ' ').trim();
   if (normalized.length <= 160) {
     return normalized;
   }

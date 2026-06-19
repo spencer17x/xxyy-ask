@@ -3529,6 +3529,46 @@ describe('createRequestHandler', () => {
     ]);
   });
 
+  it('redacts pasted secrets from chat request log previews', async () => {
+    const logs: ApiLogEntry[] = [];
+    const handler = createRequestHandler({
+      logger: (entry) => {
+        logs.push(entry);
+      },
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.resolve({
+              answer: '不要发送私钥、助记词或 seed phrase。',
+              citations: [],
+              confidence: 0.35,
+              intent: 'unknown',
+            });
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
+        }),
+    });
+
+    await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat',
+      body: {
+        message: '我的密码是 hunter2 api key: sk-test-123456',
+      },
+    });
+
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({
+      messagePreview: '我的密码是 [sensitive_credential] api key: [sensitive_credential]',
+      outcome: 'success',
+      route: '/api/chat',
+    });
+    expect(JSON.stringify(logs)).not.toContain('hunter2');
+    expect(JSON.stringify(logs)).not.toContain('sk-test-123456');
+  });
+
   it('streams chat responses as server-sent events', async () => {
     const streamEvents: ChatStreamEvent[] = [
       { type: 'answer_delta', delta: 'XXYY Pro' },
