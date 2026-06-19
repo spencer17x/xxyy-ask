@@ -18,6 +18,8 @@ import {
   createPgKnowledgeOpsStore,
   mineAnswerFeedback,
   mineAnswerQualitySignals,
+  type KnowledgeCandidate,
+  type KnowledgeCandidateRun,
   type KnowledgeCandidateStore,
   type KnowledgeCandidateSource,
   type KnowledgeCandidateStatus,
@@ -226,6 +228,15 @@ interface KnowledgeCandidateQueueSummary {
   approvedEvalCaseCount: number;
   evalFailedCount: number;
   needsReviewCount: number;
+  recentEvalFailures: RecentKnowledgeEvalFailureSummary[];
+}
+
+interface RecentKnowledgeEvalFailureSummary {
+  candidateId: string;
+  evaluatedAt?: string;
+  failureReasons: string[];
+  question: string;
+  runId?: string;
 }
 
 interface TxAnalysisRuntimeSummary {
@@ -1457,6 +1468,7 @@ async function createOpsSummary(
 }
 
 const OPS_CANDIDATE_QUEUE_LIMIT = 200;
+const OPS_RECENT_EVAL_FAILURE_LIMIT = 5;
 
 async function summarizeKnowledgeCandidateQueues(
   store: KnowledgeCandidateStore,
@@ -1475,11 +1487,69 @@ async function summarizeKnowledgeCandidateQueues(
     }),
   ]);
 
+  const recentEvalFailures = await summarizeRecentEvalFailures(
+    store,
+    evalFailed.slice(0, OPS_RECENT_EVAL_FAILURE_LIMIT),
+  );
+
   return {
     approvedEvalCaseCount: approvedEvalCases.length,
     evalFailedCount: evalFailed.length,
     needsReviewCount: needsReview.length,
+    recentEvalFailures,
   };
+}
+
+async function summarizeRecentEvalFailures(
+  store: KnowledgeCandidateStore,
+  candidates: KnowledgeCandidate[],
+): Promise<RecentKnowledgeEvalFailureSummary[]> {
+  return Promise.all(
+    candidates.map(async (candidate) => {
+      const runs = await store.listCandidateRuns(candidate.id);
+      const latestFailedEvalRun = [...runs]
+        .filter((run) => run.runType === 'eval' && run.status === 'failed')
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+
+      return {
+        candidateId: candidate.id,
+        ...(latestFailedEvalRun === undefined
+          ? {}
+          : {
+              evaluatedAt: latestFailedEvalRun.createdAt,
+              runId: latestFailedEvalRun.runId,
+            }),
+        failureReasons:
+          latestFailedEvalRun === undefined ? [] : extractEvalFailureReasons(latestFailedEvalRun),
+        question: candidate.question,
+      };
+    }),
+  );
+}
+
+function extractEvalFailureReasons(run: KnowledgeCandidateRun): string[] {
+  const failures = Array.isArray(run.metadata.failures) ? run.metadata.failures : [];
+  const reasons = failures.flatMap((failure) => {
+    if (!isRecord(failure)) {
+      return [];
+    }
+
+    const rawReasons = failure.reasons ?? failure.failureReasons;
+    if (!Array.isArray(rawReasons)) {
+      return [];
+    }
+
+    return rawReasons
+      .filter((reason): reason is string => typeof reason === 'string')
+      .map((reason) => reason.trim())
+      .filter((reason) => reason.length > 0);
+  });
+
+  return [...new Set(reasons)];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function checkRequiredConfig(config: ReturnType<typeof loadRagConfig>): HealthCheck {

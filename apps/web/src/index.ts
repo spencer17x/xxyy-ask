@@ -1697,6 +1697,7 @@ export function renderOpsPage(): string {
               </label>
               <button id="knowledge-candidate-submit" type="submit">Load</button>
             </form>
+            <div id="knowledge-eval-failures" class="tx-report-results"></div>
             <div id="knowledge-candidate-status" class="status-line" role="status" aria-live="polite">Enter token to load needs-review candidates.</div>
             <div id="knowledge-candidates" class="tx-report-results"></div>
           </div>
@@ -1817,6 +1818,7 @@ export function renderOpsPage(): string {
       const knowledgeCandidateSubmit = document.querySelector("#knowledge-candidate-submit");
       const knowledgeCandidateStatus = document.querySelector("#knowledge-candidate-status");
       const knowledgeCandidatesTarget = document.querySelector("#knowledge-candidates");
+      const knowledgeEvalFailuresTarget = document.querySelector("#knowledge-eval-failures");
       const queryTxReports = document.querySelector("#tx-report-form");
       const txReportHash = document.querySelector("#tx-report-hash");
       const txReportChain = document.querySelector("#tx-report-chain");
@@ -1905,6 +1907,7 @@ export function renderOpsPage(): string {
           renderHealth(summary.health);
           renderKnowledge(summary.knowledge);
           renderFeedback(summary.feedback);
+          renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || []);
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
           void loadKnowledgeCandidates();
           status.textContent = "Updated " + summary.generatedAt;
@@ -1969,6 +1972,30 @@ export function renderOpsPage(): string {
               item.rating + " · " + item.intent,
               item.question,
               item.comment || item.answer || item.createdAt,
+            ),
+          ),
+        );
+      }
+
+      function renderEvalFailures(recentFailures) {
+        if (recentFailures.length === 0) {
+          knowledgeEvalFailuresTarget.replaceChildren(empty("No recent eval failures."));
+          return;
+        }
+
+        knowledgeEvalFailuresTarget.replaceChildren(
+          ...recentFailures.map((recent) =>
+            row(
+              "knowledge-candidate-item",
+              "Eval failed · " + recent.candidateId,
+              recent.question,
+              [
+                ...(recent.failureReasons || []),
+                recent.evaluatedAt ? "Evaluated " + recent.evaluatedAt : "",
+                recent.runId ? "Run " + recent.runId : "",
+              ]
+                .filter(Boolean)
+                .join(" · "),
             ),
           ),
         );

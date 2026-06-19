@@ -87,9 +87,14 @@ describe('renderOpsPage', () => {
     expect(html).toContain('renderHealth(summary.health)');
     expect(html).toContain('renderKnowledge(summary.knowledge)');
     expect(html).toContain('renderFeedback(summary.feedback)');
+    expect(html).toContain(
+      'renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || [])',
+    );
     expect(html).toContain('summary.knowledgeCandidateQueues?.needsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.evalFailedCount || 0');
+    expect(html).toContain('id="knowledge-eval-failures"');
+    expect(html).toContain('recent.failureReasons');
     expect(html).toContain('Transaction Analysis');
     expect(html).toContain('renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime)');
     expect(html).toContain('summary.byReviewStatus || {}');

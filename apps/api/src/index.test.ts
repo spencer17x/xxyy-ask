@@ -337,6 +337,7 @@ describe('createRequestHandler', () => {
         approvedEvalCaseCount: 0,
         evalFailedCount: 0,
         needsReviewCount: 0,
+        recentEvalFailures: [],
       },
       txAnalysis: {
         byChain: {
@@ -419,6 +420,7 @@ describe('createRequestHandler', () => {
         approvedEvalCaseCount: 0,
         evalFailedCount: 0,
         needsReviewCount: 0,
+        recentEvalFailures: [],
       },
       txAnalysis: {
         byChain: {},
@@ -544,6 +546,59 @@ describe('createRequestHandler', () => {
 
       return Promise.resolve([]);
     });
+    const listCandidateRuns = vi.fn((candidateId: string) => {
+      if (candidateId === 'kc_eval_failed_1') {
+        return Promise.resolve([
+          {
+            candidateId,
+            createdAt: '2026-06-19T07:00:00.000Z',
+            metadata: {
+              failures: [
+                {
+                  failureReasons: ['missing expected answer text'],
+                  name: 'knowledge candidate kc_eval_failed_1 / [evm_tx_hash]',
+                },
+              ],
+              passed: 0,
+              total: 1,
+            },
+            runId: 'eval_20260619T070000Z_failed1',
+            runType: 'eval',
+            status: 'failed',
+          },
+          {
+            candidateId,
+            createdAt: '2026-06-19T06:00:00.000Z',
+            metadata: { failures: [], passed: 1, total: 1 },
+            runId: 'eval_20260619T060000Z_passed1',
+            runType: 'eval',
+            status: 'passed',
+          },
+        ]);
+      }
+      if (candidateId === 'kc_eval_failed_2') {
+        return Promise.resolve([
+          {
+            candidateId,
+            createdAt: '2026-06-19T07:05:00.000Z',
+            metadata: {
+              failures: [
+                {
+                  failureReasons: ['expected tx_sandwich_detection, got unknown'],
+                  name: 'knowledge candidate kc_eval_failed_2 / Base hash',
+                },
+              ],
+              passed: 0,
+              total: 1,
+            },
+            runId: 'eval_20260619T070500Z_failed2',
+            runType: 'eval',
+            status: 'failed',
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
 
     vi.doMock('@xxyy/rag-core', async (importOriginal) => {
       const actual = await importOriginal<Record<string, unknown>>();
@@ -560,6 +615,7 @@ describe('createRequestHandler', () => {
       return {
         ...actual,
         createPgKnowledgeOpsStore: vi.fn(() => ({
+          listCandidateRuns,
           listCandidates,
         })),
       };
@@ -612,6 +668,27 @@ describe('createRequestHandler', () => {
         knowledgeCandidateQueues: {
           approvedEvalCaseCount: 1,
           evalFailedCount: 3,
+          recentEvalFailures: [
+            {
+              candidateId: 'kc_eval_failed_1',
+              evaluatedAt: '2026-06-19T07:00:00.000Z',
+              failureReasons: ['missing expected answer text'],
+              question: 'Telegram 通知怎么设置？',
+              runId: 'eval_20260619T070000Z_failed1',
+            },
+            {
+              candidateId: 'kc_eval_failed_2',
+              evaluatedAt: '2026-06-19T07:05:00.000Z',
+              failureReasons: ['expected tx_sandwich_detection, got unknown'],
+              question: 'Telegram 通知怎么设置？',
+              runId: 'eval_20260619T070500Z_failed2',
+            },
+            {
+              candidateId: 'kc_eval_failed_3',
+              failureReasons: [],
+              question: 'Telegram 通知怎么设置？',
+            },
+          ],
           needsReviewCount: 2,
         },
       });
@@ -620,6 +697,10 @@ describe('createRequestHandler', () => {
         { limit: 200, status: 'approved', type: 'eval_case' },
         { limit: 200, status: 'eval_failed', type: 'eval_case' },
       ]);
+      expect(listCandidateRuns).toHaveBeenCalledTimes(3);
+      expect(listCandidateRuns).toHaveBeenCalledWith('kc_eval_failed_1');
+      expect(listCandidateRuns).toHaveBeenCalledWith('kc_eval_failed_2');
+      expect(listCandidateRuns).toHaveBeenCalledWith('kc_eval_failed_3');
       expect(pgClient.end).toHaveBeenCalledTimes(1);
     } finally {
       vi.doUnmock('@xxyy/rag-core');
