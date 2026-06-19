@@ -80,7 +80,7 @@ function createCandidateFromSignal(
   if (PRODUCT_GAP_REASONS.has(signal.reason)) {
     return createProductGapCandidate(signal, now);
   }
-  if (signal.reason === 'unknown_intent') {
+  if (signal.reason === 'unknown_intent' || signal.reason === 'session_unavailable') {
     return createUnknownIntentCandidate(signal, now);
   }
 

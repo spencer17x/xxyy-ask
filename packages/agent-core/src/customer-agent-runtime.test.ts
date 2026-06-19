@@ -483,6 +483,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('具体功能');
     expect(qualitySignals.signals()).toEqual([
       {
+        answer: response.answer,
         channel: 'web',
         confidence: 0.45,
         intent: 'how_to',
@@ -560,6 +561,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('单笔完整交易哈希');
     expect(qualitySignals.signals()).toEqual([
       {
+        answer: response.answer,
         channel: 'web',
         confidence: 0.45,
         intent: 'tx_sandwich_detection',

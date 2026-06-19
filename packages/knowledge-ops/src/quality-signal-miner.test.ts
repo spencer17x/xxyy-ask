@@ -143,6 +143,48 @@ describe('mineAnswerQualitySignals', () => {
     ]);
   });
 
+  it('creates a needs-review eval candidate from a missing-session clarification signal', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer:
+            '我缺少这次会话的上一轮上下文，不能确定“这笔”指哪一笔交易。请发送单笔完整交易哈希或对应主网浏览器链接，我会自动继续分析。',
+          channel: 'web',
+          confidence: 0.45,
+          intent: 'tx_sandwich_detection',
+          reason: 'session_unavailable',
+          redactedQuestion: '这笔呢？',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.45,
+      proposedAnswer:
+        '我缺少这次会话的上一轮上下文，不能确定“这笔”指哪一笔交易。请发送单笔完整交易哈希或对应主网浏览器链接，我会自动继续分析。',
+      question: '这笔呢？',
+      status: 'needs_review',
+      targetCategory: 'policy_boundary',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer:
+          '我缺少这次会话的上一轮上下文，不能确定“这笔”指哪一笔交易。请发送单笔完整交易哈希或对应主网浏览器链接，我会自动继续分析。',
+        question: '这笔呢？',
+      },
+    ]);
+  });
+
   it('skips quality signals that do not yet contain publishable knowledge', () => {
     const result = mineAnswerQualitySignals({
       now,

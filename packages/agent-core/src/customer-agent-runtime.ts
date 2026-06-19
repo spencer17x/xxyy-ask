@@ -184,6 +184,7 @@ export function createCustomerAgentRuntime(
         missingSessionDependency,
       );
       recordQualitySignal(qualitySignals, request, {
+        answer: response.answer,
         confidence: response.confidence,
         intent: response.intent,
         reason: 'session_unavailable',
