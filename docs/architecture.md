@@ -62,8 +62,8 @@ flowchart LR
 
   subgraph Planned["未完成能力"]
     MultiTurn["多轮对话"]
-    ReviewWorkflow["多成员复查 / SLA / 工单联动"]
-    Tickets["工单与人工接管"]
+    Orchestrator["自动回答总调度"]
+    QualityLoop["质量策略 / 知识缺口闭环"]
     Channels["多渠道接入"]
   end
 
@@ -128,4 +128,4 @@ flowchart LR
 - LLM 超时、限流、模型路由不可用或返回不可用答案时，会降级为本地 grounded answer。
 - 知识库由产品文档和官方 X 更新组成，支持全量入库和 X 增量同步。
 - Web UI 支持流式回答、引用展示、视频/图片附件和正负反馈。
-- Base/Ethereum/BSC 更多真实样本稳定性验证、多成员复查策略、SLA、工单联动、人工接管、多轮对话和多渠道接入目前仍是未完成能力。
+- 多轮对话、自动回答总调度、回答质量策略、知识缺口闭环、Base/Ethereum/BSC 更多真实样本稳定性验证和多渠道接入目前仍是未完成能力。当前目标不包含用户侧人工接管或业务动作执行；无法自动回答的问题应返回清晰边界、澄清问题或沉淀为内部质量/知识候选。

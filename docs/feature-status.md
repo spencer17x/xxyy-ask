@@ -113,12 +113,13 @@
 - [x] 浏览器安全验证标记识别：公开浏览器或 XXYY 页面文本里出现 `cf-mitigated: challenge`、`challenge-platform`、`cf_clearance`、`cf-chl` / `cf_chl`、`cf-challenge-running`、`Cloudflare Ray ID`、`cf-turnstile-response`、`g-recaptcha`、`h-captcha`、`DataDome`、`Akamai Bot Manager`、`_abck`、`bm_sz`、`PerimeterX`、`_px3`、`pxvid`、`Kasada`、`x-kpsdk`、`Press & Hold to confirm you are a human`、`prove you are human`、`Human verification required`、`verify you are not a bot`、`security service to protect itself from online attacks` 或 `triggered the security solution` 这类 Cloudflare / WAF / 人机验证标记时，也会提示需要完成浏览器验证，不会误报成交易不存在或普通数据源不可用。
 - [x] 交易分析数据库报告：配置 `TX_ANALYSIS_REPORT_STORE=postgres` 后，浏览器取证成功/失败报告会写入 `tx_analysis_reports` 表；报告链接可通过 `/api/tx-analysis/reports/:id` 打开，列表、摘要和 `/ops` 会从数据库读取。
 - [x] 交易分析报告筛选复查：`/ops` 运维页支持查看最近报告，也支持按交易哈希、链、报告状态、处理状态、负责人、失败原因和数量上限查询历史报告，并直接打开报告、截图、交易浏览器、XXYY 原池子页和前置/用户/后置交易 explorer 链接；相关交易链接标签会展示可用的交易方向、交易者和时间，方便客服不打开 JSON 报告也能先看前后腿上下文；成功报告会展示判断规则版本，EVM 成功或失败报告如果已解析到路由合约，也会在列表中展示；裸 EVM 自动探测失败时会展示每条链的 Probe 结果，方便客服快速判断是未找到、验证、超时还是公开站点不可用；缺失或历史异常处理状态按 open 筛选，保存处理记录时会清理负责人、备注和更新人的首尾空格，避免筛选队列被空白文本污染。
-- [ ] 多轮对话：支持基于当前会话继续追问、引用上下文和保留用户偏好。
+- [ ] 多轮对话：支持基于当前会话继续追问、引用上下文、解析省略指代和保留非敏感用户偏好。
+- [ ] 自动回答总调度：在同一个客服 Agent Runtime 内统一产品问答、交易分析、边界回复和澄清问题，不依赖人工接管。
+- [ ] 回答质量策略：对低置信度、检索不足、工具不可用、实时私有数据请求和投资建议请求输出一致的自动降级或拒答回复。
+- [ ] 知识缺口闭环：从负反馈、未知意图、低置信度回答和失败取证中自动生成知识候选或 eval case，进入审核和 gate 流程。
 - [ ] 多链实站稳定性验证：针对 Base、Ethereum、BSC 的不同浏览器页面结构、XXYY 搜索结果和池子交易窗口做更多真实样本验证与修正。
 - [x] 交易分析客服处理记录：文件和 Postgres 报告 store、受保护 API 和 `/ops` 报告列表已支持更新处理状态、备注和负责人，并可按处理状态或负责人筛选复查队列；受保护 review API 支持 `claim` 认领、`close` 关闭和 `reopen` 重新打开动作，`PATCH /api/tx-analysis/reports/review` 可对多条报告批量执行同一处理动作并返回成功与未找到列表；`/ops` 列表可直接点击 Claim / Close / Reopen 处理单条报告，也可在报告搜索结果中勾选多条报告批量 Claim / Close / Reopen，关闭时要求填写备注，重新打开时会回到 open 队列。
-- [ ] 交易分析复查工作流增强：仍需建设多成员分派策略、SLA 和工单联动。
-- [ ] 工单创建：无法直接解决的问题可以创建客服工单。
-- [ ] 人工客服接管：复杂问题可以转人工继续处理。
+- [ ] 交易分析自动复查增强：仍需建设自动重跑、失败聚类、样本补充和质量队列，不作为用户侧人工接管入口。
 - [ ] 多渠道接入：支持 Telegram、Discord、站内 widget、移动端等入口。
 
 ## Admin / Ops Features
@@ -144,6 +145,6 @@
 - [x] 知识发布 run 追踪增强：`knowledge_candidate_runs` 持久记录 publish、ingest 和 eval run，`rag:publish:knowledge` 写入 publish run，`rag:gate:knowledge` 写入 ingestion/eval run；eval 失败时会记录失败 case 和原因作为修正/回滚线索。
 - [x] 知识运营 Agent Runtime 第一版：`createKnowledgeOpsAgentRuntime` 提供内部知识运营 Agent Profile，所有候选查询、审核、发布、gate 和 Telegram sync 调用都会先校验 `opsAuthorized`，再通过 `ToolRegistry` 执行并写入结构化工具审计。
 - [ ] 知识运营后台增强：仍需补审计查询/可视化、更细的权限角色、候选合并和发布失败修正/回滚工作台。
-- [ ] 工单后台：查看、分配、处理和关闭客服工单。
-- [ ] 会话后台：查看用户会话、检索来源、反馈和处理结果。
+- [ ] 自动质量后台：查看负反馈、低置信度回答、未知意图、失败取证、自动重跑结果和知识候选状态。
+- [ ] 会话后台：查看脱敏会话摘要、检索来源、反馈和自动处理结果。
 - [ ] 知识库管理后台：支持文档编辑、审核、发布和知识缺口归类。
