@@ -1062,6 +1062,10 @@ describe('runCli', () => {
       events.push('session-context:migrate');
       return Promise.resolve();
     });
+    const migratePgToolAuditStore = vi.fn(() => {
+      events.push('tool-audit:migrate');
+      return Promise.resolve();
+    });
     const replaceChunks = vi.fn(() => {
       events.push('replace');
       return Promise.resolve();
@@ -1121,6 +1125,7 @@ describe('runCli', () => {
       return {
         ...actual,
         migratePgSessionContextStore,
+        migratePgToolAuditStore,
       };
     });
 
@@ -1139,6 +1144,7 @@ describe('runCli', () => {
         'migrate',
         'knowledge-ops:migrate',
         'session-context:migrate',
+        'tool-audit:migrate',
         'embed',
         'replace',
         'record',
@@ -1214,6 +1220,10 @@ describe('runCli', () => {
       events.push('session-context:migrate');
       return Promise.resolve();
     });
+    const migratePgToolAuditStore = vi.fn(() => {
+      events.push('tool-audit:migrate');
+      return Promise.resolve();
+    });
     const getChunkContentHashes = vi.fn(() => {
       events.push('hashes');
       return Promise.resolve(
@@ -1287,6 +1297,7 @@ describe('runCli', () => {
       return {
         ...actual,
         migratePgSessionContextStore,
+        migratePgToolAuditStore,
       };
     });
 
@@ -1312,6 +1323,7 @@ describe('runCli', () => {
         'migrate',
         'knowledge-ops:migrate',
         'session-context:migrate',
+        'tool-audit:migrate',
         'hashes',
         'embed:changed searchable text',
         'upsert',
@@ -1782,6 +1794,10 @@ describe('runCli', () => {
       events.push('session-context:migrate:ingest');
       return Promise.resolve();
     });
+    const migratePgToolAuditStore = vi.fn(() => {
+      events.push('tool-audit:migrate:ingest');
+      return Promise.resolve();
+    });
     const storeMigrate = vi.fn(() => {
       events.push('knowledge-ops:migrate:gate');
       return Promise.resolve();
@@ -1877,6 +1893,7 @@ describe('runCli', () => {
         ...actual,
         createCustomerAgentChatService,
         migratePgSessionContextStore,
+        migratePgToolAuditStore,
       };
     });
     vi.doMock('@xxyy/knowledge', async (importOriginal) => {
@@ -1960,6 +1977,7 @@ describe('runCli', () => {
         'vector:migrate',
         'knowledge-ops:migrate:ingest',
         'session-context:migrate:ingest',
+        'tool-audit:migrate:ingest',
         'embed',
         'vector:replace',
         'vector:record',
@@ -2487,6 +2505,10 @@ describe('runCli', () => {
       events.push('session-context:migrate');
       return Promise.resolve();
     });
+    const migratePgToolAuditStore = vi.fn(() => {
+      events.push('tool-audit:migrate');
+      return Promise.resolve();
+    });
     const end = vi.fn(() => {
       events.push('pool.end');
       return Promise.resolve();
@@ -2533,6 +2555,7 @@ describe('runCli', () => {
       return {
         ...actual,
         migratePgSessionContextStore,
+        migratePgToolAuditStore,
       };
     });
 
@@ -2557,6 +2580,7 @@ describe('runCli', () => {
         'rag:migrate',
         'knowledge-ops:migrate',
         'session-context:migrate',
+        'tool-audit:migrate',
         'pool.end',
       ]);
       expect(stdout.join('')).toContain('Database migrations applied.');

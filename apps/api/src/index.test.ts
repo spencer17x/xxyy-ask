@@ -381,6 +381,32 @@ describe('createRequestHandler', () => {
         storedTurnCount: 6,
         summarizedSessionCount: 1,
       },
+      toolAudit: {
+        failureCount: 1,
+        failureErrorCodeCounts: {
+          TimeoutError: 1,
+        },
+        latestEventCreatedAt: '2026-06-06T02:04:02.000Z',
+        recentFailures: [
+          {
+            channel: 'web',
+            createdAt: '2026-06-06T02:04:02.000Z',
+            errorCode: 'TimeoutError',
+            intent: 'product_qa',
+            latencyMs: 1200,
+            toolName: 'answer_product_question',
+          },
+        ],
+        successCount: 2,
+        toolStatusCounts: {
+          answer_product_question: {
+            failure: 1,
+            success: 2,
+          },
+        },
+        totalCount: 3,
+        windowStartedAt: '2026-06-05T02:04:05.000Z',
+      },
       txAnalysis: {
         byChain: {
           base: 2,
@@ -492,6 +518,15 @@ describe('createRequestHandler', () => {
         storedTurnCount: 0,
         summarizedSessionCount: 0,
       },
+      toolAudit: {
+        failureCount: 0,
+        failureErrorCodeCounts: {},
+        recentFailures: [],
+        successCount: 0,
+        toolStatusCounts: {},
+        totalCount: 0,
+        windowStartedAt: '2026-06-05T02:04:05.000Z',
+      },
       txAnalysis: {
         byChain: {},
         byRuleVersion: {},
@@ -558,6 +593,64 @@ describe('createRequestHandler', () => {
                 active_session_count: '2',
                 latest_turn_created_at: '2026-06-19T07:55:00.000Z',
                 stored_turn_count: '5',
+              },
+            ],
+          });
+        }
+        if (
+          sql.includes('from customer_agent_tool_audit_events') &&
+          sql.includes('count(*) as total_count')
+        ) {
+          expect(values).toEqual(['2026-06-18T08:00:00.000Z']);
+          return Promise.resolve({
+            rows: [
+              {
+                failure_count: '1',
+                latest_event_created_at: '2026-06-19T07:58:00.000Z',
+                success_count: '2',
+                total_count: '3',
+              },
+            ],
+          });
+        }
+        if (
+          sql.includes('from customer_agent_tool_audit_events') &&
+          sql.includes('group by tool_name')
+        ) {
+          expect(values).toEqual(['2026-06-18T08:00:00.000Z']);
+          return Promise.resolve({
+            rows: [
+              {
+                failure_count: '1',
+                success_count: '2',
+                tool_name: 'answer_product_question',
+              },
+            ],
+          });
+        }
+        if (
+          sql.includes('from customer_agent_tool_audit_events') &&
+          sql.includes('group by error_code')
+        ) {
+          expect(values).toEqual(['2026-06-18T08:00:00.000Z']);
+          return Promise.resolve({
+            rows: [{ count: '1', error_code: 'TimeoutError' }],
+          });
+        }
+        if (
+          sql.includes('from customer_agent_tool_audit_events') &&
+          sql.includes('order by created_at desc, id desc')
+        ) {
+          expect(values).toEqual(['2026-06-18T08:00:00.000Z', 5]);
+          return Promise.resolve({
+            rows: [
+              {
+                channel: 'web',
+                created_at: '2026-06-19T07:58:00.000Z',
+                error_code: 'TimeoutError',
+                intent: 'product_qa',
+                latency_ms: '1200',
+                tool_name: 'answer_product_question',
               },
             ],
           });
@@ -1030,6 +1123,32 @@ describe('createRequestHandler', () => {
           staleSummaryCount: 1,
           storedTurnCount: 5,
           summarizedSessionCount: 3,
+        },
+        toolAudit: {
+          failureCount: 1,
+          failureErrorCodeCounts: {
+            TimeoutError: 1,
+          },
+          latestEventCreatedAt: '2026-06-19T07:58:00.000Z',
+          recentFailures: [
+            {
+              channel: 'web',
+              createdAt: '2026-06-19T07:58:00.000Z',
+              errorCode: 'TimeoutError',
+              intent: 'product_qa',
+              latencyMs: 1200,
+              toolName: 'answer_product_question',
+            },
+          ],
+          successCount: 2,
+          toolStatusCounts: {
+            answer_product_question: {
+              failure: 1,
+              success: 2,
+            },
+          },
+          totalCount: 3,
+          windowStartedAt: '2026-06-18T08:00:00.000Z',
         },
       });
       expect(responseBody.sessionContext.recentSummaries[0]?.sessionIdHash).toMatch(
@@ -4072,6 +4191,7 @@ describe('createRequestHandler', () => {
       if (serviceOptions === undefined) {
         throw new Error('Expected Customer Agent service options to be captured.');
       }
+      expect(typeof serviceOptions.audit?.record).toBe('function');
       expect(typeof serviceOptions.qualitySignals?.record).toBe('function');
       expect(typeof serviceOptions.sessionContext?.appendTurn).toBe('function');
       expect(typeof serviceOptions.sessionContext?.getRecentTurns).toBe('function');

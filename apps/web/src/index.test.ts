@@ -124,6 +124,7 @@ describe('renderOpsPage', () => {
     expect(html).toContain(
       'renderApprovedBacklog(summary.knowledgeCandidateQueues?.approvedBacklogTypeCounts || {})',
     );
+    expect(html).toContain('renderToolAudit(summary.toolAudit)');
     expect(html).toContain('summary.knowledgeCandidateQueues?.needsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.oldestQualitySignalCreatedAt');
@@ -138,6 +139,7 @@ describe('renderOpsPage', () => {
     expect(html).toContain('summary.sessionContext?.storedTurnCount || 0');
     expect(html).toContain('summary.sessionContext?.summarizedSessionCount || 0');
     expect(html).toContain('summary.sessionContext?.staleSummaryCount || 0');
+    expect(html).toContain('summary.toolAudit?.failureCount || 0');
     expect(html).toContain('const ageBuckets = summary.sessionSummaryAgeBuckets || {}');
     expect(html).toContain('ageBuckets.gte24h || 0');
     expect(html).toContain('Session Age · <1h');
@@ -145,6 +147,7 @@ describe('renderOpsPage', () => {
     expect(html).toContain('Session Age · 24h+');
     expect(html).toContain('id="knowledge-approved-backlog"');
     expect(html).toContain('id="session-context"');
+    expect(html).toContain('id="tool-audit"');
     expect(html).toContain('id="knowledge-eval-failures"');
     expect(html).toContain('id="knowledge-eval-failure-reasons"');
     expect(html).toContain('id="knowledge-quality-signals"');
@@ -183,6 +186,9 @@ describe('renderOpsPage', () => {
     expect(html).toContain('Preference · " + preference');
     expect(html).toContain('summary.productTopicCounts || {}');
     expect(html).toContain('summary.productPreferenceCounts || {}');
+    expect(html).toContain('Tool · " + toolName');
+    expect(html).toContain('Recent failure · " + failure.toolName');
+    expect(html).toContain('failure.errorCode');
     expect(html).toContain('recent.agentRoute');
     expect(html).toContain('recent.targetCategory');
     expect(html).toContain('recent.riskLevel');

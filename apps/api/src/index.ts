@@ -8,12 +8,17 @@ import {
   createCustomerAgentChatService,
   createInMemoryQualitySignalSink,
   createInMemorySessionContextStore,
+  createNoopAuditSink,
   createPgSessionContextStore,
+  createPgToolAuditSink,
   sanitizeSessionText,
   summarizePgSessionContext,
+  summarizePgToolAudit,
   type PgSessionContextOpsSummary,
+  type PgToolAuditOpsSummary,
   type QualitySignalSink,
   type SessionContextStore,
+  type ToolAuditSink,
 } from '@xxyy/agent-core';
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
@@ -226,6 +231,7 @@ interface OpsSummary {
   knowledge: KnowledgeStats;
   knowledgeCandidateQueues: KnowledgeCandidateQueueSummary;
   sessionContext: PgSessionContextOpsSummary;
+  toolAudit: PgToolAuditOpsSummary;
   txAnalysis: TxAnalysisReportSummary;
   txAnalysisRuntime?: TxAnalysisRuntimeSummary;
 }
@@ -1622,15 +1628,23 @@ async function createOpsSummary(
     });
     const feedbackStore = createPgFeedbackStore({ client: pool });
     const candidateStore = createPgKnowledgeOpsStore({ client: pool });
-    const [health, knowledge, feedback, knowledgeCandidateQueues, sessionContext, txAnalysis] =
-      await Promise.all([
-        getHealthStatus(),
-        knowledgeStore.getStats(),
-        feedbackStore.getFeedbackStats({ limit: 10 }),
-        summarizeKnowledgeCandidateQueues(candidateStore, generatedAtMs),
-        summarizePgSessionContext({ client: pool, nowMs: generatedAtMs }),
-        getTxAnalysisReportStore().then((reportStore) => reportStore.summarizeReports({})),
-      ]);
+    const [
+      health,
+      knowledge,
+      feedback,
+      knowledgeCandidateQueues,
+      sessionContext,
+      toolAudit,
+      txAnalysis,
+    ] = await Promise.all([
+      getHealthStatus(),
+      knowledgeStore.getStats(),
+      feedbackStore.getFeedbackStats({ limit: 10 }),
+      summarizeKnowledgeCandidateQueues(candidateStore, generatedAtMs),
+      summarizePgSessionContext({ client: pool, nowMs: generatedAtMs }),
+      summarizePgToolAudit({ client: pool, nowMs: generatedAtMs }),
+      getTxAnalysisReportStore().then((reportStore) => reportStore.summarizeReports({})),
+    ]);
 
     return {
       feedback,
@@ -1639,6 +1653,7 @@ async function createOpsSummary(
       knowledge,
       knowledgeCandidateQueues,
       sessionContext,
+      toolAudit,
       txAnalysis,
     };
   } finally {
@@ -2294,6 +2309,7 @@ function createCachedChatServiceLoader(
     });
     cachedService = createCustomerAgentChatService({
       answerProvider: createLazyAnswerProvider(config),
+      audit: createApiToolAuditSink(config),
       config,
       qualitySignals: createApiQualitySignalSink(config),
       retriever,
@@ -2302,6 +2318,14 @@ function createCachedChatServiceLoader(
     });
     return Promise.resolve(cachedService);
   };
+}
+
+function createApiToolAuditSink(config: ReturnType<typeof loadRagConfig>): ToolAuditSink {
+  try {
+    return createPgToolAuditSink({ client: createPgPool(config.databaseUrl) });
+  } catch {
+    return createNoopAuditSink();
+  }
 }
 
 function createApiSessionContextStore(

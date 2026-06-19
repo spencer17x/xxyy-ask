@@ -1258,6 +1258,56 @@ function validateOpsSummaryPayload(payload) {
     return sessionContextError;
   }
 
+  const toolAuditError = validateToolAuditSummary(payload.toolAudit);
+  if (toolAuditError !== undefined) {
+    return toolAuditError;
+  }
+
+  return undefined;
+}
+
+function validateToolAuditSummary(value) {
+  if (
+    !isRecord(value) ||
+    !isNonNegativeInteger(value.totalCount) ||
+    !isNonNegativeInteger(value.successCount) ||
+    !isNonNegativeInteger(value.failureCount) ||
+    !isCleanNonEmptyString(value.windowStartedAt) ||
+    !hasReasonCounts(value.failureErrorCodeCounts) ||
+    !hasToolStatusCounts(value.toolStatusCounts) ||
+    !Array.isArray(value.recentFailures) ||
+    !value.recentFailures.every(isRecentToolAuditFailure)
+  ) {
+    return 'ops summary must include valid tool audit counts and recent failures.';
+  }
+
+  if (value.totalCount > 0 && !isCleanNonEmptyString(value.latestEventCreatedAt)) {
+    return 'ops summary must include valid tool audit latest timestamps.';
+  }
+
+  if (value.successCount + value.failureCount !== value.totalCount) {
+    return 'ops summary tool audit success and failure counts must match the total count.';
+  }
+
+  const toolTotals = Object.values(value.toolStatusCounts).reduce(
+    (totals, count) => ({
+      failure: totals.failure + count.failure,
+      success: totals.success + count.success,
+    }),
+    { failure: 0, success: 0 },
+  );
+  if (toolTotals.success !== value.successCount || toolTotals.failure !== value.failureCount) {
+    return 'ops summary tool audit by-tool counts must match success and failure totals.';
+  }
+
+  const errorTotal = Object.values(value.failureErrorCodeCounts).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  if (errorTotal > value.failureCount) {
+    return 'ops summary tool audit error counts cannot exceed failure count.';
+  }
+
   return undefined;
 }
 
@@ -1457,6 +1507,20 @@ function hasReasonCounts(value) {
   );
 }
 
+function hasToolStatusCounts(value) {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Object.entries(value).every(
+    ([toolName, counts]) =>
+      isCleanNonEmptyString(toolName) &&
+      isRecord(counts) &&
+      isNonNegativeInteger(counts.success) &&
+      isNonNegativeInteger(counts.failure),
+  );
+}
+
 function hasQualitySignalAgeBuckets(value) {
   return (
     isRecord(value) &&
@@ -1486,6 +1550,23 @@ function hasCandidateTypeCounts(value) {
   return Object.entries(value).every(
     ([candidateType, count]) =>
       allowedCandidateTypes.has(candidateType) && isNonNegativeInteger(count),
+  );
+}
+
+function isRecentToolAuditFailure(value) {
+  if (
+    !isRecord(value) ||
+    !isCleanNonEmptyString(value.toolName) ||
+    !isCleanNonEmptyString(value.createdAt) ||
+    !isNonNegativeInteger(value.latencyMs)
+  ) {
+    return false;
+  }
+
+  return (
+    (value.errorCode === undefined || isCleanNonEmptyString(value.errorCode)) &&
+    (value.intent === undefined || isCleanNonEmptyString(value.intent)) &&
+    (value.channel === undefined || isCleanNonEmptyString(value.channel))
   );
 }
 

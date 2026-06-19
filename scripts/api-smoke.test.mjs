@@ -1530,6 +1530,124 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when tool audit summary is missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.toolAudit;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid tool audit counts and recent failures.',
+    );
+  });
+
+  it('fails ops summary smoke when tool audit status totals drift', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      toolAudit: {
+        ...opsSummaryPayload().toolAudit,
+        failureCount: 2,
+        successCount: 1,
+        totalCount: 5,
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary tool audit success and failure counts must match the total count.',
+    );
+  });
+
+  it('fails ops summary smoke when tool audit by-tool totals drift', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      toolAudit: {
+        ...opsSummaryPayload().toolAudit,
+        toolStatusCounts: {
+          answer_product_question: {
+            failure: 0,
+            success: 1,
+          },
+        },
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary tool audit by-tool counts must match success and failure totals.',
+    );
+  });
+
+  it('fails ops summary smoke when recent tool audit failures are malformed', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      toolAudit: {
+        ...opsSummaryPayload().toolAudit,
+        recentFailures: [
+          {
+            createdAt: '2026-06-19T07:58:00.000Z',
+            errorCode: 'TimeoutError',
+            latencyMs: -1,
+            toolName: 'answer_product_question',
+          },
+        ],
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid tool audit counts and recent failures.',
+    );
+  });
+
   it('fails ops summary smoke when quality reason counts are missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -6262,6 +6380,32 @@ function opsSummaryPayload(overrides = {}) {
       staleSummaryCount: 1,
       storedTurnCount: 5,
       summarizedSessionCount: 2,
+    },
+    toolAudit: {
+      failureCount: 1,
+      failureErrorCodeCounts: {
+        TimeoutError: 1,
+      },
+      latestEventCreatedAt: '2026-06-19T07:58:00.000Z',
+      recentFailures: [
+        {
+          channel: 'web',
+          createdAt: '2026-06-19T07:58:00.000Z',
+          errorCode: 'TimeoutError',
+          intent: 'product_qa',
+          latencyMs: 1200,
+          toolName: 'answer_product_question',
+        },
+      ],
+      successCount: 2,
+      toolStatusCounts: {
+        answer_product_question: {
+          failure: 1,
+          success: 2,
+        },
+      },
+      totalCount: 3,
+      windowStartedAt: '2026-06-18T08:00:00.000Z',
     },
     txAnalysisRuntime: {
       browser: {

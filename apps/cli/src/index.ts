@@ -6,6 +6,7 @@ import {
   createCustomerAgentChatService,
   createPgSessionContextStore,
   migratePgSessionContextStore,
+  migratePgToolAuditStore,
   type QualitySignalSink,
 } from '@xxyy/agent-core';
 import {
@@ -1085,6 +1086,7 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
     await store.migrate();
     await migratePgKnowledgeOpsStore(pool);
     await migratePgSessionContextStore(pool);
+    await migratePgToolAuditStore(pool);
     const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
     const ingestionRun = createIngestionRun({
       chunks: embeddedChunks,
@@ -1122,6 +1124,7 @@ async function syncXUpdates(io: CliIo): Promise<SyncXUpdatesSummary> {
     await store.migrate();
     await migratePgKnowledgeOpsStore(pool);
     await migratePgSessionContextStore(pool);
+    await migratePgToolAuditStore(pool);
     const existingHashes = await store.getChunkContentHashes(chunks.map((chunk) => chunk.id));
     const changedChunks = chunks.filter(
       (chunk) => existingHashes.get(chunk.id) !== chunk.contentHash,
@@ -1496,6 +1499,7 @@ async function migrateDatabase(config: ReturnType<typeof loadRagConfig>): Promis
     await store.migrate();
     await migratePgKnowledgeOpsStore(pool);
     await migratePgSessionContextStore(pool);
+    await migratePgToolAuditStore(pool);
   } finally {
     await pool.end();
   }

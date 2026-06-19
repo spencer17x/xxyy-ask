@@ -1693,6 +1693,10 @@ export function renderOpsPage(): string {
           <h2>Sessions</h2>
           <div id="session-context" class="panel-body"></div>
         </article>
+        <article class="panel">
+          <h2>Tool Audit</h2>
+          <div id="tool-audit" class="panel-body"></div>
+        </article>
         <article class="panel wide-panel">
           <h2>Knowledge Candidates</h2>
           <div class="panel-body">
@@ -1877,6 +1881,7 @@ export function renderOpsPage(): string {
       const knowledgeTarget = document.querySelector("#knowledge");
       const feedbackTarget = document.querySelector("#feedback");
       const sessionContextTarget = document.querySelector("#session-context");
+      const toolAuditTarget = document.querySelector("#tool-audit");
       const txAnalysisTarget = document.querySelector("#tx-analysis");
       const latestFeedbackTarget = document.querySelector("#latest-feedback");
       const queryKnowledgeCandidates = document.querySelector("#knowledge-candidate-form");
@@ -2067,6 +2072,7 @@ export function renderOpsPage(): string {
           renderQualitySignalAgeBuckets(summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets || {});
           renderQualitySignalClusters(summary.knowledgeCandidateQueues?.qualitySignalClusters || []);
           renderApprovedBacklog(summary.knowledgeCandidateQueues?.approvedBacklogTypeCounts || {});
+          renderToolAudit(summary.toolAudit);
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
           void loadKnowledgeCandidates();
           status.textContent = "Updated " + summary.generatedAt;
@@ -2087,6 +2093,7 @@ export function renderOpsPage(): string {
           metric("Session Turns", summary.sessionContext?.storedTurnCount || 0, (summary.sessionContext?.storedTurnCount || 0) > 0 ? "ok" : "warn"),
           metric("Session Summaries", summary.sessionContext?.summarizedSessionCount || 0, (summary.sessionContext?.summarizedSessionCount || 0) > 0 ? "ok" : "warn"),
           metric("Stale Sessions", summary.sessionContext?.staleSummaryCount || 0, (summary.sessionContext?.staleSummaryCount || 0) > 0 ? "warn" : "ok"),
+          metric("Tool Failures", summary.toolAudit?.failureCount || 0, (summary.toolAudit?.failureCount || 0) > 0 ? "warn" : "ok"),
           metric("Candidates", summary.knowledgeCandidateQueues?.needsReviewCount || 0, (summary.knowledgeCandidateQueues?.needsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Quality Gaps", summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0, (summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Stale Gaps", summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0, (summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0) > 0 ? "error" : "ok"),
@@ -2096,6 +2103,54 @@ export function renderOpsPage(): string {
           metric("Eval Ready", summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0, (summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0) > 0 ? "warn" : "ok"),
           metric("Eval Failed", summary.knowledgeCandidateQueues?.evalFailedCount || 0, (summary.knowledgeCandidateQueues?.evalFailedCount || 0) > 0 ? "error" : "ok"),
           metric("Tx Failures", summary.txAnalysis?.failureCount || 0, (summary.txAnalysis?.failureCount || 0) > 0 ? "warn" : "ok"),
+        );
+      }
+
+      function renderToolAudit(summary) {
+        if (!summary) {
+          toolAuditTarget.replaceChildren(empty("No tool audit summary."));
+          return;
+        }
+
+        const toolRows = Object.entries(summary.toolStatusCounts || {})
+          .sort((left, right) => left[0].localeCompare(right[0]))
+          .map(([toolName, counts]) =>
+            row(
+              "source-row",
+              "Tool · " + toolName,
+              String((counts.success || 0) + (counts.failure || 0)),
+              "success " + String(counts.success || 0) + " · failure " + String(counts.failure || 0),
+            ),
+          );
+        const errorRows = Object.entries(summary.failureErrorCodeCounts || {})
+          .filter((entry) => Number(entry[1]) > 0)
+          .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]))
+          .map(([errorCode, count]) => row("source-row", "Error · " + errorCode, String(count), "failures"));
+        const failureRows = (summary.recentFailures || []).map((failure) =>
+          rowWithMetaNodes(
+            "source-row",
+            "Recent failure · " + failure.toolName,
+            failure.createdAt || "",
+            [
+              failure.errorCode ? text("Error " + failure.errorCode) : undefined,
+              failure.intent ? text("Intent " + failure.intent) : undefined,
+              failure.channel ? text("Channel " + failure.channel) : undefined,
+              text("Latency " + String(failure.latencyMs || 0) + "ms"),
+            ],
+          ),
+        );
+
+        toolAuditTarget.replaceChildren(
+          row("source-row", "Audit window", summary.windowStartedAt || "", "last 24h"),
+          row(
+            "source-row",
+            "Total tool calls",
+            String(summary.totalCount || 0),
+            "success " + String(summary.successCount || 0) + " · failure " + String(summary.failureCount || 0),
+          ),
+          ...(toolRows.length === 0 ? [empty("No audited tool calls.")] : toolRows),
+          ...errorRows,
+          ...(failureRows.length === 0 ? [empty("No recent tool failures.")] : failureRows),
         );
       }
 
