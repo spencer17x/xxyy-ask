@@ -80,6 +80,18 @@ async function callHandler(
   return response;
 }
 
+function unconfiguredToolAuditCostEstimate() {
+  return {
+    budgetStatus: 'not_configured',
+    completionCostUsd: 0,
+    configured: false,
+    currency: 'USD',
+    promptCostUsd: 0,
+    totalCostUsd: 0,
+    warningThresholdRatio: 0.8,
+  } as const;
+}
+
 function createRuntimeConfigForTest(): Record<string, unknown> {
   return {
     answerProvider: 'openai',
@@ -384,6 +396,7 @@ describe('createRequestHandler', () => {
         summarizedSessionCount: 1,
       },
       toolAudit: {
+        costEstimate: unconfiguredToolAuditCostEstimate(),
         failureCount: 1,
         failureErrorCodeCounts: {
           TimeoutError: 1,
@@ -535,6 +548,7 @@ describe('createRequestHandler', () => {
         summarizedSessionCount: 0,
       },
       toolAudit: {
+        costEstimate: unconfiguredToolAuditCostEstimate(),
         failureCount: 0,
         failureErrorCodeCounts: {},
         recentFailures: [],
@@ -979,7 +993,13 @@ describe('createRequestHandler', () => {
     try {
       const { createRequestHandler: createRequestHandlerWithMocks } = await import('./index.js');
       const handler = createRequestHandlerWithMocks({
-        env: { API_OPS_TOKEN: 'secret-token' },
+        env: {
+          API_OPS_TOKEN: 'secret-token',
+          API_TOOL_AUDIT_COMPLETION_TOKEN_USD_PER_1M: '8',
+          API_TOOL_AUDIT_COST_BUDGET_USD: '0.002',
+          API_TOOL_AUDIT_COST_WARNING_RATIO: '0.5',
+          API_TOOL_AUDIT_PROMPT_TOKEN_USD_PER_1M: '2',
+        },
         getHealthStatus: () =>
           Promise.resolve({
             checks: {
@@ -1256,6 +1276,19 @@ describe('createRequestHandler', () => {
           summarizedSessionCount: 3,
         },
         toolAudit: {
+          costEstimate: {
+            budgetStatus: 'warning',
+            budgetUsd: 0.002,
+            budgetUtilization: 0.7,
+            completionCostUsd: 0.0008,
+            completionTokenUsdPer1M: 8,
+            configured: true,
+            currency: 'USD',
+            promptCostUsd: 0.0006,
+            promptTokenUsdPer1M: 2,
+            totalCostUsd: 0.0014,
+            warningThresholdRatio: 0.5,
+          },
           failureCount: 1,
           failureErrorCodeCounts: {
             TimeoutError: 1,

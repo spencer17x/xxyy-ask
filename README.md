@@ -84,6 +84,10 @@ API_MAX_BODY_BYTES=65536
 API_OPS_TOKEN=
 API_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_WINDOW_MS=60000
+API_TOOL_AUDIT_PROMPT_TOKEN_USD_PER_1M=
+API_TOOL_AUDIT_COMPLETION_TOKEN_USD_PER_1M=
+API_TOOL_AUDIT_COST_BUDGET_USD=
+API_TOOL_AUDIT_COST_WARNING_RATIO=0.8
 ```
 
 应用会从 `POSTGRES_*` 自动组装数据库连接串。使用外部托管数据库时，也可以只配置 `DATABASE_URL` 覆盖。
@@ -188,6 +192,7 @@ GET /health/deep
 通过 `pnpm start` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、agentRoute、引用数、耗时、状态码和错误码。`agentRoute` 表示自动回答总调度的内部路线，例如 `product_answer`、`transaction_analysis`、`boundary`、`clarify` 或 `preference_capture`；日志只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文。
 
 API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。需要跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
+`API_TOOL_AUDIT_PROMPT_TOKEN_USD_PER_1M` 和 `API_TOOL_AUDIT_COMPLETION_TOKEN_USD_PER_1M` 可配置当前供应商/模型的 prompt 与 completion 每百万 token 美元单价；`API_TOOL_AUDIT_COST_BUDGET_USD` 和 `API_TOOL_AUDIT_COST_WARNING_RATIO` 用于 `/api/ops/summary` 和 `/ops` 的最近 24 小时成本估算与预算状态告警，不会改变实际模型调用。
 
 运维摘要接口默认关闭。配置 `API_OPS_TOKEN` 后可以访问：
 
@@ -195,7 +200,7 @@ API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/
 GET /api/ops/summary
 ```
 
-请求需要带 `Authorization: Bearer <API_OPS_TOKEN>` 或 `x-ops-token: <API_OPS_TOKEN>`。响应会聚合 `/health/deep`、知识库 stats、反馈 stats、候选知识队列数量、最近 eval 失败和最近自动回答质量缺口摘要，用于生产监控、后台页或告警系统；不要把 token 暴露到公开前端。
+请求需要带 `Authorization: Bearer <API_OPS_TOKEN>` 或 `x-ops-token: <API_OPS_TOKEN>`。响应会聚合 `/health/deep`、知识库 stats、反馈 stats、工具审计 token 与成本估算、候选知识队列数量、最近 eval 失败和最近自动回答质量缺口摘要，用于生产监控、后台页或告警系统；不要把 token 暴露到公开前端。
 
 同源 Web 运维页：
 

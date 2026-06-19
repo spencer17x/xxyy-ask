@@ -1285,6 +1285,10 @@ function validateToolAuditSummary(value) {
     return 'ops summary must include valid tool audit token usage.';
   }
 
+  if (!hasToolCostEstimate(value.costEstimate)) {
+    return 'ops summary must include valid tool audit cost estimate.';
+  }
+
   if (value.totalCount > 0 && !isCleanNonEmptyString(value.latestEventCreatedAt)) {
     return 'ops summary must include valid tool audit latest timestamps.';
   }
@@ -1592,6 +1596,53 @@ function hasToolTokenUsageByTool(value) {
   );
 }
 
+function hasToolCostEstimate(value) {
+  if (
+    !isRecord(value) ||
+    typeof value.configured !== 'boolean' ||
+    value.currency !== 'USD' ||
+    !isToolAuditBudgetStatus(value.budgetStatus) ||
+    !isNonNegativeNumber(value.completionCostUsd) ||
+    !isNonNegativeNumber(value.promptCostUsd) ||
+    !isNonNegativeNumber(value.totalCostUsd) ||
+    !isPositiveRatio(value.warningThresholdRatio)
+  ) {
+    return false;
+  }
+
+  if (value.configured) {
+    const hasPromptPrice =
+      value.promptTokenUsdPer1M !== undefined && isNonNegativeNumber(value.promptTokenUsdPer1M);
+    const hasCompletionPrice =
+      value.completionTokenUsdPer1M !== undefined &&
+      isNonNegativeNumber(value.completionTokenUsdPer1M);
+    if (!hasPromptPrice && !hasCompletionPrice) {
+      return false;
+    }
+  }
+
+  if (value.budgetUsd !== undefined && !isPositiveNumber(value.budgetUsd)) {
+    return false;
+  }
+
+  if (value.budgetUtilization !== undefined && !isNonNegativeNumber(value.budgetUtilization)) {
+    return false;
+  }
+
+  if (
+    value.budgetStatus !== 'not_configured' &&
+    (!isPositiveNumber(value.budgetUsd) || !isNonNegativeNumber(value.budgetUtilization))
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function isToolAuditBudgetStatus(value) {
+  return ['exceeded', 'not_configured', 'ok', 'warning'].includes(value);
+}
+
 function hasQualitySignalAgeBuckets(value) {
   return (
     isRecord(value) &&
@@ -1729,6 +1780,18 @@ function isPositiveInteger(value) {
 
 function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0;
+}
+
+function isPositiveNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function isNonNegativeNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isPositiveRatio(value) {
+  return isPositiveNumber(value) && value <= 1;
 }
 
 async function verifyTxAnalysisAssets(check, payload, fetchFn, log) {

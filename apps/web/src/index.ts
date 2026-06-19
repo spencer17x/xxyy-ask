@@ -2107,6 +2107,7 @@ export function renderOpsPage(): string {
           metric("Stale Sessions", summary.sessionContext?.staleSummaryCount || 0, (summary.sessionContext?.staleSummaryCount || 0) > 0 ? "warn" : "ok"),
           metric("Tool Failures", summary.toolAudit?.failureCount || 0, (summary.toolAudit?.failureCount || 0) > 0 ? "warn" : "ok"),
           metric("Tool Tokens", summary.toolAudit?.tokenUsage?.totalTokens || 0, "ok"),
+          metric("Tool Cost", formatUsd(summary.toolAudit?.costEstimate?.totalCostUsd), toolCostMetricState(summary.toolAudit?.costEstimate)),
           metric("Candidates", summary.knowledgeCandidateQueues?.needsReviewCount || 0, (summary.knowledgeCandidateQueues?.needsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Quality Gaps", summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0, (summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Stale Gaps", summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0, (summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0) > 0 ? "error" : "ok"),
@@ -2125,6 +2126,7 @@ export function renderOpsPage(): string {
           return;
         }
 
+        const cost = summary.costEstimate;
         const toolRows = Object.entries(summary.toolStatusCounts || {})
           .sort((left, right) => left[0].localeCompare(right[0]))
           .map(([toolName, counts]) =>
@@ -2172,10 +2174,57 @@ export function renderOpsPage(): string {
             "prompt " + String(summary.tokenUsage?.promptTokens || 0),
             "completion " + String(summary.tokenUsage?.completionTokens || 0),
           ),
+          cost
+            ? row(
+                "source-row",
+                "Cost budget · " + cost.budgetStatus,
+                formatUsd(cost.totalCostUsd),
+                [
+                  "prompt " + formatUsd(cost.promptCostUsd),
+                  "completion " + formatUsd(cost.completionCostUsd),
+                  cost.budgetUsd === undefined ? "" : "budget " + formatUsd(cost.budgetUsd),
+                  cost.budgetUtilization === undefined
+                    ? ""
+                    : "usage " + formatPercent(cost.budgetUtilization),
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+              )
+            : empty("No tool cost estimate."),
           ...(toolRows.length === 0 ? [empty("No audited tool calls.")] : toolRows),
           ...errorRows,
           ...(failureRows.length === 0 ? [empty("No recent tool failures.")] : failureRows),
         );
+      }
+
+      function toolCostMetricState(cost) {
+        if (!cost || cost.budgetStatus === "not_configured") {
+          return "ok";
+        }
+        if (cost.budgetStatus === "exceeded") {
+          return "error";
+        }
+        if (cost.budgetStatus === "warning") {
+          return "warn";
+        }
+
+        return "ok";
+      }
+
+      function formatUsd(value) {
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          return "$0";
+        }
+
+        return "$" + value.toFixed(6).replace(/0+$/u, "").replace(/[.]$/u, "");
+      }
+
+      function formatPercent(value) {
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          return "0%";
+        }
+
+        return String(Math.round(value * 1000) / 10) + "%";
       }
 
       function renderSessionContext(summary) {

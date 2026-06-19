@@ -71,6 +71,10 @@ API_MAX_BODY_BYTES=65536
 API_OPS_TOKEN=
 API_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_WINDOW_MS=60000
+API_TOOL_AUDIT_PROMPT_TOKEN_USD_PER_1M=
+API_TOOL_AUDIT_COMPLETION_TOKEN_USD_PER_1M=
+API_TOOL_AUDIT_COST_BUDGET_USD=
+API_TOOL_AUDIT_COST_WARNING_RATIO=0.8
 ```
 
 `pnpm start`、`pnpm sync` 和 `pnpm rag:*` 会读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
@@ -82,6 +86,7 @@ API 的 `GET /health` 是轻量存活检查；`GET /health/deep` 是生产依赖
 通过 `pnpm start` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、agentRoute、引用数、耗时、状态码和错误码；`agentRoute` 表示自动回答总调度内部路线，只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文。
 API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 `GET /api/ops/summary` 是受保护的运维摘要接口，默认关闭；配置 `API_OPS_TOKEN` 后才可用。请求必须带 `Authorization: Bearer <token>` 或 `x-ops-token`，响应聚合 deep health、知识库 stats 和反馈 stats。`GET /ops` 提供同源运维页，但页面不内置 token，需要手动输入。不要把 `API_OPS_TOKEN` 暴露到公开前端。
+`API_TOOL_AUDIT_PROMPT_TOKEN_USD_PER_1M` 和 `API_TOOL_AUDIT_COMPLETION_TOKEN_USD_PER_1M` 可配置当前供应商/模型的 prompt 与 completion 每百万 token 美元单价；`API_TOOL_AUDIT_COST_BUDGET_USD` 和 `API_TOOL_AUDIT_COST_WARNING_RATIO` 用于 `/api/ops/summary` 和 `/ops` 的最近 24 小时成本估算与预算状态告警，不会改变实际模型调用。
 Web UI 会把每条回答后的正负反馈提交到 `POST /api/feedback`，API 写入 Postgres `rag_feedback` 表，不记录明文 `userId`。反馈表迁移由 `pnpm rag:ingest` 完成，`pnpm rag:feedback` 可查看反馈数量和最近反馈明细。
 交易分析报告默认使用 `TX_ANALYSIS_REPORT_STORE=file` 写入静态资产目录的 JSON/JSONL；文件模式和 Postgres 模式都支持通过受保护接口保存处理状态、备注和负责人。需要数据库化复查时配置 `TX_ANALYSIS_REPORT_STORE=postgres`，成功/失败报告会写入 `tx_analysis_reports` 表，`/api/tx-analysis/reports`、`/api/tx-analysis/reports/summary`、`/api/tx-analysis/reports/:id` 和 `/ops` 会从同一个报告 store 读取。表迁移由 `pnpm rag:migrate`、`pnpm rag:ingest` 或 `pnpm sync` 完成。
 

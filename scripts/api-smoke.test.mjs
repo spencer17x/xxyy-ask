@@ -1637,6 +1637,60 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when tool audit cost estimate is missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.toolAudit.costEstimate;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid tool audit cost estimate.',
+    );
+  });
+
+  it('fails ops summary smoke when tool audit cost estimate is malformed', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      toolAudit: {
+        ...opsSummaryPayload().toolAudit,
+        costEstimate: {
+          ...opsSummaryPayload().toolAudit.costEstimate,
+          budgetStatus: 'maybe',
+          totalCostUsd: -1,
+        },
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid tool audit cost estimate.',
+    );
+  });
+
   it('fails ops summary smoke when tool audit by-tool token usage totals drift', async () => {
     const messages = [];
     const payload = opsSummaryPayload({
@@ -6618,6 +6672,19 @@ function opsSummaryPayload(overrides = {}) {
       summarizedSessionCount: 2,
     },
     toolAudit: {
+      costEstimate: {
+        budgetStatus: 'warning',
+        budgetUsd: 0.002,
+        budgetUtilization: 0.7,
+        completionCostUsd: 0.0008,
+        completionTokenUsdPer1M: 8,
+        configured: true,
+        currency: 'USD',
+        promptCostUsd: 0.0006,
+        promptTokenUsdPer1M: 2,
+        totalCostUsd: 0.0014,
+        warningThresholdRatio: 0.5,
+      },
       failureCount: 1,
       failureErrorCodeCounts: {
         TimeoutError: 1,

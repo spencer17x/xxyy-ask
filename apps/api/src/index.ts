@@ -98,6 +98,10 @@ type ApiEnv = RagEnv &
       | 'API_OPS_TOKEN'
       | 'API_RATE_LIMIT_MAX'
       | 'API_RATE_LIMIT_WINDOW_MS'
+      | 'API_TOOL_AUDIT_COMPLETION_TOKEN_USD_PER_1M'
+      | 'API_TOOL_AUDIT_COST_BUDGET_USD'
+      | 'API_TOOL_AUDIT_COST_WARNING_RATIO'
+      | 'API_TOOL_AUDIT_PROMPT_TOKEN_USD_PER_1M'
       | 'PORT',
       string
     >
@@ -149,6 +153,14 @@ interface ApiRuntimeConfig {
   opsToken?: string;
   rateLimitMax: number;
   rateLimitWindowMs: number;
+  toolAuditCost: ToolAuditCostConfig;
+}
+
+interface ToolAuditCostConfig {
+  budgetUsd?: number;
+  completionTokenUsdPer1M?: number;
+  promptTokenUsdPer1M?: number;
+  warningThresholdRatio: number;
 }
 
 interface ChatPayload {
@@ -231,9 +243,29 @@ interface OpsSummary {
   knowledge: KnowledgeStats;
   knowledgeCandidateQueues: KnowledgeCandidateQueueSummary;
   sessionContext: PgSessionContextOpsSummary;
-  toolAudit: PgToolAuditOpsSummary;
+  toolAudit: ToolAuditOpsSummary;
   txAnalysis: TxAnalysisReportSummary;
   txAnalysisRuntime?: TxAnalysisRuntimeSummary;
+}
+
+type ToolAuditBudgetStatus = 'exceeded' | 'not_configured' | 'ok' | 'warning';
+
+type ToolAuditOpsSummary = PgToolAuditOpsSummary & {
+  costEstimate: ToolAuditCostEstimate;
+};
+
+interface ToolAuditCostEstimate {
+  budgetStatus: ToolAuditBudgetStatus;
+  budgetUsd?: number;
+  budgetUtilization?: number;
+  completionCostUsd: number;
+  completionTokenUsdPer1M?: number;
+  configured: boolean;
+  currency: 'USD';
+  promptCostUsd: number;
+  promptTokenUsdPer1M?: number;
+  totalCostUsd: number;
+  warningThresholdRatio: number;
 }
 
 interface KnowledgeCandidateQueueSummary {
@@ -428,7 +460,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
     createCachedTxAnalysisReportStoreLoader(config, staticAssetsDir);
   const getOpsSummary =
     options.getOpsSummary ??
-    (() => createOpsSummary(config, getHealthStatus, now, getTxAnalysisReportStore));
+    (() => createOpsSummary(config, apiConfig, getHealthStatus, now, getTxAnalysisReportStore));
   const txAnalysisRuntime = createTxAnalysisRuntimeSummary(config);
   const recordFeedback = options.recordFeedback ?? createCachedFeedbackRecorder(config);
   const recordFeedbackCandidate =
@@ -1096,6 +1128,21 @@ function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
     ...(opsToken === undefined ? {} : { opsToken }),
     rateLimitMax: parsePositiveInteger(env.API_RATE_LIMIT_MAX, 60),
     rateLimitWindowMs: parsePositiveInteger(env.API_RATE_LIMIT_WINDOW_MS, 60_000),
+    toolAuditCost: {
+      ...optionalNumberProperty(
+        'budgetUsd',
+        parseOptionalPositiveNumber(env.API_TOOL_AUDIT_COST_BUDGET_USD),
+      ),
+      ...optionalNumberProperty(
+        'completionTokenUsdPer1M',
+        parseOptionalNonNegativeNumber(env.API_TOOL_AUDIT_COMPLETION_TOKEN_USD_PER_1M),
+      ),
+      ...optionalNumberProperty(
+        'promptTokenUsdPer1M',
+        parseOptionalNonNegativeNumber(env.API_TOOL_AUDIT_PROMPT_TOKEN_USD_PER_1M),
+      ),
+      warningThresholdRatio: parseOptionalRatio(env.API_TOOL_AUDIT_COST_WARNING_RATIO, 0.8),
+    },
   };
 }
 
@@ -1146,6 +1193,40 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseOptionalNonNegativeNumber(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function parseOptionalPositiveNumber(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseOptionalRatio(value: string | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 1 ? parsed : fallback;
+}
+
+function optionalNumberProperty<Key extends string>(
+  key: Key,
+  value: number | undefined,
+): Record<string, number> {
+  return value === undefined ? {} : { [key]: value };
 }
 
 function parseOptionalEnvText(value: string | undefined): string | undefined {
@@ -1645,6 +1726,7 @@ async function createDeepHealthStatus(
 
 async function createOpsSummary(
   config: ReturnType<typeof loadRagConfig>,
+  apiConfig: ApiRuntimeConfig,
   getHealthStatus: () => Promise<DeepHealthStatus>,
   now: () => number,
   getTxAnalysisReportStore: () => Promise<TxAnalysisReportReader>,
@@ -1666,7 +1748,7 @@ async function createOpsSummary(
       feedback,
       knowledgeCandidateQueues,
       sessionContext,
-      toolAudit,
+      rawToolAudit,
       txAnalysis,
     ] = await Promise.all([
       getHealthStatus(),
@@ -1677,6 +1759,7 @@ async function createOpsSummary(
       summarizePgToolAudit({ client: pool, nowMs: generatedAtMs }),
       getTxAnalysisReportStore().then((reportStore) => reportStore.summarizeReports({})),
     ]);
+    const toolAudit = addToolAuditCostEstimate(rawToolAudit, apiConfig.toolAuditCost);
 
     return {
       feedback,
@@ -1691,6 +1774,84 @@ async function createOpsSummary(
   } finally {
     await pool.end();
   }
+}
+
+function addToolAuditCostEstimate(
+  summary: PgToolAuditOpsSummary,
+  config: ToolAuditCostConfig,
+): ToolAuditOpsSummary {
+  return {
+    ...summary,
+    costEstimate: summarizeToolAuditCost(summary, config),
+  };
+}
+
+function summarizeToolAuditCost(
+  summary: PgToolAuditOpsSummary,
+  config: ToolAuditCostConfig,
+): ToolAuditCostEstimate {
+  const promptTokenUsdPer1M = config.promptTokenUsdPer1M;
+  const completionTokenUsdPer1M = config.completionTokenUsdPer1M;
+  const configured = promptTokenUsdPer1M !== undefined || completionTokenUsdPer1M !== undefined;
+  const promptCostUsd = roundUsdCost(
+    (summary.tokenUsage.promptTokens * (promptTokenUsdPer1M ?? 0)) / 1_000_000,
+  );
+  const completionCostUsd = roundUsdCost(
+    (summary.tokenUsage.completionTokens * (completionTokenUsdPer1M ?? 0)) / 1_000_000,
+  );
+  const totalCostUsd = roundUsdCost(promptCostUsd + completionCostUsd);
+  const budgetUtilization =
+    configured && config.budgetUsd !== undefined
+      ? roundCostRatio(totalCostUsd / config.budgetUsd)
+      : undefined;
+
+  return {
+    budgetStatus: summarizeToolAuditBudgetStatus({
+      configured,
+      totalCostUsd,
+      warningThresholdRatio: config.warningThresholdRatio,
+      ...optionalNumberProperty('budgetUsd', config.budgetUsd),
+    }),
+    ...optionalNumberProperty('budgetUsd', config.budgetUsd),
+    ...optionalNumberProperty('budgetUtilization', budgetUtilization),
+    completionCostUsd,
+    ...optionalNumberProperty('completionTokenUsdPer1M', completionTokenUsdPer1M),
+    configured,
+    currency: 'USD',
+    promptCostUsd,
+    ...optionalNumberProperty('promptTokenUsdPer1M', promptTokenUsdPer1M),
+    totalCostUsd,
+    warningThresholdRatio: config.warningThresholdRatio,
+  };
+}
+
+function summarizeToolAuditBudgetStatus(input: {
+  budgetUsd?: number;
+  configured: boolean;
+  totalCostUsd: number;
+  warningThresholdRatio: number;
+}): ToolAuditBudgetStatus {
+  if (!input.configured || input.budgetUsd === undefined) {
+    return 'not_configured';
+  }
+
+  if (input.totalCostUsd >= input.budgetUsd) {
+    return 'exceeded';
+  }
+
+  if (input.totalCostUsd / input.budgetUsd >= input.warningThresholdRatio) {
+    return 'warning';
+  }
+
+  return 'ok';
+}
+
+function roundUsdCost(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
+}
+
+function roundCostRatio(value: number): number {
+  return Math.round((value + Number.EPSILON) * 10_000) / 10_000;
 }
 
 const OPS_CANDIDATE_QUEUE_LIMIT = 200;
