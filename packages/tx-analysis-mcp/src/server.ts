@@ -5,7 +5,11 @@ import {
   analyzeTransactionInputSchema,
   getAnalysisReportInputSchema,
   listAnalysisReportsInputSchema,
+  sanitizeSessionText,
+  type QualitySignalChannel,
+  type QualitySignalSink,
 } from '@xxyy/agent-core';
+import type { TxAnalysisUnavailableReason } from '@xxyy/rag-core';
 import type { FindTxAnalysisReportsOptions } from '@xxyy/rag-core';
 import type { z } from 'zod';
 
@@ -22,6 +26,7 @@ export const TX_ANALYSIS_MCP_INSTRUCTIONS = [
 
 export interface CreateTxAnalysisMcpServerOptions {
   handlers: TxAnalysisToolHandlers;
+  qualitySignals?: QualitySignalSink;
 }
 
 export function createTxAnalysisMcpServer(options: CreateTxAnalysisMcpServerOptions): McpServer {
@@ -49,6 +54,15 @@ export function createTxAnalysisMcpServer(options: CreateTxAnalysisMcpServerOpti
         ...(channel === undefined ? {} : { channel }),
         txHash,
       });
+      if (output.status === 'failure') {
+        recordTxAnalysisQualitySignal(options.qualitySignals, {
+          answer: output.failure.message,
+          channel: toQualitySignalChannel(channel),
+          chain,
+          reason: output.failure.reason,
+          txHash,
+        });
+      }
       return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
         structuredContent: output,
@@ -103,4 +117,36 @@ function toFindReportsInput(
     ...(input.status === undefined ? {} : { status: input.status }),
     ...(input.txHash === undefined ? {} : { txHash: input.txHash }),
   };
+}
+
+function recordTxAnalysisQualitySignal(
+  qualitySignals: QualitySignalSink | undefined,
+  input: {
+    answer: string;
+    channel: QualitySignalChannel;
+    chain: string | undefined;
+    reason: TxAnalysisUnavailableReason;
+    txHash: string;
+  },
+): void {
+  qualitySignals?.record({
+    answer: sanitizeSessionText(input.answer),
+    channel: input.channel,
+    errorCode: input.reason,
+    intent: 'tx_sandwich_detection',
+    reason: 'tx_analysis_failure',
+    redactedQuestion: sanitizeSessionText(
+      input.chain === undefined ? input.txHash : `${input.chain} ${input.txHash}`,
+    ),
+    sessionIdPresent: false,
+    userIdPresent: false,
+  });
+}
+
+function toQualitySignalChannel(channel: string | undefined): QualitySignalChannel {
+  if (channel === 'cli' || channel === 'telegram' || channel === 'web') {
+    return channel;
+  }
+
+  return 'agent';
 }

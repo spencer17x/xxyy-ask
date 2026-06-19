@@ -118,6 +118,54 @@ describe('tx analysis MCP server', () => {
     });
   });
 
+  it('records quality signals for failed transaction analysis results', async () => {
+    const qualitySignals: unknown[] = [];
+    const server = createTxAnalysisMcpServer({
+      handlers: {
+        analyzeTransaction() {
+          return Promise.resolve({
+            failure: {
+              message: 'Transaction analysis provider is not configured.',
+              reason: 'not_configured',
+            },
+            status: 'failure',
+          });
+        },
+        getAnalysisReport() {
+          throw new Error('get report should not be called');
+        },
+        listAnalysisReports() {
+          throw new Error('list reports should not be called');
+        },
+      },
+      qualitySignals: {
+        record(signal) {
+          qualitySignals.push(signal);
+        },
+      },
+    });
+
+    const handler = getToolHandler<{ chain?: 'base'; channel?: 'ops'; txHash: string }>(
+      server,
+      'analyze_transaction',
+    );
+
+    await handler({ chain: 'base', channel: 'ops', txHash: evmTx }, {});
+
+    expect(qualitySignals).toEqual([
+      {
+        answer: 'Transaction analysis provider is not configured.',
+        channel: 'agent',
+        errorCode: 'not_configured',
+        intent: 'tx_sandwich_detection',
+        reason: 'tx_analysis_failure',
+        redactedQuestion: 'base [evm_tx_hash]',
+        sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('returns structured content for get_analysis_report', async () => {
     const server = createTxAnalysisMcpServer({
       handlers: {

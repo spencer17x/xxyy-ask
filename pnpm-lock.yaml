@@ -168,6 +168,9 @@ importers:
       '@xxyy/agent-core':
         specifier: workspace:*
         version: link:../agent-core
+      '@xxyy/knowledge-ops':
+        specifier: workspace:*
+        version: link:../knowledge-ops
       '@xxyy/rag-core':
         specifier: workspace:*
         version: link:../rag-core
