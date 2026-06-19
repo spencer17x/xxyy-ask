@@ -1152,6 +1152,10 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary must include valid quality signal route counts.';
   }
 
+  if (!hasQualitySignalAgeBuckets(value.qualitySignalAgeBuckets)) {
+    return 'ops summary must include valid quality signal age buckets.';
+  }
+
   const reasonTotal = Object.values(value.qualitySignalReasonCounts).reduce(
     (total, count) => total + count,
     0,
@@ -1166,6 +1170,14 @@ function validateKnowledgeCandidateQueueSummary(value) {
   );
   if (routeTotal !== value.qualitySignalNeedsReviewCount) {
     return 'ops summary quality signal route counts must match the quality gap queue count.';
+  }
+
+  const ageBucketTotal = Object.values(value.qualitySignalAgeBuckets).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  if (ageBucketTotal !== value.qualitySignalNeedsReviewCount) {
+    return 'ops summary quality signal age bucket counts must match the quality gap queue count.';
   }
 
   const clusterTotal = value.qualitySignalClusters.reduce(
@@ -1186,6 +1198,15 @@ function hasReasonCounts(value) {
 
   return Object.entries(value).every(
     ([reason, count]) => isCleanNonEmptyString(reason) && isNonNegativeInteger(count),
+  );
+}
+
+function hasQualitySignalAgeBuckets(value) {
+  return (
+    isRecord(value) &&
+    isNonNegativeInteger(value.lt1h) &&
+    isNonNegativeInteger(value.h1to24h) &&
+    isNonNegativeInteger(value.gte24h)
   );
 }
 

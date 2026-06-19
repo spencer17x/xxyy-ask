@@ -112,11 +112,17 @@ describe('renderOpsPage', () => {
       'renderQualitySignalRoutes(summary.knowledgeCandidateQueues?.qualitySignalAgentRouteCounts || {})',
     );
     expect(html).toContain(
+      'renderQualitySignalAgeBuckets(summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets || {})',
+    );
+    expect(html).toContain(
       'renderQualitySignalClusters(summary.knowledgeCandidateQueues?.qualitySignalClusters || [])',
     );
     expect(html).toContain('summary.knowledgeCandidateQueues?.needsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.oldestQualitySignalCreatedAt');
+    expect(html).toContain(
+      'summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0',
+    );
     expect(html).toContain('summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.evalFailedCount || 0');
     expect(html).toContain('id="knowledge-eval-failures"');
@@ -124,12 +130,14 @@ describe('renderOpsPage', () => {
     expect(html).toContain('id="knowledge-quality-signals"');
     expect(html).toContain('id="knowledge-quality-reasons"');
     expect(html).toContain('id="knowledge-quality-routes"');
+    expect(html).toContain('id="knowledge-quality-age-buckets"');
     expect(html).toContain('id="knowledge-quality-clusters"');
     expect(html).toContain('recent.failureReasons');
     expect(html).toContain('Eval reason · " + reason');
     expect(html).toContain('Quality gap · " + recent.candidateId');
     expect(html).toContain('Quality reason · " + reason');
     expect(html).toContain('Quality route · " + route');
+    expect(html).toContain('Quality age · " + bucket.label');
     expect(html).toContain('Quality cluster · " + cluster.agentRoute + " / " + cluster.reason');
     expect(html).toContain('cluster.oldestCreatedAt');
     expect(html).toContain('cluster.sampleQuestions');

@@ -338,6 +338,11 @@ describe('createRequestHandler', () => {
         evalFailedCount: 0,
         evalFailureReasonCounts: {},
         needsReviewCount: 0,
+        qualitySignalAgeBuckets: {
+          gte24h: 0,
+          h1to24h: 0,
+          lt1h: 0,
+        },
         qualitySignalAgentRouteCounts: {},
         qualitySignalClusters: [],
         qualitySignalNeedsReviewCount: 0,
@@ -427,6 +432,11 @@ describe('createRequestHandler', () => {
         evalFailedCount: 0,
         evalFailureReasonCounts: {},
         needsReviewCount: 0,
+        qualitySignalAgeBuckets: {
+          gte24h: 0,
+          h1to24h: 0,
+          lt1h: 0,
+        },
         qualitySignalAgentRouteCounts: {},
         qualitySignalClusters: [],
         qualitySignalNeedsReviewCount: 0,
@@ -758,6 +768,11 @@ describe('createRequestHandler', () => {
           qualitySignalAgentRouteCounts: {
             clarify: 1,
             product_answer: 2,
+          },
+          qualitySignalAgeBuckets: {
+            gte24h: 0,
+            h1to24h: 0,
+            lt1h: 3,
           },
           qualitySignalClusters: [
             {

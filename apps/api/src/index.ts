@@ -232,12 +232,19 @@ interface KnowledgeCandidateQueueSummary {
   evalFailureReasonCounts: Record<string, number>;
   needsReviewCount: number;
   oldestQualitySignalCreatedAt?: string;
+  qualitySignalAgeBuckets: QualitySignalAgeBuckets;
   qualitySignalAgentRouteCounts: Record<string, number>;
   qualitySignalClusters: QualitySignalClusterSummary[];
   qualitySignalNeedsReviewCount: number;
   qualitySignalReasonCounts: Record<string, number>;
   recentEvalFailures: RecentKnowledgeEvalFailureSummary[];
   recentQualitySignals: RecentQualitySignalCandidateSummary[];
+}
+
+interface QualitySignalAgeBuckets {
+  gte24h: number;
+  h1to24h: number;
+  lt1h: number;
 }
 
 interface RecentKnowledgeEvalFailureSummary {
@@ -1490,6 +1497,7 @@ async function createOpsSummary(
   now: () => number,
   getTxAnalysisReportStore: () => Promise<TxAnalysisReportReader>,
 ): Promise<OpsSummary> {
+  const generatedAtMs = now();
   const pool = createPgPool(config.databaseUrl);
   try {
     const knowledgeStore = createPgVectorStore({
@@ -1504,13 +1512,13 @@ async function createOpsSummary(
       getHealthStatus(),
       knowledgeStore.getStats(),
       feedbackStore.getFeedbackStats({ limit: 10 }),
-      summarizeKnowledgeCandidateQueues(candidateStore),
+      summarizeKnowledgeCandidateQueues(candidateStore, generatedAtMs),
       getTxAnalysisReportStore().then((reportStore) => reportStore.summarizeReports({})),
     ]);
 
     return {
       feedback,
-      generatedAt: new Date(now()).toISOString(),
+      generatedAt: new Date(generatedAtMs).toISOString(),
       health,
       knowledge,
       knowledgeCandidateQueues,
@@ -1525,9 +1533,12 @@ const OPS_CANDIDATE_QUEUE_LIMIT = 200;
 const OPS_RECENT_EVAL_FAILURE_LIMIT = 5;
 const OPS_RECENT_QUALITY_SIGNAL_LIMIT = 5;
 const OPS_QUALITY_SIGNAL_CLUSTER_SAMPLE_LIMIT = 5;
+const QUALITY_SIGNAL_AGE_ONE_HOUR_MS = 60 * 60 * 1000;
+const QUALITY_SIGNAL_AGE_ONE_DAY_MS = 24 * QUALITY_SIGNAL_AGE_ONE_HOUR_MS;
 
 async function summarizeKnowledgeCandidateQueues(
   store: KnowledgeCandidateStore,
+  nowMs: number,
 ): Promise<KnowledgeCandidateQueueSummary> {
   const [needsReview, qualitySignalNeedsReview, approvedEvalCases, evalFailed] = await Promise.all([
     store.listCandidates({ limit: OPS_CANDIDATE_QUEUE_LIMIT, status: 'needs_review' }),
@@ -1556,6 +1567,7 @@ async function summarizeKnowledgeCandidateQueues(
     evalFailureReasonCounts: summarizeEvalFailureReasonCounts(evalFailureSummaries),
     needsReviewCount: needsReview.length,
     ...optionalOldestQualitySignalCreatedAt(qualitySignalNeedsReview),
+    qualitySignalAgeBuckets: summarizeQualitySignalAgeBuckets(qualitySignalNeedsReview, nowMs),
     qualitySignalAgentRouteCounts: summarizeQualitySignalAgentRouteCounts(qualitySignalNeedsReview),
     qualitySignalClusters: summarizeQualitySignalClusters(qualitySignalNeedsReview),
     qualitySignalNeedsReviewCount: qualitySignalNeedsReview.length,
@@ -1565,6 +1577,34 @@ async function summarizeKnowledgeCandidateQueues(
       qualitySignalNeedsReview.slice(0, OPS_RECENT_QUALITY_SIGNAL_LIMIT),
     ),
   };
+}
+
+function summarizeQualitySignalAgeBuckets(
+  candidates: KnowledgeCandidate[],
+  nowMs: number,
+): QualitySignalAgeBuckets {
+  const buckets: QualitySignalAgeBuckets = {
+    gte24h: 0,
+    h1to24h: 0,
+    lt1h: 0,
+  };
+
+  for (const candidate of candidates) {
+    const createdAtMs = Date.parse(candidate.createdAt);
+    const ageMs = Number.isFinite(createdAtMs)
+      ? Math.max(0, nowMs - createdAtMs)
+      : Number.POSITIVE_INFINITY;
+
+    if (ageMs < QUALITY_SIGNAL_AGE_ONE_HOUR_MS) {
+      buckets.lt1h += 1;
+    } else if (ageMs < QUALITY_SIGNAL_AGE_ONE_DAY_MS) {
+      buckets.h1to24h += 1;
+    } else {
+      buckets.gte24h += 1;
+    }
+  }
+
+  return buckets;
 }
 
 function summarizeEvalFailureReasonCounts(

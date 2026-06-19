@@ -1192,6 +1192,29 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when quality age buckets are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.knowledgeCandidateQueues.qualitySignalAgeBuckets;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid quality signal age buckets.',
+    );
+  });
+
   it('fails ops summary smoke when quality clusters are missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -1347,6 +1370,37 @@ describe('runApiSmoke', () => {
     expect(exitCode).toBe(1);
     expect(messages).toContain(
       'Failed ops summary: ops summary quality signal route counts must match the quality gap queue count.',
+    );
+  });
+
+  it('fails ops summary smoke when quality age bucket totals drift from the queue count', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      knowledgeCandidateQueues: {
+        ...opsSummaryPayload().knowledgeCandidateQueues,
+        qualitySignalAgeBuckets: {
+          gte24h: 0,
+          h1to24h: 0,
+          lt1h: 2,
+        },
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary quality signal age bucket counts must match the quality gap queue count.',
     );
   });
 
@@ -5642,6 +5696,11 @@ function opsSummaryPayload(overrides = {}) {
       needsReviewCount: 2,
       oldestQualitySignalCreatedAt: '2026-06-19T07:30:00.000Z',
       qualitySignalNeedsReviewCount: 1,
+      qualitySignalAgeBuckets: {
+        gte24h: 0,
+        h1to24h: 0,
+        lt1h: 1,
+      },
       qualitySignalAgentRouteCounts: {
         product_answer: 1,
       },

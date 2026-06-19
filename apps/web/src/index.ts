@@ -1739,6 +1739,10 @@ export function renderOpsPage(): string {
               <div id="knowledge-quality-routes" class="tx-report-results"></div>
             </div>
             <div class="knowledge-candidate-section">
+              <h3>Quality Gap Age</h3>
+              <div id="knowledge-quality-age-buckets" class="tx-report-results"></div>
+            </div>
+            <div class="knowledge-candidate-section">
               <h3>Quality Gap Clusters</h3>
               <div id="knowledge-quality-clusters" class="tx-report-results"></div>
             </div>
@@ -1875,6 +1879,7 @@ export function renderOpsPage(): string {
       const knowledgeQualitySignalsTarget = document.querySelector("#knowledge-quality-signals");
       const knowledgeQualityReasonsTarget = document.querySelector("#knowledge-quality-reasons");
       const knowledgeQualityRoutesTarget = document.querySelector("#knowledge-quality-routes");
+      const knowledgeQualityAgeBucketsTarget = document.querySelector("#knowledge-quality-age-buckets");
       const knowledgeQualityClustersTarget = document.querySelector("#knowledge-quality-clusters");
       const queryTxReports = document.querySelector("#tx-report-form");
       const txReportHash = document.querySelector("#tx-report-hash");
@@ -1982,6 +1987,7 @@ export function renderOpsPage(): string {
           renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || []);
           renderQualitySignalReasons(summary.knowledgeCandidateQueues?.qualitySignalReasonCounts || {});
           renderQualitySignalRoutes(summary.knowledgeCandidateQueues?.qualitySignalAgentRouteCounts || {});
+          renderQualitySignalAgeBuckets(summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets || {});
           renderQualitySignalClusters(summary.knowledgeCandidateQueues?.qualitySignalClusters || []);
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
           void loadKnowledgeCandidates();
@@ -2001,6 +2007,7 @@ export function renderOpsPage(): string {
           metric("Negative", summary.feedback.negativeCount, summary.feedback.negativeCount > 0 ? "warn" : "ok"),
           metric("Candidates", summary.knowledgeCandidateQueues?.needsReviewCount || 0, (summary.knowledgeCandidateQueues?.needsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Quality Gaps", summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0, (summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0) > 0 ? "warn" : "ok"),
+          metric("Stale Gaps", summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0, (summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0) > 0 ? "error" : "ok"),
           metric("Oldest Gap", summary.knowledgeCandidateQueues?.oldestQualitySignalCreatedAt || "-", summary.knowledgeCandidateQueues?.oldestQualitySignalCreatedAt ? "warn" : "ok"),
           metric("Eval Ready", summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0, (summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0) > 0 ? "warn" : "ok"),
           metric("Eval Failed", summary.knowledgeCandidateQueues?.evalFailedCount || 0, (summary.knowledgeCandidateQueues?.evalFailedCount || 0) > 0 ? "error" : "ok"),
@@ -2122,6 +2129,28 @@ export function renderOpsPage(): string {
         knowledgeQualityRoutesTarget.replaceChildren(
           ...rows.map(([route, count]) =>
             row("knowledge-candidate-item", "Quality route · " + route, String(count), "Needs review"),
+          ),
+        );
+      }
+
+      function renderQualitySignalAgeBuckets(ageBuckets) {
+        const rows = [
+          { key: "lt1h", label: "<1h" },
+          { key: "h1to24h", label: "1-24h" },
+          { key: "gte24h", label: "24h+" },
+        ].map((bucket) => ({
+          ...bucket,
+          count: Number(ageBuckets[bucket.key] || 0),
+        }));
+
+        if (rows.every((bucket) => bucket.count === 0)) {
+          knowledgeQualityAgeBucketsTarget.replaceChildren(empty("No quality age buckets."));
+          return;
+        }
+
+        knowledgeQualityAgeBucketsTarget.replaceChildren(
+          ...rows.map((bucket) =>
+            row("knowledge-candidate-item", "Quality age · " + bucket.label, String(bucket.count), "Needs review"),
           ),
         );
       }
