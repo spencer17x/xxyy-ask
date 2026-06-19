@@ -5,6 +5,8 @@ import type {
 } from './types.js';
 
 export interface ListKnowledgeCandidatesFilter {
+  createdAtGte?: string;
+  createdAtLt?: string;
   limit?: number;
   qualitySignalClusterKey?: string;
   source?: KnowledgeCandidateSource;
@@ -276,6 +278,20 @@ function matchesFilter(
   }
 
   if (
+    filter.createdAtGte !== undefined &&
+    !isCreatedAtAtOrAfter(candidate.createdAt, filter.createdAtGte)
+  ) {
+    return false;
+  }
+
+  if (
+    filter.createdAtLt !== undefined &&
+    !isCreatedAtBefore(candidate.createdAt, filter.createdAtLt)
+  ) {
+    return false;
+  }
+
+  if (
     filter.qualitySignalClusterKey !== undefined &&
     !candidate.sourceRefs.some(
       (sourceRef) =>
@@ -287,6 +303,18 @@ function matchesFilter(
   }
 
   return true;
+}
+
+function isCreatedAtAtOrAfter(createdAt: string, threshold: string): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  const thresholdMs = Date.parse(threshold);
+  return Number.isFinite(createdAtMs) && Number.isFinite(thresholdMs) && createdAtMs >= thresholdMs;
+}
+
+function isCreatedAtBefore(createdAt: string, threshold: string): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  const thresholdMs = Date.parse(threshold);
+  return Number.isFinite(createdAtMs) && Number.isFinite(thresholdMs) && createdAtMs < thresholdMs;
 }
 
 function canMarkEvalResult(candidate: KnowledgeCandidate): boolean {

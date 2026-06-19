@@ -76,6 +76,40 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
     ).resolves.toEqual([qualitySignalCandidate]);
   });
 
+  it('lists candidates by created time window for quality age queues', async () => {
+    const recentQualityCandidate = candidate({
+      createdAt: '2026-06-19T07:30:00.000Z',
+      id: 'candidate_quality_recent',
+      sourceRefs: [{ source: 'answer_quality_signal', chatIdHash: 'session', messageId: 'aqs_1' }],
+      updatedAt: '2026-06-19T07:30:00.000Z',
+    });
+    const middleQualityCandidate = candidate({
+      createdAt: '2026-06-19T02:00:00.000Z',
+      id: 'candidate_quality_middle',
+      sourceRefs: [{ source: 'answer_quality_signal', chatIdHash: 'session', messageId: 'aqs_2' }],
+      updatedAt: '2026-06-19T02:00:00.000Z',
+    });
+    const staleQualityCandidate = candidate({
+      createdAt: '2026-06-17T07:59:00.000Z',
+      id: 'candidate_quality_stale',
+      sourceRefs: [{ source: 'answer_quality_signal', chatIdHash: 'session', messageId: 'aqs_3' }],
+      updatedAt: '2026-06-17T07:59:00.000Z',
+    });
+    const store = createInMemoryKnowledgeCandidateStore([
+      recentQualityCandidate,
+      middleQualityCandidate,
+      staleQualityCandidate,
+    ]);
+
+    await expect(
+      store.listCandidates({
+        createdAtGte: '2026-06-18T08:00:00.000Z',
+        createdAtLt: '2026-06-19T07:00:00.000Z',
+        source: 'answer_quality_signal',
+      }),
+    ).resolves.toEqual([middleQualityCandidate]);
+  });
+
   it('records human review decisions without publishing approved candidates', async () => {
     const store = createInMemoryKnowledgeCandidateStore();
     await store.addCandidates([candidate()]);

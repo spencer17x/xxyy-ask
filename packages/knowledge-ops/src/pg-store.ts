@@ -712,6 +712,16 @@ function buildListCandidatesQuery(filter: ListKnowledgeCandidatesFilter): {
     clauses.push(`source_refs @> $${values.length}::jsonb`);
   }
 
+  if (filter.createdAtGte !== undefined) {
+    values.push(filter.createdAtGte);
+    clauses.push(`created_at >= $${values.length}::timestamptz`);
+  }
+
+  if (filter.createdAtLt !== undefined) {
+    values.push(filter.createdAtLt);
+    clauses.push(`created_at < $${values.length}::timestamptz`);
+  }
+
   const limit = normalizeLimit(filter.limit);
   values.push(limit);
   const whereClause = clauses.length === 0 ? '' : `where ${clauses.join(' and ')}`;

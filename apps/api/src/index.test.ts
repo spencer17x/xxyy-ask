@@ -3289,6 +3289,91 @@ describe('createRequestHandler', () => {
     });
   });
 
+  it('lists quality signal candidates by age bucket for ops drill-down', async () => {
+    let listFilter: unknown;
+    const store: KnowledgeCandidateStore = {
+      addCandidates: () => Promise.resolve([]),
+      getCandidate() {
+        throw new Error('getCandidate should not be called for list requests');
+      },
+      listCandidates(filter) {
+        listFilter = filter;
+        return Promise.resolve([]);
+      },
+      listCandidateRuns() {
+        throw new Error('listCandidateRuns should not be called for list requests');
+      },
+      markCandidateEvalResult() {
+        throw new Error('markCandidateEvalResult should not be called for list requests');
+      },
+      markCandidateIngested() {
+        throw new Error('markCandidateIngested should not be called for list requests');
+      },
+      markCandidatePublished() {
+        throw new Error('markCandidatePublished should not be called for list requests');
+      },
+      recordCandidateRun() {
+        throw new Error('recordCandidateRun should not be called for list requests');
+      },
+      reviewCandidate() {
+        throw new Error('reviewCandidate should not be called for list requests');
+      },
+    };
+    const handler = createRequestHandler({
+      env: { API_OPS_TOKEN: 'secret-token' },
+      getKnowledgeCandidateStore: () => Promise.resolve(store),
+      now: () => Date.parse('2026-06-19T08:00:00.000Z'),
+    });
+
+    const response = await callHandler(handler, {
+      headers: { Authorization: 'Bearer secret-token' },
+      method: 'GET',
+      url: '/api/knowledge/candidates?status=needs_review&qualitySignalAgeBucket=h1to24h&limit=5',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(listFilter).toEqual({
+      createdAtGte: '2026-06-18T08:00:00.000Z',
+      createdAtLt: '2026-06-19T07:00:00.000Z',
+      limit: 5,
+      source: 'answer_quality_signal',
+      status: 'needs_review',
+    });
+    expect(JSON.parse(response.body)).toEqual({ candidates: [] });
+  });
+
+  it('rejects quality signal age bucket filters for non-quality sources', async () => {
+    const handler = createRequestHandler({
+      env: { API_OPS_TOKEN: 'secret-token' },
+      getKnowledgeCandidateStore: () =>
+        Promise.resolve({
+          addCandidates: () => Promise.resolve([]),
+          getCandidate: () => Promise.resolve(undefined),
+          listCandidateRuns: () => Promise.resolve([]),
+          listCandidates() {
+            throw new Error('listCandidates should not be called for invalid age source filters');
+          },
+          markCandidateEvalResult: () => Promise.reject(new Error('not implemented')),
+          markCandidateIngested: () => Promise.reject(new Error('not implemented')),
+          markCandidatePublished: () => Promise.reject(new Error('not implemented')),
+          recordCandidateRun: () => Promise.reject(new Error('not implemented')),
+          reviewCandidate: () => Promise.reject(new Error('not implemented')),
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      headers: { Authorization: 'Bearer secret-token' },
+      method: 'GET',
+      url: '/api/knowledge/candidates?source=telegram&qualitySignalAgeBucket=gte24h',
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'bad_request',
+      message: 'qualitySignalAgeBucket requires source answer_quality_signal.',
+    });
+  });
+
   it('rejects unsupported knowledge candidate source filters', async () => {
     const handler = createRequestHandler({
       env: { API_OPS_TOKEN: 'secret-token' },

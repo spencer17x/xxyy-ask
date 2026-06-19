@@ -227,6 +227,8 @@ describe('createPgKnowledgeOpsStore', () => {
     const store = createPgKnowledgeOpsStore({ client });
 
     const candidates = await store.listCandidates({
+      createdAtGte: '2026-06-18T08:00:00.000Z',
+      createdAtLt: '2026-06-19T07:00:00.000Z',
       limit: 10,
       qualitySignalClusterKey: 'product_answer:missing_citations:eval_case:eval_case',
       riskLevel: 'high',
@@ -236,7 +238,7 @@ describe('createPgKnowledgeOpsStore', () => {
     });
 
     expect(client.queries[0]?.sql).toContain(
-      'where status = $1 and type = $2 and risk_level = $3 and source_refs @> $4::jsonb and source_refs @> $5::jsonb',
+      'where status = $1 and type = $2 and risk_level = $3 and source_refs @> $4::jsonb and source_refs @> $5::jsonb and created_at >= $6::timestamptz and created_at < $7::timestamptz',
     );
     expect(client.queries[0]?.values).toEqual([
       'needs_review',
@@ -249,6 +251,8 @@ describe('createPgKnowledgeOpsStore', () => {
           qualitySignalClusterKey: 'product_answer:missing_citations:eval_case:eval_case',
         },
       ]),
+      '2026-06-18T08:00:00.000Z',
+      '2026-06-19T07:00:00.000Z',
       10,
     ]);
     expect(candidates).toEqual([

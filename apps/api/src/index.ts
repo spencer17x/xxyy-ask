@@ -26,6 +26,7 @@ import {
   type KnowledgeCandidateStatus,
   type KnowledgeCandidateType,
   type KnowledgeRiskLevel,
+  type ListKnowledgeCandidatesFilter,
   type ReviewKnowledgeCandidateInput,
 } from '@xxyy/knowledge-ops';
 import {
@@ -340,6 +341,8 @@ const supportedKnowledgeCandidateSources = [
   'answer_feedback',
   'answer_quality_signal',
 ] as const;
+const supportedQualitySignalAgeBuckets = ['lt1h', 'h1to24h', 'gte24h'] as const;
+type QualitySignalAgeBucket = (typeof supportedQualitySignalAgeBuckets)[number];
 const supportedKnowledgeCandidateReviewActions = [
   'approve',
   'reject',
@@ -449,6 +452,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       if (request.method === 'GET' && requestUrl.pathname === '/api/knowledge/candidates') {
         await handleKnowledgeCandidatesRequest({
           getKnowledgeCandidateStore,
+          now,
           ...(apiConfig.opsToken === undefined ? {} : { opsToken: apiConfig.opsToken }),
           request,
           requestUrl,
@@ -714,6 +718,7 @@ async function handleTxAnalysisReportsRequest(
 
 async function handleKnowledgeCandidatesRequest(options: {
   getKnowledgeCandidateStore: () => Promise<KnowledgeCandidateStore>;
+  now: () => number;
   opsToken?: string;
   request: ApiRequestLike;
   requestUrl: URL;
@@ -736,13 +741,22 @@ async function handleKnowledgeCandidatesRequest(options: {
   const qualitySignalClusterKey = parseOptionalQualitySignalClusterKey(
     options.requestUrl.searchParams.get('qualitySignalClusterKey'),
   );
+  const qualitySignalAgeBucket = parseOptionalQualitySignalAgeBucket(
+    options.requestUrl.searchParams.get('qualitySignalAgeBucket'),
+  );
+  const sourceFilter = resolveKnowledgeCandidateSourceForAgeBucket(source, qualitySignalAgeBucket);
+  const ageBucketFilter =
+    qualitySignalAgeBucket === undefined
+      ? {}
+      : createQualitySignalAgeBucketCandidateFilter(qualitySignalAgeBucket, options.now());
   const limit = parseOptionalPositiveQueryInteger(options.requestUrl.searchParams.get('limit'));
   const store = await options.getKnowledgeCandidateStore();
   const candidates = await store.listCandidates({
+    ...ageBucketFilter,
     ...(limit === undefined ? {} : { limit }),
     ...(qualitySignalClusterKey === undefined ? {} : { qualitySignalClusterKey }),
     ...(riskLevel === undefined ? {} : { riskLevel }),
-    ...(source === undefined ? {} : { source }),
+    ...(sourceFilter === undefined ? {} : { source: sourceFilter }),
     ...(status === undefined ? {} : { status }),
     ...(type === undefined ? {} : { type }),
   });
@@ -1133,6 +1147,51 @@ function parseOptionalKnowledgeCandidateSource(
 ): KnowledgeCandidateSource | undefined {
   const source = parseOptionalQueryString(value);
   return source === undefined ? undefined : parseKnowledgeCandidateSource(source);
+}
+
+function parseOptionalQualitySignalAgeBucket(
+  value: string | null,
+): QualitySignalAgeBucket | undefined {
+  const ageBucket = parseOptionalQueryString(value);
+  if (ageBucket === undefined) {
+    return undefined;
+  }
+  if (supportedQualitySignalAgeBuckets.includes(ageBucket as QualitySignalAgeBucket)) {
+    return ageBucket as QualitySignalAgeBucket;
+  }
+
+  throw new BadRequestError('qualitySignalAgeBucket must be lt1h, h1to24h, or gte24h.');
+}
+
+function resolveKnowledgeCandidateSourceForAgeBucket(
+  source: KnowledgeCandidateSource | undefined,
+  qualitySignalAgeBucket: QualitySignalAgeBucket | undefined,
+): KnowledgeCandidateSource | undefined {
+  if (qualitySignalAgeBucket === undefined) {
+    return source;
+  }
+  if (source !== undefined && source !== 'answer_quality_signal') {
+    throw new BadRequestError('qualitySignalAgeBucket requires source answer_quality_signal.');
+  }
+
+  return 'answer_quality_signal';
+}
+
+function createQualitySignalAgeBucketCandidateFilter(
+  qualitySignalAgeBucket: QualitySignalAgeBucket,
+  nowMs: number,
+): Pick<ListKnowledgeCandidatesFilter, 'createdAtGte' | 'createdAtLt'> {
+  const oneHourAgo = new Date(nowMs - QUALITY_SIGNAL_AGE_ONE_HOUR_MS).toISOString();
+  const oneDayAgo = new Date(nowMs - QUALITY_SIGNAL_AGE_ONE_DAY_MS).toISOString();
+
+  if (qualitySignalAgeBucket === 'lt1h') {
+    return { createdAtGte: oneHourAgo };
+  }
+  if (qualitySignalAgeBucket === 'h1to24h') {
+    return { createdAtGte: oneDayAgo, createdAtLt: oneHourAgo };
+  }
+
+  return { createdAtLt: oneDayAgo };
 }
 
 function parseOptionalQualitySignalClusterKey(value: string | null): string | undefined {

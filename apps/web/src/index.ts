@@ -1927,6 +1927,18 @@ export function renderOpsPage(): string {
         await loadQualitySignalClusterCandidates(clusterKey);
       });
 
+      knowledgeQualityAgeBucketsTarget.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) {
+          return;
+        }
+        const ageBucket = target.dataset.qualityAgeBucket;
+        if (!ageBucket) {
+          return;
+        }
+        await loadQualitySignalAgeBucketCandidates(ageBucket);
+      });
+
       knowledgeCandidateSource.addEventListener("change", () => {
         if (tokenInput.value.trim()) {
           void loadKnowledgeCandidates();
@@ -2150,9 +2162,22 @@ export function renderOpsPage(): string {
 
         knowledgeQualityAgeBucketsTarget.replaceChildren(
           ...rows.map((bucket) =>
-            row("knowledge-candidate-item", "Quality age · " + bucket.label, String(bucket.count), "Needs review"),
+            rowWithMetaNodes(
+              "knowledge-candidate-item",
+              "Quality age · " + bucket.label,
+              String(bucket.count),
+              [createQualityAgeBucketButton(bucket)],
+            ),
           ),
         );
+      }
+
+      function createQualityAgeBucketButton(bucket) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("data-quality-age-bucket", bucket.key);
+        button.textContent = "Load age";
+        return button;
       }
 
       function renderQualitySignalClusters(clusters) {
@@ -2198,6 +2223,13 @@ export function renderOpsPage(): string {
         knowledgeCandidateType.value = "";
         knowledgeCandidateSource.value = "answer_quality_signal";
         await loadKnowledgeCandidates({ qualitySignalClusterKey: clusterKey });
+      }
+
+      async function loadQualitySignalAgeBucketCandidates(ageBucket) {
+        knowledgeCandidateStatusFilter.value = "needs_review";
+        knowledgeCandidateType.value = "";
+        knowledgeCandidateSource.value = "answer_quality_signal";
+        await loadKnowledgeCandidates({ qualitySignalAgeBucket: ageBucket });
       }
 
       function renderQualitySignals(recentSignals) {
@@ -2301,6 +2333,9 @@ export function renderOpsPage(): string {
         }
         if (options?.qualitySignalClusterKey) {
           params.set("qualitySignalClusterKey", options.qualitySignalClusterKey);
+        }
+        if (options?.qualitySignalAgeBucket) {
+          params.set("qualitySignalAgeBucket", options.qualitySignalAgeBucket);
         }
         const limit = knowledgeCandidateLimit.value.trim();
         if (limit) {
