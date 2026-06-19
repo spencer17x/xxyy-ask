@@ -3,6 +3,7 @@ import { parseTransactionReference } from '@xxyy/rag-core';
 import type { SessionTurn } from './session-context.js';
 
 export type FollowUpResolution = 'needs_clarification' | 'resolved_followup' | 'unchanged';
+export type FollowUpDependency = 'product_topic' | 'transaction_reference';
 
 export interface ResolveFollowUpInput {
   message: string;
@@ -30,7 +31,9 @@ export function resolveFollowUp(input: ResolveFollowUpInput): ResolveFollowUpOut
     return { resolution: 'unchanged', resolvedMessage: input.message };
   }
 
-  if (isTransactionFollowUp(message)) {
+  const dependency = detectFollowUpDependency(message);
+
+  if (dependency === 'transaction_reference') {
     const transactionHashes = uniqueRecentTransactionHashes(input.recentTurns);
     if (transactionHashes.length === 1) {
       return {
@@ -47,7 +50,7 @@ export function resolveFollowUp(input: ResolveFollowUpInput): ResolveFollowUpOut
     }
   }
 
-  if (isShortProductFollowUp(message)) {
+  if (dependency === 'product_topic') {
     const topic = inferRecentProductTopic(input.recentTurns);
     if (topic !== undefined) {
       return {
@@ -59,6 +62,23 @@ export function resolveFollowUp(input: ResolveFollowUpInput): ResolveFollowUpOut
   }
 
   return { resolution: 'unchanged', resolvedMessage: input.message };
+}
+
+export function detectFollowUpDependency(message: string): FollowUpDependency | undefined {
+  const normalized = message.trim();
+  if (normalized.length === 0 || parseTransactionReference(normalized) !== undefined) {
+    return undefined;
+  }
+
+  if (isTransactionFollowUp(normalized)) {
+    return 'transaction_reference';
+  }
+
+  if (isShortProductFollowUp(normalized)) {
+    return 'product_topic';
+  }
+
+  return undefined;
 }
 
 function uniqueRecentTransactionHashes(turns: SessionTurn[]): string[] {

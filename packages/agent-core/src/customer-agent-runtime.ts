@@ -11,7 +11,11 @@ import {
 
 import { planAnswer } from './answer-planner.js';
 import { createNoopAuditSink, type ToolAuditEvent, type ToolAuditSink } from './audit.js';
-import { resolveFollowUp } from './follow-up-resolver.js';
+import {
+  detectFollowUpDependency,
+  resolveFollowUp,
+  type FollowUpDependency,
+} from './follow-up-resolver.js';
 import {
   createNoopQualitySignalSink,
   type QualitySignalReason,
@@ -170,6 +174,24 @@ export function createCustomerAgentRuntime(
   }
 
   const ask: CustomerAgentRuntime['ask'] = async (request) => {
+    const missingSessionDependency =
+      request.sessionId === undefined || options.sessionContext !== undefined
+        ? undefined
+        : detectFollowUpDependency(request.message);
+    if (missingSessionDependency !== undefined) {
+      const response = createSessionUnavailableClarification(
+        request.message,
+        missingSessionDependency,
+      );
+      recordQualitySignal(qualitySignals, request, {
+        confidence: response.confidence,
+        intent: response.intent,
+        reason: 'session_unavailable',
+        redactedQuestion: request.message,
+      });
+      return response;
+    }
+
     const recentTurns =
       request.sessionId === undefined || options.sessionContext === undefined
         ? []
@@ -295,6 +317,30 @@ function createProductKnowledgeUnavailableAnswer(intent: ChatResponse['intent'])
     citations: [],
     confidence: 0.25,
     intent,
+  };
+}
+
+function createSessionUnavailableClarification(
+  message: string,
+  dependency: FollowUpDependency,
+): ChatResponse {
+  if (dependency === 'transaction_reference') {
+    return {
+      answer:
+        '我缺少这次会话的上一轮上下文，不能确定“这笔”指哪一笔交易。请发送单笔完整交易哈希或对应主网浏览器链接，我会自动继续分析。',
+      citations: [],
+      confidence: 0.45,
+      intent: 'tx_sandwich_detection',
+    };
+  }
+
+  const classification = classifyQuestion(message);
+  return {
+    answer:
+      '我缺少这次会话的上一轮上下文，不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
+    citations: [],
+    confidence: 0.45,
+    intent: classification.intent === 'how_to' ? 'how_to' : 'product_qa',
   };
 }
 
