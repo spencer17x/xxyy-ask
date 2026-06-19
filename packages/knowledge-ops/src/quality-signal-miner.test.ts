@@ -258,7 +258,7 @@ describe('mineAnswerQualitySignals', () => {
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0]).toMatchObject({
       confidence: 0.35,
-      question: '我的助记词是 [sensitive_credential]',
+      question: '我的助记词是 [REDACTED_PRIVATE_CREDENTIAL]',
       riskLevel: 'high',
       status: 'needs_review',
       targetCategory: 'policy_boundary',

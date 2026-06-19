@@ -68,6 +68,15 @@ describe('redactSupportText', () => {
     expect(result.report.riskFlags).toEqual(['private_credentials']);
     expect(result.report.riskLevel).toBe('high');
   });
+
+  it('treats existing sensitive credential placeholders as private credentials', () => {
+    const result = redactSupportText('我的助记词是 [sensitive_credential]');
+
+    expect(result.text).toBe('我的助记词是 [REDACTED_PRIVATE_CREDENTIAL]');
+    expect(result.report.entities).toEqual([{ type: 'private_credential', count: 1 }]);
+    expect(result.report.riskFlags).toEqual(['private_credentials']);
+    expect(result.report.riskLevel).toBe('high');
+  });
 });
 
 describe('redactSupportMessage', () => {

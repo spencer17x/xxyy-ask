@@ -139,6 +139,35 @@ describe('mineAnswerFeedback', () => {
     expect(JSON.stringify(first)).not.toContain('sk-answer-111');
   });
 
+  it('keeps already-redacted credential feedback in the high-risk boundary queue', () => {
+    const result = mineAnswerFeedback({
+      feedback: [
+        {
+          answer:
+            '不要发送私钥、助记词或 seed phrase。XXYY 客服 Agent 不需要这些信息，也不能帮你保管或恢复凭证。',
+          channel: 'web',
+          citationCount: 0,
+          intent: 'unknown',
+          question: '我的助记词是 [sensitive_credential]',
+          rating: 'negative',
+          sessionIdPresent: true,
+        },
+      ],
+      now,
+    });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      question: '我的助记词是 [REDACTED_PRIVATE_CREDENTIAL]',
+      riskLevel: 'high',
+      targetCategory: 'policy_boundary',
+      type: 'boundary_example',
+    });
+    expect(result.candidates[0]?.redactionReport.riskFlags).toEqual(
+      expect.arrayContaining(['private_credentials']),
+    );
+  });
+
   it('does not require citations or copied answer text for transaction feedback eval cases', () => {
     const result = mineAnswerFeedback({
       feedback: [
