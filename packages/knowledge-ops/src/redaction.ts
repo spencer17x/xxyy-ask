@@ -18,17 +18,17 @@ const REDACTION_PATTERNS: RedactionPattern[] = [
   {
     type: 'email',
     token: '[REDACTED_EMAIL]',
-    regex: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu,
+    regex: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\[email\]/giu,
   },
   {
     type: 'phone',
     token: '[REDACTED_PHONE]',
-    regex: /(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)/gu,
+    regex: /(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)|\[phone\]/gu,
   },
   {
     type: 'evm_address',
     token: '[REDACTED_EVM_ADDRESS]',
-    regex: /\b0x[a-fA-F0-9]{40}\b/gu,
+    regex: /\b0x[a-fA-F0-9]{40}\b|\[evm_address\]/gu,
   },
   {
     type: 'solana_address',

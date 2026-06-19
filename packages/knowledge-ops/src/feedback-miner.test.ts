@@ -65,6 +65,32 @@ describe('mineAnswerFeedback', () => {
     ]);
   });
 
+  it('keeps API-redacted identity placeholders in feedback candidate risk reports', () => {
+    const result = mineAnswerFeedback({
+      feedback: [
+        {
+          answer: '根据知识库，XXYY Pro 提供更多权益。',
+          channel: 'web',
+          citationCount: 2,
+          comment: '没有讲清楚监控数量上限，我的邮箱是 [email]',
+          intent: 'product_qa',
+          question: 'XXYY Pro 有哪些权益？',
+          rating: 'negative',
+          sessionIdPresent: true,
+        },
+      ],
+      now,
+    });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      proposedAnswer:
+        '用户负反馈：没有讲清楚监控数量上限，我的邮箱是 [REDACTED_EMAIL]\n原回答：根据知识库，XXYY Pro 提供更多权益。',
+      riskLevel: 'medium',
+    });
+    expect(result.candidates[0]?.redactionReport.entities).toEqual([{ type: 'email', count: 1 }]);
+  });
+
   it('creates a high-risk boundary candidate from negative feedback on private data answers', () => {
     const result = mineAnswerFeedback({
       feedback: [

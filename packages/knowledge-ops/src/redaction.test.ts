@@ -69,6 +69,21 @@ describe('redactSupportText', () => {
     expect(result.report.riskLevel).toBe('high');
   });
 
+  it('normalizes existing identity placeholders from API session redaction', () => {
+    const result = redactSupportText('邮箱 [email]，手机 [phone]，钱包 [evm_address]');
+
+    expect(result.text).toBe(
+      '邮箱 [REDACTED_EMAIL]，手机 [REDACTED_PHONE]，钱包 [REDACTED_EVM_ADDRESS]',
+    );
+    expect(result.report.entities).toEqual([
+      { type: 'email', count: 1 },
+      { type: 'phone', count: 1 },
+      { type: 'evm_address', count: 1 },
+    ]);
+    expect(result.report.riskFlags).toEqual([]);
+    expect(result.report.riskLevel).toBe('medium');
+  });
+
   it('treats existing sensitive credential placeholders as private credentials', () => {
     const result = redactSupportText('我的助记词是 [sensitive_credential]');
 
