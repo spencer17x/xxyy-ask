@@ -196,9 +196,9 @@ export function createCustomerAgentRuntime(
 
   const ask: CustomerAgentRuntime['ask'] = async (request) => {
     const missingSessionDependency =
-      request.sessionId === undefined || options.sessionContext !== undefined
-        ? undefined
-        : detectFollowUpDependency(request.message);
+      options.sessionContext === undefined
+        ? missingSessionDependencyForRequest(request)
+        : undefined;
     if (missingSessionDependency !== undefined) {
       const response = createSessionUnavailableClarification(
         request.message,
@@ -301,6 +301,19 @@ export function createCustomerAgentRuntime(
       yield* streamChatResponse(await ask(request));
     },
   };
+}
+
+function missingSessionDependencyForRequest(request: ChatRequest): FollowUpDependency | undefined {
+  const dependency = detectFollowUpDependency(request.message);
+  if (dependency === undefined) {
+    return undefined;
+  }
+
+  if (request.sessionId !== undefined) {
+    return dependency;
+  }
+
+  return dependency === 'transaction_reference' ? dependency : undefined;
 }
 
 function recordToolFailure(

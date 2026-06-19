@@ -673,6 +673,47 @@ describe('createCustomerAgentRuntime', () => {
     ]);
   });
 
+  it('records session_unavailable when a transaction follow-up has no session id', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const execute = vi.fn();
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createCustomerAgentRuntime({ qualitySignals, registry }).ask({
+      channel: 'web',
+      message: '这笔呢？',
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.45,
+      intent: 'tx_sandwich_detection',
+    });
+    expect(response.answer).toContain('缺少这次会话的上一轮上下文');
+    expect(response.answer).toContain('单笔完整交易哈希');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.45,
+        intent: 'tx_sandwich_detection',
+        reason: 'session_unavailable',
+        redactedQuestion: '这笔呢？',
+        sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('asks for clarification when a transaction follow-up has multiple recent hashes', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();
