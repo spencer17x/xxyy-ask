@@ -209,8 +209,9 @@ function normalizeAnswerResultLinks(result: TxAnalysisResult): TxAnalysisResult 
   assignTrimmedOptionalString(normalized, 'reportUrl', result.reportUrl);
   assignTrimmedOptionalString(normalized, 'routerAddress', result.routerAddress);
   assignTrimmedOptionalString(normalized, 'screenshotUrl', result.screenshotUrl);
-  normalized.summary =
-    nonBlankOptionalString(result.summary) ?? defaultSummaryForVerdict(result.verdict);
+  normalized.summary = sanitizeCustomerFacingReviewText(
+    nonBlankOptionalString(result.summary) ?? defaultSummaryForVerdict(result.verdict),
+  );
   assignOptionalTradeSide(normalized, result.targetTradeSide);
   assignTrimmedOptionalString(normalized, 'targetTraderAddress', result.targetTraderAddress);
   assignTrimmedOptionalString(normalized, 'transactionTime', result.transactionTime);
@@ -251,8 +252,12 @@ function normalizeEvidenceForAnswer(
       return [];
     }
 
-    return [{ ...item, detail, label }];
+    return [{ ...item, detail: sanitizeCustomerFacingReviewText(detail), label }];
   });
+}
+
+function sanitizeCustomerFacingReviewText(text: string): string {
+  return text.replace(/人工复查/gu, '复查').replace(/人工关注/gu, '关注');
 }
 
 function normalizeFailureMetadataLinks(

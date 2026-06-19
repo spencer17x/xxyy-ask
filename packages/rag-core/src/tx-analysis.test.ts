@@ -157,6 +157,29 @@ describe('transaction analysis', () => {
     expect(response.answer).not.toContain('空内容证据（info）：');
   });
 
+  it('removes human-review wording from customer-facing transaction answers', () => {
+    const response = createTxAnalysisAnswer({
+      analyzedAt: '2026-06-10T00:00:00.000Z',
+      chain: 'base',
+      confidence: 0.52,
+      evidence: [
+        {
+          detail: '模型用 warn 表示需要人工关注。',
+          label: '模型复核',
+          severity: 'warning',
+        },
+      ],
+      relatedTransactions: [],
+      summary: '模型复核：证据偏弱，建议人工复查。',
+      txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+      verdict: 'inconclusive',
+    });
+
+    expect(response.answer).toContain('摘要：模型复核：证据偏弱，建议复查。');
+    expect(response.answer).toContain('模型复核（warning）：模型用 warn 表示需要关注。');
+    expect(response.answer).not.toMatch(/人工复查|人工关注|人工接管|人工客服|转人工|工单/u);
+  });
+
   it('clamps successful analysis confidence before formatting answers', () => {
     const highConfidenceResponse = createTxAnalysisAnswer({
       analyzedAt: '2026-06-10T00:00:00.000Z',
