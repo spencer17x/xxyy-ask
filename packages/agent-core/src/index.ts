@@ -9,6 +9,12 @@ export type {
   CreateCustomerAgentRuntimeOptions,
   CustomerAgentRuntime,
 } from './customer-agent-runtime.js';
+export { resolveFollowUp } from './follow-up-resolver.js';
+export type {
+  FollowUpResolution,
+  ResolveFollowUpInput,
+  ResolveFollowUpOutput,
+} from './follow-up-resolver.js';
 export {
   KnowledgeOpsAgentUnauthorizedError,
   createKnowledgeOpsAgentRuntime,
