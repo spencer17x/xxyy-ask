@@ -95,6 +95,14 @@ export function resolveFollowUp(input: ResolveFollowUpInput): ResolveFollowUpOut
         resolvedMessage: `${topic} ${message}`,
       };
     }
+    const preference = inferRecentProductPreference(input.recentTurns);
+    if (preference !== undefined) {
+      return {
+        contextSummary: 'resolved product follow-up from recent product preference',
+        resolution: 'resolved_followup',
+        resolvedMessage: `${preference} ${message}`,
+      };
+    }
     return {
       clarificationQuestion:
         '我还不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
@@ -217,7 +225,7 @@ function isMembershipPlanComparisonFollowUp(message: string): boolean {
 }
 
 function hasExplicitProductTopic(message: string): boolean {
-  return /XXYY|Pro|Telegram|TG|钱包监控|自动交易|Raydium自动卖|开盘狙击|移动端|手机|登录|扫链|打满|趋势|收藏|持仓管理|收益统计|快捷交易|钱包管理|关注钱包/u.test(
+  return /XXYY|Pro|Telegram|TG|钱包监控|自动交易|Raydium自动卖|开盘狙击|移动端|手机|扫链|打满|趋势|收藏|持仓管理|收益统计|快捷交易|钱包管理|关注钱包/u.test(
     message,
   );
 }
@@ -249,6 +257,34 @@ function extractMembershipPlan(message: string): string | undefined {
     return 'XXYY Pro';
   }
   return undefined;
+}
+
+function inferRecentProductPreference(turns: SessionTurn[]): string | undefined {
+  for (const turn of [...turns].reverse()) {
+    if (turn.role !== 'user' || turn.metadata?.intent === 'tx_sandwich_detection') {
+      continue;
+    }
+    const content = turn.content;
+    if (hasMobileProductPreference(content)) {
+      return 'XXYY 移动端登录';
+    }
+    if (hasTelegramProductPreference(content)) {
+      return 'Telegram 钱包监控';
+    }
+  }
+  return undefined;
+}
+
+function hasMobileProductPreference(content: string): boolean {
+  return /(?:主要|平时|通常|默认|偏好|习惯|用|使用|入口|版本).*(?:移动端|手机端|手机|mobile|app)|(?:移动端|手机端|mobile|app).*(?:用|使用|入口|版本)/iu.test(
+    content,
+  );
+}
+
+function hasTelegramProductPreference(content: string): boolean {
+  return /(?:主要|平时|通常|默认|偏好|习惯|用|使用|入口|通知).*(?:Telegram|TG)|(?:Telegram|TG).*(?:用|使用|入口|通知|机器人|bot)/iu.test(
+    content,
+  );
 }
 
 function hasRecentMembershipBenefitsContext(turns: SessionTurn[]): boolean {
