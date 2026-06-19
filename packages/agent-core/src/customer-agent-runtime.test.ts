@@ -55,7 +55,10 @@ describe('createCustomerAgentRuntime', () => {
         message: 'XXYY Pro 有哪些权益？',
         sessionId: 'session-1',
       }),
-    ).resolves.toEqual(response);
+    ).resolves.toEqual({
+      ...response,
+      agentRoute: 'product_answer',
+    });
     expect(execute).toHaveBeenCalledWith({
       channel: 'web',
       question: 'XXYY Pro 有哪些权益？',
@@ -97,6 +100,7 @@ describe('createCustomerAgentRuntime', () => {
         message: '帮我查一下钱包余额',
       }),
     ).resolves.toMatchObject({
+      agentRoute: 'boundary',
       citations: [],
       intent: 'realtime_account_query',
     });
@@ -647,6 +651,7 @@ describe('createCustomerAgentRuntime', () => {
 
     expect(execute).toHaveBeenCalledWith({ txHash });
     expect(response).toMatchObject({
+      agentRoute: 'transaction_analysis',
       citations: [],
       confidence: 0.76,
       intent: 'tx_sandwich_detection',
@@ -692,6 +697,7 @@ describe('createCustomerAgentRuntime', () => {
 
     expect(execute).not.toHaveBeenCalled();
     expect(response).toMatchObject({
+      agentRoute: 'clarify',
       citations: [],
       confidence: 0.55,
       intent: 'tx_sandwich_detection',
@@ -863,6 +869,7 @@ describe('createCustomerAgentRuntime', () => {
         type: 'answer_delta',
       },
       {
+        agentRoute: 'product_answer',
         citations: response.citations,
         confidence: 0.72,
         intent: 'product_qa',
@@ -1479,7 +1486,10 @@ describe('createCustomerAgentRuntime', () => {
         channel: 'web',
         message: '如何设置 Telegram 钱包监控？',
       }),
-    ).resolves.toEqual(response);
+    ).resolves.toEqual({
+      ...response,
+      agentRoute: 'product_answer',
+    });
     expect(execute).toHaveBeenCalledWith({
       channel: 'web',
       question: '如何设置 Telegram 钱包监控？',
@@ -1993,7 +2003,10 @@ describe('createCustomerAgentRuntime', () => {
         message: 'XXYY Pro 有哪些权益？',
         sessionId: 'session-append-fails',
       }),
-    ).resolves.toEqual(response);
+    ).resolves.toEqual({
+      ...response,
+      agentRoute: 'product_answer',
+    });
     expect(qualitySignals.signals()).toEqual([]);
   });
 

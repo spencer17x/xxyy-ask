@@ -16,6 +16,16 @@ export const supportedIntents = [
 
 export type Intent = (typeof supportedIntents)[number];
 
+export const supportedAgentRoutes = [
+  'boundary',
+  'clarify',
+  'preference_capture',
+  'product_answer',
+  'transaction_analysis',
+] as const;
+
+export type AgentRoute = (typeof supportedAgentRoutes)[number];
+
 export type SourceType = 'official_docs' | 'x_updates';
 
 export interface ChatRequest {
@@ -99,6 +109,7 @@ export interface ChatResponse {
   intent: Intent;
   citations: Citation[];
   confidence: number;
+  agentRoute?: AgentRoute;
   attachments?: ChatAttachment[];
 }
 
@@ -112,6 +123,7 @@ export type ChatStreamEvent =
       intent: Intent;
       citations: Citation[];
       confidence: number;
+      agentRoute?: AgentRoute;
       attachments?: ChatAttachment[];
     };
 

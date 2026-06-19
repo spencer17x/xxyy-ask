@@ -186,6 +186,7 @@ export interface ApiLogEntry {
   sessionIdPresent: boolean;
   statusCode: number;
   userIdPresent: boolean;
+  agentRoute?: ChatResponse['agentRoute'];
   attachmentCount?: number;
   citationCount?: number;
   confidence?: number;
@@ -1348,6 +1349,7 @@ function createChatSuccessLogEntry(input: {
 }): ApiLogEntry {
   return {
     ...createChatLogBase(input.payload, input.route, input.durationMs, input.statusCode),
+    ...(input.response.agentRoute === undefined ? {} : { agentRoute: input.response.agentRoute }),
     attachmentCount: input.response.attachments?.length ?? 0,
     citationCount: input.response.citations.length,
     confidence: input.response.confidence,
@@ -1379,6 +1381,7 @@ function createChatStreamLogEntry(input: {
 
   return {
     ...base,
+    ...(input.summary.agentRoute === undefined ? {} : { agentRoute: input.summary.agentRoute }),
     attachmentCount: input.summary.attachmentCount ?? 0,
     citationCount: input.summary.citationCount ?? 0,
     ...(input.summary.confidence === undefined ? {} : { confidence: input.summary.confidence }),
@@ -2654,6 +2657,7 @@ function isMissingFileError(error: unknown): boolean {
 interface ChatStreamSummary {
   outcome: 'success' | 'error';
   statusCode: number;
+  agentRoute?: ChatResponse['agentRoute'];
   attachmentCount?: number;
   citationCount?: number;
   confidence?: number;
@@ -2681,6 +2685,7 @@ async function sendChatStream(
     }
     return {
       attachmentCount: metadata?.attachments?.length ?? 0,
+      ...(metadata?.agentRoute === undefined ? {} : { agentRoute: metadata.agentRoute }),
       citationCount: metadata?.citations.length ?? 0,
       ...(metadata?.confidence === undefined ? {} : { confidence: metadata.confidence }),
       ...(metadata?.intent === undefined ? {} : { intent: metadata.intent }),

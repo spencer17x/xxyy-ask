@@ -3616,6 +3616,7 @@ describe('createRequestHandler', () => {
         Promise.resolve({
           ask() {
             return Promise.resolve({
+              agentRoute: 'product_answer',
               answer: '根据知识库，XXYY Pro 提供更多权益。',
               citations: [
                 {
@@ -3647,6 +3648,7 @@ describe('createRequestHandler', () => {
 
     expect(logs).toEqual([
       {
+        agentRoute: 'product_answer',
         attachmentCount: 0,
         channel: 'web',
         citationCount: 1,
@@ -3711,6 +3713,7 @@ describe('createRequestHandler', () => {
       { type: 'answer_delta', delta: ' 有长期权益。' },
       {
         type: 'metadata',
+        agentRoute: 'product_answer',
         citations: [],
         confidence: 0.8,
         intent: 'product_qa',
@@ -3748,7 +3751,7 @@ describe('createRequestHandler', () => {
     expect(response.body).toContain('data: {"type":"answer_delta","delta":"XXYY Pro"}\n\n');
     expect(response.body).toContain('event: metadata\n');
     expect(response.body).toContain(
-      'data: {"type":"metadata","citations":[],"confidence":0.8,"intent":"product_qa"}\n\n',
+      'data: {"type":"metadata","agentRoute":"product_answer","citations":[],"confidence":0.8,"intent":"product_qa"}\n\n',
     );
   });
 
@@ -3759,6 +3762,7 @@ describe('createRequestHandler', () => {
       { type: 'answer_delta', delta: 'XXYY Pro' },
       {
         type: 'metadata',
+        agentRoute: 'product_answer',
         citations: [
           {
             excerpt: 'Pro 用户可以使用更多产品权益。',
@@ -3795,6 +3799,7 @@ describe('createRequestHandler', () => {
 
     expect(logs).toEqual([
       {
+        agentRoute: 'product_answer',
         attachmentCount: 0,
         channel: 'web',
         citationCount: 1,

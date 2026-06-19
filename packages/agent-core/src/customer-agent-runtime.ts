@@ -1,4 +1,10 @@
-import type { ChatRequest, ChatResponse, ChatStreamEvent, Classification } from '@xxyy/shared';
+import type {
+  AgentRoute,
+  ChatRequest,
+  ChatResponse,
+  ChatStreamEvent,
+  Classification,
+} from '@xxyy/shared';
 import {
   classifyQuestion,
   createBoundaryAnswer,
@@ -232,7 +238,7 @@ export function createCustomerAgentRuntime(
         reason: 'session_unavailable',
         redactedQuestion: request.message,
       });
-      return response;
+      return withAgentRoute(response, 'clarify');
     }
 
     const recentTurnsResult = await getRecentTurnsForRequest(options.sessionContext, request);
@@ -248,19 +254,22 @@ export function createCustomerAgentRuntime(
           reason: 'session_unavailable',
           redactedQuestion: request.message,
         });
-        return response;
+        return withAgentRoute(response, 'clarify');
       }
     }
     const recentTurns = recentTurnsResult.turns;
     const followUp = resolveFollowUp({ message: request.message, recentTurns });
 
     if (followUp.resolution === 'needs_clarification') {
-      const response: ChatResponse = {
-        answer: followUp.clarificationQuestion,
-        citations: [],
-        confidence: 0.55,
-        intent: intentForFollowUpDependency(followUp.dependency, request.message),
-      };
+      const response: ChatResponse = withAgentRoute(
+        {
+          answer: followUp.clarificationQuestion,
+          citations: [],
+          confidence: 0.55,
+          intent: intentForFollowUpDependency(followUp.dependency, request.message),
+        },
+        'clarify',
+      );
       recordQualitySignal(qualitySignals, request, {
         answer: response.answer,
         confidence: response.confidence,
@@ -281,7 +290,10 @@ export function createCustomerAgentRuntime(
       const preference = detectProductPreferenceCapture(followUp.resolvedMessage);
       if (preference !== undefined) {
         if (options.sessionContext === undefined || request.sessionId === undefined) {
-          const response = createProductPreferenceUnavailableAnswer(preference);
+          const response = withAgentRoute(
+            createProductPreferenceUnavailableAnswer(preference),
+            'preference_capture',
+          );
           recordQualitySignal(qualitySignals, request, {
             answer: response.answer,
             confidence: response.confidence,
@@ -291,12 +303,18 @@ export function createCustomerAgentRuntime(
           });
           return response;
         }
-        const response = createProductPreferenceCapturedAnswer(preference);
+        const response = withAgentRoute(
+          createProductPreferenceCapturedAnswer(preference),
+          'preference_capture',
+        );
         const appendResult = await appendSessionTurns(options.sessionContext, request, response, {
           userContent: followUp.resolvedMessage,
         });
         if (!appendResult.ok) {
-          const unavailableResponse = createProductPreferenceUnavailableAnswer(preference);
+          const unavailableResponse = withAgentRoute(
+            createProductPreferenceUnavailableAnswer(preference),
+            'preference_capture',
+          );
           recordQualitySignal(qualitySignals, request, {
             answer: unavailableResponse.answer,
             confidence: unavailableResponse.confidence,
@@ -318,12 +336,15 @@ export function createCustomerAgentRuntime(
     });
 
     if (plan.route === 'clarify') {
-      const response: ChatResponse = {
-        answer: plan.clarificationQuestion,
-        citations: [],
-        confidence: plan.clarificationReason === 'ambiguous_transaction_reference' ? 0.55 : 0.45,
-        intent: plan.classification.intent,
-      };
+      const response: ChatResponse = withAgentRoute(
+        {
+          answer: plan.clarificationQuestion,
+          citations: [],
+          confidence: plan.clarificationReason === 'ambiguous_transaction_reference' ? 0.55 : 0.45,
+          intent: plan.classification.intent,
+        },
+        'clarify',
+      );
       recordQualitySignal(qualitySignals, request, {
         answer: response.answer,
         confidence: response.confidence,
@@ -338,7 +359,7 @@ export function createCustomerAgentRuntime(
     }
 
     if (plan.route === 'boundary') {
-      const response = createRuntimeBoundaryAnswer(plan.classification);
+      const response = withAgentRoute(createRuntimeBoundaryAnswer(plan.classification), 'boundary');
       recordBoundaryQualitySignal(
         qualitySignals,
         request,
@@ -353,10 +374,9 @@ export function createCustomerAgentRuntime(
     }
 
     if (plan.route === 'transaction_analysis') {
-      const response = await answerTransaction(
-        request,
-        plan.messageForTool,
-        plan.classification.intent,
+      const response = withAgentRoute(
+        await answerTransaction(request, plan.messageForTool, plan.classification.intent),
+        'transaction_analysis',
       );
       await appendSessionTurns(options.sessionContext, request, response, {
         userContent: followUp.resolvedMessage,
@@ -364,7 +384,10 @@ export function createCustomerAgentRuntime(
       return response;
     }
 
-    const response = await answerProduct(request, plan.messageForTool, plan.classification.intent);
+    const response = withAgentRoute(
+      await answerProduct(request, plan.messageForTool, plan.classification.intent),
+      'product_answer',
+    );
     await appendSessionTurns(options.sessionContext, request, response, {
       userContent: followUp.resolvedMessage,
     });
@@ -464,6 +487,13 @@ function createProductKnowledgeUnavailableAnswer(intent: ChatResponse['intent'])
     citations: [],
     confidence: 0.25,
     intent,
+  };
+}
+
+function withAgentRoute(response: ChatResponse, agentRoute: AgentRoute): ChatResponse {
+  return {
+    ...response,
+    agentRoute,
   };
 }
 
@@ -708,6 +738,7 @@ function streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEve
       : []),
     {
       type: 'metadata',
+      ...(response.agentRoute === undefined ? {} : { agentRoute: response.agentRoute }),
       ...(response.attachments === undefined ? {} : { attachments: response.attachments }),
       citations: response.citations,
       confidence: response.confidence,
