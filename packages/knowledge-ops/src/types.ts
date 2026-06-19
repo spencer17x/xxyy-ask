@@ -1,5 +1,5 @@
 export type SupportSource = 'telegram';
-export type KnowledgeCandidateSource = SupportSource | 'answer_quality_signal';
+export type KnowledgeCandidateSource = SupportSource | 'answer_feedback' | 'answer_quality_signal';
 
 export type SupportMessageSenderRole = 'user' | 'support' | 'system' | 'unknown';
 

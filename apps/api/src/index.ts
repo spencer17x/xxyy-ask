@@ -16,6 +16,7 @@ import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxy
 import {
   KnowledgeCandidateNotFoundError,
   createPgKnowledgeOpsStore,
+  mineAnswerFeedback,
   mineAnswerQualitySignals,
   type KnowledgeCandidateStore,
   type KnowledgeCandidateStatus,
@@ -120,6 +121,7 @@ export interface CreateRequestHandlerOptions {
   logger?: ApiLogger;
   now?: () => number;
   recordFeedback?: (input: RecordFeedbackInput) => Promise<void>;
+  recordFeedbackCandidate?: (input: RecordFeedbackInput) => Promise<void>;
   renderHtml?: () => string;
   renderOpsHtml?: () => string;
   staticAssetsDir?: string;
@@ -316,6 +318,8 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
     (() => createOpsSummary(config, getHealthStatus, now, getTxAnalysisReportStore));
   const txAnalysisRuntime = createTxAnalysisRuntimeSummary(config);
   const recordFeedback = options.recordFeedback ?? createCachedFeedbackRecorder(config);
+  const recordFeedbackCandidate =
+    options.recordFeedbackCandidate ?? createCachedFeedbackCandidateRecorder(config);
   const rateLimiter = createRateLimiter(apiConfig, Date.now);
 
   return async function handleRequest(request, response): Promise<void> {
@@ -497,6 +501,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
         await handleFeedbackRequest({
           maxBodyBytes: apiConfig.maxBodyBytes,
           recordFeedback,
+          recordFeedbackCandidate,
           request,
           response,
         });
@@ -571,6 +576,7 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
 interface HandleFeedbackRequestOptions {
   maxBodyBytes: number;
   recordFeedback: (input: RecordFeedbackInput) => Promise<void>;
+  recordFeedbackCandidate: (input: RecordFeedbackInput) => Promise<void>;
   request: ApiRequestLike;
   response: ApiResponseLike;
 }
@@ -928,7 +934,11 @@ async function handleTxAnalysisRequest(options: {
 
 async function handleFeedbackRequest(options: HandleFeedbackRequestOptions): Promise<void> {
   const payload = parseFeedbackPayload(await readJsonBody(options.request, options.maxBodyBytes));
-  await options.recordFeedback(toRecordFeedbackInput(payload));
+  const feedback = toRecordFeedbackInput(payload);
+  await options.recordFeedback(feedback);
+  if (feedback.rating === 'negative') {
+    await options.recordFeedbackCandidate(feedback).catch(() => undefined);
+  }
   sendJson(options.response, 201, { status: 'recorded' });
 }
 
@@ -1863,6 +1873,44 @@ function createCachedFeedbackRecorder(
     }
 
     await cachedStore.recordFeedback(input);
+  };
+}
+
+function createCachedFeedbackCandidateRecorder(
+  config: ReturnType<typeof loadRagConfig>,
+): (input: RecordFeedbackInput) => Promise<void> {
+  let cachedStore: KnowledgeCandidateStore | undefined;
+
+  function getCandidateStore(): KnowledgeCandidateStore {
+    cachedStore ??= createPgKnowledgeOpsStore({ client: createPgPool(config.databaseUrl) });
+    return cachedStore;
+  }
+
+  return async (input) => {
+    const mined = mineAnswerFeedback({
+      feedback: [
+        {
+          answer: input.answer,
+          channel: input.channel,
+          citationCount: input.citationCount,
+          ...(input.comment === undefined ? {} : { comment: input.comment }),
+          intent: input.intent,
+          question: input.question,
+          rating: input.rating,
+          sessionIdPresent: input.sessionId !== undefined,
+        },
+      ],
+    });
+
+    if (mined.candidates.length === 0) {
+      return;
+    }
+
+    try {
+      await getCandidateStore().addCandidates(mined.candidates);
+    } catch {
+      // Feedback-derived candidates are best-effort and must never block feedback capture.
+    }
   };
 }
 

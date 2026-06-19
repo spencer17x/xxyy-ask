@@ -4,6 +4,13 @@ export {
   type MineSupportConversationsOutput,
 } from './conversation-miner.js';
 export {
+  mineAnswerFeedback,
+  type AnswerFeedback,
+  type AnswerFeedbackRating,
+  type MineAnswerFeedbackInput,
+  type MineAnswerFeedbackOutput,
+} from './feedback-miner.js';
+export {
   KnowledgeCandidateNotFoundError,
   KnowledgeCandidateInvalidPublishStatusError,
   KnowledgeCandidateInvalidStatusTransitionError,

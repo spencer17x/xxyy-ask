@@ -1310,7 +1310,12 @@ describe('createRequestHandler', () => {
 
   it('records answer feedback for production quality loops', async () => {
     const feedback: unknown[] = [];
+    const feedbackCandidates: unknown[] = [];
     const handler = createRequestHandler({
+      recordFeedbackCandidate(input: unknown) {
+        feedbackCandidates.push(input);
+        return Promise.resolve();
+      },
       recordFeedback(input: unknown) {
         feedback.push(input);
         return Promise.resolve();
@@ -1335,18 +1340,46 @@ describe('createRequestHandler', () => {
 
     expect(response.statusCode).toBe(201);
     expect(JSON.parse(response.body)).toEqual({ status: 'recorded' });
-    expect(feedback).toEqual([
-      {
+    const expectedFeedback = {
+      answer: '根据知识库，XXYY Pro 提供更多权益。',
+      channel: 'web',
+      citationCount: 2,
+      comment: '没有讲清楚监控数量上限',
+      intent: 'product_qa',
+      question: 'XXYY Pro 有哪些权益？',
+      rating: 'negative',
+      sessionId: 'session-1',
+    };
+    expect(feedback).toEqual([expectedFeedback]);
+    expect(feedbackCandidates).toEqual([expectedFeedback]);
+  });
+
+  it('does not mine positive answer feedback into knowledge candidates', async () => {
+    const feedbackCandidates: unknown[] = [];
+    const handler = createRequestHandler({
+      recordFeedback: () => Promise.resolve(),
+      recordFeedbackCandidate(input: unknown) {
+        feedbackCandidates.push(input);
+        return Promise.resolve();
+      },
+    });
+
+    const response = await callHandler(handler, {
+      body: {
         answer: '根据知识库，XXYY Pro 提供更多权益。',
         channel: 'web',
         citationCount: 2,
-        comment: '没有讲清楚监控数量上限',
         intent: 'product_qa',
         question: 'XXYY Pro 有哪些权益？',
-        rating: 'negative',
+        rating: 'positive',
         sessionId: 'session-1',
       },
-    ]);
+      method: 'POST',
+      url: '/api/feedback',
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(feedbackCandidates).toEqual([]);
   });
 
   it('rejects malformed feedback payloads before writing', async () => {
