@@ -238,6 +238,7 @@ interface KnowledgeCandidateQueueSummary {
   qualitySignalClusters: QualitySignalClusterSummary[];
   qualitySignalNeedsReviewCount: number;
   qualitySignalReasonCounts: Record<string, number>;
+  qualitySignalRiskLevelCounts: Record<string, number>;
   recentEvalFailures: RecentKnowledgeEvalFailureSummary[];
   recentQualitySignals: RecentQualitySignalCandidateSummary[];
 }
@@ -1679,6 +1680,7 @@ async function summarizeKnowledgeCandidateQueues(
     qualitySignalClusters: summarizeQualitySignalClusters(qualitySignalNeedsReview),
     qualitySignalNeedsReviewCount: qualitySignalNeedsReview.length,
     qualitySignalReasonCounts: summarizeQualitySignalReasonCounts(qualitySignalNeedsReview),
+    qualitySignalRiskLevelCounts: summarizeQualitySignalRiskLevelCounts(qualitySignalNeedsReview),
     recentEvalFailures: evalFailureSummaries.slice(0, OPS_RECENT_EVAL_FAILURE_LIMIT),
     recentQualitySignals: summarizeRecentQualitySignals(
       qualitySignalNeedsReview.slice(0, OPS_RECENT_QUALITY_SIGNAL_LIMIT),
@@ -1757,6 +1759,20 @@ function summarizeQualitySignalAgentRouteCounts(
   for (const candidate of candidates) {
     const agentRoute = extractQualitySignalAgentRoute(candidate);
     counts.set(agentRoute, (counts.get(agentRoute) ?? 0) + 1);
+  }
+
+  return Object.fromEntries(
+    [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function summarizeQualitySignalRiskLevelCounts(
+  candidates: KnowledgeCandidate[],
+): Record<string, number> {
+  const counts = new Map<string, number>();
+
+  for (const candidate of candidates) {
+    counts.set(candidate.riskLevel, (counts.get(candidate.riskLevel) ?? 0) + 1);
   }
 
   return Object.fromEntries(

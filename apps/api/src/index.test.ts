@@ -347,6 +347,7 @@ describe('createRequestHandler', () => {
         qualitySignalClusters: [],
         qualitySignalNeedsReviewCount: 0,
         qualitySignalReasonCounts: {},
+        qualitySignalRiskLevelCounts: {},
         recentEvalFailures: [],
         recentQualitySignals: [],
       },
@@ -441,6 +442,7 @@ describe('createRequestHandler', () => {
         qualitySignalClusters: [],
         qualitySignalNeedsReviewCount: 0,
         qualitySignalReasonCounts: {},
+        qualitySignalRiskLevelCounts: {},
         recentEvalFailures: [],
         recentQualitySignals: [],
       },
@@ -804,6 +806,10 @@ describe('createRequestHandler', () => {
           qualitySignalReasonCounts: {
             missing_citations: 2,
             missing_followup_context: 1,
+          },
+          qualitySignalRiskLevelCounts: {
+            low: 2,
+            medium: 1,
           },
           recentQualitySignals: [
             {

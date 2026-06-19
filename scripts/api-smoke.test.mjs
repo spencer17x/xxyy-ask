@@ -1192,6 +1192,29 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when quality risk level counts are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.knowledgeCandidateQueues.qualitySignalRiskLevelCounts;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid quality signal risk level counts.',
+    );
+  });
+
   it('fails ops summary smoke when quality age buckets are missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -1370,6 +1393,35 @@ describe('runApiSmoke', () => {
     expect(exitCode).toBe(1);
     expect(messages).toContain(
       'Failed ops summary: ops summary quality signal route counts must match the quality gap queue count.',
+    );
+  });
+
+  it('fails ops summary smoke when quality risk level totals drift from the queue count', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      knowledgeCandidateQueues: {
+        ...opsSummaryPayload().knowledgeCandidateQueues,
+        qualitySignalRiskLevelCounts: {
+          low: 2,
+        },
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary quality signal risk level counts must match the quality gap queue count.',
     );
   });
 
@@ -5720,6 +5772,9 @@ function opsSummaryPayload(overrides = {}) {
       ],
       qualitySignalReasonCounts: {
         missing_citations: 1,
+      },
+      qualitySignalRiskLevelCounts: {
+        medium: 1,
       },
       recentEvalFailures: [],
       recentQualitySignals: [

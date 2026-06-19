@@ -1152,6 +1152,10 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary must include valid quality signal route counts.';
   }
 
+  if (!hasRiskLevelCounts(value.qualitySignalRiskLevelCounts)) {
+    return 'ops summary must include valid quality signal risk level counts.';
+  }
+
   if (!hasQualitySignalAgeBuckets(value.qualitySignalAgeBuckets)) {
     return 'ops summary must include valid quality signal age buckets.';
   }
@@ -1170,6 +1174,14 @@ function validateKnowledgeCandidateQueueSummary(value) {
   );
   if (routeTotal !== value.qualitySignalNeedsReviewCount) {
     return 'ops summary quality signal route counts must match the quality gap queue count.';
+  }
+
+  const riskLevelTotal = Object.values(value.qualitySignalRiskLevelCounts).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  if (riskLevelTotal !== value.qualitySignalNeedsReviewCount) {
+    return 'ops summary quality signal risk level counts must match the quality gap queue count.';
   }
 
   const ageBucketTotal = Object.values(value.qualitySignalAgeBuckets).reduce(
@@ -1207,6 +1219,17 @@ function hasQualitySignalAgeBuckets(value) {
     isNonNegativeInteger(value.lt1h) &&
     isNonNegativeInteger(value.h1to24h) &&
     isNonNegativeInteger(value.gte24h)
+  );
+}
+
+function hasRiskLevelCounts(value) {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const allowedRiskLevels = new Set(['high', 'low', 'medium']);
+  return Object.entries(value).every(
+    ([riskLevel, count]) => allowedRiskLevels.has(riskLevel) && isNonNegativeInteger(count),
   );
 }
 

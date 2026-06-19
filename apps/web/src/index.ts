@@ -1739,6 +1739,10 @@ export function renderOpsPage(): string {
               <div id="knowledge-quality-routes" class="tx-report-results"></div>
             </div>
             <div class="knowledge-candidate-section">
+              <h3>Quality Gap Risk</h3>
+              <div id="knowledge-quality-risk-levels" class="tx-report-results"></div>
+            </div>
+            <div class="knowledge-candidate-section">
               <h3>Quality Gap Age</h3>
               <div id="knowledge-quality-age-buckets" class="tx-report-results"></div>
             </div>
@@ -1879,6 +1883,7 @@ export function renderOpsPage(): string {
       const knowledgeQualitySignalsTarget = document.querySelector("#knowledge-quality-signals");
       const knowledgeQualityReasonsTarget = document.querySelector("#knowledge-quality-reasons");
       const knowledgeQualityRoutesTarget = document.querySelector("#knowledge-quality-routes");
+      const knowledgeQualityRiskLevelsTarget = document.querySelector("#knowledge-quality-risk-levels");
       const knowledgeQualityAgeBucketsTarget = document.querySelector("#knowledge-quality-age-buckets");
       const knowledgeQualityClustersTarget = document.querySelector("#knowledge-quality-clusters");
       const queryTxReports = document.querySelector("#tx-report-form");
@@ -1963,6 +1968,18 @@ export function renderOpsPage(): string {
         await loadQualitySignalRouteCandidates(route);
       });
 
+      knowledgeQualityRiskLevelsTarget.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) {
+          return;
+        }
+        const riskLevel = target.dataset.qualityRiskLevel;
+        if (!riskLevel) {
+          return;
+        }
+        await loadQualitySignalRiskLevelCandidates(riskLevel);
+      });
+
       knowledgeCandidateSource.addEventListener("change", () => {
         if (tokenInput.value.trim()) {
           void loadKnowledgeCandidates();
@@ -2023,6 +2040,7 @@ export function renderOpsPage(): string {
           renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || []);
           renderQualitySignalReasons(summary.knowledgeCandidateQueues?.qualitySignalReasonCounts || {});
           renderQualitySignalRoutes(summary.knowledgeCandidateQueues?.qualitySignalAgentRouteCounts || {});
+          renderQualitySignalRiskLevels(summary.knowledgeCandidateQueues?.qualitySignalRiskLevelCounts || {});
           renderQualitySignalAgeBuckets(summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets || {});
           renderQualitySignalClusters(summary.knowledgeCandidateQueues?.qualitySignalClusters || []);
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
@@ -2195,6 +2213,35 @@ export function renderOpsPage(): string {
         return button;
       }
 
+      function renderQualitySignalRiskLevels(riskLevelCounts) {
+        const rows = Object.entries(riskLevelCounts)
+          .filter((entry) => Number(entry[1]) > 0)
+          .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
+        if (rows.length === 0) {
+          knowledgeQualityRiskLevelsTarget.replaceChildren(empty("No quality risk counts."));
+          return;
+        }
+
+        knowledgeQualityRiskLevelsTarget.replaceChildren(
+          ...rows.map(([riskLevel, count]) =>
+            rowWithMetaNodes(
+              "knowledge-candidate-item",
+              "Quality risk · " + riskLevel,
+              String(count),
+              [createQualityRiskLevelButton(riskLevel)],
+            ),
+          ),
+        );
+      }
+
+      function createQualityRiskLevelButton(riskLevel) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("data-quality-risk-level", riskLevel);
+        button.textContent = "Load risk";
+        return button;
+      }
+
       function renderQualitySignalAgeBuckets(ageBuckets) {
         const rows = [
           { key: "lt1h", label: "<1h" },
@@ -2287,6 +2334,13 @@ export function renderOpsPage(): string {
         knowledgeCandidateType.value = "";
         knowledgeCandidateSource.value = "answer_quality_signal";
         await loadKnowledgeCandidates({ qualitySignalAgentRoute: route });
+      }
+
+      async function loadQualitySignalRiskLevelCandidates(riskLevel) {
+        knowledgeCandidateStatusFilter.value = "needs_review";
+        knowledgeCandidateType.value = "";
+        knowledgeCandidateSource.value = "answer_quality_signal";
+        await loadKnowledgeCandidates({ riskLevel });
       }
 
       async function loadQualitySignalAgeBucketCandidates(ageBucket) {
@@ -2403,6 +2457,9 @@ export function renderOpsPage(): string {
         }
         if (options?.qualitySignalAgentRoute) {
           params.set("qualitySignalAgentRoute", options.qualitySignalAgentRoute);
+        }
+        if (options?.riskLevel) {
+          params.set("riskLevel", options.riskLevel);
         }
         if (options?.qualitySignalAgeBucket) {
           params.set("qualitySignalAgeBucket", options.qualitySignalAgeBucket);
