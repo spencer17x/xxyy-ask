@@ -1739,6 +1739,10 @@ export function renderOpsPage(): string {
               <div id="knowledge-quality-routes" class="tx-report-results"></div>
             </div>
             <div class="knowledge-candidate-section">
+              <h3>Quality Gap Clusters</h3>
+              <div id="knowledge-quality-clusters" class="tx-report-results"></div>
+            </div>
+            <div class="knowledge-candidate-section">
               <h3>Eval Failure Reasons</h3>
               <div id="knowledge-eval-failure-reasons" class="tx-report-results"></div>
             </div>
@@ -1871,6 +1875,7 @@ export function renderOpsPage(): string {
       const knowledgeQualitySignalsTarget = document.querySelector("#knowledge-quality-signals");
       const knowledgeQualityReasonsTarget = document.querySelector("#knowledge-quality-reasons");
       const knowledgeQualityRoutesTarget = document.querySelector("#knowledge-quality-routes");
+      const knowledgeQualityClustersTarget = document.querySelector("#knowledge-quality-clusters");
       const queryTxReports = document.querySelector("#tx-report-form");
       const txReportHash = document.querySelector("#tx-report-hash");
       const txReportChain = document.querySelector("#tx-report-chain");
@@ -1964,6 +1969,7 @@ export function renderOpsPage(): string {
           renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || []);
           renderQualitySignalReasons(summary.knowledgeCandidateQueues?.qualitySignalReasonCounts || {});
           renderQualitySignalRoutes(summary.knowledgeCandidateQueues?.qualitySignalAgentRouteCounts || {});
+          renderQualitySignalClusters(summary.knowledgeCandidateQueues?.qualitySignalClusters || []);
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
           void loadKnowledgeCandidates();
           status.textContent = "Updated " + summary.generatedAt;
@@ -2102,6 +2108,32 @@ export function renderOpsPage(): string {
         knowledgeQualityRoutesTarget.replaceChildren(
           ...rows.map(([route, count]) =>
             row("knowledge-candidate-item", "Quality route · " + route, String(count), "Needs review"),
+          ),
+        );
+      }
+
+      function renderQualitySignalClusters(clusters) {
+        if (clusters.length === 0) {
+          knowledgeQualityClustersTarget.replaceChildren(empty("No quality clusters."));
+          return;
+        }
+
+        knowledgeQualityClustersTarget.replaceChildren(
+          ...clusters.map((cluster) =>
+            row(
+              "knowledge-candidate-item",
+              "Quality cluster · " + cluster.agentRoute + " / " + cluster.reason,
+              String(cluster.count),
+              [
+                cluster.targetCategory ? "Target " + cluster.targetCategory : "",
+                cluster.type ? "Type " + cluster.type : "",
+                cluster.latestCreatedAt ? "Latest " + cluster.latestCreatedAt : "",
+                cluster.candidateIds?.length ? "Candidates " + cluster.candidateIds.join(", ") : "",
+                cluster.sampleQuestions?.length ? "Samples " + cluster.sampleQuestions.join(" | ") : "",
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            ),
           ),
         );
       }

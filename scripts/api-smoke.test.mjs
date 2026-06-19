@@ -1192,6 +1192,29 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when quality clusters are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.knowledgeCandidateQueues.qualitySignalClusters;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid quality signal clusters.',
+    );
+  });
+
   it('fails ops summary smoke when eval failure reason counts are missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -1300,6 +1323,44 @@ describe('runApiSmoke', () => {
     expect(exitCode).toBe(1);
     expect(messages).toContain(
       'Failed ops summary: ops summary quality signal route counts must match the quality gap queue count.',
+    );
+  });
+
+  it('fails ops summary smoke when quality cluster totals drift from the queue count', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      knowledgeCandidateQueues: {
+        ...opsSummaryPayload().knowledgeCandidateQueues,
+        qualitySignalClusters: [
+          {
+            agentRoute: 'product_answer',
+            candidateIds: ['kc_quality_gap_1'],
+            count: 2,
+            latestCreatedAt: '2026-06-19T07:30:00.000Z',
+            reason: 'missing_citations',
+            sampleQuestions: ['XXYY Pro 价格是多少？'],
+            targetCategory: 'eval_case',
+            type: 'eval_case',
+          },
+        ],
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary quality signal cluster counts must match the quality gap queue count.',
     );
   });
 
@@ -5557,6 +5618,18 @@ function opsSummaryPayload(overrides = {}) {
       qualitySignalAgentRouteCounts: {
         product_answer: 1,
       },
+      qualitySignalClusters: [
+        {
+          agentRoute: 'product_answer',
+          candidateIds: ['kc_quality_gap_1'],
+          count: 1,
+          latestCreatedAt: '2026-06-19T07:30:00.000Z',
+          reason: 'missing_citations',
+          sampleQuestions: ['XXYY Pro 价格是多少？'],
+          targetCategory: 'eval_case',
+          type: 'eval_case',
+        },
+      ],
       qualitySignalReasonCounts: {
         missing_citations: 1,
       },

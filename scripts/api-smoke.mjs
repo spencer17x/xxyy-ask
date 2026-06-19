@@ -1129,6 +1129,14 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary must include knowledge candidate queue counts and recent quality gaps.';
   }
 
+  if (!Array.isArray(value.qualitySignalClusters)) {
+    return 'ops summary must include valid quality signal clusters.';
+  }
+
+  if (!value.qualitySignalClusters.every(isQualitySignalClusterSummary)) {
+    return 'ops summary must include valid quality signal clusters.';
+  }
+
   if (!hasReasonCounts(value.qualitySignalReasonCounts)) {
     return 'ops summary must include valid quality signal reason counts.';
   }
@@ -1153,6 +1161,14 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary quality signal route counts must match the quality gap queue count.';
   }
 
+  const clusterTotal = value.qualitySignalClusters.reduce(
+    (total, cluster) => total + cluster.count,
+    0,
+  );
+  if (clusterTotal !== value.qualitySignalNeedsReviewCount) {
+    return 'ops summary quality signal cluster counts must match the quality gap queue count.';
+  }
+
   return undefined;
 }
 
@@ -1174,6 +1190,25 @@ function isQualitySignalCandidateSummary(value) {
     isCleanNonEmptyString(value.createdAt) &&
     isCleanNonEmptyString(value.question) &&
     isCleanNonEmptyString(value.riskLevel) &&
+    isCleanNonEmptyString(value.targetCategory) &&
+    isCleanNonEmptyString(value.type)
+  );
+}
+
+function isQualitySignalClusterSummary(value) {
+  return (
+    isRecord(value) &&
+    isCleanNonEmptyString(value.agentRoute) &&
+    Array.isArray(value.candidateIds) &&
+    value.candidateIds.length > 0 &&
+    value.candidateIds.every(isCleanNonEmptyString) &&
+    isNonNegativeInteger(value.count) &&
+    value.count > 0 &&
+    isCleanNonEmptyString(value.latestCreatedAt) &&
+    isCleanNonEmptyString(value.reason) &&
+    Array.isArray(value.sampleQuestions) &&
+    value.sampleQuestions.length > 0 &&
+    value.sampleQuestions.every(isCleanNonEmptyString) &&
     isCleanNonEmptyString(value.targetCategory) &&
     isCleanNonEmptyString(value.type)
   );

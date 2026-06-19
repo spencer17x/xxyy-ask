@@ -232,6 +232,7 @@ interface KnowledgeCandidateQueueSummary {
   evalFailureReasonCounts: Record<string, number>;
   needsReviewCount: number;
   qualitySignalAgentRouteCounts: Record<string, number>;
+  qualitySignalClusters: QualitySignalClusterSummary[];
   qualitySignalNeedsReviewCount: number;
   qualitySignalReasonCounts: Record<string, number>;
   recentEvalFailures: RecentKnowledgeEvalFailureSummary[];
@@ -252,6 +253,17 @@ interface RecentQualitySignalCandidateSummary {
   createdAt: string;
   question: string;
   riskLevel: KnowledgeRiskLevel;
+  targetCategory: KnowledgeCandidate['targetCategory'];
+  type: KnowledgeCandidateType;
+}
+
+interface QualitySignalClusterSummary {
+  agentRoute: string;
+  candidateIds: string[];
+  count: number;
+  latestCreatedAt: string;
+  reason: string;
+  sampleQuestions: string[];
   targetCategory: KnowledgeCandidate['targetCategory'];
   type: KnowledgeCandidateType;
 }
@@ -1489,6 +1501,7 @@ async function createOpsSummary(
 const OPS_CANDIDATE_QUEUE_LIMIT = 200;
 const OPS_RECENT_EVAL_FAILURE_LIMIT = 5;
 const OPS_RECENT_QUALITY_SIGNAL_LIMIT = 5;
+const OPS_QUALITY_SIGNAL_CLUSTER_SAMPLE_LIMIT = 5;
 
 async function summarizeKnowledgeCandidateQueues(
   store: KnowledgeCandidateStore,
@@ -1520,6 +1533,7 @@ async function summarizeKnowledgeCandidateQueues(
     evalFailureReasonCounts: summarizeEvalFailureReasonCounts(evalFailureSummaries),
     needsReviewCount: needsReview.length,
     qualitySignalAgentRouteCounts: summarizeQualitySignalAgentRouteCounts(qualitySignalNeedsReview),
+    qualitySignalClusters: summarizeQualitySignalClusters(qualitySignalNeedsReview),
     qualitySignalNeedsReviewCount: qualitySignalNeedsReview.length,
     qualitySignalReasonCounts: summarizeQualitySignalReasonCounts(qualitySignalNeedsReview),
     recentEvalFailures: evalFailureSummaries.slice(0, OPS_RECENT_EVAL_FAILURE_LIMIT),
@@ -1577,6 +1591,83 @@ function summarizeQualitySignalAgentRouteCounts(
   return Object.fromEntries(
     [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)),
   );
+}
+
+function summarizeQualitySignalClusters(
+  candidates: KnowledgeCandidate[],
+): QualitySignalClusterSummary[] {
+  const clusters = new Map<
+    string,
+    { candidates: KnowledgeCandidate[]; summary: QualitySignalClusterSummary }
+  >();
+
+  for (const candidate of candidates) {
+    const agentRoute = extractQualitySignalAgentRoute(candidate);
+    const reason = extractQualitySignalReason(candidate);
+    const key = [agentRoute, reason, candidate.targetCategory, candidate.type].join('\0');
+    const existing = clusters.get(key);
+    if (existing === undefined) {
+      clusters.set(key, {
+        candidates: [candidate],
+        summary: {
+          agentRoute,
+          candidateIds: [],
+          count: 0,
+          latestCreatedAt: candidate.createdAt,
+          reason,
+          sampleQuestions: [],
+          targetCategory: candidate.targetCategory,
+          type: candidate.type,
+        },
+      });
+      continue;
+    }
+
+    existing.candidates.push(candidate);
+    if (candidate.createdAt.localeCompare(existing.summary.latestCreatedAt) > 0) {
+      existing.summary.latestCreatedAt = candidate.createdAt;
+    }
+  }
+
+  return [...clusters.values()]
+    .map(({ candidates: clusterCandidates, summary }) => {
+      const sortedCandidates = [...clusterCandidates].sort((left, right) =>
+        right.createdAt.localeCompare(left.createdAt),
+      );
+      const sampleQuestions = uniqueNonEmptyStrings(
+        sortedCandidates.map((candidate) => candidate.question),
+      ).slice(0, OPS_QUALITY_SIGNAL_CLUSTER_SAMPLE_LIMIT);
+
+      return {
+        ...summary,
+        candidateIds: sortedCandidates
+          .map((candidate) => candidate.id)
+          .slice(0, OPS_QUALITY_SIGNAL_CLUSTER_SAMPLE_LIMIT),
+        count: clusterCandidates.length,
+        sampleQuestions,
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.count - left.count ||
+        right.latestCreatedAt.localeCompare(left.latestCreatedAt) ||
+        left.agentRoute.localeCompare(right.agentRoute) ||
+        left.reason.localeCompare(right.reason) ||
+        left.targetCategory.localeCompare(right.targetCategory) ||
+        left.type.localeCompare(right.type),
+    );
+}
+
+function uniqueNonEmptyStrings(values: string[]): string[] {
+  const unique = new Set<string>();
+  for (const value of values) {
+    const normalized = value.trim();
+    if (normalized.length > 0) {
+      unique.add(normalized);
+    }
+  }
+
+  return [...unique];
 }
 
 function extractQualitySignalReason(candidate: KnowledgeCandidate): string {
