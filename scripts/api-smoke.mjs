@@ -1420,6 +1420,18 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary must include valid eval failure reason counts.';
   }
 
+  if (!Array.isArray(value.evalFailureClusters)) {
+    return 'ops summary must include valid eval failure clusters.';
+  }
+
+  if (value.evalFailedCount > 0 && value.evalFailureClusters.length === 0) {
+    return 'ops summary eval failure clusters must not be empty when eval failures exist.';
+  }
+
+  if (!value.evalFailureClusters.every(isEvalFailureClusterSummary)) {
+    return 'ops summary must include valid eval failure clusters.';
+  }
+
   if (!hasCandidateTypeCounts(value.approvedBacklogTypeCounts)) {
     return 'ops summary must include valid approved backlog type counts.';
   }
@@ -1681,6 +1693,28 @@ function isQualitySignalClusterSummary(value) {
     isCleanNonEmptyString(value.latestCreatedAt) &&
     isCleanNonEmptyString(value.oldestCreatedAt) &&
     isCleanNonEmptyString(value.reason) &&
+    Array.isArray(value.sampleQuestions) &&
+    value.sampleQuestions.length > 0 &&
+    value.sampleQuestions.every(isCleanNonEmptyString) &&
+    isCleanNonEmptyString(value.targetCategory) &&
+    isCleanNonEmptyString(value.type)
+  );
+}
+
+function isEvalFailureClusterSummary(value) {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.candidateIds) &&
+    value.candidateIds.length > 0 &&
+    value.candidateIds.every(isCleanNonEmptyString) &&
+    isCleanNonEmptyString(value.clusterKey) &&
+    isNonNegativeInteger(value.count) &&
+    value.count > 0 &&
+    (value.latestEvaluatedAt === undefined || isCleanNonEmptyString(value.latestEvaluatedAt)) &&
+    (value.oldestEvaluatedAt === undefined || isCleanNonEmptyString(value.oldestEvaluatedAt)) &&
+    isCleanNonEmptyString(value.reason) &&
+    Array.isArray(value.runIds) &&
+    value.runIds.every(isCleanNonEmptyString) &&
     Array.isArray(value.sampleQuestions) &&
     value.sampleQuestions.length > 0 &&
     value.sampleQuestions.every(isCleanNonEmptyString) &&

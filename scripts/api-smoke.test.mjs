@@ -1952,6 +1952,67 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when eval failure clusters are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.knowledgeCandidateQueues.evalFailureClusters;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid eval failure clusters.',
+    );
+  });
+
+  it('fails ops summary smoke when eval failure clusters are malformed', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      knowledgeCandidateQueues: {
+        ...opsSummaryPayload().knowledgeCandidateQueues,
+        evalFailureClusters: [
+          {
+            candidateIds: [],
+            clusterKey: 'missing expected answer text:eval_case:eval_case',
+            count: 1,
+            reason: 'missing expected answer text',
+            runIds: ['eval_20260619T070000Z_failed1'],
+            sampleQuestions: ['Telegram 通知怎么设置？'],
+            targetCategory: 'eval_case',
+            type: 'eval_case',
+          },
+        ],
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid eval failure clusters.',
+    );
+  });
+
   it('fails ops summary smoke when approved backlog type counts are missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -6417,6 +6478,20 @@ function opsSummaryPayload(overrides = {}) {
       },
       approvedEvalCaseCount: 1,
       evalFailedCount: 1,
+      evalFailureClusters: [
+        {
+          candidateIds: ['kc_eval_failed_1'],
+          clusterKey: 'missing expected answer text:eval_case:eval_case',
+          count: 1,
+          latestEvaluatedAt: '2026-06-19T07:00:00.000Z',
+          oldestEvaluatedAt: '2026-06-19T07:00:00.000Z',
+          reason: 'missing expected answer text',
+          runIds: ['eval_20260619T070000Z_failed1'],
+          sampleQuestions: ['Telegram 通知怎么设置？'],
+          targetCategory: 'eval_case',
+          type: 'eval_case',
+        },
+      ],
       evalFailureReasonCounts: {
         'missing expected answer text': 1,
       },

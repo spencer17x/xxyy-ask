@@ -241,6 +241,7 @@ interface KnowledgeCandidateQueueSummary {
   approvedBacklogTypeCounts: Record<string, number>;
   approvedEvalCaseCount: number;
   evalFailedCount: number;
+  evalFailureClusters: EvalFailureClusterSummary[];
   evalFailureReasonCounts: Record<string, number>;
   needsReviewCount: number;
   oldestApprovedBacklogCreatedAt?: string;
@@ -275,6 +276,29 @@ interface RecentKnowledgeEvalFailureSummary {
   failureReasons: string[];
   question: string;
   runId?: string;
+}
+
+interface EvalFailureClusterSummary {
+  candidateIds: string[];
+  clusterKey: string;
+  count: number;
+  latestEvaluatedAt?: string;
+  oldestEvaluatedAt?: string;
+  reason: string;
+  runIds: string[];
+  sampleQuestions: string[];
+  targetCategory: KnowledgeCandidate['targetCategory'];
+  type: KnowledgeCandidateType;
+}
+
+interface EvalFailureRunSummary {
+  candidateId: string;
+  evaluatedAt?: string;
+  failureReasons: string[];
+  question: string;
+  runId?: string;
+  targetCategory: KnowledgeCandidate['targetCategory'];
+  type: KnowledgeCandidateType;
 }
 
 interface RecentQualitySignalCandidateSummary {
@@ -1705,13 +1729,15 @@ async function summarizeKnowledgeCandidateQueues(
       }),
     ]);
 
-  const evalFailureSummaries = await summarizeRecentEvalFailures(store, evalFailed);
+  const evalFailureRunSummaries = await loadEvalFailureRunSummaries(store, evalFailed);
+  const evalFailureSummaries = summarizeRecentEvalFailures(evalFailureRunSummaries);
 
   return {
     approvedBacklogCount: approvedBacklog.length,
     approvedBacklogTypeCounts: summarizeApprovedBacklogTypeCounts(approvedBacklog),
     approvedEvalCaseCount: approvedEvalCases.length,
     evalFailedCount: evalFailed.length,
+    evalFailureClusters: summarizeEvalFailureClusters(evalFailureRunSummaries),
     evalFailureReasonCounts: summarizeEvalFailureReasonCounts(evalFailureSummaries),
     needsReviewCount: needsReview.length,
     ...optionalOldestApprovedBacklogCreatedAt(approvedBacklog),
@@ -2035,31 +2061,154 @@ function summarizeRecentQualitySignals(
   }));
 }
 
-async function summarizeRecentEvalFailures(
+async function loadEvalFailureRunSummaries(
   store: KnowledgeCandidateStore,
   candidates: KnowledgeCandidate[],
-): Promise<RecentKnowledgeEvalFailureSummary[]> {
-  return Promise.all(
+): Promise<EvalFailureRunSummary[]> {
+  const summaries = await Promise.all(
     candidates.map(async (candidate) => {
       const runs = await store.listCandidateRuns(candidate.id);
-      const latestFailedEvalRun = [...runs]
+      const failedEvalRuns = [...runs]
         .filter((run) => run.runType === 'eval' && run.status === 'failed')
-        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 
-      return {
+      if (failedEvalRuns.length === 0) {
+        return [
+          {
+            candidateId: candidate.id,
+            failureReasons: [],
+            question: candidate.question,
+            targetCategory: candidate.targetCategory,
+            type: candidate.type,
+          },
+        ];
+      }
+
+      return failedEvalRuns.map((run) => ({
         candidateId: candidate.id,
-        ...(latestFailedEvalRun === undefined
-          ? {}
-          : {
-              evaluatedAt: latestFailedEvalRun.createdAt,
-              runId: latestFailedEvalRun.runId,
-            }),
-        failureReasons:
-          latestFailedEvalRun === undefined ? [] : extractEvalFailureReasons(latestFailedEvalRun),
+        evaluatedAt: run.createdAt,
+        failureReasons: extractEvalFailureReasons(run),
         question: candidate.question,
-      };
+        runId: run.runId,
+        targetCategory: candidate.targetCategory,
+        type: candidate.type,
+      }));
     }),
   );
+
+  return summaries.flat();
+}
+
+function summarizeRecentEvalFailures(
+  runSummaries: EvalFailureRunSummary[],
+): RecentKnowledgeEvalFailureSummary[] {
+  const recentByCandidate = new Map<string, EvalFailureRunSummary>();
+  for (const summary of runSummaries) {
+    if (!recentByCandidate.has(summary.candidateId)) {
+      recentByCandidate.set(summary.candidateId, summary);
+    }
+  }
+
+  return [...recentByCandidate.values()].map((summary) => ({
+    candidateId: summary.candidateId,
+    ...(summary.evaluatedAt === undefined ? {} : { evaluatedAt: summary.evaluatedAt }),
+    failureReasons: summary.failureReasons,
+    question: summary.question,
+    ...(summary.runId === undefined ? {} : { runId: summary.runId }),
+  }));
+}
+
+function summarizeEvalFailureClusters(
+  runSummaries: EvalFailureRunSummary[],
+): EvalFailureClusterSummary[] {
+  const clusters = new Map<
+    string,
+    { summaries: EvalFailureRunSummary[]; summary: EvalFailureClusterSummary }
+  >();
+
+  for (const runSummary of runSummaries) {
+    const reasons =
+      runSummary.failureReasons.length === 0 ? ['unknown'] : runSummary.failureReasons;
+    for (const reason of reasons) {
+      const key = [reason, runSummary.targetCategory, runSummary.type].join('\0');
+      const existing = clusters.get(key);
+      if (existing === undefined) {
+        clusters.set(key, {
+          summaries: [runSummary],
+          summary: {
+            candidateIds: [],
+            clusterKey: createEvalFailureClusterKey({
+              reason,
+              targetCategory: runSummary.targetCategory,
+              type: runSummary.type,
+            }),
+            count: 0,
+            reason,
+            runIds: [],
+            sampleQuestions: [],
+            targetCategory: runSummary.targetCategory,
+            type: runSummary.type,
+          },
+        });
+        continue;
+      }
+
+      existing.summaries.push(runSummary);
+    }
+  }
+
+  return [...clusters.values()]
+    .map(({ summaries: clusterSummaries, summary }) => {
+      const sortedSummaries = [...clusterSummaries].sort(compareEvalFailureRunSummaries);
+      const evaluatedAtValues = sortedSummaries
+        .map((runSummary) => runSummary.evaluatedAt)
+        .filter((evaluatedAt): evaluatedAt is string => evaluatedAt !== undefined);
+      const latestEvaluatedAt = evaluatedAtValues[0];
+      const oldestEvaluatedAt = evaluatedAtValues.at(-1);
+
+      return {
+        ...summary,
+        candidateIds: uniqueNonEmptyStrings(
+          sortedSummaries.map((runSummary) => runSummary.candidateId),
+        ).slice(0, OPS_QUALITY_SIGNAL_CLUSTER_SAMPLE_LIMIT),
+        count: clusterSummaries.length,
+        ...(latestEvaluatedAt === undefined ? {} : { latestEvaluatedAt }),
+        ...(oldestEvaluatedAt === undefined ? {} : { oldestEvaluatedAt }),
+        runIds: uniqueNonEmptyStrings(
+          sortedSummaries.map((runSummary) => runSummary.runId ?? ''),
+        ).slice(0, OPS_QUALITY_SIGNAL_CLUSTER_SAMPLE_LIMIT),
+        sampleQuestions: uniqueNonEmptyStrings(
+          sortedSummaries.map((runSummary) => runSummary.question),
+        ).slice(0, OPS_QUALITY_SIGNAL_CLUSTER_SAMPLE_LIMIT),
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.count - left.count ||
+        (right.latestEvaluatedAt ?? '').localeCompare(left.latestEvaluatedAt ?? '') ||
+        left.reason.localeCompare(right.reason) ||
+        left.targetCategory.localeCompare(right.targetCategory) ||
+        left.type.localeCompare(right.type),
+    );
+}
+
+function compareEvalFailureRunSummaries(
+  left: EvalFailureRunSummary,
+  right: EvalFailureRunSummary,
+): number {
+  return (
+    (right.evaluatedAt ?? '').localeCompare(left.evaluatedAt ?? '') ||
+    left.candidateId.localeCompare(right.candidateId) ||
+    (left.runId ?? '').localeCompare(right.runId ?? '')
+  );
+}
+
+function createEvalFailureClusterKey(input: {
+  reason: string;
+  targetCategory: KnowledgeCandidate['targetCategory'];
+  type: KnowledgeCandidateType;
+}): string {
+  return [input.reason, input.targetCategory, input.type].join(':');
 }
 
 function extractEvalFailureReasons(run: KnowledgeCandidateRun): string[] {

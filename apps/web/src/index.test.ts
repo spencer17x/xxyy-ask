@@ -104,6 +104,9 @@ describe('renderOpsPage', () => {
       'renderEvalFailureReasons(summary.knowledgeCandidateQueues?.evalFailureReasonCounts || {})',
     );
     expect(html).toContain(
+      'renderEvalFailureClusters(summary.knowledgeCandidateQueues?.evalFailureClusters || [])',
+    );
+    expect(html).toContain(
       'renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || [])',
     );
     expect(html).toContain(
@@ -154,6 +157,7 @@ describe('renderOpsPage', () => {
     expect(html).toContain('id="tool-audit"');
     expect(html).toContain('id="knowledge-eval-failures"');
     expect(html).toContain('id="knowledge-eval-failure-reasons"');
+    expect(html).toContain('id="knowledge-eval-failure-clusters"');
     expect(html).toContain('id="knowledge-quality-signals"');
     expect(html).toContain('id="knowledge-quality-reasons"');
     expect(html).toContain('id="knowledge-quality-routes"');
@@ -162,6 +166,9 @@ describe('renderOpsPage', () => {
     expect(html).toContain('id="knowledge-quality-clusters"');
     expect(html).toContain('recent.failureReasons');
     expect(html).toContain('Eval reason · " + reason');
+    expect(html).toContain('Eval cluster · " + cluster.reason');
+    expect(html).toContain('cluster.runIds');
+    expect(html).toContain('cluster.candidateIds');
     expect(html).toContain('Quality gap · " + recent.candidateId');
     expect(html).toContain('Quality reason · " + reason');
     expect(html).toContain('Quality route · " + route');

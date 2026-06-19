@@ -1771,6 +1771,10 @@ export function renderOpsPage(): string {
               <div id="knowledge-eval-failure-reasons" class="tx-report-results"></div>
             </div>
             <div class="knowledge-candidate-section">
+              <h3>Eval Failure Clusters</h3>
+              <div id="knowledge-eval-failure-clusters" class="tx-report-results"></div>
+            </div>
+            <div class="knowledge-candidate-section">
               <h3>Recent Eval Failures</h3>
               <div id="knowledge-eval-failures" class="tx-report-results"></div>
             </div>
@@ -1898,6 +1902,7 @@ export function renderOpsPage(): string {
       const knowledgeCandidatesTarget = document.querySelector("#knowledge-candidates");
       const knowledgeEvalFailuresTarget = document.querySelector("#knowledge-eval-failures");
       const knowledgeEvalFailureReasonsTarget = document.querySelector("#knowledge-eval-failure-reasons");
+      const knowledgeEvalFailureClustersTarget = document.querySelector("#knowledge-eval-failure-clusters");
       const knowledgeQualitySignalsTarget = document.querySelector("#knowledge-quality-signals");
       const knowledgeQualityReasonsTarget = document.querySelector("#knowledge-quality-reasons");
       const knowledgeQualityRoutesTarget = document.querySelector("#knowledge-quality-routes");
@@ -2070,6 +2075,7 @@ export function renderOpsPage(): string {
           renderSessionContext(summary.sessionContext);
           renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || []);
           renderEvalFailureReasons(summary.knowledgeCandidateQueues?.evalFailureReasonCounts || {});
+          renderEvalFailureClusters(summary.knowledgeCandidateQueues?.evalFailureClusters || []);
           renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || []);
           renderQualitySignalReasons(summary.knowledgeCandidateQueues?.qualitySignalReasonCounts || {});
           renderQualitySignalRoutes(summary.knowledgeCandidateQueues?.qualitySignalAgentRouteCounts || {});
@@ -2298,6 +2304,32 @@ export function renderOpsPage(): string {
         knowledgeEvalFailureReasonsTarget.replaceChildren(
           ...rows.map(([reason, count]) =>
             row("knowledge-candidate-item", "Eval reason · " + reason, String(count), "Eval failed"),
+          ),
+        );
+      }
+
+      function renderEvalFailureClusters(clusters) {
+        if (clusters.length === 0) {
+          knowledgeEvalFailureClustersTarget.replaceChildren(empty("No eval failure clusters."));
+          return;
+        }
+
+        knowledgeEvalFailureClustersTarget.replaceChildren(
+          ...clusters.map((cluster) =>
+            rowWithMetaNodes(
+              "knowledge-candidate-item",
+              "Eval cluster · " + cluster.reason,
+              String(cluster.count),
+              [
+                cluster.targetCategory ? text("Target " + cluster.targetCategory) : undefined,
+                cluster.type ? text("Type " + cluster.type) : undefined,
+                cluster.oldestEvaluatedAt ? text("Oldest " + cluster.oldestEvaluatedAt) : undefined,
+                cluster.latestEvaluatedAt ? text("Latest " + cluster.latestEvaluatedAt) : undefined,
+                cluster.runIds?.length ? text("Runs " + cluster.runIds.join(", ")) : undefined,
+                cluster.candidateIds?.length ? text("Candidates " + cluster.candidateIds.join(", ")) : undefined,
+                cluster.sampleQuestions?.length ? text("Samples " + cluster.sampleQuestions.join(" | ")) : undefined,
+              ],
+            ),
           ),
         );
       }
