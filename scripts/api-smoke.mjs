@@ -986,16 +986,18 @@ function validateOpsSummaryPayload(payload) {
   }
 
   const knowledgeCandidateQueues = payload.knowledgeCandidateQueues;
-  if (!hasKnowledgeCandidateQueueSummary(knowledgeCandidateQueues)) {
-    return 'ops summary must include knowledge candidate queue counts and recent quality gaps.';
+  const knowledgeCandidateQueueError =
+    validateKnowledgeCandidateQueueSummary(knowledgeCandidateQueues);
+  if (knowledgeCandidateQueueError !== undefined) {
+    return knowledgeCandidateQueueError;
   }
 
   return undefined;
 }
 
-function hasKnowledgeCandidateQueueSummary(value) {
+function validateKnowledgeCandidateQueueSummary(value) {
   if (!isRecord(value)) {
-    return false;
+    return 'ops summary must include knowledge candidate queue counts and recent quality gaps.';
   }
 
   if (
@@ -1006,10 +1008,36 @@ function hasKnowledgeCandidateQueueSummary(value) {
     !Array.isArray(value.recentEvalFailures) ||
     !Array.isArray(value.recentQualitySignals)
   ) {
+    return 'ops summary must include knowledge candidate queue counts and recent quality gaps.';
+  }
+
+  if (!value.recentQualitySignals.every(isQualitySignalCandidateSummary)) {
+    return 'ops summary must include knowledge candidate queue counts and recent quality gaps.';
+  }
+
+  if (!hasQualitySignalReasonCounts(value.qualitySignalReasonCounts)) {
+    return 'ops summary must include valid quality signal reason counts.';
+  }
+
+  const reasonTotal = Object.values(value.qualitySignalReasonCounts).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  if (reasonTotal !== value.qualitySignalNeedsReviewCount) {
+    return 'ops summary quality signal reason counts must match the quality gap queue count.';
+  }
+
+  return undefined;
+}
+
+function hasQualitySignalReasonCounts(value) {
+  if (!isRecord(value)) {
     return false;
   }
 
-  return value.recentQualitySignals.every(isQualitySignalCandidateSummary);
+  return Object.entries(value).every(
+    ([reason, count]) => isCleanNonEmptyString(reason) && isNonNegativeInteger(count),
+  );
 }
 
 function isQualitySignalCandidateSummary(value) {
