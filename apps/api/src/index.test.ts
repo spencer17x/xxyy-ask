@@ -334,6 +334,8 @@ describe('createRequestHandler', () => {
         sourceUrlCount: 8,
       },
       knowledgeCandidateQueues: {
+        approvedBacklogCount: 0,
+        approvedBacklogTypeCounts: {},
         approvedEvalCaseCount: 0,
         evalFailedCount: 0,
         evalFailureReasonCounts: {},
@@ -429,6 +431,8 @@ describe('createRequestHandler', () => {
         sourceUrlCount: 0,
       },
       knowledgeCandidateQueues: {
+        approvedBacklogCount: 0,
+        approvedBacklogTypeCounts: {},
         approvedEvalCaseCount: 0,
         evalFailedCount: 0,
         evalFailureReasonCounts: {},
@@ -593,6 +597,38 @@ describe('createRequestHandler', () => {
           }),
         ]);
       }
+      if (filter.status === 'approved') {
+        return Promise.resolve([
+          knowledgeCandidate({
+            createdAt: '2026-06-19T06:45:00.000Z',
+            id: 'kc_faq_approved',
+            status: 'approved',
+            targetCategory: 'product_faq',
+            type: 'faq',
+          }),
+          knowledgeCandidate({
+            createdAt: '2026-06-19T07:15:00.000Z',
+            id: 'kc_doc_patch_approved',
+            status: 'approved',
+            targetCategory: 'doc_patch',
+            type: 'doc_patch',
+          }),
+          knowledgeCandidate({
+            createdAt: '2026-06-19T07:25:00.000Z',
+            id: 'kc_boundary_approved',
+            status: 'approved',
+            targetCategory: 'policy_boundary',
+            type: 'boundary_example',
+          }),
+          knowledgeCandidate({
+            createdAt: '2026-06-19T07:35:00.000Z',
+            id: 'kc_eval_approved',
+            status: 'approved',
+            targetCategory: 'eval_case',
+            type: 'eval_case',
+          }),
+        ]);
+      }
       if (filter.status === 'eval_failed' && filter.type === 'eval_case') {
         return Promise.resolve([
           knowledgeCandidate({
@@ -738,6 +774,13 @@ describe('createRequestHandler', () => {
       expect(JSON.parse(response.body)).toMatchObject({
         generatedAt: '2026-06-19T08:00:00.000Z',
         knowledgeCandidateQueues: {
+          approvedBacklogCount: 4,
+          approvedBacklogTypeCounts: {
+            boundary_example: 1,
+            doc_patch: 1,
+            eval_case: 1,
+            faq: 1,
+          },
           approvedEvalCaseCount: 1,
           evalFailedCount: 3,
           evalFailureReasonCounts: {
@@ -766,6 +809,7 @@ describe('createRequestHandler', () => {
             },
           ],
           needsReviewCount: 2,
+          oldestApprovedBacklogCreatedAt: '2026-06-19T06:45:00.000Z',
           oldestQualitySignalCreatedAt: '2026-06-19T07:10:00.000Z',
           qualitySignalAgentRouteCounts: {
             clarify: 1,
@@ -849,6 +893,7 @@ describe('createRequestHandler', () => {
           source: 'answer_quality_signal',
           status: 'needs_review',
         },
+        { limit: 200, status: 'approved' },
         { limit: 200, status: 'approved', type: 'eval_case' },
         { limit: 200, status: 'eval_failed', type: 'eval_case' },
       ]);

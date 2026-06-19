@@ -1579,6 +1579,60 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when approved backlog type counts are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.knowledgeCandidateQueues.approvedBacklogTypeCounts;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid approved backlog type counts.',
+    );
+  });
+
+  it('fails ops summary smoke when approved backlog type totals drift from the queue count', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      knowledgeCandidateQueues: {
+        ...opsSummaryPayload().knowledgeCandidateQueues,
+        approvedBacklogCount: 3,
+        approvedBacklogTypeCounts: {
+          doc_patch: 1,
+          faq: 1,
+        },
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary approved backlog type counts must match the approved backlog queue count.',
+    );
+  });
+
   it('fails ops summary smoke when quality reason totals drift from the queue count', async () => {
     const messages = [];
     const payload = opsSummaryPayload({
@@ -5982,12 +6036,19 @@ function jsonResponse(payload, status = 200) {
 function opsSummaryPayload(overrides = {}) {
   return {
     knowledgeCandidateQueues: {
+      approvedBacklogCount: 3,
+      approvedBacklogTypeCounts: {
+        doc_patch: 1,
+        eval_case: 1,
+        faq: 1,
+      },
       approvedEvalCaseCount: 1,
       evalFailedCount: 1,
       evalFailureReasonCounts: {
         'missing expected answer text': 1,
       },
       needsReviewCount: 2,
+      oldestApprovedBacklogCreatedAt: '2026-06-19T07:00:00.000Z',
       oldestQualitySignalCreatedAt: '2026-06-19T07:30:00.000Z',
       qualitySignalNeedsReviewCount: 1,
       qualitySignalAgeBuckets: {

@@ -1264,6 +1264,7 @@ function validateKnowledgeCandidateQueueSummary(value) {
   if (
     !isNonNegativeInteger(value.needsReviewCount) ||
     !isNonNegativeInteger(value.qualitySignalNeedsReviewCount) ||
+    !isNonNegativeInteger(value.approvedBacklogCount) ||
     !isNonNegativeInteger(value.approvedEvalCaseCount) ||
     !isNonNegativeInteger(value.evalFailedCount) ||
     !Array.isArray(value.recentEvalFailures) ||
@@ -1276,8 +1277,19 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary must include valid eval failure reason counts.';
   }
 
+  if (!hasCandidateTypeCounts(value.approvedBacklogTypeCounts)) {
+    return 'ops summary must include valid approved backlog type counts.';
+  }
+
   if (!value.recentQualitySignals.every(isQualitySignalCandidateSummary)) {
     return 'ops summary must include knowledge candidate queue counts and recent quality gaps.';
+  }
+
+  if (
+    value.approvedBacklogCount > 0 &&
+    !isCleanNonEmptyString(value.oldestApprovedBacklogCreatedAt)
+  ) {
+    return 'ops summary must include valid approved backlog oldest timestamps.';
   }
 
   if (
@@ -1351,6 +1363,14 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary quality signal cluster counts must match the quality gap queue count.';
   }
 
+  const approvedBacklogTypeTotal = Object.values(value.approvedBacklogTypeCounts).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  if (approvedBacklogTypeTotal !== value.approvedBacklogCount) {
+    return 'ops summary approved backlog type counts must match the approved backlog queue count.';
+  }
+
   return undefined;
 }
 
@@ -1381,6 +1401,18 @@ function hasRiskLevelCounts(value) {
   const allowedRiskLevels = new Set(['high', 'low', 'medium']);
   return Object.entries(value).every(
     ([riskLevel, count]) => allowedRiskLevels.has(riskLevel) && isNonNegativeInteger(count),
+  );
+}
+
+function hasCandidateTypeCounts(value) {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const allowedCandidateTypes = new Set(['boundary_example', 'doc_patch', 'eval_case', 'faq']);
+  return Object.entries(value).every(
+    ([candidateType, count]) =>
+      allowedCandidateTypes.has(candidateType) && isNonNegativeInteger(count),
   );
 }
 

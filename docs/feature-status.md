@@ -125,7 +125,7 @@
 - [ ] 多轮对话增强：在已有 `sessionId` 追问、上一轮引用、省略指代、非敏感产品偏好、安全会话摘要、最近 turn 裁剪兜底和清除本次会话上下文命令基础上，继续补更细粒度删除/过期策略、多渠道上下文一致性和更多指代样例。
 - [ ] 自动回答总调度增强：在已有 `CustomerAgentRuntime` 产品问答、交易分析、边界回复、澄清问题统一路由、响应/日志 `agentRoute` 观测和质量缺口 route 聚合基础上，继续补更多端到端 smoke、工具权限审计和渠道接入一致性。
 - [ ] 回答质量策略增强：在已有低置信度、无引用、工具不可用、边界回复、负反馈质量信号、质量原因聚合、route 聚合和质量缺口聚类基础上，继续补自动重跑、跨运行失败聚类和趋势/成本观测。
-- [ ] 知识缺口闭环增强：在已有候选生成、审核、发布、gate 和 eval-only 候选流程基础上，继续补候选合并、修正/回滚工作台、失败样本补充和自动回归重跑。
+- [ ] 知识缺口闭环增强：在已有候选生成、审核、发布、gate、eval-only 候选流程、approved backlog 总数/类型分布和最早积压时间观测基础上，继续补候选合并、修正/回滚工作台、失败样本补充和自动回归重跑。
 - [ ] 多链实站稳定性验证：针对 Base、Ethereum、BSC 的不同浏览器页面结构、XXYY 搜索结果和池子交易窗口做更多真实样本验证与修正。
 - [x] 交易分析客服处理记录：文件和 Postgres 报告 store、受保护 API 和 `/ops` 报告列表已支持更新处理状态、备注和负责人，并可按处理状态或负责人筛选复查队列；受保护 review API 支持 `claim` 认领、`close` 关闭和 `reopen` 重新打开动作，`PATCH /api/tx-analysis/reports/review` 可对多条报告批量执行同一处理动作并返回成功与未找到列表；`/ops` 列表可直接点击 Claim / Close / Reopen 处理单条报告，也可在报告搜索结果中勾选多条报告批量 Claim / Close / Reopen，关闭时要求填写备注，重新打开时会回到 open 队列。
 - [ ] 交易分析自动复查增强：仍需建设自动重跑、失败聚类、样本补充和质量队列，不作为用户侧人工接管入口。
@@ -146,7 +146,7 @@
 - [x] RAG 评测：内置产品客服回归评测集，可用于发布前检查回答质量。
 - [x] 候选知识内核：已新增 `@xxyy/knowledge-ops`，支持授权 Telegram 采集基础、客服消息结构、敏感信息脱敏、客服问答候选挖掘、Raw Source 持久化、Candidate 持久化、增量 cursor 和内存待审队列；第一版只生成 `needs_review` 候选，不会自动发布到正式 RAG 知识库。
 - [x] 候选知识审核 API：受 `API_OPS_TOKEN` 保护，支持查看候选队列和执行 approve/reject/request_changes/merge_duplicate，审核动作不会自动发布；`merge_duplicate` 会要求并记录 `mergedIntoCandidateId`，把重复候选的合并目标写入 review notes，方便后续候选合并和重复质量缺口追踪。
-- [x] 候选知识后台队列：`/ops` 运维页已接入受保护候选查询，可按 `answer_feedback`、`answer_quality_signal` 和 `telegram` 来源查看 `needs_review` 候选，并可在候选行内执行 approve、reject、request_changes 或带 `mergedIntoCandidateId` 的 merge_duplicate，方便把负反馈、自动质量信号和授权客服消息统一纳入审核闭环；这些审核动作仍不会自动发布未审核内容。
+- [x] 候选知识后台队列：`/ops` 运维页已接入受保护候选查询，可按 `answer_feedback`、`answer_quality_signal` 和 `telegram` 来源查看 `needs_review` 候选，并可在候选行内执行 approve、reject、request_changes 或带 `mergedIntoCandidateId` 的 merge_duplicate；受保护 `/api/ops/summary` 同时返回 `approvedBacklogCount`、`approvedBacklogTypeCounts` 和 `oldestApprovedBacklogCreatedAt`，`/ops` 可按 approved 类型一键加载已审核但尚未发布、gate 或入库的候选，`pnpm ops:smoke -- --ops-token` 会校验 approved backlog 类型分布与总数一致，方便把负反馈、自动质量信号和授权客服消息统一纳入审核后推进闭环；这些审核动作仍不会自动发布未审核内容。
 - [x] Telegram 知识学习运行入口：`pnpm rag:sync:telegram` 支持手动或定时增量采集授权 Telegram 客服消息，写入 Raw Source Store，生成 `needs_review` 候选知识，并推进 getUpdates offset；不会发布或 embedding 未审核内容。
 - [x] 审核后知识发布入口：`pnpm rag:publish:knowledge -- --id <candidate-id>` 只允许发布 `approved` 候选，默认追加到 `docs/product-features/pages/65-reviewed-support-knowledge.md` 正式 Markdown 知识源，并把候选状态标记为 `published`；未审核候选不能发布。
 - [x] 知识入库和第一版质量门禁：`pnpm rag:gate:knowledge -- --id <candidate-id> --fast` 只接受已 `published` 候选，执行正式 ingest/embedding，运行候选生成的 targeted eval gate，并把候选推进到 `ingested` 后标记为 `eval_passed` 或 `eval_failed`；`pnpm rag:gate:knowledge -- --approved-eval --fast` 和默认 `pnpm sync` 会批量运行已审核 eval-only 候选质量 gate，不会发布或 embedding 未审核内容。

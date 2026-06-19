@@ -1751,6 +1751,10 @@ export function renderOpsPage(): string {
               <div id="knowledge-quality-clusters" class="tx-report-results"></div>
             </div>
             <div class="knowledge-candidate-section">
+              <h3>Approved Backlog</h3>
+              <div id="knowledge-approved-backlog" class="tx-report-results"></div>
+            </div>
+            <div class="knowledge-candidate-section">
               <h3>Eval Failure Reasons</h3>
               <div id="knowledge-eval-failure-reasons" class="tx-report-results"></div>
             </div>
@@ -1886,6 +1890,7 @@ export function renderOpsPage(): string {
       const knowledgeQualityRiskLevelsTarget = document.querySelector("#knowledge-quality-risk-levels");
       const knowledgeQualityAgeBucketsTarget = document.querySelector("#knowledge-quality-age-buckets");
       const knowledgeQualityClustersTarget = document.querySelector("#knowledge-quality-clusters");
+      const knowledgeApprovedBacklogTarget = document.querySelector("#knowledge-approved-backlog");
       const queryTxReports = document.querySelector("#tx-report-form");
       const txReportHash = document.querySelector("#tx-report-hash");
       const txReportChain = document.querySelector("#tx-report-chain");
@@ -1918,6 +1923,18 @@ export function renderOpsPage(): string {
       queryKnowledgeCandidates.addEventListener("submit", async (event) => {
         event.preventDefault();
         await loadKnowledgeCandidates();
+      });
+
+      knowledgeApprovedBacklogTarget.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) {
+          return;
+        }
+        const candidateType = target.dataset.approvedCandidateType;
+        if (!candidateType) {
+          return;
+        }
+        await loadApprovedKnowledgeCandidates(candidateType);
       });
 
       knowledgeQualityClustersTarget.addEventListener("click", async (event) => {
@@ -2043,6 +2060,7 @@ export function renderOpsPage(): string {
           renderQualitySignalRiskLevels(summary.knowledgeCandidateQueues?.qualitySignalRiskLevelCounts || {});
           renderQualitySignalAgeBuckets(summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets || {});
           renderQualitySignalClusters(summary.knowledgeCandidateQueues?.qualitySignalClusters || []);
+          renderApprovedBacklog(summary.knowledgeCandidateQueues?.approvedBacklogTypeCounts || {});
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
           void loadKnowledgeCandidates();
           status.textContent = "Updated " + summary.generatedAt;
@@ -2063,6 +2081,8 @@ export function renderOpsPage(): string {
           metric("Quality Gaps", summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0, (summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0) > 0 ? "warn" : "ok"),
           metric("Stale Gaps", summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0, (summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0) > 0 ? "error" : "ok"),
           metric("Oldest Gap", summary.knowledgeCandidateQueues?.oldestQualitySignalCreatedAt || "-", summary.knowledgeCandidateQueues?.oldestQualitySignalCreatedAt ? "warn" : "ok"),
+          metric("Approved Backlog", summary.knowledgeCandidateQueues?.approvedBacklogCount || 0, (summary.knowledgeCandidateQueues?.approvedBacklogCount || 0) > 0 ? "warn" : "ok"),
+          metric("Oldest Approved", summary.knowledgeCandidateQueues?.oldestApprovedBacklogCreatedAt || "-", summary.knowledgeCandidateQueues?.oldestApprovedBacklogCreatedAt ? "warn" : "ok"),
           metric("Eval Ready", summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0, (summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0) > 0 ? "warn" : "ok"),
           metric("Eval Failed", summary.knowledgeCandidateQueues?.evalFailedCount || 0, (summary.knowledgeCandidateQueues?.evalFailedCount || 0) > 0 ? "error" : "ok"),
           metric("Tx Failures", summary.txAnalysis?.failureCount || 0, (summary.txAnalysis?.failureCount || 0) > 0 ? "warn" : "ok"),
@@ -2153,6 +2173,35 @@ export function renderOpsPage(): string {
             row("knowledge-candidate-item", "Eval reason · " + reason, String(count), "Eval failed"),
           ),
         );
+      }
+
+      function renderApprovedBacklog(typeCounts) {
+        const rows = Object.entries(typeCounts)
+          .filter((entry) => Number(entry[1]) > 0)
+          .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
+        if (rows.length === 0) {
+          knowledgeApprovedBacklogTarget.replaceChildren(empty("No approved backlog."));
+          return;
+        }
+
+        knowledgeApprovedBacklogTarget.replaceChildren(
+          ...rows.map(([candidateType, count]) =>
+            rowWithMetaNodes(
+              "knowledge-candidate-item",
+              "Approved backlog · " + candidateType,
+              String(count),
+              [createApprovedCandidateTypeButton(candidateType)],
+            ),
+          ),
+        );
+      }
+
+      function createApprovedCandidateTypeButton(candidateType) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("data-approved-candidate-type", candidateType);
+        button.textContent = "Load approved";
+        return button;
       }
 
       function renderQualitySignalReasons(reasonCounts) {
@@ -2348,6 +2397,13 @@ export function renderOpsPage(): string {
         knowledgeCandidateType.value = "";
         knowledgeCandidateSource.value = "answer_quality_signal";
         await loadKnowledgeCandidates({ qualitySignalAgeBucket: ageBucket });
+      }
+
+      async function loadApprovedKnowledgeCandidates(candidateType) {
+        knowledgeCandidateStatusFilter.value = "approved";
+        knowledgeCandidateType.value = candidateType;
+        knowledgeCandidateSource.value = "";
+        await loadKnowledgeCandidates();
       }
 
       function renderQualitySignals(recentSignals) {

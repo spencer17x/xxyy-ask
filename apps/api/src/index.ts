@@ -228,10 +228,13 @@ interface OpsSummary {
 }
 
 interface KnowledgeCandidateQueueSummary {
+  approvedBacklogCount: number;
+  approvedBacklogTypeCounts: Record<string, number>;
   approvedEvalCaseCount: number;
   evalFailedCount: number;
   evalFailureReasonCounts: Record<string, number>;
   needsReviewCount: number;
+  oldestApprovedBacklogCreatedAt?: string;
   oldestQualitySignalCreatedAt?: string;
   qualitySignalAgeBuckets: QualitySignalAgeBuckets;
   qualitySignalAgentRouteCounts: Record<string, number>;
@@ -1648,32 +1651,40 @@ async function summarizeKnowledgeCandidateQueues(
   store: KnowledgeCandidateStore,
   nowMs: number,
 ): Promise<KnowledgeCandidateQueueSummary> {
-  const [needsReview, qualitySignalNeedsReview, approvedEvalCases, evalFailed] = await Promise.all([
-    store.listCandidates({ limit: OPS_CANDIDATE_QUEUE_LIMIT, status: 'needs_review' }),
-    store.listCandidates({
-      limit: OPS_CANDIDATE_QUEUE_LIMIT,
-      source: 'answer_quality_signal',
-      status: 'needs_review',
-    }),
-    store.listCandidates({
-      limit: OPS_CANDIDATE_QUEUE_LIMIT,
-      status: 'approved',
-      type: 'eval_case',
-    }),
-    store.listCandidates({
-      limit: OPS_CANDIDATE_QUEUE_LIMIT,
-      status: 'eval_failed',
-      type: 'eval_case',
-    }),
-  ]);
+  const [needsReview, qualitySignalNeedsReview, approvedBacklog, approvedEvalCases, evalFailed] =
+    await Promise.all([
+      store.listCandidates({ limit: OPS_CANDIDATE_QUEUE_LIMIT, status: 'needs_review' }),
+      store.listCandidates({
+        limit: OPS_CANDIDATE_QUEUE_LIMIT,
+        source: 'answer_quality_signal',
+        status: 'needs_review',
+      }),
+      store.listCandidates({
+        limit: OPS_CANDIDATE_QUEUE_LIMIT,
+        status: 'approved',
+      }),
+      store.listCandidates({
+        limit: OPS_CANDIDATE_QUEUE_LIMIT,
+        status: 'approved',
+        type: 'eval_case',
+      }),
+      store.listCandidates({
+        limit: OPS_CANDIDATE_QUEUE_LIMIT,
+        status: 'eval_failed',
+        type: 'eval_case',
+      }),
+    ]);
 
   const evalFailureSummaries = await summarizeRecentEvalFailures(store, evalFailed);
 
   return {
+    approvedBacklogCount: approvedBacklog.length,
+    approvedBacklogTypeCounts: summarizeApprovedBacklogTypeCounts(approvedBacklog),
     approvedEvalCaseCount: approvedEvalCases.length,
     evalFailedCount: evalFailed.length,
     evalFailureReasonCounts: summarizeEvalFailureReasonCounts(evalFailureSummaries),
     needsReviewCount: needsReview.length,
+    ...optionalOldestApprovedBacklogCreatedAt(approvedBacklog),
     ...optionalOldestQualitySignalCreatedAt(qualitySignalNeedsReview),
     qualitySignalAgeBuckets: summarizeQualitySignalAgeBuckets(qualitySignalNeedsReview, nowMs),
     qualitySignalAgentRouteCounts: summarizeQualitySignalAgentRouteCounts(qualitySignalNeedsReview),
@@ -1729,6 +1740,20 @@ function summarizeEvalFailureReasonCounts(
       }
       counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
     }
+  }
+
+  return Object.fromEntries(
+    [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function summarizeApprovedBacklogTypeCounts(
+  candidates: KnowledgeCandidate[],
+): Record<string, number> {
+  const counts = new Map<string, number>();
+
+  for (const candidate of candidates) {
+    counts.set(candidate.type, (counts.get(candidate.type) ?? 0) + 1);
   }
 
   return Object.fromEntries(
@@ -1864,6 +1889,17 @@ function optionalOldestQualitySignalCreatedAt(
     .sort((left, right) => left.localeCompare(right))[0];
 
   return oldest === undefined ? {} : { oldestQualitySignalCreatedAt: oldest };
+}
+
+function optionalOldestApprovedBacklogCreatedAt(
+  candidates: KnowledgeCandidate[],
+): Pick<KnowledgeCandidateQueueSummary, 'oldestApprovedBacklogCreatedAt'> | Record<string, never> {
+  const oldest = candidates
+    .map((candidate) => candidate.createdAt)
+    .filter((createdAt) => createdAt.trim().length > 0)
+    .sort((left, right) => left.localeCompare(right))[0];
+
+  return oldest === undefined ? {} : { oldestApprovedBacklogCreatedAt: oldest };
 }
 
 function uniqueNonEmptyStrings(values: string[]): string[] {

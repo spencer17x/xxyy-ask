@@ -120,14 +120,20 @@ describe('renderOpsPage', () => {
     expect(html).toContain(
       'renderQualitySignalClusters(summary.knowledgeCandidateQueues?.qualitySignalClusters || [])',
     );
+    expect(html).toContain(
+      'renderApprovedBacklog(summary.knowledgeCandidateQueues?.approvedBacklogTypeCounts || {})',
+    );
     expect(html).toContain('summary.knowledgeCandidateQueues?.needsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.oldestQualitySignalCreatedAt');
     expect(html).toContain(
       'summary.knowledgeCandidateQueues?.qualitySignalAgeBuckets?.gte24h || 0',
     );
+    expect(html).toContain('summary.knowledgeCandidateQueues?.approvedBacklogCount || 0');
+    expect(html).toContain('summary.knowledgeCandidateQueues?.oldestApprovedBacklogCreatedAt');
     expect(html).toContain('summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.evalFailedCount || 0');
+    expect(html).toContain('id="knowledge-approved-backlog"');
     expect(html).toContain('id="knowledge-eval-failures"');
     expect(html).toContain('id="knowledge-eval-failure-reasons"');
     expect(html).toContain('id="knowledge-quality-signals"');
@@ -158,6 +164,9 @@ describe('renderOpsPage', () => {
     expect(html).toContain('data-quality-cluster-key');
     expect(html).toContain('qualitySignalClusterKey');
     expect(html).toContain('await loadQualitySignalClusterCandidates(clusterKey)');
+    expect(html).toContain('Approved backlog · " + candidateType');
+    expect(html).toContain('data-approved-candidate-type');
+    expect(html).toContain('await loadApprovedKnowledgeCandidates(candidateType)');
     expect(html).toContain('recent.agentRoute');
     expect(html).toContain('recent.targetCategory');
     expect(html).toContain('recent.riskLevel');
