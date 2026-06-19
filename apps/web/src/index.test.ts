@@ -96,6 +96,7 @@ describe('renderOpsPage', () => {
     expect(html).toContain('renderHealth(summary.health)');
     expect(html).toContain('renderKnowledge(summary.knowledge)');
     expect(html).toContain('renderFeedback(summary.feedback)');
+    expect(html).toContain('renderSessionContext(summary.sessionContext)');
     expect(html).toContain(
       'renderEvalFailures(summary.knowledgeCandidateQueues?.recentEvalFailures || [])',
     );
@@ -133,7 +134,11 @@ describe('renderOpsPage', () => {
     expect(html).toContain('summary.knowledgeCandidateQueues?.oldestApprovedBacklogCreatedAt');
     expect(html).toContain('summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.evalFailedCount || 0');
+    expect(html).toContain('summary.sessionContext?.activeSessionCount || 0');
+    expect(html).toContain('summary.sessionContext?.storedTurnCount || 0');
+    expect(html).toContain('summary.sessionContext?.summarizedSessionCount || 0');
     expect(html).toContain('id="knowledge-approved-backlog"');
+    expect(html).toContain('id="session-context"');
     expect(html).toContain('id="knowledge-eval-failures"');
     expect(html).toContain('id="knowledge-eval-failure-reasons"');
     expect(html).toContain('id="knowledge-quality-signals"');
@@ -167,6 +172,11 @@ describe('renderOpsPage', () => {
     expect(html).toContain('Approved backlog · " + candidateType');
     expect(html).toContain('data-approved-candidate-type');
     expect(html).toContain('await loadApprovedKnowledgeCandidates(candidateType)');
+    expect(html).toContain('Session · " + summary.sessionIdHash');
+    expect(html).toContain('Topic · " + topic');
+    expect(html).toContain('Preference · " + preference');
+    expect(html).toContain('summary.productTopicCounts || {}');
+    expect(html).toContain('summary.productPreferenceCounts || {}');
     expect(html).toContain('recent.agentRoute');
     expect(html).toContain('recent.targetCategory');
     expect(html).toContain('recent.riskLevel');

@@ -1388,6 +1388,60 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when session context summary is missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.sessionContext;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid session context counts and recent summaries.',
+    );
+  });
+
+  it('fails ops summary smoke when session context topic totals exceed summarized sessions', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      sessionContext: {
+        ...opsSummaryPayload().sessionContext,
+        productTopicCounts: {
+          'Telegram 钱包监控': 2,
+          'XXYY Pro': 2,
+        },
+        summarizedSessionCount: 3,
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary session topic counts cannot exceed the summarized session count.',
+    );
+  });
+
   it('fails ops summary smoke when quality reason counts are missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -6091,6 +6145,28 @@ function opsSummaryPayload(overrides = {}) {
           type: 'eval_case',
         },
       ],
+    },
+    sessionContext: {
+      activeSessionCount: 2,
+      latestSummaryUpdatedAt: '2026-06-19T07:56:00.000Z',
+      latestTurnCreatedAt: '2026-06-19T07:55:00.000Z',
+      productPreferenceCounts: {
+        'XXYY 移动端登录': 1,
+      },
+      productTopicCounts: {
+        'Telegram 钱包监控': 1,
+        'XXYY Pro': 1,
+      },
+      recentSummaries: [
+        {
+          productPreference: 'XXYY 移动端登录',
+          productTopic: 'XXYY Pro',
+          sessionIdHash: 'abc123def456',
+          updatedAt: '2026-06-19T07:56:00.000Z',
+        },
+      ],
+      storedTurnCount: 5,
+      summarizedSessionCount: 2,
     },
     txAnalysisRuntime: {
       browser: {

@@ -353,6 +353,27 @@ describe('createRequestHandler', () => {
         recentEvalFailures: [],
         recentQualitySignals: [],
       },
+      sessionContext: {
+        activeSessionCount: 2,
+        latestSummaryUpdatedAt: '2026-06-06T02:04:00.000Z',
+        latestTurnCreatedAt: '2026-06-06T02:04:01.000Z',
+        productPreferenceCounts: {
+          'XXYY 移动端登录': 1,
+        },
+        productTopicCounts: {
+          'XXYY Pro': 1,
+        },
+        recentSummaries: [
+          {
+            productPreference: 'XXYY 移动端登录',
+            productTopic: 'XXYY Pro',
+            sessionIdHash: 'abc123def456',
+            updatedAt: '2026-06-06T02:04:00.000Z',
+          },
+        ],
+        storedTurnCount: 6,
+        summarizedSessionCount: 1,
+      },
       txAnalysis: {
         byChain: {
           base: 2,
@@ -450,6 +471,14 @@ describe('createRequestHandler', () => {
         recentEvalFailures: [],
         recentQualitySignals: [],
       },
+      sessionContext: {
+        activeSessionCount: 0,
+        productPreferenceCounts: {},
+        productTopicCounts: {},
+        recentSummaries: [],
+        storedTurnCount: 0,
+        summarizedSessionCount: 0,
+      },
       txAnalysis: {
         byChain: {},
         byRuleVersion: {},
@@ -508,7 +537,69 @@ describe('createRequestHandler', () => {
     const listFilters: unknown[] = [];
     const pgClient = {
       end: vi.fn(),
-      query: vi.fn(() => Promise.resolve({ rows: [] })),
+      query: vi.fn((sql: string, values?: readonly unknown[]) => {
+        if (sql.includes('count(distinct session_id)')) {
+          return Promise.resolve({
+            rows: [
+              {
+                active_session_count: '2',
+                latest_turn_created_at: '2026-06-19T07:55:00.000Z',
+                stored_turn_count: '5',
+              },
+            ],
+          });
+        }
+        if (sql.includes('max(updated_at) as latest_summary_updated_at')) {
+          return Promise.resolve({
+            rows: [
+              {
+                latest_summary_updated_at: '2026-06-19T07:56:00.000Z',
+                summarized_session_count: '2',
+              },
+            ],
+          });
+        }
+        if (sql.includes("summary ->> 'productTopic'")) {
+          return Promise.resolve({
+            rows: [
+              { count: '1', label: 'Telegram 钱包监控' },
+              { count: '1', label: 'XXYY Pro' },
+            ],
+          });
+        }
+        if (sql.includes("summary ->> 'productPreference'")) {
+          return Promise.resolve({
+            rows: [{ count: '1', label: 'XXYY 移动端登录' }],
+          });
+        }
+        if (
+          sql.includes('session_id') &&
+          sql.includes('summary') &&
+          sql.includes('from customer_agent_session_summaries') &&
+          sql.includes('order by updated_at desc')
+        ) {
+          expect(values).toEqual([5]);
+          return Promise.resolve({
+            rows: [
+              {
+                session_id: 'session-1',
+                summary: {
+                  productPreference: 'XXYY 移动端登录',
+                  productTopic: 'XXYY Pro',
+                },
+                updated_at: '2026-06-19T07:56:00.000Z',
+              },
+              {
+                session_id: 'session-2',
+                summary: { productTopic: 'Telegram 钱包监控' },
+                updated_at: '2026-06-19T07:54:00.000Z',
+              },
+            ],
+          });
+        }
+
+        return Promise.resolve({ rows: [] });
+      }),
     };
     const createPgPool = vi.fn(() => pgClient);
     const createPgVectorStore = vi.fn(() => ({
@@ -771,7 +862,10 @@ describe('createRequestHandler', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(JSON.parse(response.body)).toMatchObject({
+      const responseBody = JSON.parse(response.body) as {
+        sessionContext: { recentSummaries: Array<{ sessionIdHash: string }> };
+      };
+      expect(responseBody).toMatchObject({
         generatedAt: '2026-06-19T08:00:00.000Z',
         knowledgeCandidateQueues: {
           approvedBacklogCount: 4,
@@ -885,7 +979,43 @@ describe('createRequestHandler', () => {
             },
           ],
         },
+        sessionContext: {
+          activeSessionCount: 2,
+          latestSummaryUpdatedAt: '2026-06-19T07:56:00.000Z',
+          latestTurnCreatedAt: '2026-06-19T07:55:00.000Z',
+          productPreferenceCounts: {
+            'XXYY 移动端登录': 1,
+          },
+          productTopicCounts: {
+            'Telegram 钱包监控': 1,
+            'XXYY Pro': 1,
+          },
+          recentSummaries: [
+            {
+              productPreference: 'XXYY 移动端登录',
+              productTopic: 'XXYY Pro',
+              sessionIdHash: responseBody.sessionContext.recentSummaries[0]?.sessionIdHash,
+              updatedAt: '2026-06-19T07:56:00.000Z',
+            },
+            {
+              productTopic: 'Telegram 钱包监控',
+              sessionIdHash: responseBody.sessionContext.recentSummaries[1]?.sessionIdHash,
+              updatedAt: '2026-06-19T07:54:00.000Z',
+            },
+          ],
+          storedTurnCount: 5,
+          summarizedSessionCount: 2,
+        },
       });
+      expect(responseBody.sessionContext.recentSummaries[0]?.sessionIdHash).toMatch(
+        /^[a-f0-9]{12}$/u,
+      );
+      expect(responseBody.sessionContext.recentSummaries[1]?.sessionIdHash).toMatch(
+        /^[a-f0-9]{12}$/u,
+      );
+      expect(
+        responseBody.sessionContext.recentSummaries.map((item) => item.sessionIdHash),
+      ).not.toContain('session-1');
       expect(listFilters).toEqual([
         { limit: 200, status: 'needs_review' },
         {

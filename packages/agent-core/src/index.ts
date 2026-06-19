@@ -33,10 +33,17 @@ export type {
   QualitySignalReason,
   QualitySignalSink,
 } from './quality-signals.js';
-export { createPgSessionContextStore, migratePgSessionContextStore } from './pg-session-context.js';
+export {
+  createPgSessionContextStore,
+  migratePgSessionContextStore,
+  summarizePgSessionContext,
+} from './pg-session-context.js';
 export type {
   CreatePgSessionContextStoreOptions,
+  PgSessionContextOpsSummary,
   PgClientLike as PgSessionContextClientLike,
+  RecentPgSessionContextSummary,
+  SummarizePgSessionContextOptions,
 } from './pg-session-context.js';
 export { createInMemorySessionContextStore, sanitizeSessionText } from './session-context.js';
 export type {

@@ -1253,6 +1253,58 @@ function validateOpsSummaryPayload(payload) {
     return knowledgeCandidateQueueError;
   }
 
+  const sessionContextError = validateSessionContextSummary(payload.sessionContext);
+  if (sessionContextError !== undefined) {
+    return sessionContextError;
+  }
+
+  return undefined;
+}
+
+function validateSessionContextSummary(value) {
+  if (!isRecord(value)) {
+    return 'ops summary must include valid session context counts and recent summaries.';
+  }
+
+  if (
+    !isNonNegativeInteger(value.activeSessionCount) ||
+    !isNonNegativeInteger(value.storedTurnCount) ||
+    !isNonNegativeInteger(value.summarizedSessionCount) ||
+    !hasReasonCounts(value.productPreferenceCounts) ||
+    !hasReasonCounts(value.productTopicCounts) ||
+    !Array.isArray(value.recentSummaries)
+  ) {
+    return 'ops summary must include valid session context counts and recent summaries.';
+  }
+
+  if (value.activeSessionCount > 0 && !isCleanNonEmptyString(value.latestTurnCreatedAt)) {
+    return 'ops summary must include valid session context latest turn timestamps.';
+  }
+
+  if (value.summarizedSessionCount > 0 && !isCleanNonEmptyString(value.latestSummaryUpdatedAt)) {
+    return 'ops summary must include valid session context latest summary timestamps.';
+  }
+
+  if (!value.recentSummaries.every(isRecentSessionContextSummary)) {
+    return 'ops summary must include valid session context counts and recent summaries.';
+  }
+
+  const topicTotal = Object.values(value.productTopicCounts).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  if (topicTotal > value.summarizedSessionCount) {
+    return 'ops summary session topic counts cannot exceed the summarized session count.';
+  }
+
+  const preferenceTotal = Object.values(value.productPreferenceCounts).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  if (preferenceTotal > value.summarizedSessionCount) {
+    return 'ops summary session preference counts cannot exceed the summarized session count.';
+  }
+
   return undefined;
 }
 
@@ -1413,6 +1465,22 @@ function hasCandidateTypeCounts(value) {
   return Object.entries(value).every(
     ([candidateType, count]) =>
       allowedCandidateTypes.has(candidateType) && isNonNegativeInteger(count),
+  );
+}
+
+function isRecentSessionContextSummary(value) {
+  if (
+    !isRecord(value) ||
+    !isCleanNonEmptyString(value.sessionIdHash) ||
+    !/^[a-f0-9]{12}$/u.test(value.sessionIdHash) ||
+    !isCleanNonEmptyString(value.updatedAt)
+  ) {
+    return false;
+  }
+
+  return (
+    (value.productTopic === undefined || isCleanNonEmptyString(value.productTopic)) &&
+    (value.productPreference === undefined || isCleanNonEmptyString(value.productPreference))
   );
 }
 

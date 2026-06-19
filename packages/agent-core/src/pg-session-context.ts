@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type {
   SessionContextStore,
   SessionContextSummary,
@@ -15,6 +17,29 @@ export interface CreatePgSessionContextStoreOptions {
   maxTurnsPerSession?: number;
 }
 
+export interface SummarizePgSessionContextOptions {
+  client: PgClientLike;
+  recentLimit?: number;
+}
+
+export interface RecentPgSessionContextSummary {
+  productPreference?: string;
+  productTopic?: string;
+  sessionIdHash: string;
+  updatedAt: string;
+}
+
+export interface PgSessionContextOpsSummary {
+  activeSessionCount: number;
+  latestSummaryUpdatedAt?: string;
+  latestTurnCreatedAt?: string;
+  productPreferenceCounts: Record<string, number>;
+  productTopicCounts: Record<string, number>;
+  recentSummaries: RecentPgSessionContextSummary[];
+  storedTurnCount: number;
+  summarizedSessionCount: number;
+}
+
 interface SessionTurnRow {
   content: string;
   created_at: Date | string;
@@ -27,7 +52,28 @@ interface SessionSummaryRow {
   updated_at: Date | string;
 }
 
+interface SessionContextTurnStatsRow {
+  active_session_count?: number | string | null;
+  latest_turn_created_at?: Date | string | null;
+  stored_turn_count?: number | string | null;
+}
+
+interface SessionContextSummaryStatsRow {
+  latest_summary_updated_at?: Date | string | null;
+  summarized_session_count?: number | string | null;
+}
+
+interface SessionContextLabelCountRow {
+  count?: number | string | null;
+  label?: string | null;
+}
+
+interface RecentSessionSummaryRow extends SessionSummaryRow {
+  session_id: string;
+}
+
 const DEFAULT_MAX_TURNS_PER_SESSION = 12;
+const DEFAULT_RECENT_SESSION_SUMMARY_LIMIT = 5;
 
 export function createPgSessionContextStore(
   options: CreatePgSessionContextStoreOptions,
@@ -144,6 +190,116 @@ export async function migratePgSessionContextStore(client: PgClientLike): Promis
   `);
 }
 
+export async function summarizePgSessionContext(
+  options: SummarizePgSessionContextOptions,
+): Promise<PgSessionContextOpsSummary> {
+  const recentLimit = options.recentLimit ?? DEFAULT_RECENT_SESSION_SUMMARY_LIMIT;
+  const [turnStats, summaryStats, productTopics, productPreferences, recentSummaries] =
+    await Promise.all([
+      querySessionTurnStats(options.client),
+      querySessionSummaryStats(options.client),
+      querySessionSummaryLabelCounts(options.client, 'productTopic'),
+      querySessionSummaryLabelCounts(options.client, 'productPreference'),
+      queryRecentSessionSummaries(options.client, recentLimit),
+    ]);
+
+  return {
+    ...optionalDate('latestSummaryUpdatedAt', summaryStats.latestSummaryUpdatedAt),
+    ...optionalDate('latestTurnCreatedAt', turnStats.latestTurnCreatedAt),
+    activeSessionCount: turnStats.activeSessionCount,
+    productPreferenceCounts: productPreferences,
+    productTopicCounts: productTopics,
+    recentSummaries,
+    storedTurnCount: turnStats.storedTurnCount,
+    summarizedSessionCount: summaryStats.summarizedSessionCount,
+  };
+}
+
+async function querySessionTurnStats(client: PgClientLike): Promise<{
+  activeSessionCount: number;
+  latestTurnCreatedAt?: string;
+  storedTurnCount: number;
+}> {
+  const response = await client.query<SessionContextTurnStatsRow>(`
+    select
+      count(distinct session_id) as active_session_count,
+      count(*) as stored_turn_count,
+      max(created_at) as latest_turn_created_at
+    from customer_agent_session_turns
+  `);
+  const row = response.rows[0];
+
+  return {
+    activeSessionCount: parseCount(row?.active_session_count),
+    ...optionalDate('latestTurnCreatedAt', row?.latest_turn_created_at),
+    storedTurnCount: parseCount(row?.stored_turn_count),
+  };
+}
+
+async function querySessionSummaryStats(client: PgClientLike): Promise<{
+  latestSummaryUpdatedAt?: string;
+  summarizedSessionCount: number;
+}> {
+  const response = await client.query<SessionContextSummaryStatsRow>(`
+    select
+      count(*) as summarized_session_count,
+      max(updated_at) as latest_summary_updated_at
+    from customer_agent_session_summaries
+  `);
+  const row = response.rows[0];
+
+  return {
+    ...optionalDate('latestSummaryUpdatedAt', row?.latest_summary_updated_at),
+    summarizedSessionCount: parseCount(row?.summarized_session_count),
+  };
+}
+
+async function querySessionSummaryLabelCounts(
+  client: PgClientLike,
+  field: 'productPreference' | 'productTopic',
+): Promise<Record<string, number>> {
+  const response = await client.query<SessionContextLabelCountRow>(`
+    select
+      nullif(trim(summary ->> '${field}'), '') as label,
+      count(*) as count
+    from customer_agent_session_summaries
+    where nullif(trim(summary ->> '${field}'), '') is not null
+    group by label
+    order by count desc, label asc
+  `);
+
+  const counts = new Map<string, number>();
+  for (const row of response.rows) {
+    const label = row.label?.trim();
+    if (label === undefined || label.length === 0) {
+      continue;
+    }
+    counts.set(label, parseCount(row.count));
+  }
+
+  return Object.fromEntries(counts.entries());
+}
+
+async function queryRecentSessionSummaries(
+  client: PgClientLike,
+  recentLimit: number,
+): Promise<RecentPgSessionContextSummary[]> {
+  const response = await client.query<RecentSessionSummaryRow>(
+    `
+    select
+      session_id,
+      summary,
+      updated_at
+    from customer_agent_session_summaries
+    order by updated_at desc
+    limit $1
+    `,
+    [recentLimit],
+  );
+
+  return response.rows.map(mapRecentSessionSummaryRow);
+}
+
 async function upsertSessionSummary(
   client: PgClientLike,
   sessionId: string,
@@ -225,6 +381,18 @@ function mapSessionSummaryRow(row: SessionSummaryRow): SessionContextSummary {
   };
 }
 
+function mapRecentSessionSummaryRow(row: RecentSessionSummaryRow): RecentPgSessionContextSummary {
+  const summary = parseSummary(row.summary);
+  return {
+    ...(summary.productPreference === undefined
+      ? {}
+      : { productPreference: summary.productPreference }),
+    ...(summary.productTopic === undefined ? {} : { productTopic: summary.productTopic }),
+    sessionIdHash: hashSessionId(row.session_id),
+    updatedAt: normalizeCreatedAt(row.updated_at),
+  };
+}
+
 function parseSummary(
   summary: SessionSummaryRow['summary'],
 ): Omit<SessionContextSummary, 'updatedAt'> {
@@ -239,6 +407,32 @@ function parseSummary(
       : {}),
     ...(typeof parsed.productTopic === 'string' ? { productTopic: parsed.productTopic } : {}),
   };
+}
+
+function optionalDate<Key extends string>(
+  key: Key,
+  value: Date | string | null | undefined,
+): Record<Key, string> | Record<string, never> {
+  return value === null || value === undefined
+    ? {}
+    : ({ [key]: normalizeCreatedAt(value) } as Record<Key, string>);
+}
+
+function parseCount(value: number | string | null | undefined): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
+  }
+
+  return 0;
+}
+
+function hashSessionId(sessionId: string): string {
+  return createHash('sha256').update(sessionId).digest('hex').slice(0, 12);
 }
 
 function parseSummaryJson(summary: string): Omit<SessionContextSummary, 'updatedAt'> {

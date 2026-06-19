@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { createPgSessionContextStore, migratePgSessionContextStore } from './pg-session-context.js';
+import {
+  createPgSessionContextStore,
+  migratePgSessionContextStore,
+  summarizePgSessionContext,
+} from './pg-session-context.js';
 import type { SessionTurn } from './session-context.js';
 
 class FakePgClient {
@@ -132,5 +136,85 @@ describe('createPgSessionContextStore', () => {
     expect(client.queries[0]?.values).toEqual(['session-1']);
     expect(client.queries[1]?.sql).toContain('delete from customer_agent_session_summaries');
     expect(client.queries[1]?.values).toEqual(['session-1']);
+  });
+
+  it('summarizes sanitized session context for ops dashboards without exposing raw session ids', async () => {
+    const client = new FakePgClient();
+    client.queuedRows = [
+      [
+        {
+          active_session_count: '3',
+          latest_turn_created_at: '2026-06-19T08:03:00.000Z',
+          stored_turn_count: '7',
+        },
+      ],
+      [
+        {
+          latest_summary_updated_at: '2026-06-19T08:04:00.000Z',
+          summarized_session_count: '2',
+        },
+      ],
+      [
+        { count: '1', label: 'Telegram 钱包监控' },
+        { count: '1', label: 'XXYY Pro' },
+      ],
+      [{ count: '2', label: 'XXYY 移动端登录' }],
+      [
+        {
+          session_id: 'session-1',
+          summary: {
+            productPreference: 'XXYY 移动端登录',
+            productTopic: 'XXYY Pro',
+          },
+          updated_at: '2026-06-19T08:04:00.000Z',
+        },
+        {
+          session_id: 'session-secret',
+          summary: '{"productTopic":"Telegram 钱包监控"}',
+          updated_at: '2026-06-19T08:02:00.000Z',
+        },
+      ],
+    ];
+
+    const summary = await summarizePgSessionContext({ client, recentLimit: 2 });
+
+    expect(summary).toEqual({
+      activeSessionCount: 3,
+      latestSummaryUpdatedAt: '2026-06-19T08:04:00.000Z',
+      latestTurnCreatedAt: '2026-06-19T08:03:00.000Z',
+      productPreferenceCounts: {
+        'XXYY 移动端登录': 2,
+      },
+      productTopicCounts: {
+        'Telegram 钱包监控': 1,
+        'XXYY Pro': 1,
+      },
+      recentSummaries: [
+        {
+          productPreference: 'XXYY 移动端登录',
+          productTopic: 'XXYY Pro',
+          sessionIdHash: summary.recentSummaries[0]?.sessionIdHash,
+          updatedAt: '2026-06-19T08:04:00.000Z',
+        },
+        {
+          productTopic: 'Telegram 钱包监控',
+          sessionIdHash: summary.recentSummaries[1]?.sessionIdHash,
+          updatedAt: '2026-06-19T08:02:00.000Z',
+        },
+      ],
+      storedTurnCount: 7,
+      summarizedSessionCount: 2,
+    });
+    expect(summary.recentSummaries[0]?.sessionIdHash).toMatch(/^[a-f0-9]{12}$/u);
+    expect(summary.recentSummaries[1]?.sessionIdHash).toMatch(/^[a-f0-9]{12}$/u);
+    expect(summary.recentSummaries.map((item) => item.sessionIdHash)).not.toContain('session-1');
+    expect(summary.recentSummaries.map((item) => item.sessionIdHash)).not.toContain(
+      'session-secret',
+    );
+    expect(client.queries[0]?.sql).toContain('from customer_agent_session_turns');
+    expect(client.queries[1]?.sql).toContain('from customer_agent_session_summaries');
+    expect(client.queries[2]?.sql).toContain("summary ->> 'productTopic'");
+    expect(client.queries[3]?.sql).toContain("summary ->> 'productPreference'");
+    expect(client.queries[4]?.values).toEqual([2]);
   });
 });

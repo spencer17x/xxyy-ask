@@ -10,6 +10,8 @@ import {
   createInMemorySessionContextStore,
   createPgSessionContextStore,
   sanitizeSessionText,
+  summarizePgSessionContext,
+  type PgSessionContextOpsSummary,
   type QualitySignalSink,
   type SessionContextStore,
 } from '@xxyy/agent-core';
@@ -223,6 +225,7 @@ interface OpsSummary {
   health: DeepHealthStatus;
   knowledge: KnowledgeStats;
   knowledgeCandidateQueues: KnowledgeCandidateQueueSummary;
+  sessionContext: PgSessionContextOpsSummary;
   txAnalysis: TxAnalysisReportSummary;
   txAnalysisRuntime?: TxAnalysisRuntimeSummary;
 }
@@ -1619,13 +1622,15 @@ async function createOpsSummary(
     });
     const feedbackStore = createPgFeedbackStore({ client: pool });
     const candidateStore = createPgKnowledgeOpsStore({ client: pool });
-    const [health, knowledge, feedback, knowledgeCandidateQueues, txAnalysis] = await Promise.all([
-      getHealthStatus(),
-      knowledgeStore.getStats(),
-      feedbackStore.getFeedbackStats({ limit: 10 }),
-      summarizeKnowledgeCandidateQueues(candidateStore, generatedAtMs),
-      getTxAnalysisReportStore().then((reportStore) => reportStore.summarizeReports({})),
-    ]);
+    const [health, knowledge, feedback, knowledgeCandidateQueues, sessionContext, txAnalysis] =
+      await Promise.all([
+        getHealthStatus(),
+        knowledgeStore.getStats(),
+        feedbackStore.getFeedbackStats({ limit: 10 }),
+        summarizeKnowledgeCandidateQueues(candidateStore, generatedAtMs),
+        summarizePgSessionContext({ client: pool }),
+        getTxAnalysisReportStore().then((reportStore) => reportStore.summarizeReports({})),
+      ]);
 
     return {
       feedback,
@@ -1633,6 +1638,7 @@ async function createOpsSummary(
       health,
       knowledge,
       knowledgeCandidateQueues,
+      sessionContext,
       txAnalysis,
     };
   } finally {

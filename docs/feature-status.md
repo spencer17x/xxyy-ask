@@ -120,9 +120,10 @@
 - [x] 自动质量原因、路由和缺口聚类：质量信号生成的候选会保留 `qualitySignalReason`、`qualitySignalAgentRoute` 和 `qualitySignalClusterKey`，受保护 `/api/ops/summary` 会返回 `qualitySignalReasonCounts`、`qualitySignalAgentRouteCounts`、`qualitySignalRiskLevelCounts`、`qualitySignalAgeBuckets`、`oldestQualitySignalCreatedAt` 与 `qualitySignalClusters`，`/ops` 运维页可看到 needs-review 自动回答质量缺口按原因、路由、风险等级、`<1h / 1-24h / 24h+` 积压年龄和 `agentRoute + reason + targetCategory + type` 聚类后的数量，也会在最近质量缺口里展示 `product_answer`、`transaction_analysis`、`boundary`、`clarify` 或 `preference_capture` 等路线；原因、路由、风险等级、聚类和年龄分桶行都可一键加载对应 `answer_quality_signal` 候选，受保护 `/api/knowledge/candidates` 支持 `qualitySignalReason`、`qualitySignalAgentRoute`、`riskLevel`、`qualitySignalClusterKey` 和 `qualitySignalAgeBucket=lt1h|h1to24h|gte24h` 过滤；`pnpm ops:smoke -- --ops-token` 会校验原因/路由/风险等级/年龄分桶/聚类存在、最早时间字段存在且合计匹配质量缺口数量，方便区分缺引用、低置信度、会话上下文缺失、工具失败或边界策略漂移主要发生在哪条自动回答路线，是否存在高风险自动回答缺口，以及是否集中在同一类长期滞留的知识缺口。
 - [x] Eval 失败原因聚合：受保护 `/api/ops/summary` 会返回 `evalFailureReasonCounts`，`/ops` 运维页可看到 `eval_failed` 候选的最新 eval 失败原因聚合数量，并保留最近失败样本列表；`pnpm ops:smoke -- --ops-token` 会校验原因聚合字段形状，方便按缺引用、分类漂移、期望答案缺失或边界策略退化等失败类型优先修正和回归。
 - [x] 多轮自动回答 smoke 验收：`pnpm ops:smoke -- --chat-follow-up` 会使用同一个 `sessionId` 连续请求产品问题和省略追问，校验追问仍自动回答、保留引用、返回 `agentRoute: "product_answer"` 且没有人工接管措辞；`pnpm ops:smoke -- --chat-clear-session` 会先捕获安全产品偏好、清除本次会话上下文，再发送短追问并要求返回澄清而不是继续沿用已清除上下文，便于发布前固定会话上下文、上下文清除和自动回答总调度的基础行为。
+- [x] 会话上下文运维观测：受保护 `/api/ops/summary` 会返回 `sessionContext`，包含活跃 session 数、已存储脱敏 turn 数、已生成安全摘要数、最近 turn/summary 时间、产品主题/安全产品偏好分布和只含 `sessionIdHash` 的最近摘要列表；`/ops` 会展示 Sessions 面板和顶层 session metrics，`pnpm ops:smoke -- --ops-token` 会校验会话上下文字段形状、hash 形状和主题/偏好计数不会超过摘要总数，方便在无人值守时确认多轮上下文是否正常沉淀，不暴露原始 session id。
 - [x] 自动回答边界 smoke 验收：`pnpm ops:smoke -- --chat` 会校验产品问答回答、引用、`agentRoute: "product_answer"` 和无人工接管措辞，`pnpm ops:smoke -- --chat-boundary` 会请求默认“帮我查一下钱包余额”的边界问题，校验返回 `realtime_account_query`、`agentRoute: "boundary"`、允许无引用且没有人工接管措辞，可用 `--boundary-question` 或 `API_SMOKE_CHAT_BOUNDARY_QUESTION` 固定其它边界样本。
 - [x] 自动回答路由观测：`CustomerAgentRuntime` 会在回答和 `/api/chat/stream` metadata 上标记 `agentRoute`，API 结构化日志也会记录同一字段，用于区分 `product_answer`、`transaction_analysis`、`boundary`、`clarify` 和 `preference_capture` 等内部决策路线，便于无人值守时按路由统计自动回答、澄清、边界和工具路径占比。
-- [ ] 多轮对话增强：在已有 `sessionId` 追问、上一轮引用、省略指代、非敏感产品偏好、安全会话摘要、最近 turn 裁剪兜底和清除本次会话上下文命令基础上，继续补更细粒度删除/过期策略、多渠道上下文一致性和更多指代样例。
+- [ ] 多轮对话增强：在已有 `sessionId` 追问、上一轮引用、省略指代、非敏感产品偏好、安全会话摘要、最近 turn 裁剪兜底、清除本次会话上下文命令和 ops 会话上下文观测基础上，继续补更细粒度删除/过期策略、多渠道上下文一致性和更多指代样例。
 - [ ] 自动回答总调度增强：在已有 `CustomerAgentRuntime` 产品问答、交易分析、边界回复、澄清问题统一路由、响应/日志 `agentRoute` 观测和质量缺口 route 聚合基础上，继续补更多端到端 smoke、工具权限审计和渠道接入一致性。
 - [ ] 回答质量策略增强：在已有低置信度、无引用、工具不可用、边界回复、负反馈质量信号、质量原因聚合、route 聚合和质量缺口聚类基础上，继续补自动重跑、跨运行失败聚类和趋势/成本观测。
 - [ ] 知识缺口闭环增强：在已有候选生成、审核、发布、gate、eval-only 候选流程、approved backlog 总数/类型分布和最早积压时间观测基础上，继续补候选合并、修正/回滚工作台、失败样本补充和自动回归重跑。
@@ -156,5 +157,5 @@
 - [x] 知识运营 Agent Runtime 第一版：`createKnowledgeOpsAgentRuntime` 提供内部知识运营 Agent Profile，所有候选查询、审核、发布、gate 和 Telegram sync 调用都会先校验 `opsAuthorized`，再通过 `ToolRegistry` 执行并写入结构化工具审计。
 - [ ] 知识运营后台增强：仍需补审计查询/可视化、更细的权限角色、基于 `mergedIntoCandidateId` 的候选合并工作台，以及发布失败修正/回滚工作台。
 - [ ] 自动质量后台：查看负反馈、低置信度回答、未知意图、失败取证、自动重跑结果和知识候选状态。
-- [ ] 会话后台：查看脱敏会话摘要、检索来源、反馈和自动处理结果。
+- [ ] 会话后台：已有 ops sessionContext 汇总和最近脱敏摘要列表；仍需补按 session hash 查看脱敏会话详情、检索来源、反馈和自动处理结果。
 - [ ] 知识库管理后台：支持文档编辑、审核、发布和知识缺口归类。
