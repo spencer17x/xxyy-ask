@@ -40,7 +40,10 @@ export function planAnswer(input: PlanAnswerInput): AnswerPlan {
     };
   }
 
-  if (isUnsafeUnsupportedClassification(input.classification)) {
+  if (
+    isUnsafeUnsupportedClassification(input.classification) ||
+    isPrivateCredentialClassification(input.classification)
+  ) {
     return {
       classification: input.classification,
       route: 'boundary',
@@ -66,5 +69,12 @@ export function isUnsafeUnsupportedClassification(classification: Classification
   return (
     classification.intent === 'unknown' &&
     classification.reason === 'unsafe or unsupported operation request'
+  );
+}
+
+export function isPrivateCredentialClassification(classification: Classification): boolean {
+  return (
+    classification.intent === 'unknown' &&
+    classification.reason === 'private credential or seed phrase disclosure'
   );
 }

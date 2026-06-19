@@ -232,6 +232,43 @@ describe('mineAnswerQualitySignals', () => {
     ]);
   });
 
+  it('creates a high-risk boundary candidate from a private-credential boundary signal', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer:
+            '不要发送私钥、助记词或 seed phrase。XXYY 客服 Agent 不需要这些信息，也不能帮你保管或恢复凭证。',
+          channel: 'web',
+          confidence: 0.35,
+          intent: 'unknown',
+          reason: 'boundary_private_credentials',
+          redactedQuestion: '我的助记词是 [sensitive_credential]',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.35,
+      question: '我的助记词是 [sensitive_credential]',
+      riskLevel: 'high',
+      status: 'needs_review',
+      targetCategory: 'policy_boundary',
+      type: 'boundary_example',
+    });
+    expect(result.candidates[0]?.redactionReport.riskFlags).toEqual(
+      expect.arrayContaining(['private_credentials']),
+    );
+  });
+
   it('creates a needs-review eval candidate from an unknown-intent clarification signal', () => {
     const result = mineAnswerQualitySignals({
       now,

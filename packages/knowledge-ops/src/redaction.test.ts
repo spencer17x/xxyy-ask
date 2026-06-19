@@ -46,6 +46,17 @@ describe('redactSupportText', () => {
     expect(product.report.riskFlags).toEqual([]);
     expect(product.report.riskLevel).toBe('low');
   });
+
+  it('redacts private credentials and marks them high risk', () => {
+    const result = redactSupportText(
+      '我的助记词是 abandon ability able about above absent absorb abstract absurd abuse access accident',
+    );
+
+    expect(result.text).toBe('我的助记词是 [REDACTED_PRIVATE_CREDENTIAL]');
+    expect(result.report.entities).toEqual([{ type: 'private_credential', count: 1 }]);
+    expect(result.report.riskFlags).toEqual(['private_credentials']);
+    expect(result.report.riskLevel).toBe('high');
+  });
 });
 
 describe('redactSupportMessage', () => {

@@ -10,7 +10,11 @@ import {
   VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
 
-import { isUnsafeUnsupportedClassification, planAnswer } from './answer-planner.js';
+import {
+  isPrivateCredentialClassification,
+  isUnsafeUnsupportedClassification,
+  planAnswer,
+} from './answer-planner.js';
 import { createNoopAuditSink, type ToolAuditEvent, type ToolAuditSink } from './audit.js';
 import {
   detectFollowUpDependency,
@@ -419,6 +423,16 @@ function createSessionUnavailableClarification(
 }
 
 function createRuntimeBoundaryAnswer(classification: Classification): ChatResponse {
+  if (isPrivateCredentialClassification(classification)) {
+    return {
+      answer:
+        '不要发送私钥、助记词或 seed phrase。XXYY 客服 Agent 不需要这些信息，也不能帮你保管或恢复凭证；如果你已经泄露了凭证，请立即停止使用相关钱包并在自己的钱包工具里转移资产或更换钱包。',
+      citations: [],
+      confidence: Math.min(classification.confidence, 0.7),
+      intent: classification.intent,
+    };
+  }
+
   if (isUnsafeUnsupportedClassification(classification)) {
     return {
       answer:
@@ -439,15 +453,17 @@ function recordBoundaryQualitySignal(
   redactedQuestion: string,
   classification: Classification,
 ): void {
-  const reason: QualitySignalReason = isUnsafeUnsupportedClassification(classification)
-    ? 'boundary_unsafe_request'
-    : response.intent === 'investment_advice'
-      ? 'boundary_investment_advice'
-      : response.intent === 'realtime_account_query'
-        ? 'boundary_private_data'
-        : response.intent === 'mev_or_chain_forensics'
-          ? 'boundary_chain_forensics'
-          : 'unknown_intent';
+  const reason: QualitySignalReason = isPrivateCredentialClassification(classification)
+    ? 'boundary_private_credentials'
+    : isUnsafeUnsupportedClassification(classification)
+      ? 'boundary_unsafe_request'
+      : response.intent === 'investment_advice'
+        ? 'boundary_investment_advice'
+        : response.intent === 'realtime_account_query'
+          ? 'boundary_private_data'
+          : response.intent === 'mev_or_chain_forensics'
+            ? 'boundary_chain_forensics'
+            : 'unknown_intent';
   recordQualitySignal(qualitySignals, request, {
     answer: response.answer,
     confidence: response.confidence,

@@ -77,6 +77,22 @@ describe('planAnswer', () => {
     });
   });
 
+  it('routes private credential disclosures to boundary', () => {
+    expect(
+      planAnswer({
+        classification: {
+          confidence: 0.35,
+          intent: 'unknown',
+          reason: 'private credential or seed phrase disclosure',
+        },
+        resolvedMessage:
+          '我的助记词是 abandon ability able about above absent absorb abstract absurd abuse access accident',
+      }),
+    ).toMatchObject({
+      route: 'boundary',
+    });
+  });
+
   it('routes private account queries to boundary', () => {
     expect(
       planAnswer({

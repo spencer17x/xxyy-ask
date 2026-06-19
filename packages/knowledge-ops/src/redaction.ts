@@ -43,6 +43,11 @@ const REDACTION_PATTERNS: RedactionPattern[] = [
   },
 ];
 
+const PRIVATE_CREDENTIAL_PATTERNS = [
+  /((?:私钥|助记词|恢复词|密钥)\s*(?:是|为|:|：)?\s*)((?:0x)?[a-fA-F0-9]{64}\b|(?:[a-z]{3,}\s+){11,23}[a-z]{3,})/giu,
+  /((?:private\s+key|seed\s+phrase|mnemonic|secret\s+recovery\s+phrase)\s*(?:is|:|：)?\s*)((?:0x)?[a-fA-F0-9]{64}\b|(?:[a-z]{3,}\s+){11,23}[a-z]{3,})/giu,
+];
+
 const PRIVATE_ACCOUNT_PATTERNS = [
   /钱包余额/u,
   /账户余额/u,
@@ -81,7 +86,7 @@ export interface RedactSupportTextResult {
 
 export function redactSupportText(text: string): RedactSupportTextResult {
   const entityCounts = new Map<RedactedEntityType, number>();
-  let redactedText = text;
+  let redactedText = redactPrivateCredentials(text, entityCounts);
 
   for (const pattern of REDACTION_PATTERNS) {
     redactedText = redactedText.replace(pattern.regex, () => {
@@ -94,6 +99,10 @@ export function redactSupportText(text: string): RedactSupportTextResult {
     const count = entityCounts.get(pattern.type) ?? 0;
     return count === 0 ? [] : [{ type: pattern.type, count }];
   });
+  const privateCredentialCount = entityCounts.get('private_credential') ?? 0;
+  if (privateCredentialCount > 0) {
+    entities.push({ type: 'private_credential', count: privateCredentialCount });
+  }
   const riskFlags = detectRiskFlags(redactedText);
   const riskLevel = calculateRiskLevel(entities, riskFlags);
 
@@ -119,6 +128,10 @@ export function redactSupportMessage(message: RawSupportMessage): RedactedSuppor
 function detectRiskFlags(text: string): KnowledgeRiskFlag[] {
   const flags: KnowledgeRiskFlag[] = [];
 
+  if (text.includes('[REDACTED_PRIVATE_CREDENTIAL]')) {
+    flags.push('private_credentials');
+  }
+
   if (PRIVATE_ACCOUNT_PATTERNS.some((pattern) => pattern.test(text))) {
     flags.push('private_account_query');
   }
@@ -132,6 +145,20 @@ function detectRiskFlags(text: string): KnowledgeRiskFlag[] {
   }
 
   return flags;
+}
+
+function redactPrivateCredentials(
+  text: string,
+  entityCounts: Map<RedactedEntityType, number>,
+): string {
+  let redactedText = text;
+  for (const pattern of PRIVATE_CREDENTIAL_PATTERNS) {
+    redactedText = redactedText.replace(pattern, (_match, prefix: string) => {
+      entityCounts.set('private_credential', (entityCounts.get('private_credential') ?? 0) + 1);
+      return `${prefix}[REDACTED_PRIVATE_CREDENTIAL]`;
+    });
+  }
+  return redactedText;
 }
 
 function calculateRiskLevel(

@@ -47,4 +47,17 @@ describe('session context', () => {
       ),
     ).toBe('我的钱包 [evm_address] 查余额，交易 [evm_tx_hash]');
   });
+
+  it('redacts seed phrases and private keys before storing session context', () => {
+    expect(
+      sanitizeSessionText(
+        '我的助记词是 abandon ability able about above absent absorb abstract absurd abuse access accident',
+      ),
+    ).toBe('我的助记词是 [sensitive_credential]');
+    expect(
+      sanitizeSessionText(
+        'private key: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ),
+    ).toBe('private key: [sensitive_credential]');
+  });
 });

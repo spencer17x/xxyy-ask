@@ -17,7 +17,13 @@ export interface RawSupportMessage {
   attachmentsMetadata?: Record<string, unknown>;
 }
 
-export type RedactedEntityType = 'email' | 'phone' | 'evm_address' | 'solana_address' | 'url';
+export type RedactedEntityType =
+  | 'email'
+  | 'phone'
+  | 'evm_address'
+  | 'solana_address'
+  | 'url'
+  | 'private_credential';
 
 export interface RedactedEntitySummary {
   type: RedactedEntityType;
@@ -27,6 +33,7 @@ export interface RedactedEntitySummary {
 export type KnowledgeRiskFlag =
   | 'private_account_query'
   | 'private_transaction_data'
+  | 'private_credentials'
   | 'investment_advice';
 
 export type KnowledgeRiskLevel = 'low' | 'medium' | 'high';

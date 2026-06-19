@@ -18,6 +18,7 @@ export type AnswerQualitySignalReason =
   | 'ambiguous_followup'
   | 'boundary_investment_advice'
   | 'boundary_private_data'
+  | 'boundary_private_credentials'
   | 'boundary_unsafe_request'
   | 'low_confidence'
   | 'low_confidence_missing_citations'
@@ -89,7 +90,11 @@ function createCandidateFromSignal(
   signal: AnswerQualitySignal,
   now: string,
 ): KnowledgeCandidate | undefined {
-  if (signal.reason === 'boundary_private_data' || signal.reason === 'boundary_investment_advice') {
+  if (
+    signal.reason === 'boundary_private_data' ||
+    signal.reason === 'boundary_investment_advice' ||
+    signal.reason === 'boundary_private_credentials'
+  ) {
     return createBoundaryCandidate(signal, now);
   }
 
@@ -325,6 +330,9 @@ function boundaryAnswerFor(reason: AnswerQualitySignalReason): string {
   if (reason === 'boundary_investment_advice') {
     return 'XXYY 客服 Agent 可以说明产品功能和风险提示，但不能提供买入、卖出、价格预测或投资收益建议。请自行评估风险。';
   }
+  if (reason === 'boundary_private_credentials') {
+    return 'XXYY 客服 Agent 不需要私钥、助记词、seed phrase 或恢复词，也不能保管或恢复这些凭证。请不要在客服对话中发送。';
+  }
 
   return 'XXYY 客服 Agent 不能查询账户、订单、钱包余额或私有交易记录。请在已登录的 XXYY 产品页面或你的钱包/交易所内自行核对。';
 }
@@ -363,6 +371,9 @@ function ensureBoundaryRisk(
   }
   if (reason === 'boundary_private_data') {
     riskFlags.add('private_account_query');
+  }
+  if (reason === 'boundary_private_credentials') {
+    riskFlags.add('private_credentials');
   }
 
   return {

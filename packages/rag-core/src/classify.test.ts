@@ -105,4 +105,25 @@ describe('classifyQuestion', () => {
   it('does not classify account hacking requests as how-to product support', () => {
     expect(classifyQuestion('How to hack XXYY account?').intent).toBe('unknown');
   });
+
+  it('classifies private key and seed phrase disclosure as a credential boundary', () => {
+    expect(
+      classifyQuestion(
+        '我的助记词是 abandon ability able about above absent absorb abstract absurd abuse access accident',
+      ),
+    ).toMatchObject({
+      confidence: 0.35,
+      intent: 'unknown',
+      reason: 'private credential or seed phrase disclosure',
+    });
+    expect(
+      classifyQuestion(
+        'Here is my private key: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ),
+    ).toMatchObject({
+      confidence: 0.35,
+      intent: 'unknown',
+      reason: 'private credential or seed phrase disclosure',
+    });
+  });
 });

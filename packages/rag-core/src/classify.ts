@@ -31,6 +31,11 @@ const unsafeOperationPatterns = [
   /盗号|攻击|破解|钓鱼/u,
 ];
 
+const privateCredentialPatterns = [
+  /\b(private\s+key|seed\s+phrase|mnemonic|secret\s+recovery\s+phrase)\b/u,
+  /私钥|助记词|恢复词|密钥/u,
+];
+
 const productOperationPatterns = [
   /如何.*(买入|卖出|交易|挂单|swap|设置)/u,
   /怎么.*(买入|卖出|交易|挂单|swap|设置|操作|登录|导出|导入|生成|升级)/u,
@@ -105,6 +110,10 @@ export function classifyQuestion(question: string): Classification {
 
   if (unsafeOperationPatterns.some((pattern) => pattern.test(normalized))) {
     return createClassification('unknown', 0.3, 'unsafe or unsupported operation request');
+  }
+
+  if (privateCredentialPatterns.some((pattern) => pattern.test(normalized))) {
+    return createClassification('unknown', 0.35, 'private credential or seed phrase disclosure');
   }
 
   const investmentRule = rules.find((rule) => rule.intent === 'investment_advice');

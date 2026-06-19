@@ -160,6 +160,63 @@ describe('createCustomerAgentRuntime', () => {
     ]);
   });
 
+  it('returns private credential boundary answers without storing pasted seed phrases', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const productExecute = vi.fn(() => {
+      throw new Error('product tool should not be called');
+    });
+    const txExecute = vi.fn(() => {
+      throw new Error('transaction tool should not be called');
+    });
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      policy: toolPolicy,
+      execute: productExecute,
+    });
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute: txExecute,
+    });
+
+    const response = await createCustomerAgentRuntime({ qualitySignals, registry }).ask({
+      channel: 'web',
+      message:
+        '我的助记词是 abandon ability able about above absent absorb abstract absurd abuse access accident',
+      sessionId: 'session-secret',
+    });
+
+    expect(productExecute).not.toHaveBeenCalled();
+    expect(txExecute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.35,
+      intent: 'unknown',
+    });
+    expect(response.answer).toContain('不要发送私钥、助记词或 seed phrase');
+    expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.35,
+        intent: 'unknown',
+        reason: 'boundary_private_credentials',
+        redactedQuestion: '我的助记词是 [sensitive_credential]',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('records chain-forensics boundary answers as quality signals', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();
