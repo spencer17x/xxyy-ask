@@ -227,6 +227,13 @@ export function createCustomerAgentRuntime(
         confidence: 0.55,
         intent: 'tx_sandwich_detection',
       };
+      recordQualitySignal(qualitySignals, request, {
+        answer: response.answer,
+        confidence: response.confidence,
+        intent: response.intent,
+        reason: 'ambiguous_followup',
+        redactedQuestion: request.message,
+      });
       await appendSessionTurns(options.sessionContext, request, response, {
         userContent: request.message,
       });

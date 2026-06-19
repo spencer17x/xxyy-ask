@@ -14,6 +14,7 @@ import type {
 } from './types.js';
 
 export type AnswerQualitySignalReason =
+  | 'ambiguous_followup'
   | 'boundary_investment_advice'
   | 'boundary_private_data'
   | 'low_confidence'
@@ -92,7 +93,11 @@ function createCandidateFromSignal(
   if (PRODUCT_GAP_REASONS.has(signal.reason)) {
     return createProductGapCandidate(signal, now);
   }
-  if (signal.reason === 'unknown_intent' || signal.reason === 'session_unavailable') {
+  if (
+    signal.reason === 'ambiguous_followup' ||
+    signal.reason === 'unknown_intent' ||
+    signal.reason === 'session_unavailable'
+  ) {
     return createUnknownIntentCandidate(signal, now);
   }
   if (isTransactionFailureSignal(signal)) {

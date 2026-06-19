@@ -1,6 +1,7 @@
 import type { ChatChannel, Intent } from '@xxyy/shared';
 
 export type QualitySignalReason =
+  | 'ambiguous_followup'
   | 'boundary_investment_advice'
   | 'boundary_private_data'
   | 'low_confidence'

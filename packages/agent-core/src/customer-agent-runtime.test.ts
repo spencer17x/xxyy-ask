@@ -675,6 +675,7 @@ describe('createCustomerAgentRuntime', () => {
 
   it('asks for clarification when a transaction follow-up has multiple recent hashes', async () => {
     const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
     const sessionContext = createInMemorySessionContextStore();
     const firstTx = '0x1111111111111111111111111111111111111111111111111111111111111111';
     const secondTx = '0x2222222222222222222222222222222222222222222222222222222222222222';
@@ -704,7 +705,7 @@ describe('createCustomerAgentRuntime', () => {
       execute,
     });
 
-    const runtime = createCustomerAgentRuntime({ registry, sessionContext });
+    const runtime = createCustomerAgentRuntime({ qualitySignals, registry, sessionContext });
     await runtime.ask({ channel: 'web', message: firstTx, sessionId: 'session-many-tx' });
     await runtime.ask({ channel: 'web', message: secondTx, sessionId: 'session-many-tx' });
     const response = await runtime.ask({
@@ -720,6 +721,18 @@ describe('createCustomerAgentRuntime', () => {
     });
     expect(response.answer).toContain('请发送单笔完整交易哈希');
     expect(execute).toHaveBeenCalledTimes(2);
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.55,
+        intent: 'tx_sandwich_detection',
+        reason: 'ambiguous_followup',
+        redactedQuestion: '这笔呢？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
   });
 
   it('records the clarification answer on unknown-intent quality signals', async () => {

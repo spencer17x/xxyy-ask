@@ -237,6 +237,48 @@ describe('mineAnswerQualitySignals', () => {
     ]);
   });
 
+  it('creates a needs-review eval candidate from an ambiguous follow-up clarification signal', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer: '你想分析哪一笔交易？请发送单笔完整交易哈希或对应主网浏览器链接。',
+          channel: 'web',
+          confidence: 0.55,
+          intent: 'tx_sandwich_detection',
+          reason: 'ambiguous_followup',
+          redactedQuestion: '这笔呢？',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.55,
+      proposedAnswer: '你想分析哪一笔交易？请发送单笔完整交易哈希或对应主网浏览器链接。',
+      question: '这笔呢？',
+      status: 'needs_review',
+      targetCategory: 'policy_boundary',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer: '你想分析哪一笔交易？请发送单笔完整交易哈希或对应主网浏览器链接。',
+        expectedIntent: 'tx_sandwich_detection',
+        minCitations: 0,
+        question: '这笔呢？',
+        requireExpectedAnswerText: false,
+      },
+    ]);
+  });
+
   it('creates a needs-review eval candidate from a transaction analysis failure signal', () => {
     const result = mineAnswerQualitySignals({
       now,
