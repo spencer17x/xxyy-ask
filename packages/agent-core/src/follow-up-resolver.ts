@@ -148,10 +148,16 @@ function isTransactionFollowUp(message: string): boolean {
 
 function isShortProductFollowUp(message: string): boolean {
   const normalized = message.normalize('NFKC').trim();
-  if (normalized.length > 24) {
+  if (normalized.length > 24 || hasExplicitProductTopic(normalized)) {
     return false;
   }
   return /^(那|这个|刚才|上一条)?(怎么|如何|有哪些|可以|支持|升级|配置|设置)/u.test(normalized);
+}
+
+function hasExplicitProductTopic(message: string): boolean {
+  return /XXYY|Pro|Telegram|TG|钱包监控|自动交易|Raydium自动卖|开盘狙击|移动端|手机|登录|扫链|打满|趋势|收藏|持仓管理|收益统计|快捷交易|钱包管理|关注钱包/u.test(
+    message,
+  );
 }
 
 function inferRecentProductTopic(turns: SessionTurn[]): string | undefined {

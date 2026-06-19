@@ -41,6 +41,27 @@ describe('resolveFollowUp', () => {
     });
   });
 
+  it('keeps explicit product questions unchanged even when previous product context exists', () => {
+    const recentTurns: SessionTurn[] = [
+      {
+        content: 'XXYY Pro 有哪些权益？',
+        createdAt: '2026-06-19T00:00:00.000Z',
+        metadata: { intent: 'product_qa' },
+        role: 'user',
+      },
+    ];
+
+    expect(
+      resolveFollowUp({
+        message: '如何设置 Telegram 钱包监控？',
+        recentTurns,
+      }),
+    ).toEqual({
+      resolution: 'unchanged',
+      resolvedMessage: '如何设置 Telegram 钱包监控？',
+    });
+  });
+
   it('resolves transaction follow-ups when exactly one recent transaction exists', () => {
     const recentTurns: SessionTurn[] = [
       {

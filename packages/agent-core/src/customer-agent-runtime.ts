@@ -313,7 +313,7 @@ function missingSessionDependencyForRequest(request: ChatRequest): FollowUpDepen
     return dependency;
   }
 
-  return dependency === 'transaction_reference' ? dependency : undefined;
+  return dependency;
 }
 
 function recordToolFailure(

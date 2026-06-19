@@ -553,6 +553,97 @@ describe('createCustomerAgentRuntime', () => {
     ]);
   });
 
+  it('records session_unavailable when a product follow-up has no session id', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        answer: 'tool should not be called',
+        citations: [],
+        confidence: 0.8,
+        intent: 'how_to',
+      } satisfies ChatResponse),
+    );
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createCustomerAgentRuntime({ qualitySignals, registry }).ask({
+      channel: 'web',
+      message: '怎么升级？',
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.45,
+      intent: 'how_to',
+    });
+    expect(response.answer).toContain('缺少这次会话的上一轮上下文');
+    expect(response.answer).toContain('具体功能');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.45,
+        intent: 'how_to',
+        reason: 'session_unavailable',
+        redactedQuestion: '怎么升级？',
+        sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
+  it('keeps explicit product how-to questions self-contained without a session id', async () => {
+    const registry = createToolRegistry();
+    const response: ChatResponse = {
+      answer: '可以在 Telegram 钱包监控配置页完成设置。',
+      citations: [
+        {
+          excerpt: 'Telegram 钱包监控配置步骤。',
+          file: 'docs/product-features/telegram-wallet-monitoring.md',
+          title: 'Telegram 钱包监控',
+        },
+      ],
+      confidence: 0.82,
+      intent: 'how_to',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    await expect(
+      createCustomerAgentRuntime({ registry }).ask({
+        channel: 'web',
+        message: '如何设置 Telegram 钱包监控？',
+      }),
+    ).resolves.toEqual(response);
+    expect(execute).toHaveBeenCalledWith({
+      channel: 'web',
+      question: '如何设置 Telegram 钱包监控？',
+    });
+  });
+
   it('uses session context to resolve one recent transaction follow-up', async () => {
     const registry = createToolRegistry();
     const sessionContext = createInMemorySessionContextStore();
