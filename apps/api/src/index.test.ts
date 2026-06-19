@@ -3395,6 +3395,78 @@ describe('createRequestHandler', () => {
     expect(payload.candidate).not.toHaveProperty('publishedTarget');
   });
 
+  it('passes merge-duplicate targets through the protected review API', async () => {
+    let reviewInput: unknown;
+    const store: KnowledgeCandidateStore = {
+      addCandidates: () => Promise.resolve([]),
+      getCandidate() {
+        throw new Error('getCandidate should not be called for review requests');
+      },
+      listCandidateRuns() {
+        throw new Error('listCandidateRuns should not be called for review requests');
+      },
+      listCandidates: () => Promise.resolve([]),
+      markCandidateEvalResult() {
+        throw new Error('markCandidateEvalResult should not be called for review requests');
+      },
+      markCandidateIngested() {
+        throw new Error('markCandidateIngested should not be called for review requests');
+      },
+      markCandidatePublished() {
+        throw new Error('markCandidatePublished should not be called for review requests');
+      },
+      recordCandidateRun() {
+        throw new Error('recordCandidateRun should not be called for review requests');
+      },
+      reviewCandidate(candidateId, input) {
+        reviewInput = { candidateId, input };
+        return Promise.resolve(
+          knowledgeCandidate({
+            reviewNotes: 'Merged duplicate into kc_quality_cluster_primary.\n\n同一组质量缺口。',
+            reviewer: 'ops@example.com',
+            status: 'rejected',
+            updatedAt: '2026-06-17T03:00:00.000Z',
+          }),
+        );
+      },
+    };
+    const handler = createRequestHandler({
+      env: { API_OPS_TOKEN: 'secret-token' },
+      getKnowledgeCandidateStore: () => Promise.resolve(store),
+    });
+
+    const response = await callHandler(handler, {
+      body: {
+        action: 'merge_duplicate',
+        mergedIntoCandidateId: ' kc_quality_cluster_primary ',
+        notes: ' 同一组质量缺口。 ',
+        reviewedAt: '2026-06-17T03:00:00.000Z',
+        reviewer: ' ops@example.com ',
+      },
+      headers: { Authorization: 'Bearer secret-token' },
+      method: 'PATCH',
+      url: '/api/knowledge/candidates/kc_quality_cluster_duplicate/review',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(reviewInput).toEqual({
+      candidateId: 'kc_quality_cluster_duplicate',
+      input: {
+        action: 'merge_duplicate',
+        mergedIntoCandidateId: 'kc_quality_cluster_primary',
+        notes: '同一组质量缺口。',
+        reviewedAt: '2026-06-17T03:00:00.000Z',
+        reviewer: 'ops@example.com',
+      },
+    });
+    const payload = JSON.parse(response.body) as { candidate: Record<string, unknown> };
+    expect(payload.candidate).toMatchObject({
+      id: 'kc_telegram_setup',
+      reviewNotes: 'Merged duplicate into kc_quality_cluster_primary.\n\n同一组质量缺口。',
+      status: 'rejected',
+    });
+  });
+
   it('returns 404 when reviewing a missing knowledge candidate', async () => {
     const handler = createRequestHandler({
       env: { API_OPS_TOKEN: 'secret-token' },

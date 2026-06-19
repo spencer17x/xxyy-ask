@@ -576,6 +576,41 @@ describe('createPgKnowledgeOpsStore', () => {
     expect(reviewed.publishedTarget).toBeUndefined();
   });
 
+  it('records merge-duplicate targets in Postgres review notes', async () => {
+    const client = new FakePgClient();
+    client.rows = [
+      {
+        ...toPgCandidateRow(candidate({ status: 'rejected' })),
+        review_notes: 'Merged duplicate into kc_quality_cluster_primary.\n\n同一组质量缺口。',
+        reviewer: 'ops@example.com',
+        updated_at: '2026-06-17T03:00:00.000Z',
+      },
+    ];
+    const store = createPgKnowledgeOpsStore({ client });
+
+    const reviewed = await store.reviewCandidate('kc_quality_cluster_duplicate', {
+      action: 'merge_duplicate',
+      mergedIntoCandidateId: 'kc_quality_cluster_primary',
+      notes: '同一组质量缺口。',
+      reviewedAt: '2026-06-17T03:00:00.000Z',
+      reviewer: 'ops@example.com',
+    });
+
+    expect(client.queries[0]?.values).toEqual([
+      'rejected',
+      'ops@example.com',
+      'Merged duplicate into kc_quality_cluster_primary.\n\n同一组质量缺口。',
+      '2026-06-17T03:00:00.000Z',
+      'kc_quality_cluster_duplicate',
+    ]);
+    expect(reviewed).toMatchObject({
+      reviewNotes: 'Merged duplicate into kc_quality_cluster_primary.\n\n同一组质量缺口。',
+      reviewer: 'ops@example.com',
+      status: 'rejected',
+      updatedAt: '2026-06-17T03:00:00.000Z',
+    });
+  });
+
   it('rejects reviewing a missing Postgres candidate', async () => {
     const client = new FakePgClient();
     client.rows = [];

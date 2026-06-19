@@ -70,13 +70,24 @@ export const listKnowledgeCandidatesOutputSchema = z.object({
   count: z.number().int().nonnegative(),
 });
 
-export const reviewKnowledgeCandidateInputSchema = z.object({
-  action: reviewActionSchema,
-  id: nonEmptyStringSchema,
-  notes: z.string().trim().min(1).optional(),
-  reviewedAt: nonEmptyStringSchema.optional(),
-  reviewer: nonEmptyStringSchema,
-});
+export const reviewKnowledgeCandidateInputSchema = z
+  .object({
+    action: reviewActionSchema,
+    id: nonEmptyStringSchema,
+    mergedIntoCandidateId: nonEmptyStringSchema.optional(),
+    notes: z.string().trim().min(1).optional(),
+    reviewedAt: nonEmptyStringSchema.optional(),
+    reviewer: nonEmptyStringSchema,
+  })
+  .superRefine((input, context) => {
+    if (input.action === 'merge_duplicate' && input.mergedIntoCandidateId === undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: 'mergedIntoCandidateId is required when action is merge_duplicate.',
+        path: ['mergedIntoCandidateId'],
+      });
+    }
+  });
 
 export const reviewKnowledgeCandidateOutputSchema = z.object({
   candidate: knowledgeCandidateSchema,

@@ -176,7 +176,7 @@ export function createPgKnowledgeOpsStore(
         where id = $5
         returning ${candidateReturnColumns()}
         `,
-        [status, input.reviewer, input.notes ?? null, reviewedAt, candidateId],
+        [status, input.reviewer, createReviewNotes(input) ?? null, reviewedAt, candidateId],
       );
       const row = response.rows[0];
       if (row === undefined) {
@@ -814,6 +814,15 @@ function reviewActionToStatus(
     case 'request_changes':
       return 'draft';
   }
+}
+
+function createReviewNotes(input: ReviewKnowledgeCandidateInput): string | undefined {
+  if (input.action !== 'merge_duplicate' || input.mergedIntoCandidateId === undefined) {
+    return input.notes;
+  }
+
+  const mergeNote = `Merged duplicate into ${input.mergedIntoCandidateId}.`;
+  return input.notes === undefined ? mergeNote : `${mergeNote}\n\n${input.notes}`;
 }
 
 function candidateReturnColumns(): string {

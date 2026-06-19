@@ -23,7 +23,7 @@ Use the internal XXYY knowledge-ops MCP server for the audited knowledge learnin
 
 1. Use `sync_telegram_support` only for explicitly authorized support chats configured by the service environment.
 2. Use `list_knowledge_candidates` to inspect `needs_review`, `approved`, `published`, `eval_failed`, or other candidate queues.
-3. Use `review_knowledge_candidate` to apply a human decision. Prefer `approve` only when the candidate is product-support knowledge, redacted, and not private account/order/balance data or investment advice.
+3. Use `review_knowledge_candidate` to apply a human decision. Prefer `approve` only when the candidate is product-support knowledge, redacted, and not private account/order/balance data or investment advice. When using `merge_duplicate`, provide `mergedIntoCandidateId` so the rejected duplicate keeps a traceable merge target.
 4. Use `publish_knowledge_candidate` only after a candidate is `approved`. Never publish `draft`, `needs_review`, `rejected`, `ingested`, `eval_passed`, or `eval_failed` candidates.
 5. After publishing, use `run_knowledge_gate` with `{ id, fast: true }` for the first pass. Treat `status: "passed"` as the candidate reaching `eval_passed`; treat `status: "failed"` as requiring correction or rollback planning.
 

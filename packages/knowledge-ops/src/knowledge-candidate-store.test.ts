@@ -117,6 +117,26 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
     ).rejects.toThrow('Knowledge candidate not found: missing');
   });
 
+  it('records merge-duplicate targets in review notes', async () => {
+    const store = createInMemoryKnowledgeCandidateStore();
+    await store.addCandidates([candidate({ id: 'candidate_primary' }), candidate()]);
+
+    const reviewed = await store.reviewCandidate('candidate_1', {
+      action: 'merge_duplicate',
+      mergedIntoCandidateId: 'candidate_primary',
+      notes: '同一组缺引用质量信号。',
+      reviewedAt: '2026-06-17T03:00:00.000Z',
+      reviewer: 'ops@example.com',
+    });
+
+    expect(reviewed).toMatchObject({
+      reviewNotes: 'Merged duplicate into candidate_primary.\n\n同一组缺引用质量信号。',
+      reviewer: 'ops@example.com',
+      status: 'rejected',
+      updatedAt: '2026-06-17T03:00:00.000Z',
+    });
+  });
+
   it('marks only approved candidates as published', async () => {
     const store = createInMemoryKnowledgeCandidateStore();
     await store.addCandidates([

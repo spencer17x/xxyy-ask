@@ -42,6 +42,7 @@ export type KnowledgeCandidateReviewAction =
 
 export interface ReviewKnowledgeCandidateInput {
   action: KnowledgeCandidateReviewAction;
+  mergedIntoCandidateId?: string;
   reviewer: string;
   reviewedAt?: string;
   notes?: string;
@@ -311,9 +312,25 @@ function applyReview(
     ...candidate,
     status,
     reviewer: input.reviewer,
-    ...(input.notes === undefined ? {} : { reviewNotes: input.notes }),
+    ...reviewNotesPatch(input),
     updatedAt,
   };
+}
+
+function reviewNotesPatch(
+  input: ReviewKnowledgeCandidateInput,
+): Pick<KnowledgeCandidate, 'reviewNotes'> | Record<string, never> {
+  const reviewNotes = createReviewNotes(input);
+  return reviewNotes === undefined ? {} : { reviewNotes };
+}
+
+function createReviewNotes(input: ReviewKnowledgeCandidateInput): string | undefined {
+  if (input.action !== 'merge_duplicate' || input.mergedIntoCandidateId === undefined) {
+    return input.notes;
+  }
+
+  const mergeNote = `Merged duplicate into ${input.mergedIntoCandidateId}.`;
+  return input.notes === undefined ? mergeNote : `${mergeNote}\n\n${input.notes}`;
 }
 
 function applyPublished(

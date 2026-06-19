@@ -143,6 +143,75 @@ describe('createKnowledgeOpsTools', () => {
     });
   });
 
+  it('requires and forwards merge-duplicate target candidates', async () => {
+    const registry = createToolRegistry();
+    const reviewCandidate = vi.fn(() =>
+      Promise.resolve({
+        confidence: 0.82,
+        createdAt: '2026-06-17T02:00:00.000Z',
+        existingKnowledgeMatches: [],
+        generatedEvalCases: [],
+        id: 'kc_quality_cluster_duplicate',
+        proposedAnswer: '在钱包监控里配置 Telegram Bot。',
+        question: 'Telegram 通知怎么设置？',
+        redactionReport: { entities: [], riskFlags: [], riskLevel: 'low' },
+        reviewNotes: 'Merged duplicate into kc_quality_cluster_primary.',
+        reviewer: 'ops@example.com',
+        riskLevel: 'low' as const,
+        sourceRefs: [],
+        status: 'rejected' as const,
+        targetCategory: 'product_faq' as const,
+        type: 'faq' as const,
+        updatedAt: '2026-06-17T03:00:00.000Z',
+      }),
+    );
+
+    for (const tool of createKnowledgeOpsTools({
+      listCandidates() {
+        throw new Error('listCandidates should not be called');
+      },
+      publishKnowledgeCandidate() {
+        throw new Error('publishKnowledgeCandidate should not be called');
+      },
+      reviewCandidate,
+      runKnowledgeGate() {
+        throw new Error('runKnowledgeGate should not be called');
+      },
+      syncTelegramSupport() {
+        throw new Error('syncTelegramSupport should not be called');
+      },
+    })) {
+      registry.register(tool);
+    }
+
+    await expect(
+      registry.execute('review_knowledge_candidate', {
+        action: 'merge_duplicate',
+        id: 'kc_quality_cluster_duplicate',
+        mergedIntoCandidateId: ' kc_quality_cluster_primary ',
+        reviewer: ' ops@example.com ',
+      }),
+    ).resolves.toMatchObject({
+      candidate: {
+        id: 'kc_quality_cluster_duplicate',
+        status: 'rejected',
+      },
+    });
+    expect(reviewCandidate).toHaveBeenCalledWith('kc_quality_cluster_duplicate', {
+      action: 'merge_duplicate',
+      mergedIntoCandidateId: 'kc_quality_cluster_primary',
+      reviewer: 'ops@example.com',
+    });
+
+    await expect(
+      registry.execute('review_knowledge_candidate', {
+        action: 'merge_duplicate',
+        id: 'kc_quality_cluster_duplicate',
+        reviewer: 'ops@example.com',
+      }),
+    ).rejects.toThrow('mergedIntoCandidateId is required when action is merge_duplicate.');
+  });
+
   it('registers publish, gate, and telegram sync operations for internal agents', async () => {
     const registry = createToolRegistry();
     const publishKnowledgeCandidate = vi.fn(() =>

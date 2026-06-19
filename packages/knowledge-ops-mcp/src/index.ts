@@ -6,12 +6,12 @@ import {
   KnowledgeCandidateNotFoundError,
   createPgKnowledgeOpsStore,
   publishKnowledgeCandidate as publishCandidateToKnowledgeSource,
-  type ReviewKnowledgeCandidateInput,
 } from '@xxyy/knowledge-ops';
 import { createPgPool, loadRagConfig, loadWorkspaceEnv, resolveWorkspaceCwd } from '@xxyy/rag-core';
 
 import { createRunKnowledgeGateCommandArgs } from './commands.js';
 import { toListCandidatesFilter } from './filters.js';
+import { toReviewCandidateInput } from './review-input.js';
 import { createKnowledgeOpsMcpServer } from './server.js';
 import { createKnowledgeOpsToolHandlers } from './tools.js';
 
@@ -136,18 +136,4 @@ function runWorkspaceCommand(args: string[]): Promise<{
       });
     });
   });
-}
-
-function toReviewCandidateInput(input: {
-  action: ReviewKnowledgeCandidateInput['action'];
-  notes?: string | undefined;
-  reviewedAt?: string | undefined;
-  reviewer: string;
-}): ReviewKnowledgeCandidateInput {
-  return {
-    action: input.action,
-    reviewer: input.reviewer,
-    ...(input.notes === undefined ? {} : { notes: input.notes }),
-    ...(input.reviewedAt === undefined ? {} : { reviewedAt: input.reviewedAt }),
-  };
 }

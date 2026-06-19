@@ -2511,15 +2511,33 @@ function parseKnowledgeCandidateReviewPayload(value: unknown): ReviewKnowledgeCa
   }
 
   const record = value as Record<string, unknown>;
+  const action = parseKnowledgeCandidateReviewAction(record.action);
   const reviewedAt = parseOptionalKnowledgeReviewedAt(record.reviewedAt);
+  const mergedIntoCandidateId = parseKnowledgeCandidateMergeTarget(
+    action,
+    record.mergedIntoCandidateId,
+  );
   const notes = parseOptionalText(record.notes, 'notes', MAX_KNOWLEDGE_REVIEW_NOTES_CHARS);
 
   return {
-    action: parseKnowledgeCandidateReviewAction(record.action),
+    action,
+    ...(mergedIntoCandidateId === undefined ? {} : { mergedIntoCandidateId }),
     ...(notes === undefined ? {} : { notes }),
     ...(reviewedAt === undefined ? {} : { reviewedAt }),
     reviewer: parseRequiredText(record.reviewer, 'reviewer', MAX_KNOWLEDGE_REVIEW_REVIEWER_CHARS),
   };
+}
+
+function parseKnowledgeCandidateMergeTarget(
+  action: ReviewKnowledgeCandidateInput['action'],
+  value: unknown,
+): string | undefined {
+  const mergedIntoCandidateId = parseOptionalText(value, 'mergedIntoCandidateId', 200);
+  if (action === 'merge_duplicate' && mergedIntoCandidateId === undefined) {
+    throw new BadRequestError('mergedIntoCandidateId is required for merge_duplicate.');
+  }
+
+  return mergedIntoCandidateId;
 }
 
 function parseKnowledgeCandidateReviewAction(

@@ -525,7 +525,9 @@ Eval 失败时不应静默上线，应保留发布记录、失败原因和回滚
 
 - `id: string`
 - `action: "approve" | "reject" | "request_changes" | "merge_duplicate"`
-- `reviewNotes?: string`
+- `reviewer: string`
+- `notes?: string`
+- `mergedIntoCandidateId?: string`，当 `action` 为 `merge_duplicate` 时必填，用于记录重复候选合并目标。
 - `editedQuestion?: string`
 - `editedAnswer?: string`
 

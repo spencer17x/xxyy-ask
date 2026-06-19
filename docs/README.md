@@ -85,7 +85,7 @@ TX_ANALYSIS_PROVIDER=mock pnpm tx:mcp:smoke
 
 产品客服 MCP 可以用 `pnpm product:mcp` 作为 stdio MCP server 启动命令，暴露 `search_product_docs` 和 `answer_product_question`，并复用 `@xxyy/agent-core` 的产品工具定义。Agent 接入时配套使用 `skills/xxyy-product-support`，只回答 XXYY 产品功能、配置步骤、权益说明和公开更新，不用于账户、订单、余额、私有交易记录或投资建议。
 
-知识运营 MCP 可以用 `pnpm knowledge-ops:mcp` 作为内部 stdio MCP server 启动命令，并配套使用 `skills/xxyy-knowledge-ops`。它暴露 `list_knowledge_candidates`、`review_knowledge_candidate`、`publish_knowledge_candidate`、`run_knowledge_gate` 和 `sync_telegram_support`。该 server 只用于受信任的内部 Agent：第一版必须人工审核后才能发布，未审核 Telegram 内容只能停留在候选知识队列，不能进入正式 RAG 知识库。
+知识运营 MCP 可以用 `pnpm knowledge-ops:mcp` 作为内部 stdio MCP server 启动命令，并配套使用 `skills/xxyy-knowledge-ops`。它暴露 `list_knowledge_candidates`、`review_knowledge_candidate`、`publish_knowledge_candidate`、`run_knowledge_gate` 和 `sync_telegram_support`；`review_knowledge_candidate` 使用 `merge_duplicate` 时必须提供 `mergedIntoCandidateId`，以便重复候选保留合并目标。该 server 只用于受信任的内部 Agent：第一版必须人工审核后才能发布，未审核 Telegram 内容只能停留在候选知识队列，不能进入正式 RAG 知识库。
 
 Agent 接入时可以把 `pnpm tx:mcp` 作为 stdio MCP server 启动命令，并配套使用仓库内的 Skill 源文件 `skills/xxyy-transaction-analysis`。该 Skill 会提醒 agent 只对公开交易哈希/浏览器链接做 交易夹子检测，`unknown` 只表示裸 EVM 哈希在 Base、Ethereum、BSC 间自动探测，不能用于账户、订单、余额、私有交易记录或投资建议。
 
