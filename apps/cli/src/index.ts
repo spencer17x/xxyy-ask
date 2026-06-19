@@ -2,7 +2,11 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 
-import { createCustomerAgentChatService, migratePgSessionContextStore } from '@xxyy/agent-core';
+import {
+  createCustomerAgentChatService,
+  createPgSessionContextStore,
+  migratePgSessionContextStore,
+} from '@xxyy/agent-core';
 import {
   EmbeddingConfigurationError,
   createOpenAiEmbeddingProvider,
@@ -67,7 +71,7 @@ type CliEnv = RagEnv &
   >;
 
 type CliCommand =
-  | { command: 'ask'; question: string }
+  | { command: 'ask'; question: string; sessionId?: string }
   | { command: 'evaluate'; fast: boolean }
   | { command: 'feedback'; json: boolean; limit: number; rating?: FeedbackRating }
   | { command: 'gate:knowledge'; approvedEvalOnly: true; fast: boolean }
@@ -156,7 +160,7 @@ const HELP_TEXT = [
   '  pnpm rag:migrate',
   '  pnpm rag:stats',
   '  pnpm rag:feedback [-- --rating positive|negative] [--limit 25] [--json]',
-  '  pnpm rag:ask -- "question"',
+  '  pnpm rag:ask [--session-id <id>] -- "question"',
   '  pnpm rag:evaluate [-- --fast]',
 ].join('\n');
 
@@ -458,15 +462,57 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
   }
 
   if (command === 'ask') {
-    const rest = rawRest[0] === '--' ? rawRest.slice(1) : rawRest;
-    const question = rest.join(' ').trim();
-    if (question.length === 0) {
-      return { command: 'help', error: 'Missing question for rag:ask.' };
-    }
-    return { command: 'ask', question };
+    return parseAskArgs(rawRest);
   }
 
   return { command: 'help', error: `Unknown command: ${command}` };
+}
+
+function parseAskArgs(rawArgs: readonly string[]): CliCommand {
+  const args = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs;
+  const questionParts: string[] = [];
+  let sessionId: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const option = args[index];
+
+    if (option === '--') {
+      questionParts.push(...args.slice(index + 1));
+      break;
+    }
+
+    if (option === '--session-id') {
+      const rawSessionId = args[index + 1]?.trim();
+      if (rawSessionId === undefined || rawSessionId.length === 0) {
+        return { command: 'help', error: 'Missing value for rag:ask --session-id.' };
+      }
+      sessionId = rawSessionId;
+      index += 1;
+      continue;
+    }
+
+    if (option?.startsWith('--session-id=') === true) {
+      const rawSessionId = option.slice('--session-id='.length).trim();
+      if (rawSessionId.length === 0) {
+        return { command: 'help', error: 'Missing value for rag:ask --session-id.' };
+      }
+      sessionId = rawSessionId;
+      continue;
+    }
+
+    questionParts.push(option ?? '');
+  }
+
+  const question = questionParts.join(' ').trim();
+  if (question.length === 0) {
+    return { command: 'help', error: 'Missing question for rag:ask.' };
+  }
+
+  return {
+    command: 'ask',
+    question,
+    ...(sessionId === undefined ? {} : { sessionId }),
+  };
 }
 
 function parsePublishKnowledgeArgs(rawArgs: readonly string[]): CliCommand {
@@ -984,13 +1030,18 @@ export async function runCli(
 
   try {
     const runtime = createCliChatRuntime(config, {
+      enableSessionContext: parsed.command === 'ask' && parsed.sessionId !== undefined,
       fastAnswers: parsed.command === 'evaluate' && parsed.fast,
     });
     try {
       const service = runtime.service;
 
       if (parsed.command === 'ask') {
-        const request: ChatRequest = { channel: 'cli', message: parsed.question };
+        const request: ChatRequest = {
+          channel: 'cli',
+          message: parsed.question,
+          ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+        };
         const response = await service.ask(request);
         writeLine(io.stdout, formatChatResponse(response));
         return 0;
@@ -1500,6 +1551,7 @@ async function embedPreparedChunks(
 }
 
 interface CliChatRuntimeOptions {
+  enableSessionContext?: boolean;
   fastAnswers?: boolean;
 }
 
@@ -1508,6 +1560,10 @@ function createCliChatRuntime(
   options: CliChatRuntimeOptions = {},
 ): CliChatRuntime {
   let pool: ReturnType<typeof createPgPool> | undefined;
+  let sessionPool: ReturnType<typeof createPgPool> | undefined;
+  if (options.enableSessionContext === true) {
+    sessionPool = createPgPool(config.databaseUrl);
+  }
   const retriever = createLazyRetriever(async () => {
     const nextPool = createPgPool(config.databaseUrl);
 
@@ -1535,12 +1591,18 @@ function createCliChatRuntime(
           : createLazyAnswerProvider(config),
       config,
       retriever,
+      ...(sessionPool === undefined
+        ? {}
+        : { sessionContext: createPgSessionContextStore({ client: sessionPool }) }),
       txAnalysisProvider: createConfiguredTxAnalysisProvider(config),
     }),
     close: async () => {
       const currentPool = pool;
+      const currentSessionPool = sessionPool;
       pool = undefined;
+      sessionPool = undefined;
       await currentPool?.end();
+      await currentSessionPool?.end();
     },
   };
 }

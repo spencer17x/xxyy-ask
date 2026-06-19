@@ -44,6 +44,23 @@ describe('parseCliArgs', () => {
     });
   });
 
+  it('parses ask session ids for multi-turn autonomous answer checks', () => {
+    expect(parseCliArgs(['ask', '--session-id', 'session-cli', '--', '怎么升级？'])).toEqual({
+      command: 'ask',
+      question: '怎么升级？',
+      sessionId: 'session-cli',
+    });
+    expect(parseCliArgs(['ask', '--session-id', 'session-cli', '这笔呢？'])).toEqual({
+      command: 'ask',
+      question: '这笔呢？',
+      sessionId: 'session-cli',
+    });
+    expect(parseCliArgs(['ask', '--session-id'])).toEqual({
+      command: 'help',
+      error: 'Missing value for rag:ask --session-id.',
+    });
+  });
+
   it('parses commands that do not require extra arguments', () => {
     expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
     expect(parseCliArgs(['gate:knowledge', '--id', 'kc_telegram_setup', '--fast'])).toEqual({
@@ -518,6 +535,118 @@ describe('runCli', () => {
 
     expect(exitCode).toBe(1);
     expect(stderr.join('')).toContain('DATABASE_URL is required for pgvector retrieval');
+  });
+
+  it('passes explicit ask session ids into the autonomous runtime with a pg session store', async () => {
+    vi.resetModules();
+
+    const stdout: string[] = [];
+    const sessionContext = {
+      appendTurn: vi.fn(),
+      getRecentTurns: vi.fn(),
+    };
+    const createPgSessionContextStore = vi.fn(
+      (_input: { client: { end: () => Promise<void> } }) => sessionContext,
+    );
+    const ask = vi.fn((request: unknown) => {
+      expect(request).toEqual({
+        channel: 'cli',
+        message: 'XXYY Pro 怎么升级？',
+        sessionId: 'session-cli',
+      });
+      return Promise.resolve({
+        answer: 'session-aware response',
+        citations: [],
+        confidence: 0.8,
+        intent: 'how_to' as const,
+      });
+    });
+    const createCustomerAgentChatService = vi.fn(
+      (options: CreateCustomerAgentChatServiceOptions) => {
+        expect(options.sessionContext).toBe(sessionContext);
+        return {
+          ask,
+          stream: vi.fn(),
+        };
+      },
+    );
+    const end = vi.fn(() => Promise.resolve());
+    const pgClient = { end };
+    const createPgPool = vi.fn(() => pgClient);
+
+    vi.doMock('@xxyy/agent-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createCustomerAgentChatService,
+        createPgSessionContextStore,
+      };
+    });
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createOpenAiEmbeddingProvider: vi.fn(() => ({ embedTexts: vi.fn() })),
+      };
+    });
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createConfiguredTxAnalysisProvider: vi.fn(() => undefined),
+        createLazyRetriever: vi.fn(() => ({ retrieve: vi.fn() })),
+        createPgPool,
+        createPgVectorStore: vi.fn(() => ({ retrieve: vi.fn() })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+          txAnalysisProvider: 'none',
+          txAnalysisReportStore: 'file',
+          txAnalysisReviewer: 'none',
+        })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+
+      const exitCode = await runCliWithMocks(
+        ['ask', '--session-id', 'session-cli', '--', 'XXYY Pro 怎么升级？'],
+        {
+          cwd: process.cwd(),
+          env: {},
+          stderr: { write: () => true },
+          stdout: {
+            write: (message: string) => {
+              stdout.push(message);
+              return true;
+            },
+          },
+        },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(createPgPool).toHaveBeenCalledWith('postgres://example.test/db');
+      expect(createPgSessionContextStore).toHaveBeenCalledWith({
+        client: pgClient,
+      });
+      expect(createCustomerAgentChatService).toHaveBeenCalledTimes(1);
+      expect(ask).toHaveBeenCalledTimes(1);
+      expect(end).toHaveBeenCalledTimes(1);
+      expect(stdout.join('')).toContain('session-aware response');
+    } finally {
+      vi.doUnmock('@xxyy/agent-core');
+      vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+    }
   });
 
   it('runs fast evaluation with progress output and a local answer provider', async () => {
