@@ -423,8 +423,11 @@ function recordBoundaryQualitySignal(
       ? 'boundary_investment_advice'
       : response.intent === 'realtime_account_query'
         ? 'boundary_private_data'
-        : 'unknown_intent';
+        : response.intent === 'mev_or_chain_forensics'
+          ? 'boundary_chain_forensics'
+          : 'unknown_intent';
   recordQualitySignal(qualitySignals, request, {
+    answer: response.answer,
     confidence: response.confidence,
     intent: response.intent,
     reason,

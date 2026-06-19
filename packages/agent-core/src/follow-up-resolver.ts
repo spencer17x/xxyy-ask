@@ -162,6 +162,9 @@ function formatRecentTransactionReference(reference: RecentTransactionReference)
 }
 
 function isTransactionFollowUp(message: string): boolean {
+  if (/^(什么是|什么叫|介绍|解释|how does|what is|what's)/iu.test(message)) {
+    return false;
+  }
   return /^(这笔|那笔|刚才那笔|上一笔)|被夹|夹子|sandwich|transaction|tx/iu.test(message);
 }
 

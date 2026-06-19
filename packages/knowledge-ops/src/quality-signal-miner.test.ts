@@ -144,6 +144,50 @@ describe('mineAnswerQualitySignals', () => {
     );
   });
 
+  it('creates a needs-review eval candidate from a chain-forensics boundary signal', () => {
+    const answer =
+      '我不能仅凭当前问题判断某笔交易是否被夹或存在 MEV，也不会编造链上取证结论。需要实时链上数据、交易哈希和专业分析工具；我可以说明 XXYY 产品文档中支持哪些相关能力。';
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer,
+          channel: 'web',
+          confidence: 0.7,
+          intent: 'mev_or_chain_forensics',
+          reason: 'boundary_chain_forensics',
+          redactedQuestion: '什么是 MEV sandwich？',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.7,
+      proposedAnswer: answer,
+      question: '什么是 MEV sandwich？',
+      status: 'needs_review',
+      targetCategory: 'policy_boundary',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer: answer,
+        expectedIntent: 'mev_or_chain_forensics',
+        minCitations: 0,
+        question: '什么是 MEV sandwich？',
+        requireExpectedAnswerText: false,
+      },
+    ]);
+  });
+
   it('creates a needs-review eval candidate from an unknown-intent clarification signal', () => {
     const result = mineAnswerQualitySignals({
       now,

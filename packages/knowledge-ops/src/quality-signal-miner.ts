@@ -14,6 +14,7 @@ import type {
 } from './types.js';
 
 export type AnswerQualitySignalReason =
+  | 'boundary_chain_forensics'
   | 'ambiguous_followup'
   | 'boundary_investment_advice'
   | 'boundary_private_data'
@@ -96,6 +97,7 @@ function createCandidateFromSignal(
   }
   if (
     signal.reason === 'ambiguous_followup' ||
+    signal.reason === 'boundary_chain_forensics' ||
     signal.reason === 'missing_followup_context' ||
     signal.reason === 'unknown_intent' ||
     signal.reason === 'session_unavailable'

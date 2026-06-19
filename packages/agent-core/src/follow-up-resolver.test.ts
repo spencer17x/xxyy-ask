@@ -114,6 +114,18 @@ describe('resolveFollowUp', () => {
     });
   });
 
+  it('keeps generic MEV definition questions unchanged instead of treating them as follow-ups', () => {
+    expect(
+      resolveFollowUp({
+        message: '什么是 MEV sandwich？',
+        recentTurns: [],
+      }),
+    ).toEqual({
+      resolution: 'unchanged',
+      resolvedMessage: '什么是 MEV sandwich？',
+    });
+  });
+
   it('asks for clarification when the same transaction hash exists on multiple recent chains', () => {
     const recentTurns: SessionTurn[] = [
       {

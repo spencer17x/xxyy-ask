@@ -104,6 +104,61 @@ describe('createCustomerAgentRuntime', () => {
     expect(audit.events()).toEqual([]);
   });
 
+  it('records chain-forensics boundary answers as quality signals', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const productExecute = vi.fn(() => {
+      throw new Error('product tool should not be called');
+    });
+    const txExecute = vi.fn(() => {
+      throw new Error('transaction tool should not be called');
+    });
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      policy: toolPolicy,
+      execute: productExecute,
+    });
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute: txExecute,
+    });
+
+    const response = await createCustomerAgentRuntime({ qualitySignals, registry }).ask({
+      channel: 'web',
+      message: '什么是 MEV sandwich？',
+      sessionId: 'session-mev-boundary',
+    });
+
+    expect(productExecute).not.toHaveBeenCalled();
+    expect(txExecute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.7,
+      intent: 'mev_or_chain_forensics',
+    });
+    expect(response.answer).toContain('不能仅凭当前问题判断某笔交易是否被夹或存在 MEV');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.7,
+        intent: 'mev_or_chain_forensics',
+        reason: 'boundary_chain_forensics',
+        redactedQuestion: '什么是 MEV sandwich？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('returns an automatic product fallback when answer_product_question fails', async () => {
     const registry = createToolRegistry();
     const audit = createInMemoryAuditSink();
