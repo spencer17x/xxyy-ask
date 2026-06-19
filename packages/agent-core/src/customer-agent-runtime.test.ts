@@ -1252,6 +1252,117 @@ describe('createCustomerAgentRuntime', () => {
     ]);
   });
 
+  it('asks for clarification when session context lookup fails for a follow-up', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        answer: 'XXYY Pro 可以升级。',
+        citations: [
+          {
+            excerpt: 'XXYY Pro 可以升级。',
+            file: 'docs/product-features/pro.md',
+            title: 'XXYY Pro',
+          },
+        ],
+        confidence: 0.8,
+        intent: 'how_to' as const,
+      }),
+    );
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createCustomerAgentRuntime({
+      qualitySignals,
+      registry,
+      sessionContext: {
+        appendTurn: () => Promise.resolve(),
+        getRecentTurns: () => Promise.reject(new Error('session store unavailable')),
+      },
+    }).ask({
+      channel: 'web',
+      message: '怎么升级？',
+      sessionId: 'session-broken-store',
+    });
+
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.45,
+      intent: 'how_to',
+    });
+    expect(response.answer).toContain('我缺少这次会话的上一轮上下文');
+    expect(response.answer).toContain('请补充具体功能');
+    expect(execute).not.toHaveBeenCalled();
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.45,
+        errorCode: 'Error',
+        intent: 'how_to',
+        reason: 'session_unavailable',
+        redactedQuestion: '怎么升级？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
+  it('keeps returning the answer when session context append fails', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const response: ChatResponse = {
+      answer: 'XXYY Pro 提供更高监控上限。',
+      citations: [
+        {
+          excerpt: 'XXYY Pro 提供更高监控上限。',
+          file: 'docs/product-features/pro.md',
+          title: 'XXYY Pro',
+        },
+      ],
+      confidence: 0.8,
+      intent: 'product_qa',
+    };
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute: () => Promise.resolve(response),
+    });
+
+    await expect(
+      createCustomerAgentRuntime({
+        qualitySignals,
+        registry,
+        sessionContext: {
+          appendTurn: () => Promise.reject(new Error('session append unavailable')),
+          getRecentTurns: () => Promise.resolve([]),
+        },
+      }).ask({
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？',
+        sessionId: 'session-append-fails',
+      }),
+    ).resolves.toEqual(response);
+    expect(qualitySignals.signals()).toEqual([]);
+  });
+
   it('returns a conservative fallback and records one combined quality signal for low-confidence no-citation product answers', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

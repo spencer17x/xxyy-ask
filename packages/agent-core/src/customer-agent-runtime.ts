@@ -29,6 +29,7 @@ import {
 import {
   sanitizeSessionText,
   type SessionContextStore,
+  type SessionTurn,
   type SessionTurnMetadata,
 } from './session-context.js';
 import type { ToolRegistry } from './tool-registry.js';
@@ -218,10 +219,23 @@ export function createCustomerAgentRuntime(
       return response;
     }
 
-    const recentTurns =
-      request.sessionId === undefined || options.sessionContext === undefined
-        ? []
-        : await options.sessionContext.getRecentTurns(request.sessionId);
+    const recentTurnsResult = await getRecentTurnsForRequest(options.sessionContext, request);
+    if (recentTurnsResult.error !== undefined) {
+      const dependency = missingSessionDependencyForRequest(request);
+      if (dependency !== undefined) {
+        const response = createSessionUnavailableClarification(request.message, dependency);
+        recordQualitySignal(qualitySignals, request, {
+          answer: response.answer,
+          confidence: response.confidence,
+          errorCode: errorCodeFrom(recentTurnsResult.error),
+          intent: response.intent,
+          reason: 'session_unavailable',
+          redactedQuestion: request.message,
+        });
+        return response;
+      }
+    }
+    const recentTurns = recentTurnsResult.turns;
     const followUp = resolveFollowUp({ message: request.message, recentTurns });
 
     if (followUp.resolution === 'needs_clarification') {
@@ -314,6 +328,21 @@ export function createCustomerAgentRuntime(
       yield* streamChatResponse(await ask(request));
     },
   };
+}
+
+async function getRecentTurnsForRequest(
+  sessionContext: SessionContextStore | undefined,
+  request: ChatRequest,
+): Promise<{ turns: SessionTurn[]; error?: unknown }> {
+  if (request.sessionId === undefined || sessionContext === undefined) {
+    return { turns: [] };
+  }
+
+  try {
+    return { turns: await sessionContext.getRecentTurns(request.sessionId) };
+  } catch (error) {
+    return { error, turns: [] };
+  }
 }
 
 function intentForFollowUpDependency(
@@ -514,21 +543,25 @@ async function appendSessionTurns(
     response.intent === 'tx_sandwich_detection'
       ? transactionMetadataFromText(options.userContent)
       : undefined;
-  await sessionContext.appendTurn(request.sessionId, {
-    content: options.userContent,
-    createdAt: now,
-    metadata: {
-      intent: response.intent,
-      ...(userTransactionMetadata === undefined ? {} : userTransactionMetadata),
-    },
-    role: 'user',
-  });
-  await sessionContext.appendTurn(request.sessionId, {
-    content: response.answer,
-    createdAt: now,
-    metadata: metadataFromResponse(response, userTransactionMetadata),
-    role: 'assistant',
-  });
+  try {
+    await sessionContext.appendTurn(request.sessionId, {
+      content: options.userContent,
+      createdAt: now,
+      metadata: {
+        intent: response.intent,
+        ...(userTransactionMetadata === undefined ? {} : userTransactionMetadata),
+      },
+      role: 'user',
+    });
+    await sessionContext.appendTurn(request.sessionId, {
+      content: response.answer,
+      createdAt: now,
+      metadata: metadataFromResponse(response, userTransactionMetadata),
+      role: 'assistant',
+    });
+  } catch {
+    // Session history is best-effort; answering must not depend on persistence.
+  }
 }
 
 function metadataFromResponse(
