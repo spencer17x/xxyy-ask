@@ -6,6 +6,7 @@ import type {
 
 export interface ListKnowledgeCandidatesFilter {
   limit?: number;
+  qualitySignalClusterKey?: string;
   source?: KnowledgeCandidateSource;
   status?: KnowledgeCandidateStatus;
   type?: KnowledgeCandidate['type'];
@@ -269,6 +270,17 @@ function matchesFilter(
   if (
     filter.source !== undefined &&
     !candidate.sourceRefs.some((sourceRef) => sourceRef.source === filter.source)
+  ) {
+    return false;
+  }
+
+  if (
+    filter.qualitySignalClusterKey !== undefined &&
+    !candidate.sourceRefs.some(
+      (sourceRef) =>
+        sourceRef.source === 'answer_quality_signal' &&
+        sourceRef.qualitySignalClusterKey === filter.qualitySignalClusterKey,
+    )
   ) {
     return false;
   }

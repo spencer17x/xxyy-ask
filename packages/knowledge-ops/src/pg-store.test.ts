@@ -228,20 +228,27 @@ describe('createPgKnowledgeOpsStore', () => {
 
     const candidates = await store.listCandidates({
       limit: 10,
+      qualitySignalClusterKey: 'product_answer:missing_citations:eval_case:eval_case',
       riskLevel: 'high',
-      source: 'answer_feedback',
+      source: 'answer_quality_signal',
       status: 'needs_review',
       type: 'boundary_example',
     });
 
     expect(client.queries[0]?.sql).toContain(
-      'where status = $1 and type = $2 and risk_level = $3 and source_refs @> $4::jsonb',
+      'where status = $1 and type = $2 and risk_level = $3 and source_refs @> $4::jsonb and source_refs @> $5::jsonb',
     );
     expect(client.queries[0]?.values).toEqual([
       'needs_review',
       'boundary_example',
       'high',
-      JSON.stringify([{ source: 'answer_feedback' }]),
+      JSON.stringify([{ source: 'answer_quality_signal' }]),
+      JSON.stringify([
+        {
+          source: 'answer_quality_signal',
+          qualitySignalClusterKey: 'product_answer:missing_citations:eval_case:eval_case',
+        },
+      ]),
       10,
     ]);
     expect(candidates).toEqual([

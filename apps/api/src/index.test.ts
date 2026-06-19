@@ -762,6 +762,7 @@ describe('createRequestHandler', () => {
             {
               agentRoute: 'product_answer',
               candidateIds: ['kc_quality_gap_1', 'kc_quality_gap_3'],
+              clusterKey: 'product_answer:missing_citations:eval_case:eval_case',
               count: 2,
               latestCreatedAt: '2026-06-19T07:30:00.000Z',
               reason: 'missing_citations',
@@ -772,6 +773,7 @@ describe('createRequestHandler', () => {
             {
               agentRoute: 'clarify',
               candidateIds: ['kc_quality_gap_2'],
+              clusterKey: 'clarify:missing_followup_context:eval_case:eval_case',
               count: 1,
               latestCreatedAt: '2026-06-19T07:20:00.000Z',
               reason: 'missing_followup_context',
@@ -3245,14 +3247,15 @@ describe('createRequestHandler', () => {
     const response = await callHandler(handler, {
       headers: { Authorization: 'Bearer secret-token' },
       method: 'GET',
-      url: '/api/knowledge/candidates?status=needs_review&type=boundary_example&riskLevel=high&source=answer_feedback&limit=5',
+      url: '/api/knowledge/candidates?status=needs_review&type=boundary_example&riskLevel=high&source=answer_quality_signal&qualitySignalClusterKey=product_answer:missing_citations:eval_case:eval_case&limit=5',
     });
 
     expect(response.statusCode).toBe(200);
     expect(listFilter).toEqual({
       limit: 5,
+      qualitySignalClusterKey: 'product_answer:missing_citations:eval_case:eval_case',
       riskLevel: 'high',
-      source: 'answer_feedback',
+      source: 'answer_quality_signal',
       status: 'needs_review',
       type: 'boundary_example',
     });

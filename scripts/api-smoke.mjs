@@ -1202,6 +1202,7 @@ function isQualitySignalClusterSummary(value) {
     Array.isArray(value.candidateIds) &&
     value.candidateIds.length > 0 &&
     value.candidateIds.every(isCleanNonEmptyString) &&
+    isCleanNonEmptyString(value.clusterKey) &&
     isNonNegativeInteger(value.count) &&
     value.count > 0 &&
     isCleanNonEmptyString(value.latestCreatedAt) &&

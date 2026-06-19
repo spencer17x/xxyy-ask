@@ -162,7 +162,12 @@ function createProductGapCandidate(
       question: questionText,
       redactionReport,
       riskLevel: redactionReport.riskLevel,
-      sourceRefs: [createSourceRef(signalIdentity)],
+      sourceRefs: [
+        createSourceRef(signalIdentity, {
+          targetCategory: 'eval_case',
+          type: 'eval_case',
+        }),
+      ],
       status: 'needs_review',
       targetCategory: 'eval_case',
       type: 'eval_case',
@@ -177,6 +182,7 @@ function createProductGapCandidate(
     },
   ];
   const candidateType = selectProductCandidateType(redactionReport.riskLevel);
+  const targetCategory = candidateType === 'boundary_example' ? 'policy_boundary' : 'product_faq';
 
   return {
     confidence: normalizeConfidence(signal.confidence),
@@ -188,9 +194,14 @@ function createProductGapCandidate(
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
-    sourceRefs: [createSourceRef(signalIdentity)],
+    sourceRefs: [
+      createSourceRef(signalIdentity, {
+        targetCategory,
+        type: candidateType,
+      }),
+    ],
     status: 'needs_review',
-    targetCategory: candidateType === 'boundary_example' ? 'policy_boundary' : 'product_faq',
+    targetCategory,
     type: candidateType,
     updatedAt: now,
   };
@@ -230,7 +241,12 @@ function createProductToolFailureCandidate(
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
-    sourceRefs: [createSourceRef(signalIdentity)],
+    sourceRefs: [
+      createSourceRef(signalIdentity, {
+        targetCategory: 'eval_case',
+        type: 'eval_case',
+      }),
+    ],
     status: 'needs_review',
     targetCategory: 'eval_case',
     type: 'eval_case',
@@ -271,7 +287,12 @@ function createBoundaryCandidate(
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
-    sourceRefs: [createSourceRef(signalIdentity)],
+    sourceRefs: [
+      createSourceRef(signalIdentity, {
+        targetCategory: 'policy_boundary',
+        type: 'boundary_example',
+      }),
+    ],
     status: 'needs_review',
     targetCategory: 'policy_boundary',
     type: 'boundary_example',
@@ -313,7 +334,12 @@ function createUnknownIntentCandidate(
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
-    sourceRefs: [createSourceRef(signalIdentity)],
+    sourceRefs: [
+      createSourceRef(signalIdentity, {
+        targetCategory: 'eval_case',
+        type: 'eval_case',
+      }),
+    ],
     status: 'needs_review',
     targetCategory: 'eval_case',
     type: 'eval_case',
@@ -373,7 +399,12 @@ function createTransactionFailureCandidate(
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
-    sourceRefs: [createSourceRef(signalIdentity)],
+    sourceRefs: [
+      createSourceRef(signalIdentity, {
+        targetCategory: 'eval_case',
+        type: 'eval_case',
+      }),
+    ],
     status: 'needs_review',
     targetCategory: 'eval_case',
     type: 'eval_case',
@@ -523,14 +554,36 @@ function normalizeConfidence(confidence: number | undefined): number {
   return Math.min(1, Math.max(0, confidence));
 }
 
-function createSourceRef(signal: QualitySignalIdentity): KnowledgeCandidateSourceRef {
+function createSourceRef(
+  signal: QualitySignalIdentity,
+  candidate: {
+    targetCategory: KnowledgeCandidate['targetCategory'];
+    type: KnowledgeCandidateType;
+  },
+): KnowledgeCandidateSourceRef {
   return {
     chatIdHash: signal.sessionIdPresent ? 'session_present' : 'session_absent',
     messageId: createQualitySignalMessageId(signal),
     ...(signal.agentRoute === undefined ? {} : { qualitySignalAgentRoute: signal.agentRoute }),
+    qualitySignalClusterKey: createQualitySignalClusterKey(signal, candidate),
     qualitySignalReason: signal.reason,
     source: 'answer_quality_signal',
   };
+}
+
+function createQualitySignalClusterKey(
+  signal: QualitySignalIdentity,
+  candidate: {
+    targetCategory: KnowledgeCandidate['targetCategory'];
+    type: KnowledgeCandidateType;
+  },
+): string {
+  return [
+    signal.agentRoute ?? 'unknown',
+    signal.reason,
+    candidate.targetCategory,
+    candidate.type,
+  ].join(':');
 }
 
 function createCandidateId(signal: QualitySignalIdentity): string {

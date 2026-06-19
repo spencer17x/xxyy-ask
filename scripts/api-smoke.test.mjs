@@ -1335,6 +1335,7 @@ describe('runApiSmoke', () => {
           {
             agentRoute: 'product_answer',
             candidateIds: ['kc_quality_gap_1'],
+            clusterKey: 'product_answer:missing_citations:eval_case:eval_case',
             count: 2,
             latestCreatedAt: '2026-06-19T07:30:00.000Z',
             reason: 'missing_citations',
@@ -5622,6 +5623,7 @@ function opsSummaryPayload(overrides = {}) {
         {
           agentRoute: 'product_answer',
           candidateIds: ['kc_quality_gap_1'],
+          clusterKey: 'product_answer:missing_citations:eval_case:eval_case',
           count: 1,
           latestCreatedAt: '2026-06-19T07:30:00.000Z',
           reason: 'missing_citations',

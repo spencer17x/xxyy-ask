@@ -67,6 +67,7 @@ export interface KnowledgeCandidateSourceRef {
   messageId: string;
   threadId?: string;
   qualitySignalAgentRoute?: string;
+  qualitySignalClusterKey?: string;
   qualitySignalReason?: string;
 }
 

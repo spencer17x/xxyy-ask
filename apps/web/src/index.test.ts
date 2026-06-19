@@ -132,6 +132,9 @@ describe('renderOpsPage', () => {
     expect(html).toContain('Quality cluster · " + cluster.agentRoute + " / " + cluster.reason');
     expect(html).toContain('cluster.sampleQuestions');
     expect(html).toContain('cluster.candidateIds');
+    expect(html).toContain('data-quality-cluster-key');
+    expect(html).toContain('qualitySignalClusterKey');
+    expect(html).toContain('await loadQualitySignalClusterCandidates(clusterKey)');
     expect(html).toContain('recent.agentRoute');
     expect(html).toContain('recent.targetCategory');
     expect(html).toContain('recent.riskLevel');
@@ -271,7 +274,7 @@ describe('renderOpsPage', () => {
     expect(html).toContain('<option value="">Any source</option>');
     expect(html).toContain('<option value="answer_feedback">Answer feedback</option>');
     expect(html).toContain('<option value="answer_quality_signal">Quality signals</option>');
-    expect(html).toContain('function loadKnowledgeCandidates()');
+    expect(html).toContain('function loadKnowledgeCandidates(options)');
     expect(html).toContain('params.set("status", knowledgeCandidateStatusFilter.value)');
     expect(html).toContain('if (knowledgeCandidateType.value) {');
     expect(html).toContain('params.set("type", knowledgeCandidateType.value)');

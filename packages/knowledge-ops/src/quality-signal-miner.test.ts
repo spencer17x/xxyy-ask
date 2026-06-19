@@ -57,6 +57,7 @@ describe('mineAnswerQualitySignals', () => {
         chatIdHash: 'session_present',
         messageId: sourceRef.messageId,
         qualitySignalAgentRoute: 'product_answer',
+        qualitySignalClusterKey: 'product_answer:low_confidence:product_faq:faq',
         qualitySignalReason: 'low_confidence',
         source: 'answer_quality_signal',
       },

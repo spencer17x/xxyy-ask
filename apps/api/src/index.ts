@@ -260,6 +260,7 @@ interface RecentQualitySignalCandidateSummary {
 interface QualitySignalClusterSummary {
   agentRoute: string;
   candidateIds: string[];
+  clusterKey: string;
   count: number;
   latestCreatedAt: string;
   reason: string;
@@ -303,6 +304,7 @@ const MAX_TX_ANALYSIS_REVIEW_NOTE_CHARS = 2000;
 const MAX_TX_ANALYSIS_REVIEW_UPDATED_BY_CHARS = 200;
 const MAX_KNOWLEDGE_REVIEW_NOTES_CHARS = 2000;
 const MAX_KNOWLEDGE_REVIEW_REVIEWER_CHARS = 200;
+const MAX_QUALITY_SIGNAL_CLUSTER_KEY_CHARS = 300;
 const supportedTxAnalysisReportStatuses = ['failure', 'success'] as const;
 const supportedTxAnalysisReportReviewStatuses = ['closed', 'in_review', 'open'] as const;
 const supportedTxAnalysisReportReviewActions = ['claim', 'close', 'reopen'] as const;
@@ -722,10 +724,14 @@ async function handleKnowledgeCandidatesRequest(options: {
   const source = parseOptionalKnowledgeCandidateSource(
     options.requestUrl.searchParams.get('source'),
   );
+  const qualitySignalClusterKey = parseOptionalQualitySignalClusterKey(
+    options.requestUrl.searchParams.get('qualitySignalClusterKey'),
+  );
   const limit = parseOptionalPositiveQueryInteger(options.requestUrl.searchParams.get('limit'));
   const store = await options.getKnowledgeCandidateStore();
   const candidates = await store.listCandidates({
     ...(limit === undefined ? {} : { limit }),
+    ...(qualitySignalClusterKey === undefined ? {} : { qualitySignalClusterKey }),
     ...(riskLevel === undefined ? {} : { riskLevel }),
     ...(source === undefined ? {} : { source }),
     ...(status === undefined ? {} : { status }),
@@ -1118,6 +1124,21 @@ function parseOptionalKnowledgeCandidateSource(
 ): KnowledgeCandidateSource | undefined {
   const source = parseOptionalQueryString(value);
   return source === undefined ? undefined : parseKnowledgeCandidateSource(source);
+}
+
+function parseOptionalQualitySignalClusterKey(value: string | null): string | undefined {
+  const clusterKey = parseOptionalQueryString(value);
+  if (clusterKey === undefined) {
+    return undefined;
+  }
+  if (clusterKey.length > MAX_QUALITY_SIGNAL_CLUSTER_KEY_CHARS) {
+    throw new BadRequestError('qualitySignalClusterKey is too long.');
+  }
+  if (!/^[a-z_]+:[a-z_]+:[a-z_]+:[a-z_]+$/u.test(clusterKey)) {
+    throw new BadRequestError('qualitySignalClusterKey must be a valid quality cluster key.');
+  }
+
+  return clusterKey;
 }
 
 function parseOptionalPositiveQueryInteger(value: string | null): number | undefined {
@@ -1612,6 +1633,12 @@ function summarizeQualitySignalClusters(
         summary: {
           agentRoute,
           candidateIds: [],
+          clusterKey: createQualitySignalClusterKey({
+            agentRoute,
+            reason,
+            targetCategory: candidate.targetCategory,
+            type: candidate.type,
+          }),
           count: 0,
           latestCreatedAt: candidate.createdAt,
           reason,
@@ -1668,6 +1695,15 @@ function uniqueNonEmptyStrings(values: string[]): string[] {
   }
 
   return [...unique];
+}
+
+function createQualitySignalClusterKey(input: {
+  agentRoute: string;
+  reason: string;
+  targetCategory: KnowledgeCandidate['targetCategory'];
+  type: KnowledgeCandidateType;
+}): string {
+  return [input.agentRoute, input.reason, input.targetCategory, input.type].join(':');
 }
 
 function extractQualitySignalReason(candidate: KnowledgeCandidate): string {

@@ -51,7 +51,12 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
     const qualitySignalCandidate = candidate({
       id: 'candidate_quality',
       sourceRefs: [
-        { source: 'answer_quality_signal', chatIdHash: 'session_present', messageId: 'aqs_1' },
+        {
+          source: 'answer_quality_signal',
+          chatIdHash: 'session_present',
+          messageId: 'aqs_1',
+          qualitySignalClusterKey: 'product_answer:missing_citations:product_faq:faq',
+        },
       ],
       type: 'faq',
     });
@@ -64,6 +69,11 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
     await expect(store.listCandidates({ source: 'answer_feedback' })).resolves.toEqual([
       feedbackCandidate,
     ]);
+    await expect(
+      store.listCandidates({
+        qualitySignalClusterKey: 'product_answer:missing_citations:product_faq:faq',
+      }),
+    ).resolves.toEqual([qualitySignalCandidate]);
   });
 
   it('records human review decisions without publishing approved candidates', async () => {

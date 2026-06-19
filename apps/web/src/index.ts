@@ -1909,6 +1909,18 @@ export function renderOpsPage(): string {
         await loadKnowledgeCandidates();
       });
 
+      knowledgeQualityClustersTarget.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) {
+          return;
+        }
+        const clusterKey = target.dataset.qualityClusterKey;
+        if (!clusterKey) {
+          return;
+        }
+        await loadQualitySignalClusterCandidates(clusterKey);
+      });
+
       knowledgeCandidateSource.addEventListener("change", () => {
         if (tokenInput.value.trim()) {
           void loadKnowledgeCandidates();
@@ -2120,22 +2132,40 @@ export function renderOpsPage(): string {
 
         knowledgeQualityClustersTarget.replaceChildren(
           ...clusters.map((cluster) =>
-            row(
+            rowWithMetaNodes(
               "knowledge-candidate-item",
               "Quality cluster · " + cluster.agentRoute + " / " + cluster.reason,
               String(cluster.count),
               [
-                cluster.targetCategory ? "Target " + cluster.targetCategory : "",
-                cluster.type ? "Type " + cluster.type : "",
-                cluster.latestCreatedAt ? "Latest " + cluster.latestCreatedAt : "",
-                cluster.candidateIds?.length ? "Candidates " + cluster.candidateIds.join(", ") : "",
-                cluster.sampleQuestions?.length ? "Samples " + cluster.sampleQuestions.join(" | ") : "",
-              ]
-                .filter(Boolean)
-                .join(" · "),
+                createQualityClusterButton(cluster),
+                cluster.targetCategory ? text("Target " + cluster.targetCategory) : undefined,
+                cluster.type ? text("Type " + cluster.type) : undefined,
+                cluster.latestCreatedAt ? text("Latest " + cluster.latestCreatedAt) : undefined,
+                cluster.candidateIds?.length ? text("Candidates " + cluster.candidateIds.join(", ")) : undefined,
+                cluster.sampleQuestions?.length ? text("Samples " + cluster.sampleQuestions.join(" | ")) : undefined,
+              ],
             ),
           ),
         );
+      }
+
+      function createQualityClusterButton(cluster) {
+        if (!cluster.clusterKey) {
+          return undefined;
+        }
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("data-quality-cluster-key", cluster.clusterKey);
+        button.textContent = "Load cluster";
+        return button;
+      }
+
+      async function loadQualitySignalClusterCandidates(clusterKey) {
+        knowledgeCandidateStatusFilter.value = "needs_review";
+        knowledgeCandidateType.value = "";
+        knowledgeCandidateSource.value = "answer_quality_signal";
+        await loadKnowledgeCandidates({ qualitySignalClusterKey: clusterKey });
       }
 
       function renderQualitySignals(recentSignals) {
@@ -2221,7 +2251,7 @@ export function renderOpsPage(): string {
         );
       }
 
-      async function loadKnowledgeCandidates() {
+      async function loadKnowledgeCandidates(options) {
         const token = tokenInput.value.trim();
         if (!token) {
           knowledgeCandidateStatus.textContent = "Ops token is required.";
@@ -2236,6 +2266,9 @@ export function renderOpsPage(): string {
         }
         if (knowledgeCandidateSource.value) {
           params.set("source", knowledgeCandidateSource.value);
+        }
+        if (options?.qualitySignalClusterKey) {
+          params.set("qualitySignalClusterKey", options.qualitySignalClusterKey);
         }
         const limit = knowledgeCandidateLimit.value.trim();
         if (limit) {

@@ -700,6 +700,18 @@ function buildListCandidatesQuery(filter: ListKnowledgeCandidatesFilter): {
     clauses.push(`source_refs @> $${values.length}::jsonb`);
   }
 
+  if (filter.qualitySignalClusterKey !== undefined) {
+    values.push(
+      JSON.stringify([
+        {
+          source: 'answer_quality_signal',
+          qualitySignalClusterKey: filter.qualitySignalClusterKey,
+        },
+      ]),
+    );
+    clauses.push(`source_refs @> $${values.length}::jsonb`);
+  }
+
   const limit = normalizeLimit(filter.limit);
   values.push(limit);
   const whereClause = clauses.length === 0 ? '' : `where ${clauses.join(' and ')}`;
