@@ -129,7 +129,8 @@ describe('createBoundaryAnswer', () => {
       confidence: 0.4,
       intent: 'unknown',
     });
-    expect(response.answer).toContain('不能代你开通、取消、修改或执行账户内操作');
+    expect(response.answer).toContain('不能代你开通、取消、修改');
+    expect(response.answer).toContain('退款、赔偿');
     expect(response.answer).toContain('可以继续问我开通或升级的操作步骤');
     expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
   });

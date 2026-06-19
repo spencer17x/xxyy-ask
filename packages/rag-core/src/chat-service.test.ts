@@ -850,7 +850,8 @@ describe('createChatService', () => {
     });
 
     expect(response.intent).toBe('unknown');
-    expect(response.answer).toContain('不能代你开通、取消、修改或执行账户内操作');
+    expect(response.answer).toContain('不能代你开通、取消、修改');
+    expect(response.answer).toContain('退款、赔偿');
     expect(response.answer).not.toContain('更多权益');
     expect(response.citations).toEqual([]);
   });

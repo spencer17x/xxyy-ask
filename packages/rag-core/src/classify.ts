@@ -32,8 +32,8 @@ const unsafeOperationPatterns = [
 ];
 
 const businessActionRequestPatterns = [
-  /(?:帮我|替我|给我|帮忙|麻烦(?:你)?帮我|请(?:你)?帮我).*(?:开通|升级|取消|关闭|解绑|修改|更改|重置|恢复|处理|执行|下单|挂单|提现|转账|认领)/u,
-  /\b(?:please|can you|could you|i need you to)\b.*\b(?:open|activate|enable|upgrade|cancel|close|change|modify|reset|recover|execute|place|withdraw|transfer|claim)\b/u,
+  /(?:帮我|替我|给我|帮忙|麻烦(?:你)?帮我|请(?:你)?帮我).*(?:开通|升级|取消|关闭|解绑|修改|更改|重置|恢复|处理|执行|下单|挂单|提现|转账|认领|退款|退费|赔偿|补偿)/u,
+  /\b(?:please|can you|could you|i need you to)\b.*\b(?:open|activate|enable|upgrade|cancel|close|change|modify|reset|recover|execute|place|withdraw|transfer|claim|refund|compensate)\b/u,
 ];
 
 const privateCredentialPatterns = [

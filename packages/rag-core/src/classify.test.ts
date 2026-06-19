@@ -53,6 +53,16 @@ describe('classifyQuestion', () => {
       intent: 'unknown',
       reason: 'business action execution request',
     });
+    expect(classifyQuestion('麻烦帮我退款')).toMatchObject({
+      confidence: 0.4,
+      intent: 'unknown',
+      reason: 'business action execution request',
+    });
+    expect(classifyQuestion('Can you refund my XXYY Pro charge?')).toMatchObject({
+      confidence: 0.4,
+      intent: 'unknown',
+      reason: 'business action execution request',
+    });
     expect(classifyQuestion('如何开通 XXYY Pro？').intent).toBe('how_to');
   });
 
