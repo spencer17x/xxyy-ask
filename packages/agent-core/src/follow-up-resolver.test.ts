@@ -59,7 +59,34 @@ describe('resolveFollowUp', () => {
     ).toEqual({
       contextSummary: 'resolved transaction follow-up from one recent transaction',
       resolution: 'resolved_followup',
-      resolvedMessage: `${evmTx} 这笔被夹了吗？`,
+      resolvedMessage: `base ${evmTx} 这笔被夹了吗？`,
+    });
+  });
+
+  it('asks for clarification when the same transaction hash exists on multiple recent chains', () => {
+    const recentTurns: SessionTurn[] = [
+      {
+        content: '[evm_tx_hash]',
+        createdAt: '2026-06-19T00:00:00.000Z',
+        metadata: { chain: 'base', intent: 'tx_sandwich_detection', txHash: evmTx },
+        role: 'assistant',
+      },
+      {
+        content: '[evm_tx_hash]',
+        createdAt: '2026-06-19T00:01:00.000Z',
+        metadata: { chain: 'ethereum', intent: 'tx_sandwich_detection', txHash: evmTx },
+        role: 'assistant',
+      },
+    ];
+
+    expect(
+      resolveFollowUp({
+        message: '这笔呢？',
+        recentTurns,
+      }),
+    ).toEqual({
+      clarificationQuestion: '你想分析哪一笔交易？请发送单笔完整交易哈希或对应主网浏览器链接。',
+      resolution: 'needs_clarification',
     });
   });
 

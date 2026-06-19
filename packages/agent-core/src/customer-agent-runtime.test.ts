@@ -586,7 +586,7 @@ describe('createCustomerAgentRuntime', () => {
     await runtime.ask({ channel: 'web', message: txHash, sessionId: 'session-tx' });
     await runtime.ask({ channel: 'web', message: '这笔被夹了吗？', sessionId: 'session-tx' });
 
-    expect(execute).toHaveBeenLastCalledWith({ txHash: `${txHash} 这笔被夹了吗？` });
+    expect(execute).toHaveBeenLastCalledWith({ txHash: `base ${txHash} 这笔被夹了吗？` });
   });
 
   it('uses session context to resolve one recent Solana transaction follow-up', async () => {
@@ -628,7 +628,7 @@ describe('createCustomerAgentRuntime', () => {
       sessionId: 'session-solana-tx',
     });
 
-    expect(execute).toHaveBeenLastCalledWith({ txHash: `${txHash} 这笔被夹了吗？` });
+    expect(execute).toHaveBeenLastCalledWith({ txHash: `solana ${txHash} 这笔被夹了吗？` });
   });
 
   it('records session_unavailable when a transaction follow-up has no session context store', async () => {

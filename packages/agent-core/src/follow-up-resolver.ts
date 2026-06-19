@@ -1,3 +1,4 @@
+import type { TxAnalysisChain } from '@xxyy/shared';
 import { parseTransactionReference } from '@xxyy/rag-core';
 
 import type { SessionTurn } from './session-context.js';
@@ -8,6 +9,11 @@ export type FollowUpDependency = 'product_topic' | 'transaction_reference';
 export interface ResolveFollowUpInput {
   message: string;
   recentTurns: SessionTurn[];
+}
+
+interface RecentTransactionReference {
+  chain?: TxAnalysisChain;
+  txHash: string;
 }
 
 export type ResolveFollowUpOutput =
@@ -34,15 +40,19 @@ export function resolveFollowUp(input: ResolveFollowUpInput): ResolveFollowUpOut
   const dependency = detectFollowUpDependency(message);
 
   if (dependency === 'transaction_reference') {
-    const transactionHashes = uniqueRecentTransactionHashes(input.recentTurns);
-    if (transactionHashes.length === 1) {
+    const transactionReferences = uniqueRecentTransactionReferences(input.recentTurns);
+    if (transactionReferences.length === 1) {
+      const transactionReference = transactionReferences[0];
+      if (transactionReference === undefined) {
+        return { resolution: 'unchanged', resolvedMessage: input.message };
+      }
       return {
         contextSummary: 'resolved transaction follow-up from one recent transaction',
         resolution: 'resolved_followup',
-        resolvedMessage: `${transactionHashes[0]} ${message}`,
+        resolvedMessage: `${formatRecentTransactionReference(transactionReference)} ${message}`,
       };
     }
-    if (transactionHashes.length > 1) {
+    if (transactionReferences.length > 1) {
       return {
         clarificationQuestion: '你想分析哪一笔交易？请发送单笔完整交易哈希或对应主网浏览器链接。',
         resolution: 'needs_clarification',
@@ -81,18 +91,55 @@ export function detectFollowUpDependency(message: string): FollowUpDependency | 
   return undefined;
 }
 
-function uniqueRecentTransactionHashes(turns: SessionTurn[]): string[] {
-  const hashes: string[] = [];
+function uniqueRecentTransactionReferences(turns: SessionTurn[]): RecentTransactionReference[] {
+  const referencesByHash = new Map<string, RecentTransactionReference[]>();
   for (const turn of turns) {
     const txHash = turn.metadata?.txHash;
-    if (
-      txHash !== undefined &&
-      !hashes.some((hash) => hash.toLowerCase() === txHash.toLowerCase())
-    ) {
-      hashes.push(txHash);
+    if (txHash === undefined) {
+      continue;
+    }
+
+    const chain = turn.metadata?.chain;
+    const hashKey = normalizeTransactionHashKey(txHash);
+    const existingReferences = referencesByHash.get(hashKey) ?? [];
+    const reference = {
+      ...(chain === undefined ? {} : { chain }),
+      txHash,
+    };
+
+    if (!existingReferences.some((existing) => transactionReferenceEquals(existing, reference))) {
+      referencesByHash.set(hashKey, [...existingReferences, reference]);
     }
   }
-  return hashes;
+
+  return Array.from(referencesByHash.values()).flatMap((references) => {
+    const knownReferences = references.filter(
+      (reference) => reference.chain !== undefined && reference.chain !== 'unknown',
+    );
+    return knownReferences.length > 0 ? knownReferences : references.slice(0, 1);
+  });
+}
+
+function normalizeTransactionHashKey(txHash: string): string {
+  return txHash.startsWith('0x') ? txHash.toLowerCase() : txHash;
+}
+
+function transactionReferenceEquals(
+  left: RecentTransactionReference,
+  right: RecentTransactionReference,
+): boolean {
+  return (
+    normalizeTransactionHashKey(left.txHash) === normalizeTransactionHashKey(right.txHash) &&
+    (left.chain ?? 'unknown') === (right.chain ?? 'unknown')
+  );
+}
+
+function formatRecentTransactionReference(reference: RecentTransactionReference): string {
+  if (reference.chain === undefined || reference.chain === 'unknown') {
+    return reference.txHash;
+  }
+
+  return `${reference.chain} ${reference.txHash}`;
 }
 
 function isTransactionFollowUp(message: string): boolean {
