@@ -1892,6 +1892,7 @@ export function renderOpsPage(): string {
       const txReportBulkNote = document.querySelector("#tx-report-bulk-note");
       const txReportBulkStatus = document.querySelector("#tx-report-bulk-status");
       const txReportBulkButtons = Array.from(document.querySelectorAll("#tx-report-bulk-review button[data-action]"));
+      let currentKnowledgeCandidates = [];
       let currentTxReports = [];
 
       form.addEventListener("submit", async (event) => {
@@ -2287,7 +2288,8 @@ export function renderOpsPage(): string {
             throw new Error(payload.message || "Unable to load knowledge candidates.");
           }
 
-          renderKnowledgeCandidates(payload.candidates || []);
+          currentKnowledgeCandidates = payload.candidates || [];
+          renderKnowledgeCandidates(currentKnowledgeCandidates);
           knowledgeCandidateStatus.textContent =
             String((payload.candidates || []).length) + " candidates";
         } catch (error) {
@@ -2324,10 +2326,187 @@ export function renderOpsPage(): string {
                 candidate.redactionReport?.riskFlags?.length
                   ? text("Flags " + candidate.redactionReport.riskFlags.join(", "))
                   : undefined,
+                candidate.reviewer ? text("Reviewer " + candidate.reviewer) : undefined,
+                candidate.reviewNotes ? text("Review notes " + candidate.reviewNotes) : undefined,
+                createKnowledgeCandidateReviewForm(candidate),
               ],
             ),
           ),
         );
+      }
+
+      function createKnowledgeCandidateReviewForm(candidate) {
+        if (!candidate.id) {
+          return undefined;
+        }
+
+        const form = document.createElement("form");
+        form.className = "report-review-form";
+
+        const reviewerLabel = document.createElement("label");
+        reviewerLabel.textContent = "Reviewer";
+        const reviewer = document.createElement("input");
+        reviewer.name = "reviewer";
+        reviewer.autocomplete = "off";
+        reviewer.value = candidate.reviewer || "";
+        reviewerLabel.append(reviewer);
+
+        const notesLabel = document.createElement("label");
+        notesLabel.textContent = "Notes";
+        const notes = document.createElement("input");
+        notes.name = "notes";
+        notes.autocomplete = "off";
+        notes.value = candidate.reviewNotes || "";
+        notesLabel.append(notes);
+
+        const mergedIntoCandidateLabel = document.createElement("label");
+        mergedIntoCandidateLabel.textContent = "Merge target";
+        const mergedIntoCandidateId = document.createElement("input");
+        mergedIntoCandidateId.name = "mergedIntoCandidateId";
+        mergedIntoCandidateId.autocomplete = "off";
+        mergedIntoCandidateId.placeholder = "candidate id";
+        mergedIntoCandidateLabel.append(mergedIntoCandidateId);
+
+        const statusTarget = document.createElement("div");
+        statusTarget.className = "report-review-status";
+        statusTarget.setAttribute("role", "status");
+        statusTarget.setAttribute("aria-live", "polite");
+
+        const approve = createKnowledgeCandidateReviewActionButton(candidate, {
+          action: "approve",
+          mergedIntoCandidateId,
+          notes,
+          reviewer,
+          statusTarget,
+        });
+        approve.textContent = "Approve";
+
+        const reject = createKnowledgeCandidateReviewActionButton(candidate, {
+          action: "reject",
+          mergedIntoCandidateId,
+          notes,
+          reviewer,
+          statusTarget,
+        });
+        reject.textContent = "Reject";
+
+        const requestChanges = createKnowledgeCandidateReviewActionButton(candidate, {
+          action: "request_changes",
+          mergedIntoCandidateId,
+          notes,
+          reviewer,
+          statusTarget,
+        });
+        requestChanges.textContent = "Request changes";
+
+        const mergeDuplicate = createKnowledgeCandidateReviewActionButton(candidate, {
+          action: "merge_duplicate",
+          mergedIntoCandidateId,
+          notes,
+          reviewer,
+          statusTarget,
+        });
+        mergeDuplicate.textContent = "Merge duplicate";
+
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+        });
+        form.append(
+          reviewerLabel,
+          notesLabel,
+          mergedIntoCandidateLabel,
+          approve,
+          reject,
+          requestChanges,
+          mergeDuplicate,
+          statusTarget,
+        );
+        return form;
+      }
+
+      function createKnowledgeCandidateReviewActionButton(candidate, options) {
+        const button = document.createElement("button");
+        button.type = "button";
+
+        button.addEventListener("click", async () => {
+          const token = tokenInput.value.trim();
+          if (!token) {
+            options.statusTarget.textContent = "Ops token is required.";
+            tokenInput.focus();
+            return;
+          }
+          if (!options.reviewer.value.trim()) {
+            options.statusTarget.textContent = "Reviewer is required.";
+            options.reviewer.focus();
+            return;
+          }
+          if (
+            options.action === "merge_duplicate" &&
+            !options.mergedIntoCandidateId.value.trim()
+          ) {
+            options.statusTarget.textContent = "Merge target is required.";
+            options.mergedIntoCandidateId.focus();
+            return;
+          }
+
+          button.disabled = true;
+          options.statusTarget.textContent = "Saving";
+          try {
+            const reviewed = await updateKnowledgeCandidateReview(
+              candidate,
+              {
+                action: options.action,
+                mergedIntoCandidateId: options.mergedIntoCandidateId.value.trim(),
+                notes: options.notes.value.trim(),
+                reviewer: options.reviewer.value.trim(),
+              },
+              options.statusTarget,
+            );
+            currentKnowledgeCandidates = currentKnowledgeCandidates
+              .map((item) => (item.id === reviewed.id ? reviewed : item))
+              .filter((item) => item.status === knowledgeCandidateStatusFilter.value);
+            renderKnowledgeCandidates(currentKnowledgeCandidates);
+            knowledgeCandidateStatus.textContent =
+              "Saved " +
+              reviewed.status +
+              " · " +
+              String(currentKnowledgeCandidates.length) +
+              " candidates";
+          } catch (error) {
+            options.statusTarget.textContent =
+              error instanceof Error ? error.message : String(error);
+          } finally {
+            button.disabled = false;
+          }
+        });
+
+        return button;
+      }
+
+      async function updateKnowledgeCandidateReview(candidate, payload, statusTarget) {
+        const requestPayload = {
+          action: payload.action,
+          reviewer: payload.reviewer,
+          ...(payload.notes ? { notes: payload.notes } : {}),
+          ...(payload.action === "merge_duplicate"
+            ? { mergedIntoCandidateId: payload.mergedIntoCandidateId }
+            : {}),
+        };
+        const response = await fetch("/api/knowledge/candidates/" + encodeURIComponent(candidate.id) + "/review", {
+          method: "PATCH",
+          headers: {
+            Authorization: "Bearer " + tokenInput.value.trim(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestPayload),
+        });
+        const responsePayload = await response.json();
+        if (!response.ok) {
+          throw new Error(responsePayload.message || "Unable to save candidate review.");
+        }
+
+        statusTarget.textContent = "Saved";
+        return responsePayload.candidate;
       }
 
       function knowledgeCandidateSourcesLabel(sourceRefs) {

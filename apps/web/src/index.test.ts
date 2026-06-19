@@ -282,7 +282,22 @@ describe('renderOpsPage', () => {
     expect(html).toContain('params.set("source", knowledgeCandidateSource.value)');
     expect(html).toContain('fetch("/api/knowledge/candidates?" + params.toString()');
     expect(html).toContain('Authorization: "Bearer " + token');
-    expect(html).toContain('renderKnowledgeCandidates(payload.candidates || [])');
+    expect(html).toContain('currentKnowledgeCandidates = payload.candidates || []');
+    expect(html).toContain('renderKnowledgeCandidates(currentKnowledgeCandidates)');
+  });
+
+  it('renders knowledge candidate review controls including duplicate merge target', () => {
+    const html = renderOpsPage();
+
+    expect(html).toContain('function createKnowledgeCandidateReviewForm(candidate)');
+    expect(html).toContain('mergedIntoCandidateId.name = "mergedIntoCandidateId"');
+    expect(html).toContain('mergeDuplicate.textContent = "Merge duplicate"');
+    expect(html).toContain('action: "merge_duplicate"');
+    expect(html).toContain('mergedIntoCandidateId: options.mergedIntoCandidateId.value.trim()');
+    expect(html).toContain(
+      'fetch("/api/knowledge/candidates/" + encodeURIComponent(candidate.id) + "/review"',
+    );
+    expect(html).toContain('renderKnowledgeCandidates(currentKnowledgeCandidates)');
   });
 
   it('renders bulk transaction analysis report review controls for ops queues', () => {
