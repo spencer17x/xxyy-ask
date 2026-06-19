@@ -108,6 +108,9 @@ describe('renderOpsPage', () => {
     expect(html).toContain(
       'renderQualitySignalReasons(summary.knowledgeCandidateQueues?.qualitySignalReasonCounts || {})',
     );
+    expect(html).toContain(
+      'renderQualitySignalRoutes(summary.knowledgeCandidateQueues?.qualitySignalAgentRouteCounts || {})',
+    );
     expect(html).toContain('summary.knowledgeCandidateQueues?.needsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.qualitySignalNeedsReviewCount || 0');
     expect(html).toContain('summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0');
@@ -116,10 +119,13 @@ describe('renderOpsPage', () => {
     expect(html).toContain('id="knowledge-eval-failure-reasons"');
     expect(html).toContain('id="knowledge-quality-signals"');
     expect(html).toContain('id="knowledge-quality-reasons"');
+    expect(html).toContain('id="knowledge-quality-routes"');
     expect(html).toContain('recent.failureReasons');
     expect(html).toContain('Eval reason · " + reason');
     expect(html).toContain('Quality gap · " + recent.candidateId');
     expect(html).toContain('Quality reason · " + reason');
+    expect(html).toContain('Quality route · " + route');
+    expect(html).toContain('recent.agentRoute');
     expect(html).toContain('recent.targetCategory');
     expect(html).toContain('recent.riskLevel');
     expect(html).toContain('Transaction Analysis');

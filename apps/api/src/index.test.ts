@@ -338,6 +338,7 @@ describe('createRequestHandler', () => {
         evalFailedCount: 0,
         evalFailureReasonCounts: {},
         needsReviewCount: 0,
+        qualitySignalAgentRouteCounts: {},
         qualitySignalNeedsReviewCount: 0,
         qualitySignalReasonCounts: {},
         recentEvalFailures: [],
@@ -425,6 +426,7 @@ describe('createRequestHandler', () => {
         evalFailedCount: 0,
         evalFailureReasonCounts: {},
         needsReviewCount: 0,
+        qualitySignalAgentRouteCounts: {},
         qualitySignalNeedsReviewCount: 0,
         qualitySignalReasonCounts: {},
         recentEvalFailures: [],
@@ -517,9 +519,14 @@ describe('createRequestHandler', () => {
         if (filter.source === 'answer_quality_signal') {
           const qualitySourceRef = (
             reason: string,
-          ): KnowledgeCandidate['sourceRefs'][number] & { qualitySignalReason: string } => ({
+            agentRoute?: string,
+          ): KnowledgeCandidate['sourceRefs'][number] & {
+            qualitySignalAgentRoute?: string;
+            qualitySignalReason: string;
+          } => ({
             chatIdHash: 'session_present',
             messageId: `aqs_${reason}`,
+            ...(agentRoute === undefined ? {} : { qualitySignalAgentRoute: agentRoute }),
             qualitySignalReason: reason,
             source: 'answer_quality_signal',
           });
@@ -530,7 +537,7 @@ describe('createRequestHandler', () => {
               id: 'kc_quality_gap_1',
               question: 'XXYY Pro 价格是多少？',
               riskLevel: 'medium',
-              sourceRefs: [qualitySourceRef('missing_citations')],
+              sourceRefs: [qualitySourceRef('missing_citations', 'product_answer')],
               status: 'needs_review',
               targetCategory: 'eval_case',
               type: 'eval_case',
@@ -540,7 +547,7 @@ describe('createRequestHandler', () => {
               id: 'kc_quality_gap_2',
               question: '怎么升级？',
               riskLevel: 'low',
-              sourceRefs: [qualitySourceRef('missing_followup_context')],
+              sourceRefs: [qualitySourceRef('missing_followup_context', 'clarify')],
               status: 'needs_review',
               targetCategory: 'eval_case',
               type: 'eval_case',
@@ -550,7 +557,7 @@ describe('createRequestHandler', () => {
               id: 'kc_quality_gap_3',
               question: 'XXYY 文档打不开怎么办？',
               riskLevel: 'low',
-              sourceRefs: [qualitySourceRef('missing_citations')],
+              sourceRefs: [qualitySourceRef('missing_citations', 'product_answer')],
               status: 'needs_review',
               targetCategory: 'eval_case',
               type: 'eval_case',
@@ -745,6 +752,10 @@ describe('createRequestHandler', () => {
             },
           ],
           needsReviewCount: 2,
+          qualitySignalAgentRouteCounts: {
+            clarify: 1,
+            product_answer: 2,
+          },
           qualitySignalNeedsReviewCount: 3,
           qualitySignalReasonCounts: {
             missing_citations: 2,
@@ -752,6 +763,7 @@ describe('createRequestHandler', () => {
           },
           recentQualitySignals: [
             {
+              agentRoute: 'product_answer',
               candidateId: 'kc_quality_gap_1',
               createdAt: '2026-06-19T07:30:00.000Z',
               question: 'XXYY Pro 价格是多少？',
@@ -760,6 +772,7 @@ describe('createRequestHandler', () => {
               type: 'eval_case',
             },
             {
+              agentRoute: 'clarify',
               candidateId: 'kc_quality_gap_2',
               createdAt: '2026-06-19T07:20:00.000Z',
               question: '怎么升级？',
@@ -768,6 +781,7 @@ describe('createRequestHandler', () => {
               type: 'eval_case',
             },
             {
+              agentRoute: 'product_answer',
               candidateId: 'kc_quality_gap_3',
               createdAt: '2026-06-19T07:10:00.000Z',
               question: 'XXYY 文档打不开怎么办？',

@@ -1133,12 +1133,24 @@ function validateKnowledgeCandidateQueueSummary(value) {
     return 'ops summary must include valid quality signal reason counts.';
   }
 
+  if (!hasReasonCounts(value.qualitySignalAgentRouteCounts)) {
+    return 'ops summary must include valid quality signal route counts.';
+  }
+
   const reasonTotal = Object.values(value.qualitySignalReasonCounts).reduce(
     (total, count) => total + count,
     0,
   );
   if (reasonTotal !== value.qualitySignalNeedsReviewCount) {
     return 'ops summary quality signal reason counts must match the quality gap queue count.';
+  }
+
+  const routeTotal = Object.values(value.qualitySignalAgentRouteCounts).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  if (routeTotal !== value.qualitySignalNeedsReviewCount) {
+    return 'ops summary quality signal route counts must match the quality gap queue count.';
   }
 
   return undefined;
@@ -1157,6 +1169,7 @@ function hasReasonCounts(value) {
 function isQualitySignalCandidateSummary(value) {
   return (
     isRecord(value) &&
+    isCleanNonEmptyString(value.agentRoute) &&
     isCleanNonEmptyString(value.candidateId) &&
     isCleanNonEmptyString(value.createdAt) &&
     isCleanNonEmptyString(value.question) &&

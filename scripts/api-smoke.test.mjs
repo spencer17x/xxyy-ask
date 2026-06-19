@@ -1169,6 +1169,29 @@ describe('runApiSmoke', () => {
     );
   });
 
+  it('fails ops summary smoke when quality route counts are missing', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload();
+    delete payload.knowledgeCandidateQueues.qualitySignalAgentRouteCounts;
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary must include valid quality signal route counts.',
+    );
+  });
+
   it('fails ops summary smoke when eval failure reason counts are missing', async () => {
     const messages = [];
     const payload = opsSummaryPayload();
@@ -1247,6 +1270,36 @@ describe('runApiSmoke', () => {
     expect(exitCode).toBe(1);
     expect(messages).toContain(
       'Failed ops summary: ops summary quality signal reason counts must match the quality gap queue count.',
+    );
+  });
+
+  it('fails ops summary smoke when quality route totals drift from the queue count', async () => {
+    const messages = [];
+    const payload = opsSummaryPayload({
+      knowledgeCandidateQueues: {
+        ...opsSummaryPayload().knowledgeCandidateQueues,
+        qualitySignalAgentRouteCounts: {
+          clarify: 1,
+          product_answer: 1,
+        },
+      },
+    });
+
+    const exitCode = await runApiSmoke({
+      args: ['--ops-token', 'ops-token'],
+      env: {},
+      fetch: (url) => {
+        if (url.endsWith('/api/ops/summary')) {
+          return Promise.resolve(jsonResponse(payload));
+        }
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(messages).toContain(
+      'Failed ops summary: ops summary quality signal route counts must match the quality gap queue count.',
     );
   });
 
@@ -5501,12 +5554,16 @@ function opsSummaryPayload(overrides = {}) {
       },
       needsReviewCount: 2,
       qualitySignalNeedsReviewCount: 1,
+      qualitySignalAgentRouteCounts: {
+        product_answer: 1,
+      },
       qualitySignalReasonCounts: {
         missing_citations: 1,
       },
       recentEvalFailures: [],
       recentQualitySignals: [
         {
+          agentRoute: 'product_answer',
           candidateId: 'kc_quality_gap_1',
           createdAt: '2026-06-19T07:30:00.000Z',
           question: 'XXYY Pro 价格是多少？',

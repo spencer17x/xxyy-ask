@@ -152,6 +152,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'boundary',
         answer: response.answer,
         channel: 'web',
         confidence: 0.3,
@@ -210,6 +211,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'boundary',
         answer: response.answer,
         channel: 'web',
         confidence: 0.4,
@@ -268,6 +270,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'boundary',
         answer: response.answer,
         channel: 'web',
         confidence: 0.4,
@@ -325,6 +328,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'boundary',
         answer: response.answer,
         channel: 'web',
         confidence: 0.35,
@@ -368,6 +372,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('不要发送私钥、助记词或 seed phrase');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'boundary',
         answer: response.answer,
         channel: 'web',
         confidence: 0.35,
@@ -423,6 +428,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('不能仅凭当前问题判断某笔交易是否被夹或存在 MEV');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'boundary',
         answer: response.answer,
         channel: 'web',
         confidence: 0.7,
@@ -466,6 +472,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('不能仅凭当前问题判断某笔交易是否被夹或存在 MEV');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'boundary',
         answer: response.answer,
         channel: 'web',
         confidence: 0.7,
@@ -534,6 +541,7 @@ describe('createCustomerAgentRuntime', () => {
     });
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'product_answer',
         answer: response.answer,
         channel: 'web',
         errorCode: 'ProductToolFailure',
@@ -707,6 +715,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).not.toMatch(/人工接管|工单|转人工|人工客服/u);
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.55,
@@ -766,6 +775,7 @@ describe('createCustomerAgentRuntime', () => {
     ]);
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'transaction_analysis',
         answer: response.answer,
         channel: 'web',
         errorCode: 'TxToolFailure',
@@ -816,6 +826,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('交易哈希夹子检测功能暂未启用');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'transaction_analysis',
         answer: response.answer,
         channel: 'web',
         confidence: 0.35,
@@ -1221,6 +1232,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).not.toContain('已记录');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'preference_capture',
         answer: response.answer,
         channel: 'web',
         confidence: 0.45,
@@ -1281,6 +1293,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).not.toContain('已记录');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'preference_capture',
         answer: response.answer,
         channel: 'web',
         confidence: 0.45,
@@ -1334,6 +1347,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('具体功能');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.45,
@@ -1385,6 +1399,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('具体功能');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.45,
@@ -1441,6 +1456,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('具体功能');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.45,
@@ -1540,6 +1556,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('不能确定你想继续咨询哪个具体功能');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.55,
@@ -1660,6 +1677,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('单笔完整交易哈希');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.45,
@@ -1701,6 +1719,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('单笔完整交易哈希');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.45,
@@ -1747,6 +1766,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('单笔完整交易哈希');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.45,
@@ -1793,6 +1813,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(response.answer).toContain('不能确定“这笔”指哪一笔交易');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.55,
@@ -1855,6 +1876,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(execute).toHaveBeenCalledTimes(2);
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.55,
@@ -1884,6 +1906,7 @@ describe('createCustomerAgentRuntime', () => {
     });
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.45,
@@ -1949,6 +1972,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(execute).not.toHaveBeenCalled();
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'clarify',
         answer: response.answer,
         channel: 'web',
         confidence: 0.45,
@@ -2056,6 +2080,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(finalResponse.answer).not.toMatch(/提交工单|人工客服|人工接管|转人工/u);
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'product_answer',
         answer: finalResponse.answer,
         channel: 'web',
         citationCount: 1,
@@ -2111,6 +2136,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(finalResponse.answer).not.toContain('999 USDT');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'product_answer',
         answer: finalResponse.answer,
         channel: 'web',
         citationCount: 0,
@@ -2165,6 +2191,7 @@ describe('createCustomerAgentRuntime', () => {
     expect(finalResponse.answer).not.toContain('一定支持');
     expect(qualitySignals.signals()).toEqual([
       {
+        agentRoute: 'product_answer',
         answer: finalResponse.answer,
         channel: 'web',
         citationCount: 0,

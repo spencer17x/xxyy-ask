@@ -10,6 +10,7 @@ describe('mineAnswerQualitySignals', () => {
       now,
       signals: [
         {
+          agentRoute: 'product_answer',
           answer: 'XXYY Pro 可以在会员页面升级，升级后会提升监控上限。',
           channel: 'web',
           citationCount: 0,
@@ -55,6 +56,7 @@ describe('mineAnswerQualitySignals', () => {
       {
         chatIdHash: 'session_present',
         messageId: sourceRef.messageId,
+        qualitySignalAgentRoute: 'product_answer',
         qualitySignalReason: 'low_confidence',
         source: 'answer_quality_signal',
       },

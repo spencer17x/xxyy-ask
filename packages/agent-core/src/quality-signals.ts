@@ -1,4 +1,4 @@
-import type { ChatChannel, Intent } from '@xxyy/shared';
+import type { AgentRoute, ChatChannel, Intent } from '@xxyy/shared';
 
 export type QualitySignalChannel = ChatChannel | 'agent';
 
@@ -22,6 +22,7 @@ export type QualitySignalReason =
   | 'unknown_intent';
 
 export interface QualitySignal {
+  agentRoute?: AgentRoute;
   answer?: string;
   channel: QualitySignalChannel;
   citationCount?: number;

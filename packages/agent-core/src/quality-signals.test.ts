@@ -7,6 +7,7 @@ describe('quality signals', () => {
     const sink = createInMemoryQualitySignalSink();
 
     sink.record({
+      agentRoute: 'product_answer',
       channel: 'web',
       citationCount: 0,
       confidence: 0.2,
@@ -19,6 +20,7 @@ describe('quality signals', () => {
 
     expect(sink.signals()).toEqual([
       {
+        agentRoute: 'product_answer',
         channel: 'web',
         citationCount: 0,
         confidence: 0.2,

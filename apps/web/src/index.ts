@@ -1735,6 +1735,10 @@ export function renderOpsPage(): string {
               <div id="knowledge-quality-reasons" class="tx-report-results"></div>
             </div>
             <div class="knowledge-candidate-section">
+              <h3>Quality Gap Routes</h3>
+              <div id="knowledge-quality-routes" class="tx-report-results"></div>
+            </div>
+            <div class="knowledge-candidate-section">
               <h3>Eval Failure Reasons</h3>
               <div id="knowledge-eval-failure-reasons" class="tx-report-results"></div>
             </div>
@@ -1866,6 +1870,7 @@ export function renderOpsPage(): string {
       const knowledgeEvalFailureReasonsTarget = document.querySelector("#knowledge-eval-failure-reasons");
       const knowledgeQualitySignalsTarget = document.querySelector("#knowledge-quality-signals");
       const knowledgeQualityReasonsTarget = document.querySelector("#knowledge-quality-reasons");
+      const knowledgeQualityRoutesTarget = document.querySelector("#knowledge-quality-routes");
       const queryTxReports = document.querySelector("#tx-report-form");
       const txReportHash = document.querySelector("#tx-report-hash");
       const txReportChain = document.querySelector("#tx-report-chain");
@@ -1958,6 +1963,7 @@ export function renderOpsPage(): string {
           renderEvalFailureReasons(summary.knowledgeCandidateQueues?.evalFailureReasonCounts || {});
           renderQualitySignals(summary.knowledgeCandidateQueues?.recentQualitySignals || []);
           renderQualitySignalReasons(summary.knowledgeCandidateQueues?.qualitySignalReasonCounts || {});
+          renderQualitySignalRoutes(summary.knowledgeCandidateQueues?.qualitySignalAgentRouteCounts || {});
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
           void loadKnowledgeCandidates();
           status.textContent = "Updated " + summary.generatedAt;
@@ -2084,6 +2090,22 @@ export function renderOpsPage(): string {
         );
       }
 
+      function renderQualitySignalRoutes(routeCounts) {
+        const rows = Object.entries(routeCounts)
+          .filter((entry) => Number(entry[1]) > 0)
+          .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
+        if (rows.length === 0) {
+          knowledgeQualityRoutesTarget.replaceChildren(empty("No quality route counts."));
+          return;
+        }
+
+        knowledgeQualityRoutesTarget.replaceChildren(
+          ...rows.map(([route, count]) =>
+            row("knowledge-candidate-item", "Quality route · " + route, String(count), "Needs review"),
+          ),
+        );
+      }
+
       function renderQualitySignals(recentSignals) {
         if (recentSignals.length === 0) {
           knowledgeQualitySignalsTarget.replaceChildren(empty("No recent quality gaps."));
@@ -2097,6 +2119,7 @@ export function renderOpsPage(): string {
               "Quality gap · " + recent.candidateId,
               recent.question,
               [
+                recent.agentRoute ? "Route " + recent.agentRoute : "",
                 recent.targetCategory ? "Target " + recent.targetCategory : "",
                 recent.type ? "Type " + recent.type : "",
                 recent.riskLevel ? "Risk " + recent.riskLevel : "",

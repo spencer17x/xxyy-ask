@@ -82,6 +82,7 @@ export function createCustomerAgentRuntime(
       });
       const response = createTxAnalysisUnavailableAnswer('provider_unavailable');
       recordQualitySignal(qualitySignals, request, {
+        agentRoute: 'transaction_analysis',
         answer: response.answer,
         errorCode: errorCodeFrom(error),
         intent,
@@ -103,6 +104,7 @@ export function createCustomerAgentRuntime(
 
     if (output.status === 'failure') {
       recordQualitySignal(qualitySignals, request, {
+        agentRoute: 'transaction_analysis',
         answer: response.answer,
         confidence: response.confidence,
         intent,
@@ -148,6 +150,7 @@ export function createCustomerAgentRuntime(
       }
       const response = createProductKnowledgeUnavailableAnswer(intent);
       recordQualitySignal(qualitySignals, request, {
+        agentRoute: 'product_answer',
         answer: response.answer,
         errorCode: errorCodeFrom(error),
         intent,
@@ -182,6 +185,7 @@ export function createCustomerAgentRuntime(
 
     if (handoffBlockedResponse !== undefined) {
       recordQualitySignal(qualitySignals, request, {
+        agentRoute: 'product_answer',
         answer: handoffBlockedResponse.answer,
         citationCount: response.citations.length,
         confidence: response.confidence,
@@ -191,6 +195,7 @@ export function createCustomerAgentRuntime(
       });
     } else if (hasLowConfidence && hasMissingCitations) {
       recordQualitySignal(qualitySignals, request, {
+        agentRoute: 'product_answer',
         answer: guardedResponse?.answer ?? response.answer,
         citationCount: 0,
         confidence: response.confidence,
@@ -200,6 +205,7 @@ export function createCustomerAgentRuntime(
       });
     } else if (hasLowConfidence) {
       recordQualitySignal(qualitySignals, request, {
+        agentRoute: 'product_answer',
         answer: guardedResponse?.answer ?? response.answer,
         citationCount: response.citations.length,
         confidence: response.confidence,
@@ -209,6 +215,7 @@ export function createCustomerAgentRuntime(
       });
     } else if (hasMissingCitations) {
       recordQualitySignal(qualitySignals, request, {
+        agentRoute: 'product_answer',
         answer: guardedResponse?.answer ?? response.answer,
         citationCount: 0,
         confidence: response.confidence,
@@ -232,6 +239,7 @@ export function createCustomerAgentRuntime(
         missingSessionDependency,
       );
       recordQualitySignal(qualitySignals, request, {
+        agentRoute: 'clarify',
         answer: response.answer,
         confidence: response.confidence,
         intent: response.intent,
@@ -247,6 +255,7 @@ export function createCustomerAgentRuntime(
       if (dependency !== undefined) {
         const response = createSessionUnavailableClarification(request.message, dependency);
         recordQualitySignal(qualitySignals, request, {
+          agentRoute: 'clarify',
           answer: response.answer,
           confidence: response.confidence,
           errorCode: errorCodeFrom(recentTurnsResult.error),
@@ -271,6 +280,7 @@ export function createCustomerAgentRuntime(
         'clarify',
       );
       recordQualitySignal(qualitySignals, request, {
+        agentRoute: 'clarify',
         answer: response.answer,
         confidence: response.confidence,
         intent: response.intent,
@@ -295,6 +305,7 @@ export function createCustomerAgentRuntime(
             'preference_capture',
           );
           recordQualitySignal(qualitySignals, request, {
+            agentRoute: 'preference_capture',
             answer: response.answer,
             confidence: response.confidence,
             intent: response.intent,
@@ -316,6 +327,7 @@ export function createCustomerAgentRuntime(
             'preference_capture',
           );
           recordQualitySignal(qualitySignals, request, {
+            agentRoute: 'preference_capture',
             answer: unavailableResponse.answer,
             confidence: unavailableResponse.confidence,
             errorCode: errorCodeFrom(appendResult.error),
@@ -346,6 +358,7 @@ export function createCustomerAgentRuntime(
         'clarify',
       );
       recordQualitySignal(qualitySignals, request, {
+        agentRoute: 'clarify',
         answer: response.answer,
         confidence: response.confidence,
         intent: response.intent,
@@ -621,6 +634,7 @@ function recordBoundaryQualitySignal(
               ? 'boundary_chain_forensics'
               : 'unknown_intent';
   recordQualitySignal(qualitySignals, request, {
+    agentRoute: 'boundary',
     answer: response.answer,
     confidence: response.confidence,
     intent: response.intent,
@@ -633,6 +647,7 @@ function recordQualitySignal(
   qualitySignals: QualitySignalSink,
   request: ChatRequest,
   signal: {
+    agentRoute?: AgentRoute;
     answer?: string;
     citationCount?: number;
     confidence?: number;
@@ -643,6 +658,7 @@ function recordQualitySignal(
   },
 ): void {
   qualitySignals.record({
+    ...(signal.agentRoute === undefined ? {} : { agentRoute: signal.agentRoute }),
     ...(signal.answer === undefined ? {} : { answer: sanitizeSessionText(signal.answer) }),
     channel: request.channel,
     ...(signal.citationCount === undefined ? {} : { citationCount: signal.citationCount }),

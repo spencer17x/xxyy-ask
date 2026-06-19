@@ -33,6 +33,7 @@ export type AnswerQualitySignalReason =
   | 'unknown_intent';
 
 export interface AnswerQualitySignal {
+  agentRoute?: string;
   answer?: string;
   channel: string;
   citationCount?: number;
@@ -381,6 +382,7 @@ function createTransactionFailureCandidate(
 }
 
 interface QualitySignalIdentity {
+  agentRoute?: string;
   answer?: string;
   channel: string;
   citationCount?: number;
@@ -397,7 +399,9 @@ function createQualitySignalIdentity(
   signal: AnswerQualitySignal,
   input: { answerText: string | undefined; questionText: string },
 ): QualitySignalIdentity {
+  const agentRoute = signal.agentRoute?.trim();
   return {
+    ...(agentRoute === undefined || agentRoute.length === 0 ? {} : { agentRoute }),
     ...(input.answerText === undefined ? {} : { answer: input.answerText }),
     channel: signal.channel,
     ...(signal.citationCount === undefined ? {} : { citationCount: signal.citationCount }),
@@ -523,6 +527,7 @@ function createSourceRef(signal: QualitySignalIdentity): KnowledgeCandidateSourc
   return {
     chatIdHash: signal.sessionIdPresent ? 'session_present' : 'session_absent',
     messageId: createQualitySignalMessageId(signal),
+    ...(signal.agentRoute === undefined ? {} : { qualitySignalAgentRoute: signal.agentRoute }),
     qualitySignalReason: signal.reason,
     source: 'answer_quality_signal',
   };
@@ -540,6 +545,7 @@ function qualitySignalHash(signal: QualitySignalIdentity): string {
   return createHash('sha256')
     .update(
       JSON.stringify({
+        agentRoute: signal.agentRoute,
         answer: signal.answer,
         channel: signal.channel,
         citationCount: signal.citationCount,

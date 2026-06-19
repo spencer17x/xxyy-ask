@@ -231,6 +231,7 @@ interface KnowledgeCandidateQueueSummary {
   evalFailedCount: number;
   evalFailureReasonCounts: Record<string, number>;
   needsReviewCount: number;
+  qualitySignalAgentRouteCounts: Record<string, number>;
   qualitySignalNeedsReviewCount: number;
   qualitySignalReasonCounts: Record<string, number>;
   recentEvalFailures: RecentKnowledgeEvalFailureSummary[];
@@ -246,6 +247,7 @@ interface RecentKnowledgeEvalFailureSummary {
 }
 
 interface RecentQualitySignalCandidateSummary {
+  agentRoute: string;
   candidateId: string;
   createdAt: string;
   question: string;
@@ -1517,6 +1519,7 @@ async function summarizeKnowledgeCandidateQueues(
     evalFailedCount: evalFailed.length,
     evalFailureReasonCounts: summarizeEvalFailureReasonCounts(evalFailureSummaries),
     needsReviewCount: needsReview.length,
+    qualitySignalAgentRouteCounts: summarizeQualitySignalAgentRouteCounts(qualitySignalNeedsReview),
     qualitySignalNeedsReviewCount: qualitySignalNeedsReview.length,
     qualitySignalReasonCounts: summarizeQualitySignalReasonCounts(qualitySignalNeedsReview),
     recentEvalFailures: evalFailureSummaries.slice(0, OPS_RECENT_EVAL_FAILURE_LIMIT),
@@ -1561,16 +1564,38 @@ function summarizeQualitySignalReasonCounts(
   );
 }
 
+function summarizeQualitySignalAgentRouteCounts(
+  candidates: KnowledgeCandidate[],
+): Record<string, number> {
+  const counts = new Map<string, number>();
+
+  for (const candidate of candidates) {
+    const agentRoute = extractQualitySignalAgentRoute(candidate);
+    counts.set(agentRoute, (counts.get(agentRoute) ?? 0) + 1);
+  }
+
+  return Object.fromEntries(
+    [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
 function extractQualitySignalReason(candidate: KnowledgeCandidate): string {
   const sourceRef = candidate.sourceRefs.find((ref) => ref.source === 'answer_quality_signal');
   const reason = sourceRef?.qualitySignalReason?.trim();
   return reason === undefined || reason.length === 0 ? 'unknown' : reason;
 }
 
+function extractQualitySignalAgentRoute(candidate: KnowledgeCandidate): string {
+  const sourceRef = candidate.sourceRefs.find((ref) => ref.source === 'answer_quality_signal');
+  const agentRoute = sourceRef?.qualitySignalAgentRoute?.trim();
+  return agentRoute === undefined || agentRoute.length === 0 ? 'unknown' : agentRoute;
+}
+
 function summarizeRecentQualitySignals(
   candidates: KnowledgeCandidate[],
 ): RecentQualitySignalCandidateSummary[] {
   return candidates.map((candidate) => ({
+    agentRoute: extractQualitySignalAgentRoute(candidate),
     candidateId: candidate.id,
     createdAt: candidate.createdAt,
     question: candidate.question,
