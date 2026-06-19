@@ -6,6 +6,7 @@ import {
   createCustomerAgentChatService,
   createPgSessionContextStore,
   migratePgSessionContextStore,
+  type QualitySignalSink,
 } from '@xxyy/agent-core';
 import {
   EmbeddingConfigurationError,
@@ -20,6 +21,7 @@ import {
   KnowledgeCandidateInvalidStatusTransitionError,
   KnowledgeCandidateNotFoundError,
   KnowledgePublishTargetError,
+  captureAnswerQualitySignals,
   createPgKnowledgeOpsStore,
   fetchTelegramSupportMessages,
   mineSupportConversations,
@@ -1564,6 +1566,7 @@ function createCliChatRuntime(
   if (options.enableSessionContext === true) {
     sessionPool = createPgPool(config.databaseUrl);
   }
+  const qualitySignals = createCliQualitySignalRuntime(config);
   const retriever = createLazyRetriever(async () => {
     const nextPool = createPgPool(config.databaseUrl);
 
@@ -1590,6 +1593,7 @@ function createCliChatRuntime(
           ? createFastEvaluationAnswerProvider()
           : createLazyAnswerProvider(config),
       config,
+      qualitySignals: qualitySignals.sink,
       retriever,
       ...(sessionPool === undefined
         ? {}
@@ -1603,6 +1607,54 @@ function createCliChatRuntime(
       sessionPool = undefined;
       await currentPool?.end();
       await currentSessionPool?.end();
+      await qualitySignals.close();
+    },
+  };
+}
+
+interface CliQualitySignalRuntime {
+  sink: QualitySignalSink;
+  close(): Promise<void>;
+}
+
+function createCliQualitySignalRuntime(
+  config: ReturnType<typeof loadRagConfig>,
+): CliQualitySignalRuntime {
+  let pool: ReturnType<typeof createPgPool> | undefined;
+  let candidateStore: KnowledgeCandidateStore | undefined;
+  const pendingCaptures = new Set<Promise<void>>();
+
+  function getCandidateStore(): KnowledgeCandidateStore {
+    pool ??= createPgPool(config.databaseUrl);
+    candidateStore ??= createPgKnowledgeOpsStore({ client: pool });
+    return candidateStore;
+  }
+
+  return {
+    sink: {
+      record(signal) {
+        try {
+          const capture = captureAnswerQualitySignals({
+            getStore: getCandidateStore,
+            signals: [signal],
+          })
+            .then(() => undefined)
+            .catch(() => undefined);
+          pendingCaptures.add(capture);
+          void capture.finally(() => {
+            pendingCaptures.delete(capture);
+          });
+        } catch {
+          // Quality-gap capture is best-effort and must never block CLI answers.
+        }
+      },
+    },
+    async close() {
+      const currentPool = pool;
+      await Promise.allSettled([...pendingCaptures]);
+      pool = undefined;
+      candidateStore = undefined;
+      await currentPool?.end();
     },
   };
 }

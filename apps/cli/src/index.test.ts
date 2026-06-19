@@ -649,6 +649,260 @@ describe('runCli', () => {
     }
   });
 
+  it('captures CLI answer quality signals into knowledge candidate queues', async () => {
+    vi.resetModules();
+
+    const stdout: string[] = [];
+    const signal = {
+      answer: '当前知识库没有足够资料确认这个问题。',
+      channel: 'cli',
+      confidence: 0.2,
+      intent: 'product_qa',
+      reason: 'low_confidence',
+      redactedQuestion: 'XXYY Pro 价格是多少？',
+      sessionIdPresent: false,
+      userIdPresent: false,
+    } as const;
+    const addCandidates = vi.fn(() => Promise.resolve([]));
+    const candidateStore = { addCandidates };
+    const createPgKnowledgeOpsStore = vi.fn(() => candidateStore);
+    const captureAnswerQualitySignals = vi.fn(
+      (input: { getStore?: () => unknown; signals: readonly unknown[] }) => {
+        expect(input.signals).toEqual([signal]);
+        expect(typeof input.getStore).toBe('function');
+        expect(input.getStore?.()).toBe(candidateStore);
+        return Promise.resolve({
+          candidates: [],
+          candidatesCreated: 0,
+          signalsRead: 1,
+          signalsSkipped: 1,
+          storedCandidates: [],
+        });
+      },
+    );
+    const ask = vi.fn(() =>
+      Promise.resolve({
+        answer: 'quality-captured response',
+        citations: [],
+        confidence: 0.2,
+        intent: 'product_qa' as const,
+      }),
+    );
+    const createCustomerAgentChatService = vi.fn(
+      (options: CreateCustomerAgentChatServiceOptions) => {
+        expect(typeof options.qualitySignals?.record).toBe('function');
+        options.qualitySignals?.record(signal);
+        return {
+          ask,
+          stream: vi.fn(),
+        };
+      },
+    );
+    const end = vi.fn(() => Promise.resolve());
+    const createPgPool = vi.fn(() => ({ end }));
+
+    vi.doMock('@xxyy/agent-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createCustomerAgentChatService,
+      };
+    });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        captureAnswerQualitySignals,
+        createPgKnowledgeOpsStore,
+      };
+    });
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createOpenAiEmbeddingProvider: vi.fn(() => ({ embedTexts: vi.fn() })),
+      };
+    });
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createConfiguredTxAnalysisProvider: vi.fn(() => undefined),
+        createLazyRetriever: vi.fn(() => ({ retrieve: vi.fn() })),
+        createPgPool,
+        createPgVectorStore: vi.fn(() => ({ retrieve: vi.fn() })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+          txAnalysisProvider: 'none',
+          txAnalysisReportStore: 'file',
+          txAnalysisReviewer: 'none',
+        })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+
+      const exitCode = await runCliWithMocks(['ask', 'XXYY Pro 价格是多少？'], {
+        cwd: process.cwd(),
+        env: {},
+        stderr: { write: () => true },
+        stdout: {
+          write: (message: string) => {
+            stdout.push(message);
+            return true;
+          },
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(createCustomerAgentChatService).toHaveBeenCalledTimes(1);
+      expect(captureAnswerQualitySignals).toHaveBeenCalledTimes(1);
+      expect(createPgKnowledgeOpsStore).toHaveBeenCalledTimes(1);
+      expect(createPgPool).toHaveBeenCalledWith('postgres://example.test/db');
+      expect(addCandidates).not.toHaveBeenCalled();
+      expect(stdout.join('')).toContain('quality-captured response');
+    } finally {
+      vi.doUnmock('@xxyy/agent-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
+      vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+    }
+  });
+
+  it('waits for CLI quality signal capture before closing the candidate store pool', async () => {
+    vi.resetModules();
+
+    const events: string[] = [];
+    const signal = {
+      answer: '当前知识库没有足够资料确认这个问题。',
+      channel: 'cli',
+      confidence: 0.2,
+      intent: 'product_qa',
+      reason: 'missing_citations',
+      redactedQuestion: 'XXYY Pro 价格是多少？',
+      sessionIdPresent: false,
+      userIdPresent: false,
+    } as const;
+    const addCandidates = vi.fn(() => Promise.resolve([]));
+    const candidateStore = { addCandidates };
+    const createPgKnowledgeOpsStore = vi.fn(() => candidateStore);
+    const captureAnswerQualitySignals = vi.fn(
+      async (input: { getStore?: () => unknown; signals: readonly unknown[] }) => {
+        events.push('capture:start');
+        expect(input.signals).toEqual([signal]);
+        expect(input.getStore?.()).toBe(candidateStore);
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+        events.push('capture:done');
+        return {
+          candidates: [],
+          candidatesCreated: 0,
+          signalsRead: 1,
+          signalsSkipped: 1,
+          storedCandidates: [],
+        };
+      },
+    );
+    const createCustomerAgentChatService = vi.fn(
+      (options: CreateCustomerAgentChatServiceOptions) => ({
+        ask: vi.fn(() => {
+          options.qualitySignals?.record(signal);
+          return Promise.resolve({
+            answer: 'quality-captured response',
+            citations: [],
+            confidence: 0.2,
+            intent: 'product_qa' as const,
+          });
+        }),
+        stream: vi.fn(),
+      }),
+    );
+    const end = vi.fn(() => {
+      events.push('pool:end');
+      return Promise.resolve();
+    });
+    const createPgPool = vi.fn(() => ({ end }));
+
+    vi.doMock('@xxyy/agent-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createCustomerAgentChatService,
+      };
+    });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        captureAnswerQualitySignals,
+        createPgKnowledgeOpsStore,
+      };
+    });
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createOpenAiEmbeddingProvider: vi.fn(() => ({ embedTexts: vi.fn() })),
+      };
+    });
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createConfiguredTxAnalysisProvider: vi.fn(() => undefined),
+        createLazyRetriever: vi.fn(() => ({ retrieve: vi.fn() })),
+        createPgPool,
+        createPgVectorStore: vi.fn(() => ({ retrieve: vi.fn() })),
+        loadRagConfig: vi.fn(() => ({
+          answerProvider: 'openai',
+          databaseUrl: 'postgres://example.test/db',
+          openAiApiKey: 'test-key',
+          openAiApiKeyPresent: true,
+          openAiBaseUrl: 'https://api.openai.test/v1',
+          openAiEmbeddingModel: 'text-embedding-3-small',
+          openAiMaxRetries: 1,
+          openAiModel: 'gpt-test',
+          openAiRequestTimeoutMs: 30000,
+          topK: 6,
+          txAnalysisProvider: 'none',
+          txAnalysisReportStore: 'file',
+          txAnalysisReviewer: 'none',
+        })),
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+
+      const exitCode = await runCliWithMocks(['ask', 'XXYY Pro 价格是多少？'], {
+        cwd: process.cwd(),
+        env: {},
+        stderr: { write: () => true },
+        stdout: { write: () => true },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(captureAnswerQualitySignals).toHaveBeenCalledTimes(1);
+      expect(events).toEqual(['capture:start', 'capture:done', 'pool:end']);
+    } finally {
+      vi.doUnmock('@xxyy/agent-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
+      vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+    }
+  });
+
   it('runs fast evaluation with progress output and a local answer provider', async () => {
     vi.resetModules();
 
