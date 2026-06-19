@@ -1623,6 +1623,53 @@ describe('createRequestHandler', () => {
     expect(feedbackCandidates).toEqual([expectedFeedback]);
   });
 
+  it('redacts pasted secrets before storing or mining answer feedback', async () => {
+    const feedback: unknown[] = [];
+    const feedbackCandidates: unknown[] = [];
+    const handler = createRequestHandler({
+      recordFeedbackCandidate(input: unknown) {
+        feedbackCandidates.push(input);
+        return Promise.resolve();
+      },
+      recordFeedback(input: unknown) {
+        feedback.push(input);
+        return Promise.resolve();
+      },
+    });
+
+    const response = await callHandler(handler, {
+      body: {
+        answer: '不要发送私钥、助记词或 seed phrase。api key: sk-answer-123',
+        channel: 'web',
+        citationCount: 0,
+        comment: '我的密码是 hunter2',
+        intent: 'unknown',
+        question: '我的密码是 hunter2 api key: sk-test-123456',
+        rating: 'negative',
+        sessionId: 'session-secret-feedback',
+      },
+      method: 'POST',
+      url: '/api/feedback',
+    });
+
+    expect(response.statusCode).toBe(201);
+    const expectedFeedback = {
+      answer: '不要发送私钥、助记词或 seed phrase。api key: [sensitive_credential]',
+      channel: 'web',
+      citationCount: 0,
+      comment: '我的密码是 [sensitive_credential]',
+      intent: 'unknown',
+      question: '我的密码是 [sensitive_credential] api key: [sensitive_credential]',
+      rating: 'negative',
+      sessionId: 'session-secret-feedback',
+    };
+    expect(feedback).toEqual([expectedFeedback]);
+    expect(feedbackCandidates).toEqual([expectedFeedback]);
+    expect(JSON.stringify(feedback)).not.toContain('hunter2');
+    expect(JSON.stringify(feedback)).not.toContain('sk-test-123456');
+    expect(JSON.stringify(feedback)).not.toContain('sk-answer-123');
+  });
+
   it('does not mine positive answer feedback into knowledge candidates', async () => {
     const feedbackCandidates: unknown[] = [];
     const handler = createRequestHandler({

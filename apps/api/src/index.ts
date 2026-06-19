@@ -2491,13 +2491,13 @@ function toTxAnalysisChatRequest(payload: TxAnalysisPayload): ChatRequest {
 
 function toRecordFeedbackInput(payload: FeedbackPayload): RecordFeedbackInput {
   return {
-    answer: payload.answer,
+    answer: sanitizeSessionText(payload.answer),
     channel: payload.channel ?? 'web',
     citationCount: payload.citationCount,
     intent: payload.intent,
-    question: payload.question,
+    question: sanitizeSessionText(payload.question),
     rating: payload.rating,
-    ...(payload.comment === undefined ? {} : { comment: payload.comment }),
+    ...(payload.comment === undefined ? {} : { comment: sanitizeSessionText(payload.comment) }),
     ...(payload.sessionId === undefined ? {} : { sessionId: payload.sessionId }),
   };
 }
