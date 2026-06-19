@@ -1900,8 +1900,8 @@ function createApiQualitySignalSink(config: ReturnType<typeof loadRagConfig>): Q
       memory.record(signal);
       try {
         void captureAnswerQualitySignals({
+          getStore: getCandidateStore,
           signals: [signal],
-          store: getCandidateStore(),
         }).catch(() => undefined);
       } catch {
         // Quality-gap capture is best-effort and must never block customer answers.

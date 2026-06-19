@@ -3405,14 +3405,19 @@ describe('createRequestHandler', () => {
     const addCandidates = vi.fn(() => Promise.resolve([]));
     const candidateStore = { addCandidates };
     const createPgKnowledgeOpsStore = vi.fn(() => candidateStore);
-    const captureAnswerQualitySignals = vi.fn(() =>
-      Promise.resolve({
-        candidates: [{ id: 'kc_quality_signal' }],
-        storedCandidates: [{ id: 'kc_quality_signal' }],
-        candidatesCreated: 1,
-        signalsRead: 1,
-        signalsSkipped: 0,
-      }),
+    const captureAnswerQualitySignals = vi.fn(
+      (input: { getStore?: () => unknown; signals: readonly unknown[]; store?: unknown }) => {
+        expect(input.store).toBeUndefined();
+        expect(typeof input.getStore).toBe('function');
+        expect(input.getStore?.()).toBe(candidateStore);
+        return Promise.resolve({
+          candidates: [{ id: 'kc_quality_signal' }],
+          storedCandidates: [{ id: 'kc_quality_signal' }],
+          candidatesCreated: 1,
+          signalsRead: 1,
+          signalsSkipped: 0,
+        });
+      },
     );
     const mineAnswerQualitySignals = vi.fn(() => ({
       candidates: [candidateFromSignal],
@@ -3511,10 +3516,11 @@ describe('createRequestHandler', () => {
         userIdPresent: false,
       } as const;
       serviceOptions.qualitySignals?.record(signal);
-      expect(captureAnswerQualitySignals).toHaveBeenCalledWith({
-        signals: [signal],
-        store: candidateStore,
-      });
+      expect(captureAnswerQualitySignals).toHaveBeenCalledTimes(1);
+      const captureInput = captureAnswerQualitySignals.mock.calls[0]?.[0];
+      expect(captureInput).toBeDefined();
+      expect(captureInput?.signals).toEqual([signal]);
+      expect(typeof captureInput?.getStore).toBe('function');
       expect(mineAnswerQualitySignals).not.toHaveBeenCalled();
       expect(createPgKnowledgeOpsStore).toHaveBeenCalledTimes(1);
       expect(addCandidates).not.toHaveBeenCalled();

@@ -50,6 +50,35 @@ describe('captureAnswerQualitySignals', () => {
     expect(storedCandidates).toEqual(result.storedCandidates);
   });
 
+  it('supports lazy candidate store creation after signals produce candidates', async () => {
+    const addCandidates = vi.fn((candidates: unknown[]) => Promise.resolve(candidates));
+    const store = { addCandidates } as unknown as KnowledgeCandidateStore;
+    const getStore = vi.fn(() => store);
+
+    const result = await captureAnswerQualitySignals({
+      getStore,
+      now,
+      signals: [
+        {
+          answer:
+            '当前知识库没有足够资料确认这个问题。为了避免误导，我不会编造产品细节；请补充更具体的功能、权益或配置步骤，或稍后在知识库更新后再问。',
+          channel: 'web',
+          citationCount: 0,
+          confidence: 0.2,
+          intent: 'product_qa',
+          reason: 'low_confidence_missing_citations',
+          redactedQuestion: 'XXYY Pro 价格是多少？',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result.storedCandidates).toHaveLength(1);
+    expect(getStore).toHaveBeenCalledTimes(1);
+    expect(addCandidates).toHaveBeenCalledWith(result.candidates);
+  });
+
   it('skips store writes when quality signals do not produce candidates', async () => {
     const addCandidates = vi.fn(() => Promise.resolve([]));
     const store = { addCandidates } as unknown as KnowledgeCandidateStore;
@@ -78,5 +107,36 @@ describe('captureAnswerQualitySignals', () => {
       storedCandidates: [],
     });
     expect(addCandidates).not.toHaveBeenCalled();
+  });
+
+  it('does not create a lazy candidate store when quality signals do not produce candidates', async () => {
+    const getStore = vi.fn(() => {
+      throw new Error('store should not be created');
+    });
+
+    const result = await captureAnswerQualitySignals({
+      getStore,
+      now,
+      signals: [
+        {
+          channel: 'web',
+          confidence: 0.2,
+          intent: 'unknown',
+          reason: 'unknown_intent',
+          redactedQuestion: '   ',
+          sessionIdPresent: false,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidates: [],
+      candidatesCreated: 0,
+      signalsRead: 1,
+      signalsSkipped: 1,
+      storedCandidates: [],
+    });
+    expect(getStore).not.toHaveBeenCalled();
   });
 });
