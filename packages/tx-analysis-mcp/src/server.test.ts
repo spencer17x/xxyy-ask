@@ -166,6 +166,58 @@ describe('tx analysis MCP server', () => {
     ]);
   });
 
+  it('returns provider_unavailable and records tool failure quality signals when analysis throws', async () => {
+    const qualitySignals: unknown[] = [];
+    const server = createTxAnalysisMcpServer({
+      handlers: {
+        analyzeTransaction() {
+          throw new Error('browser crashed with sensitive stack');
+        },
+        getAnalysisReport() {
+          throw new Error('get report should not be called');
+        },
+        listAnalysisReports() {
+          throw new Error('list reports should not be called');
+        },
+      },
+      qualitySignals: {
+        record(signal) {
+          qualitySignals.push(signal);
+        },
+      },
+    });
+
+    const handler = getToolHandler<{ chain?: 'base'; channel?: 'web'; txHash: string }>(
+      server,
+      'analyze_transaction',
+    );
+
+    const output = await handler({ chain: 'base', channel: 'web', txHash: evmTx }, {});
+
+    expect(output).toMatchObject({
+      structuredContent: {
+        failure: {
+          message: 'Transaction analysis provider is temporarily unavailable.',
+          reason: 'provider_unavailable',
+        },
+        status: 'failure',
+      },
+    });
+    expect(JSON.stringify(output)).not.toContain('browser crashed');
+    expect(qualitySignals).toEqual([
+      {
+        answer: 'Transaction analysis provider is temporarily unavailable.',
+        channel: 'web',
+        errorCode: 'Error',
+        intent: 'tx_sandwich_detection',
+        reason: 'tool_failure',
+        redactedQuestion: 'base [evm_tx_hash]',
+        sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('returns structured content for get_analysis_report', async () => {
     const server = createTxAnalysisMcpServer({
       handlers: {
