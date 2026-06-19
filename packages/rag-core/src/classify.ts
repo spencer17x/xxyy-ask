@@ -41,6 +41,8 @@ const privateCredentialPatterns = [
   /(?:我的)?(?:密码|登录密码)\s*(?:是|为|:|：|=)\s*\S+/u,
   /(?:api\s*key|access\s*token|auth\s*token|访问令牌)\s*(?:是|为|:|：|=)\s*\S+/u,
   /\b(?:my\s+)?(?:password|api\s*key|access\s*token|auth\s*token)\s*(?:is|:|=)\s*\S+/u,
+  /\bbearer\s+\S+/u,
+  /\bsecret\s+key\s*(?:is|:|=)\s*\S+/u,
   /私钥|助记词|恢复词|密钥/u,
 ];
 

@@ -84,5 +84,7 @@ function redactSensitiveCredentials(text: string): string {
       /((?:api\s*key|access\s*token|auth\s*token|访问令牌)\s*(?:是|为|:|：|=)\s*)[^\s,，。；;]+/giu,
       '$1[sensitive_credential]',
     )
+    .replace(/(\bbearer\s+)[^\s,，。；;]+/giu, '$1[sensitive_credential]')
+    .replace(/(\bsecret\s+key\s*(?:is|:|=)\s*)[^\s,，。；;]+/giu, '$1[sensitive_credential]')
     .replace(/(\b(?:my\s+)?password\s*(?:is|:|=)\s*)[^\s,，。；;]+/giu, '$1[sensitive_credential]');
 }

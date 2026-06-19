@@ -162,6 +162,16 @@ describe('classifyQuestion', () => {
       intent: 'unknown',
       reason: 'private credential or seed phrase disclosure',
     });
+    expect(classifyQuestion('Bearer sk-live-1234567890abcdef')).toMatchObject({
+      confidence: 0.35,
+      intent: 'unknown',
+      reason: 'private credential or seed phrase disclosure',
+    });
+    expect(classifyQuestion('secret key = xxyy-secret-123456')).toMatchObject({
+      confidence: 0.35,
+      intent: 'unknown',
+      reason: 'private credential or seed phrase disclosure',
+    });
     expect(classifyQuestion('Telegram bot token 怎么设置？').intent).toBe('how_to');
   });
 });

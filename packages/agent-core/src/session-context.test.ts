@@ -64,5 +64,11 @@ describe('session context', () => {
   it('redacts passwords and API keys before storing session context', () => {
     expect(sanitizeSessionText('我的密码是 hunter2')).toBe('我的密码是 [sensitive_credential]');
     expect(sanitizeSessionText('api key: sk-test-123456')).toBe('api key: [sensitive_credential]');
+    expect(sanitizeSessionText('Bearer sk-live-1234567890abcdef')).toBe(
+      'Bearer [sensitive_credential]',
+    );
+    expect(sanitizeSessionText('secret key = xxyy-secret-123456')).toBe(
+      'secret key = [sensitive_credential]',
+    );
   });
 });
