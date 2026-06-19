@@ -211,6 +211,21 @@ describe('renderOpsPage', () => {
     expect(html).toContain('note.value.trim()');
   });
 
+  it('renders source-filtered knowledge candidate queues for automatic answer quality review', () => {
+    const html = renderOpsPage();
+
+    expect(html).toContain('Knowledge Candidates');
+    expect(html).toContain('id="knowledge-candidate-source"');
+    expect(html).toContain('<option value="answer_feedback">Answer feedback</option>');
+    expect(html).toContain('<option value="answer_quality_signal">Quality signals</option>');
+    expect(html).toContain('function loadKnowledgeCandidates()');
+    expect(html).toContain('params.set("status", "needs_review")');
+    expect(html).toContain('params.set("source", knowledgeCandidateSource.value)');
+    expect(html).toContain('fetch("/api/knowledge/candidates?" + params.toString()');
+    expect(html).toContain('Authorization: "Bearer " + token');
+    expect(html).toContain('renderKnowledgeCandidates(payload.candidates || [])');
+  });
+
   it('renders bulk transaction analysis report review controls for ops queues', () => {
     const html = renderOpsPage();
 

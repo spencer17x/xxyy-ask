@@ -1527,6 +1527,17 @@ export function renderOpsPage(): string {
         font-size: 12px;
       }
 
+      .knowledge-candidate-form {
+        display: grid;
+        grid-template-columns: minmax(180px, 1fr) minmax(100px, 140px) auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .knowledge-candidate-form button {
+        white-space: nowrap;
+      }
+
       .tx-report-results {
         display: grid;
         gap: 10px;
@@ -1534,6 +1545,7 @@ export function renderOpsPage(): string {
 
       .check,
       .feedback-item,
+      .knowledge-candidate-item,
       .tx-analysis-item,
       .source-row {
         display: grid;
@@ -1605,6 +1617,7 @@ export function renderOpsPage(): string {
 
       @media (max-width: 860px) {
          .token-form,
+         .knowledge-candidate-form,
          .tx-report-form,
          .tx-report-bulk-review,
          .report-review-form,
@@ -1647,6 +1660,28 @@ export function renderOpsPage(): string {
         <article class="panel">
           <h2>Feedback</h2>
           <div id="feedback" class="panel-body"></div>
+        </article>
+        <article class="panel wide-panel">
+          <h2>Knowledge Candidates</h2>
+          <div class="panel-body">
+            <form id="knowledge-candidate-form" class="knowledge-candidate-form">
+              <label for="knowledge-candidate-source">
+                Source
+                <select id="knowledge-candidate-source" name="source">
+                  <option value="answer_feedback">Answer feedback</option>
+                  <option value="answer_quality_signal">Quality signals</option>
+                  <option value="telegram">Telegram support</option>
+                </select>
+              </label>
+              <label for="knowledge-candidate-limit">
+                Limit
+                <input id="knowledge-candidate-limit" name="limit" type="number" min="1" max="50" value="10" />
+              </label>
+              <button id="knowledge-candidate-submit" type="submit">Load</button>
+            </form>
+            <div id="knowledge-candidate-status" class="status-line" role="status" aria-live="polite">Enter token to load needs-review candidates.</div>
+            <div id="knowledge-candidates" class="tx-report-results"></div>
+          </div>
         </article>
         <article class="panel">
           <h2>Transaction Analysis</h2>
@@ -1756,6 +1791,12 @@ export function renderOpsPage(): string {
       const feedbackTarget = document.querySelector("#feedback");
       const txAnalysisTarget = document.querySelector("#tx-analysis");
       const latestFeedbackTarget = document.querySelector("#latest-feedback");
+      const queryKnowledgeCandidates = document.querySelector("#knowledge-candidate-form");
+      const knowledgeCandidateSource = document.querySelector("#knowledge-candidate-source");
+      const knowledgeCandidateLimit = document.querySelector("#knowledge-candidate-limit");
+      const knowledgeCandidateSubmit = document.querySelector("#knowledge-candidate-submit");
+      const knowledgeCandidateStatus = document.querySelector("#knowledge-candidate-status");
+      const knowledgeCandidatesTarget = document.querySelector("#knowledge-candidates");
       const queryTxReports = document.querySelector("#tx-report-form");
       const txReportHash = document.querySelector("#tx-report-hash");
       const txReportChain = document.querySelector("#tx-report-chain");
@@ -1782,6 +1823,17 @@ export function renderOpsPage(): string {
       queryTxReports.addEventListener("submit", async (event) => {
         event.preventDefault();
         await loadTxReports();
+      });
+
+      queryKnowledgeCandidates.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await loadKnowledgeCandidates();
+      });
+
+      knowledgeCandidateSource.addEventListener("change", () => {
+        if (tokenInput.value.trim()) {
+          void loadKnowledgeCandidates();
+        }
       });
 
       txReportBulkReview.addEventListener("click", async (event) => {
@@ -1822,6 +1874,7 @@ export function renderOpsPage(): string {
           renderKnowledge(summary.knowledge);
           renderFeedback(summary.feedback);
           renderTxAnalysis(summary.txAnalysis, summary.txAnalysisRuntime);
+          void loadKnowledgeCandidates();
           status.textContent = "Updated " + summary.generatedAt;
         } catch (error) {
           status.textContent = error instanceof Error ? error.message : String(error);
@@ -1941,6 +1994,100 @@ export function renderOpsPage(): string {
           ...ruleRows,
           ...latestRows,
         );
+      }
+
+      async function loadKnowledgeCandidates() {
+        const token = tokenInput.value.trim();
+        if (!token) {
+          knowledgeCandidateStatus.textContent = "Ops token is required.";
+          tokenInput.focus();
+          return;
+        }
+
+        const params = new URLSearchParams();
+        params.set("status", "needs_review");
+        params.set("source", knowledgeCandidateSource.value);
+        const limit = knowledgeCandidateLimit.value.trim();
+        if (limit) {
+          params.set("limit", limit);
+        }
+
+        knowledgeCandidateSubmit.disabled = true;
+        knowledgeCandidateStatus.textContent =
+          "Loading " + formatCandidateSourceLabel(knowledgeCandidateSource.value);
+        try {
+          const response = await fetch("/api/knowledge/candidates?" + params.toString(), {
+            headers: { Authorization: "Bearer " + token },
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.message || "Unable to load knowledge candidates.");
+          }
+
+          renderKnowledgeCandidates(payload.candidates || []);
+          knowledgeCandidateStatus.textContent =
+            String((payload.candidates || []).length) + " candidates";
+        } catch (error) {
+          knowledgeCandidateStatus.textContent =
+            error instanceof Error ? error.message : String(error);
+        } finally {
+          knowledgeCandidateSubmit.disabled = false;
+        }
+      }
+
+      function renderKnowledgeCandidates(candidates) {
+        if (candidates.length === 0) {
+          knowledgeCandidatesTarget.replaceChildren(
+            empty("No needs-review candidates for this source."),
+          );
+          return;
+        }
+
+        knowledgeCandidatesTarget.replaceChildren(
+          ...candidates.map((candidate) =>
+            rowWithMetaNodes(
+              "knowledge-candidate-item",
+              candidate.question || candidate.id,
+              candidate.riskLevel + " · " + candidate.type,
+              [
+                candidate.proposedAnswer ? text(candidate.proposedAnswer) : undefined,
+                text("Status " + candidate.status),
+                text("ID " + candidate.id),
+                text("Source " + knowledgeCandidateSourcesLabel(candidate.sourceRefs || [])),
+                candidate.confidence === undefined
+                  ? undefined
+                  : text("Confidence " + Math.round(candidate.confidence * 100) + "%"),
+                candidate.updatedAt ? text("Updated " + candidate.updatedAt) : undefined,
+                candidate.redactionReport?.riskFlags?.length
+                  ? text("Flags " + candidate.redactionReport.riskFlags.join(", "))
+                  : undefined,
+              ],
+            ),
+          ),
+        );
+      }
+
+      function knowledgeCandidateSourcesLabel(sourceRefs) {
+        const sources = Array.from(
+          new Set(sourceRefs.map((sourceRef) => formatCandidateSourceLabel(sourceRef.source))),
+        ).filter(Boolean);
+        return sources.length > 0
+          ? sources.join(", ")
+          : formatCandidateSourceLabel(knowledgeCandidateSource.value);
+      }
+
+      function formatCandidateSourceLabel(source) {
+        if (source === "answer_feedback") {
+          return "Answer feedback";
+        }
+        if (source === "answer_quality_signal") {
+          return "Quality signals";
+        }
+        if (source === "telegram") {
+          return "Telegram support";
+        }
+
+        return String(source || "unknown");
       }
 
       function renderTxAnalysisRuntimeRows(runtime) {

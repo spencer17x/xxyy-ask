@@ -139,6 +139,7 @@
 - [x] RAG 评测：内置产品客服回归评测集，可用于发布前检查回答质量。
 - [x] 候选知识内核：已新增 `@xxyy/knowledge-ops`，支持授权 Telegram 采集基础、客服消息结构、敏感信息脱敏、客服问答候选挖掘、Raw Source 持久化、Candidate 持久化、增量 cursor 和内存待审队列；第一版只生成 `needs_review` 候选，不会自动发布到正式 RAG 知识库。
 - [x] 候选知识审核 API：受 `API_OPS_TOKEN` 保护，支持查看候选队列和执行 approve/reject/request_changes/merge_duplicate，审核动作不会自动发布。
+- [x] 候选知识后台队列：`/ops` 运维页已接入受保护候选查询，可按 `answer_feedback`、`answer_quality_signal` 和 `telegram` 来源查看 `needs_review` 候选，方便把负反馈、自动质量信号和授权客服消息统一纳入审核闭环。
 - [x] Telegram 知识学习运行入口：`pnpm rag:sync:telegram` 支持手动或定时增量采集授权 Telegram 客服消息，写入 Raw Source Store，生成 `needs_review` 候选知识，并推进 getUpdates offset；不会发布或 embedding 未审核内容。
 - [x] 审核后知识发布入口：`pnpm rag:publish:knowledge -- --id <candidate-id>` 只允许发布 `approved` 候选，默认追加到 `docs/product-features/pages/65-reviewed-support-knowledge.md` 正式 Markdown 知识源，并把候选状态标记为 `published`；未审核候选不能发布。
 - [x] 知识入库和第一版质量门禁：`pnpm rag:gate:knowledge -- --id <candidate-id> --fast` 只接受已 `published` 候选，执行正式 ingest/embedding，运行候选生成的 targeted eval gate，并把候选推进到 `ingested` 后标记为 `eval_passed` 或 `eval_failed`。
