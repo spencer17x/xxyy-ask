@@ -328,4 +328,53 @@ describe('product QA MCP server', () => {
       },
     ]);
   });
+
+  it('returns an automatic unavailable answer and records a quality signal when answering fails', async () => {
+    const qualitySignals: unknown[] = [];
+    const server = createProductQaMcpServer({
+      handlers: {
+        answerProductQuestion() {
+          throw new Error('retriever timeout');
+        },
+        searchProductDocs() {
+          throw new Error('search should not be called');
+        },
+      },
+      qualitySignals: {
+        record(signal) {
+          qualitySignals.push(signal);
+        },
+      },
+    });
+
+    const handler = getToolHandler<{ channel?: 'web'; question: string }>(
+      server,
+      'answer_product_question',
+    );
+    const output = await handler({ channel: 'web', question: 'XXYY Pro 有哪些权益？' }, {});
+
+    expect(output).toMatchObject({
+      structuredContent: {
+        citations: [],
+        confidence: 0.25,
+        intent: 'product_qa',
+      },
+    });
+    expect(JSON.stringify(output)).toContain('当前产品知识库暂时不可用');
+    expect(JSON.stringify(output)).not.toContain('retriever timeout');
+    expect(qualitySignals).toEqual([
+      {
+        answer:
+          '当前产品知识库暂时不可用，无法基于 XXYY 文档确认这个问题。为了避免误导，我不会编造产品细节；请稍后重试，或换成更具体的功能、权益或配置步骤提问。',
+        channel: 'web',
+        confidence: 0.25,
+        errorCode: 'Error',
+        intent: 'product_qa',
+        reason: 'tool_failure',
+        redactedQuestion: 'XXYY Pro 有哪些权益？',
+        sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
+  });
 });

@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { ChatResponse } from '@xxyy/shared';
+import { LlmConfigurationError, VectorStoreConfigurationError } from '@xxyy/rag-core';
 import {
   PRODUCT_TOOL_NAMES,
   answerProductQuestionInputSchema,
@@ -68,13 +69,37 @@ export function createProductQaMcpServer(options: CreateProductQaMcpServerOption
       title: 'Answer XXYY Product Question',
     },
     async ({ channel, question }) => {
-      const guarded = guardProductAnswerOutput(
-        await options.handlers.answerProductQuestion({
-          ...(channel === undefined ? {} : { channel }),
+      let guarded: GuardedProductAnswer;
+      let qualitySignalRecorded = false;
+      try {
+        guarded = guardProductAnswerOutput(
+          await options.handlers.answerProductQuestion({
+            ...(channel === undefined ? {} : { channel }),
+            question,
+          }),
+        );
+      } catch (error) {
+        if (isProductConfigurationError(error)) {
+          throw error;
+        }
+        const response = createProductKnowledgeUnavailableAnswer('product_qa');
+        guarded = {
+          original: response,
+          reason: 'tool_failure',
+          response,
+        };
+        recordProductQualitySignal(options.qualitySignals, {
+          answer: guarded.response.answer,
+          channel: channel ?? 'agent',
+          confidence: guarded.response.confidence,
+          errorCode: errorCodeFrom(error),
+          intent: guarded.response.intent,
           question,
-        }),
-      );
-      if (guarded.reason !== undefined) {
+          reason: 'tool_failure',
+        });
+        qualitySignalRecorded = true;
+      }
+      if (!qualitySignalRecorded && guarded.reason !== undefined) {
         recordProductQualitySignal(options.qualitySignals, {
           answer: guarded.response.answer,
           channel: channel ?? 'agent',
@@ -133,8 +158,9 @@ function recordProductQualitySignal(
   input: {
     answer: string;
     channel: 'agent' | 'cli' | 'telegram' | 'web';
-    citationCount: number;
+    citationCount?: number;
     confidence: number;
+    errorCode?: string;
     intent: ChatResponse['intent'];
     question: string;
     reason: QualitySignalReason;
@@ -143,14 +169,25 @@ function recordProductQualitySignal(
   qualitySignals?.record({
     answer: sanitizeSessionText(input.answer),
     channel: input.channel,
-    citationCount: input.citationCount,
+    ...(input.citationCount === undefined ? {} : { citationCount: input.citationCount }),
     confidence: input.confidence,
+    ...(input.errorCode === undefined ? {} : { errorCode: input.errorCode }),
     intent: input.intent,
     reason: input.reason,
     redactedQuestion: sanitizeSessionText(input.question),
     sessionIdPresent: false,
     userIdPresent: false,
   });
+}
+
+function createProductKnowledgeUnavailableAnswer(intent: ChatResponse['intent']): ChatResponse {
+  return {
+    answer:
+      '当前产品知识库暂时不可用，无法基于 XXYY 文档确认这个问题。为了避免误导，我不会编造产品细节；请稍后重试，或换成更具体的功能、权益或配置步骤提问。',
+    citations: [],
+    confidence: 0.25,
+    intent,
+  };
 }
 
 function createProductKnowledgeInsufficientAnswer(intent: ChatResponse['intent']): ChatResponse {
@@ -186,4 +223,27 @@ function containsCustomerHandoffPromise(answer: string): boolean {
   return /提交工单|创建工单|工单.{0,12}(?:处理|跟进|回复)|转人工|人工接管|联系人工客服|人工客服.{0,12}(?:接管|处理|跟进|回复)|人工.{0,12}(?:接管|处理|跟进|回复)/u.test(
     answer,
   );
+}
+
+function isProductConfigurationError(error: unknown): boolean {
+  if (error instanceof LlmConfigurationError || error instanceof VectorStoreConfigurationError) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.constructor.name === 'EmbeddingConfigurationError' ||
+    error.message.includes('required for embedding generation')
+  );
+}
+
+function errorCodeFrom(error: unknown): string {
+  if (error instanceof Error && error.name.trim().length > 0) {
+    return error.name;
+  }
+
+  return 'unknown_error';
 }
