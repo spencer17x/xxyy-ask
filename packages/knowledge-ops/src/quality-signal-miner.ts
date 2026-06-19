@@ -80,6 +80,9 @@ function createCandidateFromSignal(
   if (PRODUCT_GAP_REASONS.has(signal.reason)) {
     return createProductGapCandidate(signal, now);
   }
+  if (signal.reason === 'unknown_intent') {
+    return createUnknownIntentCandidate(signal, now);
+  }
 
   return undefined;
 }
@@ -159,6 +162,48 @@ function createBoundaryCandidate(
     type: 'boundary_example',
     updatedAt: now,
   };
+}
+
+function createUnknownIntentCandidate(
+  signal: AnswerQualitySignal,
+  now: string,
+): KnowledgeCandidate | undefined {
+  const question = redactSupportText(signal.redactedQuestion);
+  const answer = redactSupportText(signal.answer ?? unknownIntentClarificationAnswer());
+  const questionText = question.text.trim();
+  const answerText = answer.text.trim();
+
+  if (questionText.length === 0 || answerText.length === 0) {
+    return undefined;
+  }
+
+  const redactionReport = mergeRedactionReports([question.report, answer.report]);
+
+  return {
+    confidence: normalizeConfidence(signal.confidence),
+    createdAt: now,
+    existingKnowledgeMatches: [],
+    generatedEvalCases: [
+      {
+        expectedAnswer: answerText,
+        question: questionText,
+      },
+    ],
+    id: createCandidateId(signal),
+    proposedAnswer: answerText,
+    question: questionText,
+    redactionReport,
+    riskLevel: redactionReport.riskLevel,
+    sourceRefs: [createSourceRef(signal)],
+    status: 'needs_review',
+    targetCategory: 'policy_boundary',
+    type: 'eval_case',
+    updatedAt: now,
+  };
+}
+
+function unknownIntentClarificationAnswer(): string {
+  return '我还不确定你想咨询 XXYY 的哪个功能。请补充具体功能、配置步骤、Pro 权益，或发送单笔交易哈希。';
 }
 
 function boundaryAnswerFor(reason: AnswerQualitySignalReason): string {

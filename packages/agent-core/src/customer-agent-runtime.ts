@@ -225,6 +225,7 @@ export function createCustomerAgentRuntime(
         intent: plan.classification.intent,
       };
       recordQualitySignal(qualitySignals, request, {
+        answer: response.answer,
         confidence: response.confidence,
         intent: response.intent,
         reason: 'unknown_intent',

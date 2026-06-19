@@ -620,6 +620,35 @@ describe('createCustomerAgentRuntime', () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it('records the clarification answer on unknown-intent quality signals', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+
+    const response = await createCustomerAgentRuntime({ qualitySignals, registry }).ask({
+      channel: 'web',
+      message: '帮我看看这个',
+      sessionId: 'session-unknown',
+    });
+
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.45,
+      intent: 'unknown',
+    });
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.45,
+        intent: 'unknown',
+        reason: 'unknown_intent',
+        redactedQuestion: '帮我看看这个',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('records quality signals for low-confidence no-citation product answers', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

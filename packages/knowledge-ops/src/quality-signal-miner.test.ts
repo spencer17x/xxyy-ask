@@ -98,6 +98,51 @@ describe('mineAnswerQualitySignals', () => {
     );
   });
 
+  it('creates a needs-review eval candidate from an unknown-intent clarification signal', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer:
+            '我还不确定你想咨询 XXYY 的哪个功能。请补充具体功能、配置步骤、Pro 权益，或发送单笔交易哈希。',
+          channel: 'web',
+          confidence: 0.45,
+          intent: 'unknown',
+          reason: 'unknown_intent',
+          redactedQuestion: '帮我看看这个，我的邮箱是 me@example.com',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.45,
+      createdAt: now,
+      proposedAnswer:
+        '我还不确定你想咨询 XXYY 的哪个功能。请补充具体功能、配置步骤、Pro 权益，或发送单笔交易哈希。',
+      question: '帮我看看这个，我的邮箱是 [REDACTED_EMAIL]',
+      riskLevel: 'medium',
+      status: 'needs_review',
+      targetCategory: 'policy_boundary',
+      type: 'eval_case',
+      updatedAt: now,
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer:
+          '我还不确定你想咨询 XXYY 的哪个功能。请补充具体功能、配置步骤、Pro 权益，或发送单笔交易哈希。',
+        question: '帮我看看这个，我的邮箱是 [REDACTED_EMAIL]',
+      },
+    ]);
+  });
+
   it('skips quality signals that do not yet contain publishable knowledge', () => {
     const result = mineAnswerQualitySignals({
       now,
