@@ -66,6 +66,23 @@ export function createPgSessionContextStore(
       await pruneOldSessionTurns(options.client, sessionId, maxTurnsPerSession);
     },
 
+    async clearSession(sessionId) {
+      await options.client.query(
+        `
+        delete from customer_agent_session_turns
+        where session_id = $1
+        `,
+        [sessionId],
+      );
+      await options.client.query(
+        `
+        delete from customer_agent_session_summaries
+        where session_id = $1
+        `,
+        [sessionId],
+      );
+    },
+
     async getRecentTurns(sessionId, limit) {
       const response = await options.client.query<SessionTurnRow>(
         `

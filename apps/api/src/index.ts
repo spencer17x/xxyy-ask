@@ -2278,6 +2278,16 @@ function createApiSessionContextStore(
         }
       },
 
+      async clearSession(sessionId) {
+        try {
+          await primary.clearSession(sessionId);
+        } catch {
+          await fallback.clearSession(sessionId);
+          return;
+        }
+        await fallback.clearSession(sessionId);
+      },
+
       async getRecentTurns(sessionId, limit) {
         try {
           return await primary.getRecentTurns(sessionId, limit);

@@ -92,6 +92,38 @@ describe('session context', () => {
     await expect(summaryStore.getSessionSummary('missing-session')).resolves.toBeNull();
   });
 
+  it('clears stored turns and safe summaries for one session', async () => {
+    const store = createInMemorySessionContextStore({
+      now: () => new Date('2026-06-19T00:00:00.000Z'),
+    });
+    const clearableStore = store as typeof store & {
+      clearSession(sessionId: string): Promise<void>;
+    };
+
+    await store.appendTurn('session-1', {
+      content: '我主要用手机端。',
+      createdAt: '2026-06-19T00:00:00.000Z',
+      metadata: { intent: 'product_qa' },
+      role: 'user',
+    });
+    await store.appendTurn('session-2', {
+      content: '我主要用 Telegram。',
+      createdAt: '2026-06-19T00:00:00.000Z',
+      metadata: { intent: 'product_qa' },
+      role: 'user',
+    });
+
+    await clearableStore.clearSession('session-1');
+
+    await expect(store.getRecentTurns('session-1')).resolves.toEqual([]);
+    await expect(store.getSessionSummary('session-1')).resolves.toBeNull();
+    await expect(store.getRecentTurns('session-2')).resolves.toHaveLength(1);
+    await expect(store.getSessionSummary('session-2')).resolves.toEqual({
+      productPreference: 'Telegram 钱包监控',
+      updatedAt: '2026-06-19T00:00:00.000Z',
+    });
+  });
+
   it('redacts private-looking identifiers while preserving public transaction marker usefulness', () => {
     expect(
       sanitizeSessionText(

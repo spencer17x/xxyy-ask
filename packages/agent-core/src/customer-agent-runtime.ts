@@ -230,6 +230,30 @@ export function createCustomerAgentRuntime(
   }
 
   const ask: CustomerAgentRuntime['ask'] = async (request) => {
+    if (isSessionContextClearRequest(request.message)) {
+      const clearResult = await clearSessionForRequest(options.sessionContext, request);
+      if (!clearResult.ok) {
+        const response = withAgentRoute(
+          createSessionClearUnavailableAnswer(),
+          'preference_capture',
+        );
+        recordQualitySignal(qualitySignals, request, {
+          agentRoute: 'preference_capture',
+          answer: response.answer,
+          confidence: response.confidence,
+          ...(clearResult.error === undefined
+            ? {}
+            : { errorCode: errorCodeFrom(clearResult.error) }),
+          intent: response.intent,
+          reason: 'session_unavailable',
+          redactedQuestion: request.message,
+        });
+        return response;
+      }
+
+      return withAgentRoute(createSessionClearedAnswer(), 'preference_capture');
+    }
+
     const missingSessionDependency =
       options.sessionContext === undefined || request.sessionId === undefined
         ? missingSessionDependencyForRequest(request)
@@ -565,6 +589,49 @@ function detectProductPreferenceCapture(message: string): string | undefined {
     return undefined;
   }
   return inferProductPreferenceFromText(message);
+}
+
+function isSessionContextClearRequest(message: string): boolean {
+  const normalized = message.normalize('NFKC').trim();
+  return /^(清除|清空|删除|重置|忘记).{0,8}(本次|当前|这个|这次)?(会话|对话|上下文|context)|^(forget|clear|reset|delete)\s+(this\s+)?(session|conversation|context)$/iu.test(
+    normalized,
+  );
+}
+
+async function clearSessionForRequest(
+  sessionContext: SessionContextStore | undefined,
+  request: ChatRequest,
+): Promise<{ error?: unknown; ok: boolean }> {
+  if (sessionContext === undefined || request.sessionId === undefined) {
+    return { ok: false };
+  }
+
+  try {
+    await sessionContext.clearSession(request.sessionId);
+    return { ok: true };
+  } catch (error) {
+    return { error, ok: false };
+  }
+}
+
+function createSessionClearedAnswer(): ChatResponse {
+  return {
+    answer:
+      '已清除本次会话上下文。后续短追问不会再沿用刚才的产品偏好、主题或交易引用；请直接补充具体功能、权益、配置步骤，或发送单笔公开交易哈希继续自动处理。',
+    citations: [],
+    confidence: 0.65,
+    intent: 'product_qa',
+  };
+}
+
+function createSessionClearUnavailableAnswer(): ChatResponse {
+  return {
+    answer:
+      '当前请求没有可清除的会话上下文，或会话存储暂时不可用。我不会沿用无法确认的上下文；请直接补充具体功能、权益、配置步骤，或发送单笔公开交易哈希继续自动处理。',
+    citations: [],
+    confidence: 0.45,
+    intent: 'product_qa',
+  };
 }
 
 function createProductPreferenceCapturedAnswer(preference: string): ChatResponse {

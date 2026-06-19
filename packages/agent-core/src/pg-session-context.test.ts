@@ -118,4 +118,19 @@ describe('createPgSessionContextStore', () => {
     expect(client.queries[0]?.sql).toContain('from customer_agent_session_summaries');
     expect(client.queries[0]?.values).toEqual(['session-1']);
   });
+
+  it('clears stored turns and safe summaries for one session', async () => {
+    const client = new FakePgClient();
+    const store = createPgSessionContextStore({ client, maxTurnsPerSession: 12 });
+    const clearableStore = store as typeof store & {
+      clearSession(sessionId: string): Promise<void>;
+    };
+
+    await clearableStore.clearSession('session-1');
+
+    expect(client.queries[0]?.sql).toContain('delete from customer_agent_session_turns');
+    expect(client.queries[0]?.values).toEqual(['session-1']);
+    expect(client.queries[1]?.sql).toContain('delete from customer_agent_session_summaries');
+    expect(client.queries[1]?.values).toEqual(['session-1']);
+  });
 });

@@ -1239,6 +1239,88 @@ describe('createCustomerAgentRuntime', () => {
     });
   });
 
+  it('clears session context on explicit reset requests without calling answer tools', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const sessionContext = createInMemorySessionContextStore();
+    const response: ChatResponse = {
+      answer: '可以在 XXYY 移动端登录页完成登录。',
+      citations: [
+        {
+          excerpt: '移动端登录步骤。',
+          file: 'docs/product-features/mobile-login.md',
+          title: '移动端登录',
+        },
+      ],
+      confidence: 0.82,
+      intent: 'how_to',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ qualitySignals, registry, sessionContext });
+    await runtime.ask({
+      channel: 'web',
+      message: '我主要用手机端。',
+      sessionId: 'session-clear-context',
+    });
+
+    const clearResponse = await runtime.ask({
+      channel: 'web',
+      message: '清除本次会话上下文',
+      sessionId: 'session-clear-context',
+    });
+
+    expect(clearResponse).toMatchObject({
+      agentRoute: 'preference_capture',
+      citations: [],
+      confidence: 0.65,
+      intent: 'product_qa',
+    });
+    expect(clearResponse.answer).toContain('已清除');
+    expect(execute).not.toHaveBeenCalled();
+    await expect(sessionContext.getRecentTurns('session-clear-context')).resolves.toEqual([]);
+    await expect(sessionContext.getSessionSummary('session-clear-context')).resolves.toBeNull();
+
+    const followUpAfterClear = await runtime.ask({
+      channel: 'web',
+      message: '怎么登录？',
+      sessionId: 'session-clear-context',
+    });
+
+    expect(followUpAfterClear).toMatchObject({
+      agentRoute: 'clarify',
+      citations: [],
+      intent: 'how_to',
+    });
+    expect(followUpAfterClear.answer).toContain('不能确定你想继续咨询哪个具体功能');
+    expect(execute).not.toHaveBeenCalled();
+    expect(qualitySignals.signals()).toEqual([
+      {
+        agentRoute: 'clarify',
+        answer: followUpAfterClear.answer,
+        channel: 'web',
+        confidence: 0.55,
+        intent: 'how_to',
+        reason: 'missing_followup_context',
+        redactedQuestion: '怎么登录？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('does not claim a safe product preference was recorded without session persistence', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();
@@ -1326,6 +1408,7 @@ describe('createCustomerAgentRuntime', () => {
       registry,
       sessionContext: {
         appendTurn: () => Promise.reject(new Error('session append unavailable')),
+        clearSession: () => Promise.resolve(),
         getRecentTurns: () => Promise.resolve([]),
         getSessionSummary: () => Promise.resolve(null),
       },
@@ -2007,6 +2090,7 @@ describe('createCustomerAgentRuntime', () => {
       registry,
       sessionContext: {
         appendTurn: () => Promise.resolve(),
+        clearSession: () => Promise.resolve(),
         getRecentTurns: () => Promise.reject(new Error('session store unavailable')),
         getSessionSummary: () => Promise.resolve(null),
       },
@@ -2074,6 +2158,7 @@ describe('createCustomerAgentRuntime', () => {
         registry,
         sessionContext: {
           appendTurn: () => Promise.reject(new Error('session append unavailable')),
+          clearSession: () => Promise.resolve(),
           getRecentTurns: () => Promise.resolve([]),
           getSessionSummary: () => Promise.resolve(null),
         },

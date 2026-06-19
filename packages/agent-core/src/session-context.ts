@@ -25,6 +25,7 @@ export interface SessionContextSummary {
 
 export interface SessionContextStore {
   appendTurn(sessionId: string, turn: SessionTurn): Promise<void>;
+  clearSession(sessionId: string): Promise<void>;
   getRecentTurns(sessionId: string, limit?: number): Promise<SessionTurn[]>;
   getSessionSummary(sessionId: string): Promise<SessionContextSummary | null>;
 }
@@ -62,6 +63,12 @@ export function createInMemorySessionContextStore(
           updatedAt: storedTurn.createdAt,
         });
       }
+      return Promise.resolve();
+    },
+
+    clearSession(sessionId) {
+      summariesBySession.delete(sessionId);
+      turnsBySession.delete(sessionId);
       return Promise.resolve();
     },
 
