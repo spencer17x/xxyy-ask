@@ -65,7 +65,10 @@ function uniqueRecentTransactionHashes(turns: SessionTurn[]): string[] {
   const hashes: string[] = [];
   for (const turn of turns) {
     const txHash = turn.metadata?.txHash;
-    if (txHash !== undefined && !hashes.some((hash) => hash.toLowerCase() === txHash.toLowerCase())) {
+    if (
+      txHash !== undefined &&
+      !hashes.some((hash) => hash.toLowerCase() === txHash.toLowerCase())
+    ) {
       hashes.push(txHash);
     }
   }

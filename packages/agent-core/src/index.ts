@@ -25,20 +25,14 @@ export type {
   CreateKnowledgeOpsAgentRuntimeOptions,
   KnowledgeOpsAgentRuntime,
 } from './knowledge-ops-agent-runtime.js';
-export {
-  createInMemoryQualitySignalSink,
-  createNoopQualitySignalSink,
-} from './quality-signals.js';
+export { createInMemoryQualitySignalSink, createNoopQualitySignalSink } from './quality-signals.js';
 export type {
   InMemoryQualitySignalSink,
   QualitySignal,
   QualitySignalReason,
   QualitySignalSink,
 } from './quality-signals.js';
-export {
-  createInMemorySessionContextStore,
-  sanitizeSessionText,
-} from './session-context.js';
+export { createInMemorySessionContextStore, sanitizeSessionText } from './session-context.js';
 export type {
   InMemorySessionContextStoreOptions,
   SessionContextStore,

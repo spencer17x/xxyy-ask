@@ -74,7 +74,9 @@ export function createCustomerAgentRuntime(
         ? createTxAnalysisAnswer(output.result)
         : createTxAnalysisUnavailableAnswer(output.failure.reason, {
             ...(output.failure.metadata === undefined ? {} : { metadata: output.failure.metadata }),
-            ...(output.failure.reportUrl === undefined ? {} : { reportUrl: output.failure.reportUrl }),
+            ...(output.failure.reportUrl === undefined
+              ? {}
+              : { reportUrl: output.failure.reportUrl }),
           });
 
     if (output.status === 'failure') {
@@ -215,7 +217,11 @@ export function createCustomerAgentRuntime(
     }
 
     if (plan.route === 'transaction_analysis') {
-      const response = await answerTransaction(request, plan.messageForTool, plan.classification.intent);
+      const response = await answerTransaction(
+        request,
+        plan.messageForTool,
+        plan.classification.intent,
+      );
       await appendSessionTurns(options.sessionContext, request, response, {
         userContent: followUp.resolvedMessage,
       });
