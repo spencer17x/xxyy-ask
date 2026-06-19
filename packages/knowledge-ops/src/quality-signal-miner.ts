@@ -132,6 +132,7 @@ function createProductGapCandidate(
   }
 
   const redactionReport = mergeRedactionReports([question.report, answer.report]);
+  const signalIdentity = createQualitySignalIdentity(signal, { answerText, questionText });
   if (isProductKnowledgeInsufficientAnswer(answerText)) {
     return {
       confidence: normalizeConfidence(signal.confidence),
@@ -146,12 +147,12 @@ function createProductGapCandidate(
           requireExpectedAnswerText: false,
         }),
       ],
-      id: createCandidateId(signal),
+      id: createCandidateId(signalIdentity),
       proposedAnswer: answerText,
       question: questionText,
       redactionReport,
       riskLevel: redactionReport.riskLevel,
-      sourceRefs: [createSourceRef(signal)],
+      sourceRefs: [createSourceRef(signalIdentity)],
       status: 'needs_review',
       targetCategory: 'eval_case',
       type: 'eval_case',
@@ -172,12 +173,12 @@ function createProductGapCandidate(
     createdAt: now,
     existingKnowledgeMatches: [],
     generatedEvalCases,
-    id: createCandidateId(signal),
+    id: createCandidateId(signalIdentity),
     proposedAnswer: answerText,
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
-    sourceRefs: [createSourceRef(signal)],
+    sourceRefs: [createSourceRef(signalIdentity)],
     status: 'needs_review',
     targetCategory: candidateType === 'boundary_example' ? 'policy_boundary' : 'product_faq',
     type: candidateType,
@@ -198,6 +199,10 @@ function createBoundaryCandidate(
 
   const redactionReport = ensureBoundaryRisk(question.report, signal.reason);
   const proposedAnswer = boundaryAnswerFor(signal.reason);
+  const signalIdentity = createQualitySignalIdentity(signal, {
+    answerText: proposedAnswer,
+    questionText,
+  });
 
   return {
     confidence: normalizeConfidence(signal.confidence),
@@ -209,12 +214,12 @@ function createBoundaryCandidate(
         question: questionText,
       },
     ],
-    id: createCandidateId(signal),
+    id: createCandidateId(signalIdentity),
     proposedAnswer,
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
-    sourceRefs: [createSourceRef(signal)],
+    sourceRefs: [createSourceRef(signalIdentity)],
     status: 'needs_review',
     targetCategory: 'policy_boundary',
     type: 'boundary_example',
@@ -236,6 +241,7 @@ function createUnknownIntentCandidate(
   }
 
   const redactionReport = mergeRedactionReports([question.report, answer.report]);
+  const signalIdentity = createQualitySignalIdentity(signal, { answerText, questionText });
 
   return {
     confidence: normalizeConfidence(signal.confidence),
@@ -250,12 +256,12 @@ function createUnknownIntentCandidate(
         requireExpectedAnswerText: false,
       }),
     ],
-    id: createCandidateId(signal),
+    id: createCandidateId(signalIdentity),
     proposedAnswer: answerText,
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
-    sourceRefs: [createSourceRef(signal)],
+    sourceRefs: [createSourceRef(signalIdentity)],
     status: 'needs_review',
     targetCategory: 'policy_boundary',
     type: 'eval_case',
@@ -295,6 +301,7 @@ function createTransactionFailureCandidate(
   }
 
   const redactionReport = mergeRedactionReports([question.report, answer.report]);
+  const signalIdentity = createQualitySignalIdentity(signal, { answerText, questionText });
 
   return {
     confidence: normalizeConfidence(signal.confidence),
@@ -309,16 +316,47 @@ function createTransactionFailureCandidate(
         requireExpectedAnswerText: false,
       },
     ],
-    id: createCandidateId(signal),
+    id: createCandidateId(signalIdentity),
     proposedAnswer: answerText,
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
-    sourceRefs: [createSourceRef(signal)],
+    sourceRefs: [createSourceRef(signalIdentity)],
     status: 'needs_review',
     targetCategory: 'eval_case',
     type: 'eval_case',
     updatedAt: now,
+  };
+}
+
+interface QualitySignalIdentity {
+  answer?: string;
+  channel: string;
+  citationCount?: number;
+  confidence?: number;
+  errorCode?: string;
+  intent: string;
+  question: string;
+  reason: AnswerQualitySignalReason;
+  sessionIdPresent: boolean;
+  userIdPresent: boolean;
+}
+
+function createQualitySignalIdentity(
+  signal: AnswerQualitySignal,
+  input: { answerText: string | undefined; questionText: string },
+): QualitySignalIdentity {
+  return {
+    ...(input.answerText === undefined ? {} : { answer: input.answerText }),
+    channel: signal.channel,
+    ...(signal.citationCount === undefined ? {} : { citationCount: signal.citationCount }),
+    ...(signal.confidence === undefined ? {} : { confidence: signal.confidence }),
+    ...(signal.errorCode === undefined ? {} : { errorCode: signal.errorCode }),
+    intent: signal.intent,
+    question: input.questionText,
+    reason: signal.reason,
+    sessionIdPresent: signal.sessionIdPresent,
+    userIdPresent: signal.userIdPresent,
   };
 }
 
@@ -423,7 +461,7 @@ function normalizeConfidence(confidence: number | undefined): number {
   return Math.min(1, Math.max(0, confidence));
 }
 
-function createSourceRef(signal: AnswerQualitySignal): KnowledgeCandidateSourceRef {
+function createSourceRef(signal: QualitySignalIdentity): KnowledgeCandidateSourceRef {
   return {
     chatIdHash: signal.sessionIdPresent ? 'session_present' : 'session_absent',
     messageId: createQualitySignalMessageId(signal),
@@ -431,15 +469,15 @@ function createSourceRef(signal: AnswerQualitySignal): KnowledgeCandidateSourceR
   };
 }
 
-function createCandidateId(signal: AnswerQualitySignal): string {
+function createCandidateId(signal: QualitySignalIdentity): string {
   return `kc_quality_${qualitySignalHash(signal)}`;
 }
 
-function createQualitySignalMessageId(signal: AnswerQualitySignal): string {
+function createQualitySignalMessageId(signal: QualitySignalIdentity): string {
   return `aqs_${qualitySignalHash(signal)}`;
 }
 
-function qualitySignalHash(signal: AnswerQualitySignal): string {
+function qualitySignalHash(signal: QualitySignalIdentity): string {
   return createHash('sha256')
     .update(
       JSON.stringify({
@@ -449,7 +487,7 @@ function qualitySignalHash(signal: AnswerQualitySignal): string {
         confidence: signal.confidence,
         errorCode: signal.errorCode,
         intent: signal.intent,
-        question: signal.redactedQuestion,
+        question: signal.question,
         reason: signal.reason,
         sessionIdPresent: signal.sessionIdPresent,
         userIdPresent: signal.userIdPresent,

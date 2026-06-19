@@ -269,6 +269,52 @@ describe('mineAnswerQualitySignals', () => {
     );
   });
 
+  it('derives quality candidate ids from redacted text instead of raw secrets', () => {
+    const first = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer: '不要发送私钥、助记词或 seed phrase。api key: sk-answer-111',
+          channel: 'web',
+          confidence: 0.35,
+          intent: 'unknown',
+          reason: 'boundary_private_credentials',
+          redactedQuestion: '我的密码是 hunter2 api key: sk-test-111',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    }).candidates[0];
+    const second = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer: '不要发送私钥、助记词或 seed phrase。api key: sk-answer-222',
+          channel: 'web',
+          confidence: 0.35,
+          intent: 'unknown',
+          reason: 'boundary_private_credentials',
+          redactedQuestion: '我的密码是 different-secret api key: sk-test-222',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    }).candidates[0];
+
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (first === undefined || second === undefined) {
+      throw new Error('Expected both quality-signal candidates to be created.');
+    }
+    expect(first.question).toBe(second.question);
+    expect(first.proposedAnswer).toBe(second.proposedAnswer);
+    expect(first.id).toBe(second.id);
+    expect(first.sourceRefs[0]?.messageId).toBe(second.sourceRefs[0]?.messageId);
+    expect(JSON.stringify(first)).not.toContain('hunter2');
+    expect(JSON.stringify(first)).not.toContain('sk-test-111');
+    expect(JSON.stringify(first)).not.toContain('sk-answer-111');
+  });
+
   it('creates a needs-review eval candidate from an unknown-intent clarification signal', () => {
     const result = mineAnswerQualitySignals({
       now,

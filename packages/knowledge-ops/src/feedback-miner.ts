@@ -88,9 +88,14 @@ function createCandidateFromFeedback(
     answer.report,
     ...(comment === undefined ? [] : [comment.report]),
   ]);
+  const feedbackIdentity = createFeedbackIdentity(feedback, {
+    answerText,
+    commentText: comment?.text.trim(),
+    questionText,
+  });
 
   if (isBoundaryFeedback(feedback, redactionReport)) {
-    return createBoundaryCandidate(feedback, {
+    return createBoundaryCandidate(feedbackIdentity, {
       answerText,
       now,
       questionText,
@@ -118,16 +123,47 @@ function createCandidateFromFeedback(
     createdAt: now,
     existingKnowledgeMatches: [],
     generatedEvalCases,
-    id: createCandidateId(feedback),
+    id: createCandidateId(feedbackIdentity),
     proposedAnswer,
     question: questionText,
     redactionReport,
     riskLevel: redactionReport.riskLevel,
-    sourceRefs: [createSourceRef(feedback)],
+    sourceRefs: [createSourceRef(feedbackIdentity)],
     status: 'needs_review',
     targetCategory: 'eval_case',
     type: 'eval_case',
     updatedAt: now,
+  };
+}
+
+interface FeedbackIdentity {
+  answer: string;
+  channel: string;
+  citationCount: number;
+  comment?: string;
+  intent: string;
+  question: string;
+  rating: AnswerFeedbackRating;
+  sessionIdPresent: boolean;
+}
+
+function createFeedbackIdentity(
+  feedback: AnswerFeedback,
+  input: {
+    answerText: string;
+    commentText: string | undefined;
+    questionText: string;
+  },
+): FeedbackIdentity {
+  return {
+    answer: input.answerText,
+    channel: feedback.channel,
+    citationCount: feedback.citationCount,
+    ...(input.commentText === undefined ? {} : { comment: input.commentText }),
+    intent: feedback.intent,
+    question: input.questionText,
+    rating: feedback.rating,
+    sessionIdPresent: feedback.sessionIdPresent,
   };
 }
 
@@ -154,7 +190,7 @@ function minCitationsForFeedbackIntent(intent: string): number {
 }
 
 function createBoundaryCandidate(
-  feedback: AnswerFeedback,
+  feedback: FeedbackIdentity,
   input: {
     answerText: string;
     now: string;
@@ -242,7 +278,7 @@ function maxRiskLevel(left: KnowledgeRiskLevel, right: KnowledgeRiskLevel): Know
   return rank[left] >= rank[right] ? left : right;
 }
 
-function createSourceRef(feedback: AnswerFeedback): KnowledgeCandidateSourceRef {
+function createSourceRef(feedback: FeedbackIdentity): KnowledgeCandidateSourceRef {
   return {
     chatIdHash: feedback.sessionIdPresent ? 'session_present' : 'session_absent',
     messageId: createFeedbackMessageId(feedback),
@@ -250,15 +286,15 @@ function createSourceRef(feedback: AnswerFeedback): KnowledgeCandidateSourceRef 
   };
 }
 
-function createCandidateId(feedback: AnswerFeedback): string {
+function createCandidateId(feedback: FeedbackIdentity): string {
   return `kc_feedback_${feedbackHash(feedback)}`;
 }
 
-function createFeedbackMessageId(feedback: AnswerFeedback): string {
+function createFeedbackMessageId(feedback: FeedbackIdentity): string {
   return `fb_${feedbackHash(feedback)}`;
 }
 
-function feedbackHash(feedback: AnswerFeedback): string {
+function feedbackHash(feedback: FeedbackIdentity): string {
   return createHash('sha256')
     .update(
       JSON.stringify({

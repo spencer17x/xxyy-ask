@@ -93,6 +93,52 @@ describe('mineAnswerFeedback', () => {
     );
   });
 
+  it('derives feedback candidate ids from redacted text instead of raw secrets', () => {
+    const first = mineAnswerFeedback({
+      feedback: [
+        {
+          answer: '不要发送私钥、助记词或 seed phrase。api key: sk-answer-111',
+          channel: 'web',
+          citationCount: 0,
+          comment: '我的密码是 hunter2',
+          intent: 'unknown',
+          question: '我的密码是 hunter2 api key: sk-test-111',
+          rating: 'negative',
+          sessionIdPresent: true,
+        },
+      ],
+      now,
+    }).candidates[0];
+    const second = mineAnswerFeedback({
+      feedback: [
+        {
+          answer: '不要发送私钥、助记词或 seed phrase。api key: sk-answer-222',
+          channel: 'web',
+          citationCount: 0,
+          comment: '我的密码是 different-secret',
+          intent: 'unknown',
+          question: '我的密码是 different-secret api key: sk-test-222',
+          rating: 'negative',
+          sessionIdPresent: true,
+        },
+      ],
+      now,
+    }).candidates[0];
+
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (first === undefined || second === undefined) {
+      throw new Error('Expected both feedback candidates to be created.');
+    }
+    expect(first.question).toBe(second.question);
+    expect(first.proposedAnswer).toBe(second.proposedAnswer);
+    expect(first.id).toBe(second.id);
+    expect(first.sourceRefs[0]?.messageId).toBe(second.sourceRefs[0]?.messageId);
+    expect(JSON.stringify(first)).not.toContain('hunter2');
+    expect(JSON.stringify(first)).not.toContain('sk-test-111');
+    expect(JSON.stringify(first)).not.toContain('sk-answer-111');
+  });
+
   it('does not require citations or copied answer text for transaction feedback eval cases', () => {
     const result = mineAnswerFeedback({
       feedback: [
