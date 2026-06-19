@@ -66,12 +66,13 @@ describe('mineAnswerQualitySignals', () => {
     ]);
   });
 
-  it('creates one FAQ candidate from a combined low-confidence missing-citations signal', () => {
+  it('creates one eval candidate from a conservative product fallback signal', () => {
     const result = mineAnswerQualitySignals({
       now,
       signals: [
         {
-          answer: '当前知识库没有足够信息。',
+          answer:
+            '当前知识库没有足够资料确认这个问题。为了避免误导，我不会编造产品细节；请补充更具体的功能、权益或配置步骤，或稍后在知识库更新后再问。',
           channel: 'web',
           citationCount: 0,
           confidence: 0.2,
@@ -92,16 +93,21 @@ describe('mineAnswerQualitySignals', () => {
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0]).toMatchObject({
       confidence: 0.2,
-      proposedAnswer: '当前知识库没有足够信息。',
+      proposedAnswer:
+        '当前知识库没有足够资料确认这个问题。为了避免误导，我不会编造产品细节；请补充更具体的功能、权益或配置步骤，或稍后在知识库更新后再问。',
       question: 'XXYY Pro 价格是多少？',
       status: 'needs_review',
-      targetCategory: 'product_faq',
-      type: 'faq',
+      targetCategory: 'eval_case',
+      type: 'eval_case',
     });
     expect(result.candidates[0]?.generatedEvalCases).toEqual([
       {
-        expectedAnswer: '当前知识库没有足够信息。',
+        expectedAnswer:
+          '当前知识库没有足够资料确认这个问题。为了避免误导，我不会编造产品细节；请补充更具体的功能、权益或配置步骤，或稍后在知识库更新后再问。',
+        expectedIntent: 'product_qa',
+        minCitations: 0,
         question: 'XXYY Pro 价格是多少？',
+        requireExpectedAnswerText: false,
       },
     ]);
   });

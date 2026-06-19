@@ -116,6 +116,33 @@ function createProductGapCandidate(
   }
 
   const redactionReport = mergeRedactionReports([question.report, answer.report]);
+  if (isProductKnowledgeInsufficientAnswer(answerText)) {
+    return {
+      confidence: normalizeConfidence(signal.confidence),
+      createdAt: now,
+      existingKnowledgeMatches: [],
+      generatedEvalCases: [
+        createGeneratedEvalCase({
+          answerText,
+          expectedIntent: toSupportedIntent(signal.intent),
+          minCitations: 0,
+          questionText,
+          requireExpectedAnswerText: false,
+        }),
+      ],
+      id: createCandidateId(signal),
+      proposedAnswer: answerText,
+      question: questionText,
+      redactionReport,
+      riskLevel: redactionReport.riskLevel,
+      sourceRefs: [createSourceRef(signal)],
+      status: 'needs_review',
+      targetCategory: 'eval_case',
+      type: 'eval_case',
+      updatedAt: now,
+    };
+  }
+
   const generatedEvalCases: GeneratedEvalCase[] = [
     {
       expectedAnswer: answerText,
@@ -293,6 +320,10 @@ function boundaryAnswerFor(reason: AnswerQualitySignalReason): string {
 
 function selectProductCandidateType(riskLevel: KnowledgeRiskLevel): KnowledgeCandidateType {
   return riskLevel === 'high' ? 'boundary_example' : 'faq';
+}
+
+function isProductKnowledgeInsufficientAnswer(answerText: string): boolean {
+  return /当前知识库没有足够|知识库没有足够资料|知识库没有足够信息/u.test(answerText);
 }
 
 function isTransactionFailureSignal(signal: AnswerQualitySignal): boolean {
