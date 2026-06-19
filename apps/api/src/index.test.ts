@@ -339,6 +339,7 @@ describe('createRequestHandler', () => {
         needsReviewCount: 0,
         qualitySignalNeedsReviewCount: 0,
         recentEvalFailures: [],
+        recentQualitySignals: [],
       },
       txAnalysis: {
         byChain: {
@@ -423,6 +424,7 @@ describe('createRequestHandler', () => {
         needsReviewCount: 0,
         qualitySignalNeedsReviewCount: 0,
         recentEvalFailures: [],
+        recentQualitySignals: [],
       },
       txAnalysis: {
         byChain: {},
@@ -511,7 +513,10 @@ describe('createRequestHandler', () => {
         if (filter.source === 'answer_quality_signal') {
           return Promise.resolve([
             knowledgeCandidate({
+              createdAt: '2026-06-19T07:30:00.000Z',
               id: 'kc_quality_gap_1',
+              question: 'XXYY Pro 价格是多少？',
+              riskLevel: 'medium',
               sourceRefs: [
                 {
                   chatIdHash: 'session_present',
@@ -520,6 +525,8 @@ describe('createRequestHandler', () => {
                 },
               ],
               status: 'needs_review',
+              targetCategory: 'eval_case',
+              type: 'eval_case',
             }),
           ]);
         }
@@ -708,6 +715,16 @@ describe('createRequestHandler', () => {
           ],
           needsReviewCount: 2,
           qualitySignalNeedsReviewCount: 1,
+          recentQualitySignals: [
+            {
+              candidateId: 'kc_quality_gap_1',
+              createdAt: '2026-06-19T07:30:00.000Z',
+              question: 'XXYY Pro 价格是多少？',
+              riskLevel: 'medium',
+              targetCategory: 'eval_case',
+              type: 'eval_case',
+            },
+          ],
         },
       });
       expect(listFilters).toEqual([

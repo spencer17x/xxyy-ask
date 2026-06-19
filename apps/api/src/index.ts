@@ -231,6 +231,7 @@ interface KnowledgeCandidateQueueSummary {
   needsReviewCount: number;
   qualitySignalNeedsReviewCount: number;
   recentEvalFailures: RecentKnowledgeEvalFailureSummary[];
+  recentQualitySignals: RecentQualitySignalCandidateSummary[];
 }
 
 interface RecentKnowledgeEvalFailureSummary {
@@ -239,6 +240,15 @@ interface RecentKnowledgeEvalFailureSummary {
   failureReasons: string[];
   question: string;
   runId?: string;
+}
+
+interface RecentQualitySignalCandidateSummary {
+  candidateId: string;
+  createdAt: string;
+  question: string;
+  riskLevel: KnowledgeRiskLevel;
+  targetCategory: KnowledgeCandidate['targetCategory'];
+  type: KnowledgeCandidateType;
 }
 
 interface TxAnalysisRuntimeSummary {
@@ -1471,6 +1481,7 @@ async function createOpsSummary(
 
 const OPS_CANDIDATE_QUEUE_LIMIT = 200;
 const OPS_RECENT_EVAL_FAILURE_LIMIT = 5;
+const OPS_RECENT_QUALITY_SIGNAL_LIMIT = 5;
 
 async function summarizeKnowledgeCandidateQueues(
   store: KnowledgeCandidateStore,
@@ -1505,7 +1516,23 @@ async function summarizeKnowledgeCandidateQueues(
     needsReviewCount: needsReview.length,
     qualitySignalNeedsReviewCount: qualitySignalNeedsReview.length,
     recentEvalFailures,
+    recentQualitySignals: summarizeRecentQualitySignals(
+      qualitySignalNeedsReview.slice(0, OPS_RECENT_QUALITY_SIGNAL_LIMIT),
+    ),
   };
+}
+
+function summarizeRecentQualitySignals(
+  candidates: KnowledgeCandidate[],
+): RecentQualitySignalCandidateSummary[] {
+  return candidates.map((candidate) => ({
+    candidateId: candidate.id,
+    createdAt: candidate.createdAt,
+    question: candidate.question,
+    riskLevel: candidate.riskLevel,
+    targetCategory: candidate.targetCategory,
+    type: candidate.type,
+  }));
 }
 
 async function summarizeRecentEvalFailures(

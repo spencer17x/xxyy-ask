@@ -195,7 +195,7 @@ API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/
 GET /api/ops/summary
 ```
 
-请求需要带 `Authorization: Bearer <API_OPS_TOKEN>` 或 `x-ops-token: <API_OPS_TOKEN>`。响应会聚合 `/health/deep`、知识库 stats 和反馈 stats，用于生产监控、后台页或告警系统；不要把 token 暴露到公开前端。
+请求需要带 `Authorization: Bearer <API_OPS_TOKEN>` 或 `x-ops-token: <API_OPS_TOKEN>`。响应会聚合 `/health/deep`、知识库 stats、反馈 stats、候选知识队列数量、最近 eval 失败和最近自动回答质量缺口摘要，用于生产监控、后台页或告警系统；不要把 token 暴露到公开前端。
 
 同源 Web 运维页：
 
