@@ -201,7 +201,7 @@ export function createCustomerAgentRuntime(
 
   const ask: CustomerAgentRuntime['ask'] = async (request) => {
     const missingSessionDependency =
-      options.sessionContext === undefined
+      options.sessionContext === undefined || request.sessionId === undefined
         ? missingSessionDependencyForRequest(request)
         : undefined;
     if (missingSessionDependency !== undefined) {
