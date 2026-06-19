@@ -126,4 +126,18 @@ describe('classifyQuestion', () => {
       reason: 'private credential or seed phrase disclosure',
     });
   });
+
+  it('classifies password and API key disclosure as a credential boundary without blocking token setup questions', () => {
+    expect(classifyQuestion('我的密码是 hunter2')).toMatchObject({
+      confidence: 0.35,
+      intent: 'unknown',
+      reason: 'private credential or seed phrase disclosure',
+    });
+    expect(classifyQuestion('my api key is sk-test-123456')).toMatchObject({
+      confidence: 0.35,
+      intent: 'unknown',
+      reason: 'private credential or seed phrase disclosure',
+    });
+    expect(classifyQuestion('Telegram bot token 怎么设置？').intent).toBe('how_to');
+  });
 });

@@ -57,6 +57,17 @@ describe('redactSupportText', () => {
     expect(result.report.riskFlags).toEqual(['private_credentials']);
     expect(result.report.riskLevel).toBe('high');
   });
+
+  it('redacts passwords and API keys as private credentials', () => {
+    const result = redactSupportText('我的密码是 hunter2，api key: sk-test-123456');
+
+    expect(result.text).toBe(
+      '我的密码是 [REDACTED_PRIVATE_CREDENTIAL]，api key: [REDACTED_PRIVATE_CREDENTIAL]',
+    );
+    expect(result.report.entities).toEqual([{ type: 'private_credential', count: 2 }]);
+    expect(result.report.riskFlags).toEqual(['private_credentials']);
+    expect(result.report.riskLevel).toBe('high');
+  });
 });
 
 describe('redactSupportMessage', () => {

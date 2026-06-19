@@ -217,6 +217,49 @@ describe('createCustomerAgentRuntime', () => {
     ]);
   });
 
+  it('returns private credential boundary answers for pasted passwords without tool calls', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const productExecute = vi.fn(() => {
+      throw new Error('product tool should not be called');
+    });
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      policy: toolPolicy,
+      execute: productExecute,
+    });
+
+    const response = await createCustomerAgentRuntime({ qualitySignals, registry }).ask({
+      channel: 'web',
+      message: '我的密码是 hunter2',
+      sessionId: 'session-password',
+    });
+
+    expect(productExecute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.35,
+      intent: 'unknown',
+    });
+    expect(response.answer).toContain('不要发送私钥、助记词或 seed phrase');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.35,
+        intent: 'unknown',
+        reason: 'boundary_private_credentials',
+        redactedQuestion: '我的密码是 [sensitive_credential]',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('records chain-forensics boundary answers as quality signals', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();
