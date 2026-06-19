@@ -160,6 +160,7 @@ describe('createCustomerAgentRuntime', () => {
     });
     expect(qualitySignals.signals()).toEqual([
       {
+        answer: response.answer,
         channel: 'web',
         errorCode: 'ProductToolFailure',
         intent: 'product_qa',
@@ -342,12 +343,63 @@ describe('createCustomerAgentRuntime', () => {
     ]);
     expect(qualitySignals.signals()).toEqual([
       {
+        answer: response.answer,
         channel: 'web',
         errorCode: 'TxToolFailure',
         intent: 'tx_sandwich_detection',
         reason: 'tool_failure',
         redactedQuestion: '[evm_tx_hash]',
         sessionIdPresent: false,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
+  it('records unavailable answers on transaction analysis failure quality signals', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const txHash = '0x1111111111111111111111111111111111111111111111111111111111111111';
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute: () =>
+        Promise.resolve({
+          failure: {
+            message: '交易哈希夹子检测功能暂未启用。',
+            reason: 'not_configured',
+          },
+          status: 'failure',
+        } satisfies AnalyzeTransactionOutput),
+    });
+
+    const response = await createCustomerAgentRuntime({
+      qualitySignals,
+      registry,
+    }).ask({
+      channel: 'web',
+      message: txHash,
+      sessionId: 'session-tx-failure',
+    });
+
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.35,
+      intent: 'tx_sandwich_detection',
+    });
+    expect(response.answer).toContain('交易哈希夹子检测功能暂未启用');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.35,
+        intent: 'tx_sandwich_detection',
+        reason: 'tx_analysis_failure',
+        redactedQuestion: '[evm_tx_hash]',
+        sessionIdPresent: true,
         userIdPresent: false,
       },
     ]);

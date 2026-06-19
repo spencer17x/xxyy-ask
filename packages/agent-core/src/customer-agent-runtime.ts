@@ -66,13 +66,15 @@ export function createCustomerAgentRuntime(
         startedAt,
         toolName: 'analyze_transaction',
       });
+      const response = createTxAnalysisUnavailableAnswer('provider_unavailable');
       recordQualitySignal(qualitySignals, request, {
+        answer: response.answer,
         errorCode: errorCodeFrom(error),
         intent,
         reason: 'tool_failure',
         redactedQuestion: messageForTool,
       });
-      return createTxAnalysisUnavailableAnswer('provider_unavailable');
+      return response;
     }
 
     const response =
@@ -87,6 +89,7 @@ export function createCustomerAgentRuntime(
 
     if (output.status === 'failure') {
       recordQualitySignal(qualitySignals, request, {
+        answer: response.answer,
         confidence: response.confidence,
         intent,
         reason: 'tx_analysis_failure',
@@ -129,13 +132,15 @@ export function createCustomerAgentRuntime(
       if (isProductConfigurationError(error)) {
         throw error;
       }
+      const response = createProductKnowledgeUnavailableAnswer(intent);
       recordQualitySignal(qualitySignals, request, {
+        answer: response.answer,
         errorCode: errorCodeFrom(error),
         intent,
         reason: 'tool_failure',
         redactedQuestion: messageForTool,
       });
-      return createProductKnowledgeUnavailableAnswer(intent);
+      return response;
     }
 
     audit.record({
