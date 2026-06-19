@@ -4,6 +4,7 @@ export type QualitySignalReason =
   | 'boundary_investment_advice'
   | 'boundary_private_data'
   | 'low_confidence'
+  | 'low_confidence_missing_citations'
   | 'missing_citations'
   | 'session_unavailable'
   | 'tool_failure'

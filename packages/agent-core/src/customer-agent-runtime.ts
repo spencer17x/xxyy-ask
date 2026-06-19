@@ -154,7 +154,19 @@ export function createCustomerAgentRuntime(
       userIdPresent: request.userId !== undefined,
     });
 
-    if (response.confidence < qualityConfidenceThreshold) {
+    const hasMissingCitations = response.citations.length === 0;
+    const hasLowConfidence = response.confidence < qualityConfidenceThreshold;
+
+    if (hasLowConfidence && hasMissingCitations) {
+      recordQualitySignal(qualitySignals, request, {
+        answer: response.answer,
+        citationCount: 0,
+        confidence: response.confidence,
+        intent: response.intent,
+        reason: 'low_confidence_missing_citations',
+        redactedQuestion: messageForTool,
+      });
+    } else if (hasLowConfidence) {
       recordQualitySignal(qualitySignals, request, {
         answer: response.answer,
         citationCount: response.citations.length,
@@ -163,8 +175,7 @@ export function createCustomerAgentRuntime(
         reason: 'low_confidence',
         redactedQuestion: messageForTool,
       });
-    }
-    if (response.citations.length === 0) {
+    } else if (hasMissingCitations) {
       recordQualitySignal(qualitySignals, request, {
         answer: response.answer,
         citationCount: 0,

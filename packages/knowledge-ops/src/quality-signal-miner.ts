@@ -17,6 +17,7 @@ export type AnswerQualitySignalReason =
   | 'boundary_investment_advice'
   | 'boundary_private_data'
   | 'low_confidence'
+  | 'low_confidence_missing_citations'
   | 'missing_citations'
   | 'session_unavailable'
   | 'tool_failure'
@@ -50,6 +51,7 @@ export interface MineAnswerQualitySignalsOutput {
 
 const PRODUCT_GAP_REASONS = new Set<AnswerQualitySignalReason>([
   'low_confidence',
+  'low_confidence_missing_citations',
   'missing_citations',
 ]);
 const SUPPORTED_GENERATED_EVAL_INTENTS = new Set<GeneratedEvalIntent>([

@@ -703,7 +703,7 @@ describe('createCustomerAgentRuntime', () => {
     ]);
   });
 
-  it('records quality signals for low-confidence no-citation product answers', async () => {
+  it('records one combined quality signal for low-confidence no-citation product answers', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();
     const response: ChatResponse = {
@@ -742,18 +742,7 @@ describe('createCustomerAgentRuntime', () => {
         citationCount: 0,
         confidence: 0.2,
         intent: 'product_qa',
-        reason: 'low_confidence',
-        redactedQuestion: 'XXYY Pro 价格是多少？',
-        sessionIdPresent: true,
-        userIdPresent: false,
-      },
-      {
-        answer: '当前知识库没有足够信息。',
-        channel: 'web',
-        citationCount: 0,
-        confidence: 0.2,
-        intent: 'product_qa',
-        reason: 'missing_citations',
+        reason: 'low_confidence_missing_citations',
         redactedQuestion: 'XXYY Pro 价格是多少？',
         sessionIdPresent: true,
         userIdPresent: false,

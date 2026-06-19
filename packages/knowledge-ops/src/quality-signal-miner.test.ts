@@ -66,6 +66,46 @@ describe('mineAnswerQualitySignals', () => {
     ]);
   });
 
+  it('creates one FAQ candidate from a combined low-confidence missing-citations signal', () => {
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer: '当前知识库没有足够信息。',
+          channel: 'web',
+          citationCount: 0,
+          confidence: 0.2,
+          intent: 'product_qa',
+          reason: 'low_confidence_missing_citations',
+          redactedQuestion: 'XXYY Pro 价格是多少？',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.2,
+      proposedAnswer: '当前知识库没有足够信息。',
+      question: 'XXYY Pro 价格是多少？',
+      status: 'needs_review',
+      targetCategory: 'product_faq',
+      type: 'faq',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer: '当前知识库没有足够信息。',
+        question: 'XXYY Pro 价格是多少？',
+      },
+    ]);
+  });
+
   it('creates a high-risk boundary candidate from a private-data boundary signal', () => {
     const result = mineAnswerQualitySignals({
       now,
