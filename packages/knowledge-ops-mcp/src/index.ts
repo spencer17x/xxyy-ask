@@ -6,12 +6,12 @@ import {
   KnowledgeCandidateNotFoundError,
   createPgKnowledgeOpsStore,
   publishKnowledgeCandidate as publishCandidateToKnowledgeSource,
-  type ListKnowledgeCandidatesFilter,
   type ReviewKnowledgeCandidateInput,
 } from '@xxyy/knowledge-ops';
 import { createPgPool, loadRagConfig, loadWorkspaceEnv, resolveWorkspaceCwd } from '@xxyy/rag-core';
 
 import { createRunKnowledgeGateCommandArgs } from './commands.js';
+import { toListCandidatesFilter } from './filters.js';
 import { createKnowledgeOpsMcpServer } from './server.js';
 import { createKnowledgeOpsToolHandlers } from './tools.js';
 
@@ -136,20 +136,6 @@ function runWorkspaceCommand(args: string[]): Promise<{
       });
     });
   });
-}
-
-function toListCandidatesFilter(input: {
-  limit?: number | undefined;
-  riskLevel?: ListKnowledgeCandidatesFilter['riskLevel'] | undefined;
-  status?: ListKnowledgeCandidatesFilter['status'] | undefined;
-  type?: ListKnowledgeCandidatesFilter['type'] | undefined;
-}): ListKnowledgeCandidatesFilter {
-  return {
-    ...(input.limit === undefined ? {} : { limit: input.limit }),
-    ...(input.riskLevel === undefined ? {} : { riskLevel: input.riskLevel }),
-    ...(input.status === undefined ? {} : { status: input.status }),
-    ...(input.type === undefined ? {} : { type: input.type }),
-  };
 }
 
 function toReviewCandidateInput(input: {

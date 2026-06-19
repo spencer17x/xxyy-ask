@@ -43,13 +43,18 @@ describe('knowledge ops MCP tool handlers', () => {
     await expect(
       handlers.listKnowledgeCandidates({
         limit: 5,
+        source: 'answer_quality_signal',
         status: 'needs_review',
       }),
     ).resolves.toMatchObject({
       candidates: [{ id: 'kc_telegram_setup', status: 'needs_review' }],
       count: 1,
     });
-    expect(listCandidates).toHaveBeenCalledWith({ limit: 5, status: 'needs_review' });
+    expect(listCandidates).toHaveBeenCalledWith({
+      limit: 5,
+      source: 'answer_quality_signal',
+      status: 'needs_review',
+    });
   });
 
   it('publishes candidates and runs the knowledge gate through configured operations', async () => {

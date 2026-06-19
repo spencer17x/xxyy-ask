@@ -65,6 +65,7 @@ describe('createKnowledgeOpsTools', () => {
       registry.execute('list_knowledge_candidates', {
         limit: 5,
         riskLevel: 'low',
+        source: 'answer_quality_signal',
         status: 'needs_review',
         type: 'faq',
       }),
@@ -75,6 +76,7 @@ describe('createKnowledgeOpsTools', () => {
     expect(listCandidates).toHaveBeenCalledWith({
       limit: 5,
       riskLevel: 'low',
+      source: 'answer_quality_signal',
       status: 'needs_review',
       type: 'faq',
     });

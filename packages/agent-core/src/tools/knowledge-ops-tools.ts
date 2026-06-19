@@ -30,6 +30,11 @@ const knowledgeCandidateStatusSchema = z.enum([
 ]);
 const knowledgeCandidateTypeSchema = z.enum(['faq', 'doc_patch', 'boundary_example', 'eval_case']);
 const knowledgeRiskLevelSchema = z.enum(['low', 'medium', 'high']);
+const knowledgeCandidateSourceSchema = z.enum([
+  'telegram',
+  'answer_feedback',
+  'answer_quality_signal',
+]);
 const reviewActionSchema = z.enum(['approve', 'reject', 'request_changes', 'merge_duplicate']);
 
 const knowledgeCandidateSchema = z.object({
@@ -55,6 +60,7 @@ const knowledgeCandidateSchema = z.object({
 export const listKnowledgeCandidatesInputSchema = z.object({
   limit: z.number().int().positive().optional(),
   riskLevel: knowledgeRiskLevelSchema.optional(),
+  source: knowledgeCandidateSourceSchema.optional(),
   status: knowledgeCandidateStatusSchema.optional(),
   type: knowledgeCandidateTypeSchema.optional(),
 });
