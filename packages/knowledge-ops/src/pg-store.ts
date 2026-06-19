@@ -712,6 +712,27 @@ function buildListCandidatesQuery(filter: ListKnowledgeCandidatesFilter): {
     clauses.push(`source_refs @> $${values.length}::jsonb`);
   }
 
+  if (filter.qualitySignalReason !== undefined) {
+    values.push(
+      JSON.stringify([
+        { source: 'answer_quality_signal', qualitySignalReason: filter.qualitySignalReason },
+      ]),
+    );
+    clauses.push(`source_refs @> $${values.length}::jsonb`);
+  }
+
+  if (filter.qualitySignalAgentRoute !== undefined) {
+    values.push(
+      JSON.stringify([
+        {
+          source: 'answer_quality_signal',
+          qualitySignalAgentRoute: filter.qualitySignalAgentRoute,
+        },
+      ]),
+    );
+    clauses.push(`source_refs @> $${values.length}::jsonb`);
+  }
+
   if (filter.createdAtGte !== undefined) {
     values.push(filter.createdAtGte);
     clauses.push(`created_at >= $${values.length}::timestamptz`);

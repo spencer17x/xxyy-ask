@@ -315,6 +315,7 @@ const MAX_TX_ANALYSIS_REVIEW_UPDATED_BY_CHARS = 200;
 const MAX_KNOWLEDGE_REVIEW_NOTES_CHARS = 2000;
 const MAX_KNOWLEDGE_REVIEW_REVIEWER_CHARS = 200;
 const MAX_QUALITY_SIGNAL_CLUSTER_KEY_CHARS = 300;
+const MAX_QUALITY_SIGNAL_FILTER_VALUE_CHARS = 120;
 const supportedTxAnalysisReportStatuses = ['failure', 'success'] as const;
 const supportedTxAnalysisReportReviewStatuses = ['closed', 'in_review', 'open'] as const;
 const supportedTxAnalysisReportReviewActions = ['claim', 'close', 'reopen'] as const;
@@ -744,7 +745,19 @@ async function handleKnowledgeCandidatesRequest(options: {
   const qualitySignalAgeBucket = parseOptionalQualitySignalAgeBucket(
     options.requestUrl.searchParams.get('qualitySignalAgeBucket'),
   );
-  const sourceFilter = resolveKnowledgeCandidateSourceForAgeBucket(source, qualitySignalAgeBucket);
+  const qualitySignalReason = parseOptionalQualitySignalFilterValue(
+    options.requestUrl.searchParams.get('qualitySignalReason'),
+    'qualitySignalReason',
+  );
+  const qualitySignalAgentRoute = parseOptionalQualitySignalFilterValue(
+    options.requestUrl.searchParams.get('qualitySignalAgentRoute'),
+    'qualitySignalAgentRoute',
+  );
+  const sourceFilter = resolveKnowledgeCandidateSourceForQualityFilters(source, {
+    ...(qualitySignalAgeBucket === undefined ? {} : { qualitySignalAgeBucket }),
+    ...(qualitySignalAgentRoute === undefined ? {} : { qualitySignalAgentRoute }),
+    ...(qualitySignalReason === undefined ? {} : { qualitySignalReason }),
+  });
   const ageBucketFilter =
     qualitySignalAgeBucket === undefined
       ? {}
@@ -754,7 +767,9 @@ async function handleKnowledgeCandidatesRequest(options: {
   const candidates = await store.listCandidates({
     ...ageBucketFilter,
     ...(limit === undefined ? {} : { limit }),
+    ...(qualitySignalAgentRoute === undefined ? {} : { qualitySignalAgentRoute }),
     ...(qualitySignalClusterKey === undefined ? {} : { qualitySignalClusterKey }),
+    ...(qualitySignalReason === undefined ? {} : { qualitySignalReason }),
     ...(riskLevel === undefined ? {} : { riskLevel }),
     ...(sourceFilter === undefined ? {} : { source: sourceFilter }),
     ...(status === undefined ? {} : { status }),
@@ -1163,15 +1178,48 @@ function parseOptionalQualitySignalAgeBucket(
   throw new BadRequestError('qualitySignalAgeBucket must be lt1h, h1to24h, or gte24h.');
 }
 
-function resolveKnowledgeCandidateSourceForAgeBucket(
+function parseOptionalQualitySignalFilterValue(
+  value: string | null,
+  fieldName: 'qualitySignalAgentRoute' | 'qualitySignalReason',
+): string | undefined {
+  const normalized = parseOptionalQueryString(value);
+  if (normalized === undefined) {
+    return undefined;
+  }
+  if (normalized.length > MAX_QUALITY_SIGNAL_FILTER_VALUE_CHARS) {
+    throw new BadRequestError(`${fieldName} is too long.`);
+  }
+  if (!/^[a-z_]+$/u.test(normalized)) {
+    throw new BadRequestError(`${fieldName} must be a valid quality signal filter.`);
+  }
+
+  return normalized;
+}
+
+function resolveKnowledgeCandidateSourceForQualityFilters(
   source: KnowledgeCandidateSource | undefined,
-  qualitySignalAgeBucket: QualitySignalAgeBucket | undefined,
+  filters: {
+    qualitySignalAgeBucket?: QualitySignalAgeBucket;
+    qualitySignalAgentRoute?: string;
+    qualitySignalReason?: string;
+  },
 ): KnowledgeCandidateSource | undefined {
-  if (qualitySignalAgeBucket === undefined) {
+  const hasQualitySignalFilter =
+    filters.qualitySignalAgeBucket !== undefined ||
+    filters.qualitySignalAgentRoute !== undefined ||
+    filters.qualitySignalReason !== undefined;
+  if (!hasQualitySignalFilter) {
     return source;
   }
   if (source !== undefined && source !== 'answer_quality_signal') {
-    throw new BadRequestError('qualitySignalAgeBucket requires source answer_quality_signal.');
+    if (
+      filters.qualitySignalAgeBucket !== undefined &&
+      filters.qualitySignalAgentRoute === undefined &&
+      filters.qualitySignalReason === undefined
+    ) {
+      throw new BadRequestError('qualitySignalAgeBucket requires source answer_quality_signal.');
+    }
+    throw new BadRequestError('quality signal filters require source answer_quality_signal.');
   }
 
   return 'answer_quality_signal';

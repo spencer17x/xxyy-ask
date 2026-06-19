@@ -8,7 +8,9 @@ export interface ListKnowledgeCandidatesFilter {
   createdAtGte?: string;
   createdAtLt?: string;
   limit?: number;
+  qualitySignalAgentRoute?: string;
   qualitySignalClusterKey?: string;
+  qualitySignalReason?: string;
   source?: KnowledgeCandidateSource;
   status?: KnowledgeCandidateStatus;
   type?: KnowledgeCandidate['type'];
@@ -297,6 +299,28 @@ function matchesFilter(
       (sourceRef) =>
         sourceRef.source === 'answer_quality_signal' &&
         sourceRef.qualitySignalClusterKey === filter.qualitySignalClusterKey,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    filter.qualitySignalReason !== undefined &&
+    !candidate.sourceRefs.some(
+      (sourceRef) =>
+        sourceRef.source === 'answer_quality_signal' &&
+        sourceRef.qualitySignalReason === filter.qualitySignalReason,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    filter.qualitySignalAgentRoute !== undefined &&
+    !candidate.sourceRefs.some(
+      (sourceRef) =>
+        sourceRef.source === 'answer_quality_signal' &&
+        sourceRef.qualitySignalAgentRoute === filter.qualitySignalAgentRoute,
     )
   ) {
     return false;

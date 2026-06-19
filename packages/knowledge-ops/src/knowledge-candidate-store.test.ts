@@ -55,7 +55,9 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
           source: 'answer_quality_signal',
           chatIdHash: 'session_present',
           messageId: 'aqs_1',
+          qualitySignalAgentRoute: 'product_answer',
           qualitySignalClusterKey: 'product_answer:missing_citations:product_faq:faq',
+          qualitySignalReason: 'missing_citations',
         },
       ],
       type: 'faq',
@@ -73,6 +75,12 @@ describe('createInMemoryKnowledgeCandidateStore', () => {
       store.listCandidates({
         qualitySignalClusterKey: 'product_answer:missing_citations:product_faq:faq',
       }),
+    ).resolves.toEqual([qualitySignalCandidate]);
+    await expect(
+      store.listCandidates({ qualitySignalReason: 'missing_citations' }),
+    ).resolves.toEqual([qualitySignalCandidate]);
+    await expect(
+      store.listCandidates({ qualitySignalAgentRoute: 'product_answer' }),
     ).resolves.toEqual([qualitySignalCandidate]);
   });
 

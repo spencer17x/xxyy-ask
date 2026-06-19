@@ -137,6 +137,10 @@ describe('renderOpsPage', () => {
     expect(html).toContain('Quality gap · " + recent.candidateId');
     expect(html).toContain('Quality reason · " + reason');
     expect(html).toContain('Quality route · " + route');
+    expect(html).toContain('data-quality-reason');
+    expect(html).toContain('data-quality-route');
+    expect(html).toContain('await loadQualitySignalReasonCandidates(reason)');
+    expect(html).toContain('await loadQualitySignalRouteCandidates(route)');
     expect(html).toContain('Quality age · " + bucket.label');
     expect(html).toContain('data-quality-age-bucket');
     expect(html).toContain('await loadQualitySignalAgeBucketCandidates(ageBucket)');
@@ -292,8 +296,14 @@ describe('renderOpsPage', () => {
     expect(html).toContain('params.set("type", knowledgeCandidateType.value)');
     expect(html).toContain('if (knowledgeCandidateSource.value) {');
     expect(html).toContain('params.set("source", knowledgeCandidateSource.value)');
+    expect(html).toContain('params.set("qualitySignalReason", options.qualitySignalReason)');
+    expect(html).toContain(
+      'params.set("qualitySignalAgentRoute", options.qualitySignalAgentRoute)',
+    );
     expect(html).toContain('params.set("qualitySignalAgeBucket", options.qualitySignalAgeBucket)');
     expect(html).toContain('knowledgeCandidateSource.value = "answer_quality_signal"');
+    expect(html).toContain('function loadQualitySignalReasonCandidates(reason)');
+    expect(html).toContain('function loadQualitySignalRouteCandidates(route)');
     expect(html).toContain('function loadQualitySignalAgeBucketCandidates(ageBucket)');
     expect(html).toContain('fetch("/api/knowledge/candidates?" + params.toString()');
     expect(html).toContain('Authorization: "Bearer " + token');

@@ -230,7 +230,9 @@ describe('createPgKnowledgeOpsStore', () => {
       createdAtGte: '2026-06-18T08:00:00.000Z',
       createdAtLt: '2026-06-19T07:00:00.000Z',
       limit: 10,
+      qualitySignalAgentRoute: 'product_answer',
       qualitySignalClusterKey: 'product_answer:missing_citations:eval_case:eval_case',
+      qualitySignalReason: 'missing_citations',
       riskLevel: 'high',
       source: 'answer_quality_signal',
       status: 'needs_review',
@@ -238,7 +240,7 @@ describe('createPgKnowledgeOpsStore', () => {
     });
 
     expect(client.queries[0]?.sql).toContain(
-      'where status = $1 and type = $2 and risk_level = $3 and source_refs @> $4::jsonb and source_refs @> $5::jsonb and created_at >= $6::timestamptz and created_at < $7::timestamptz',
+      'where status = $1 and type = $2 and risk_level = $3 and source_refs @> $4::jsonb and source_refs @> $5::jsonb and source_refs @> $6::jsonb and source_refs @> $7::jsonb and created_at >= $8::timestamptz and created_at < $9::timestamptz',
     );
     expect(client.queries[0]?.values).toEqual([
       'needs_review',
@@ -250,6 +252,12 @@ describe('createPgKnowledgeOpsStore', () => {
           source: 'answer_quality_signal',
           qualitySignalClusterKey: 'product_answer:missing_citations:eval_case:eval_case',
         },
+      ]),
+      JSON.stringify([
+        { source: 'answer_quality_signal', qualitySignalReason: 'missing_citations' },
+      ]),
+      JSON.stringify([
+        { source: 'answer_quality_signal', qualitySignalAgentRoute: 'product_answer' },
       ]),
       '2026-06-18T08:00:00.000Z',
       '2026-06-19T07:00:00.000Z',

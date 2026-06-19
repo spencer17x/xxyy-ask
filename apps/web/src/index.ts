@@ -1939,6 +1939,30 @@ export function renderOpsPage(): string {
         await loadQualitySignalAgeBucketCandidates(ageBucket);
       });
 
+      knowledgeQualityReasonsTarget.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) {
+          return;
+        }
+        const reason = target.dataset.qualityReason;
+        if (!reason) {
+          return;
+        }
+        await loadQualitySignalReasonCandidates(reason);
+      });
+
+      knowledgeQualityRoutesTarget.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) {
+          return;
+        }
+        const route = target.dataset.qualityRoute;
+        if (!route) {
+          return;
+        }
+        await loadQualitySignalRouteCandidates(route);
+      });
+
       knowledgeCandidateSource.addEventListener("change", () => {
         if (tokenInput.value.trim()) {
           void loadKnowledgeCandidates();
@@ -2124,9 +2148,22 @@ export function renderOpsPage(): string {
 
         knowledgeQualityReasonsTarget.replaceChildren(
           ...rows.map(([reason, count]) =>
-            row("knowledge-candidate-item", "Quality reason · " + reason, String(count), "Needs review"),
+            rowWithMetaNodes(
+              "knowledge-candidate-item",
+              "Quality reason · " + reason,
+              String(count),
+              [createQualityReasonButton(reason)],
+            ),
           ),
         );
+      }
+
+      function createQualityReasonButton(reason) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("data-quality-reason", reason);
+        button.textContent = "Load reason";
+        return button;
       }
 
       function renderQualitySignalRoutes(routeCounts) {
@@ -2140,9 +2177,22 @@ export function renderOpsPage(): string {
 
         knowledgeQualityRoutesTarget.replaceChildren(
           ...rows.map(([route, count]) =>
-            row("knowledge-candidate-item", "Quality route · " + route, String(count), "Needs review"),
+            rowWithMetaNodes(
+              "knowledge-candidate-item",
+              "Quality route · " + route,
+              String(count),
+              [createQualityRouteButton(route)],
+            ),
           ),
         );
+      }
+
+      function createQualityRouteButton(route) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("data-quality-route", route);
+        button.textContent = "Load route";
+        return button;
       }
 
       function renderQualitySignalAgeBuckets(ageBuckets) {
@@ -2223,6 +2273,20 @@ export function renderOpsPage(): string {
         knowledgeCandidateType.value = "";
         knowledgeCandidateSource.value = "answer_quality_signal";
         await loadKnowledgeCandidates({ qualitySignalClusterKey: clusterKey });
+      }
+
+      async function loadQualitySignalReasonCandidates(reason) {
+        knowledgeCandidateStatusFilter.value = "needs_review";
+        knowledgeCandidateType.value = "";
+        knowledgeCandidateSource.value = "answer_quality_signal";
+        await loadKnowledgeCandidates({ qualitySignalReason: reason });
+      }
+
+      async function loadQualitySignalRouteCandidates(route) {
+        knowledgeCandidateStatusFilter.value = "needs_review";
+        knowledgeCandidateType.value = "";
+        knowledgeCandidateSource.value = "answer_quality_signal";
+        await loadKnowledgeCandidates({ qualitySignalAgentRoute: route });
       }
 
       async function loadQualitySignalAgeBucketCandidates(ageBucket) {
@@ -2333,6 +2397,12 @@ export function renderOpsPage(): string {
         }
         if (options?.qualitySignalClusterKey) {
           params.set("qualitySignalClusterKey", options.qualitySignalClusterKey);
+        }
+        if (options?.qualitySignalReason) {
+          params.set("qualitySignalReason", options.qualitySignalReason);
+        }
+        if (options?.qualitySignalAgentRoute) {
+          params.set("qualitySignalAgentRoute", options.qualitySignalAgentRoute);
         }
         if (options?.qualitySignalAgeBucket) {
           params.set("qualitySignalAgeBucket", options.qualitySignalAgeBucket);
