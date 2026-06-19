@@ -955,6 +955,54 @@ describe('createCustomerAgentRuntime', () => {
     });
   });
 
+  it('uses session context to resolve product price follow-ups', async () => {
+    const registry = createToolRegistry();
+    const sessionContext = createInMemorySessionContextStore();
+    const response: ChatResponse = {
+      answer: 'XXYY Pro 价格以产品页面展示为准。',
+      citations: [
+        {
+          excerpt: 'XXYY Pro 价格以产品页面展示为准。',
+          file: 'docs/product-features/pro-upgrade.md',
+          title: 'XXYY Pro',
+        },
+      ],
+      confidence: 0.78,
+      intent: 'product_qa',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createCustomerAgentRuntime({ registry, sessionContext });
+    await runtime.ask({
+      channel: 'web',
+      message: 'XXYY Pro 有哪些权益？',
+      sessionId: 'session-price-followup',
+    });
+    const followUpResponse = await runtime.ask({
+      channel: 'web',
+      message: '多少钱？',
+      sessionId: 'session-price-followup',
+    });
+
+    expect(followUpResponse.answer).toContain('价格');
+    expect(execute).toHaveBeenLastCalledWith({
+      channel: 'web',
+      question: 'XXYY Pro 多少钱？',
+    });
+  });
+
   it('uses safe session preferences to resolve product follow-ups through the runtime', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

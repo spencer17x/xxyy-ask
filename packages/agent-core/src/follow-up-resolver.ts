@@ -222,6 +222,9 @@ function isShortProductFollowUp(message: string): boolean {
     ) ||
     /^(那|这个|那个|它|刚才|刚才那个|上一条)?(入口|页面|按钮)在?(哪里|哪儿|哪|什么地方)/u.test(
       normalized,
+    ) ||
+    /^(那|这个|那个|它|刚才|刚才那个|上一条)?(多少钱|价格(是多少|多少)?|费用(是多少|多少)?|怎么收费|收费(是多少|多少)?)/u.test(
+      normalized,
     )
   );
 }

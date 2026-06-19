@@ -85,6 +85,28 @@ describe('resolveFollowUp', () => {
     });
   });
 
+  it('resolves price product follow-ups using the most recent product topic', () => {
+    const recentTurns: SessionTurn[] = [
+      {
+        content: 'XXYY Pro 有哪些权益？',
+        createdAt: '2026-06-19T00:00:00.000Z',
+        metadata: { intent: 'product_qa' },
+        role: 'user',
+      },
+    ];
+
+    expect(
+      resolveFollowUp({
+        message: '多少钱？',
+        recentTurns,
+      }),
+    ).toEqual({
+      contextSummary: 'resolved product follow-up from previous product turn',
+      resolution: 'resolved_followup',
+      resolvedMessage: 'XXYY Pro 多少钱？',
+    });
+  });
+
   it('resolves pronoun product follow-ups using the most recent product topic', () => {
     const recentTurns: SessionTurn[] = [
       {
