@@ -11,6 +11,7 @@ import {
 } from '@xxyy/knowledge-ops';
 import { createPgPool, loadRagConfig, loadWorkspaceEnv, resolveWorkspaceCwd } from '@xxyy/rag-core';
 
+import { createRunKnowledgeGateCommandArgs } from './commands.js';
 import { createKnowledgeOpsMcpServer } from './server.js';
 import { createKnowledgeOpsToolHandlers } from './tools.js';
 
@@ -67,13 +68,19 @@ const server = createKnowledgeOpsMcpServer({
       return store.reviewCandidate(id, toReviewCandidateInput(input));
     },
     async runKnowledgeGate(input) {
-      const result = await runWorkspaceCommand([
-        'rag:gate:knowledge',
-        '--',
-        '--id',
-        input.id,
-        ...(input.fast === true ? ['--fast'] : []),
-      ]);
+      const result = await runWorkspaceCommand(createRunKnowledgeGateCommandArgs(input));
+      if (input.approvedEvalOnly === true) {
+        return {
+          approvedEvalOnly: true,
+          status: result.exitCode === 0 ? 'passed' : 'failed',
+          ...result,
+        };
+      }
+
+      if (input.id === undefined) {
+        throw new Error('run_knowledge_gate requires id unless approvedEvalOnly is true.');
+      }
+
       return {
         candidateId: input.id,
         status: result.exitCode === 0 ? 'passed' : 'failed',

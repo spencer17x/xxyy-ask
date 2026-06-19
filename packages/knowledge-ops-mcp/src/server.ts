@@ -69,7 +69,8 @@ export function createKnowledgeOpsMcpServer(
   server.registerTool(
     KNOWLEDGE_OPS_MCP_TOOL_NAMES[3],
     {
-      description: 'Run ingest, embeddings, and targeted eval gate for a published candidate.',
+      description:
+        'Run ingest, embeddings, and targeted eval gate for one candidate, or batch-gate approved eval-only candidates.',
       inputSchema: runKnowledgeGateInputSchema,
       title: 'Run Knowledge Gate',
     },

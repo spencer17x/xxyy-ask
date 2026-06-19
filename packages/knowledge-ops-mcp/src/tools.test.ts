@@ -60,12 +60,21 @@ describe('knowledge ops MCP tool handlers', () => {
         publishRunId: 'publish_20260617T050000Z_abcd1234',
       }),
     );
-    const runKnowledgeGate = vi.fn(() =>
-      Promise.resolve({
-        candidateId: 'kc_telegram_setup',
-        evaluation: { passed: 1, total: 1 },
-        status: 'passed' as const,
-      }),
+    const runKnowledgeGate = vi.fn((input: { approvedEvalOnly?: boolean; id?: string }) =>
+      Promise.resolve(
+        input.approvedEvalOnly === true
+          ? {
+              approvedEvalOnly: true,
+              exitCode: 0,
+              status: 'passed' as const,
+              stdout: 'Approved eval knowledge gate passed: 2/2 candidates passed.',
+            }
+          : {
+              candidateId: input.id ?? 'kc_telegram_setup',
+              evaluation: { passed: 1, total: 1 },
+              status: 'passed' as const,
+            },
+      ),
     );
     const handlers = createKnowledgeOpsToolHandlers({
       listCandidates() {
@@ -99,10 +108,27 @@ describe('knowledge ops MCP tool handlers', () => {
       candidateId: 'kc_telegram_setup',
       status: 'passed',
     });
+    await expect(
+      handlers.runKnowledgeGate({
+        approvedEvalOnly: true,
+        fast: true,
+      }),
+    ).resolves.toMatchObject({
+      approvedEvalOnly: true,
+      status: 'passed',
+      stdout: 'Approved eval knowledge gate passed: 2/2 candidates passed.',
+    });
     expect(publishKnowledgeCandidate).toHaveBeenCalledWith({
       id: 'kc_telegram_setup',
       target: 'pages/support-faq.md',
     });
-    expect(runKnowledgeGate).toHaveBeenCalledWith({ fast: true, id: 'kc_telegram_setup' });
+    expect(runKnowledgeGate).toHaveBeenNthCalledWith(1, {
+      fast: true,
+      id: 'kc_telegram_setup',
+    });
+    expect(runKnowledgeGate).toHaveBeenNthCalledWith(2, {
+      approvedEvalOnly: true,
+      fast: true,
+    });
   });
 });

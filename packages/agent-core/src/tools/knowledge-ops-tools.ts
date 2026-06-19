@@ -87,13 +87,33 @@ export const publishKnowledgeCandidateOutputSchema = z.object({
   publishRunId: z.string(),
 });
 
-export const runKnowledgeGateInputSchema = z.object({
-  fast: z.boolean().optional(),
-  id: nonEmptyStringSchema,
-});
+export const runKnowledgeGateInputSchema = z
+  .object({
+    approvedEvalOnly: z.boolean().optional(),
+    fast: z.boolean().optional(),
+    id: nonEmptyStringSchema.optional(),
+  })
+  .superRefine((input, context) => {
+    if (input.approvedEvalOnly === true && input.id !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: 'run_knowledge_gate accepts either id or approvedEvalOnly, not both.',
+        path: ['approvedEvalOnly'],
+      });
+    }
+
+    if (input.approvedEvalOnly !== true && input.id === undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: 'run_knowledge_gate requires id unless approvedEvalOnly is true.',
+        path: ['id'],
+      });
+    }
+  });
 
 export const runKnowledgeGateOutputSchema = z.object({
-  candidateId: z.string(),
+  approvedEvalOnly: z.boolean().optional(),
+  candidateId: z.string().optional(),
   evaluation: z
     .object({
       passed: z.number().int().nonnegative(),
@@ -102,9 +122,12 @@ export const runKnowledgeGateOutputSchema = z.object({
     .passthrough()
     .optional(),
   exitCode: z.number().int().optional(),
+  failedCount: z.number().int().nonnegative().optional(),
+  passedCount: z.number().int().nonnegative().optional(),
   status: z.enum(['passed', 'failed']),
   stderr: z.string().optional(),
   stdout: z.string().optional(),
+  totalCount: z.number().int().nonnegative().optional(),
 });
 
 export const syncTelegramSupportInputSchema = z.object({});
@@ -215,7 +238,8 @@ export function createKnowledgeOpsTools(
 
   const runKnowledgeGateTool: RunKnowledgeGateToolDefinition = {
     name: 'run_knowledge_gate',
-    description: 'Run ingest, embeddings, and targeted eval gate for a published candidate.',
+    description:
+      'Run ingest, embeddings, and targeted eval gate for one candidate, or batch-gate approved eval-only candidates.',
     inputSchema: runKnowledgeGateInputSchema,
     outputSchema: runKnowledgeGateOutputSchema,
     policy: knowledgeOpsToolPolicy,
