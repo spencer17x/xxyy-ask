@@ -101,6 +101,9 @@ function createCandidateFromSignal(
   if (PRODUCT_GAP_REASONS.has(signal.reason)) {
     return createProductGapCandidate(signal, now);
   }
+  if (isProductToolFailureSignal(signal)) {
+    return createProductToolFailureCandidate(signal, now);
+  }
   if (
     signal.reason === 'ambiguous_followup' ||
     signal.reason === 'boundary_chain_forensics' ||
@@ -182,6 +185,48 @@ function createProductGapCandidate(
     status: 'needs_review',
     targetCategory: candidateType === 'boundary_example' ? 'policy_boundary' : 'product_faq',
     type: candidateType,
+    updatedAt: now,
+  };
+}
+
+function createProductToolFailureCandidate(
+  signal: AnswerQualitySignal,
+  now: string,
+): KnowledgeCandidate | undefined {
+  const question = redactSupportText(signal.redactedQuestion);
+  const answer = redactSupportText(signal.answer ?? '');
+  const questionText = question.text.trim();
+  const answerText = answer.text.trim();
+
+  if (questionText.length === 0 || answerText.length === 0) {
+    return undefined;
+  }
+
+  const redactionReport = mergeRedactionReports([question.report, answer.report]);
+  const signalIdentity = createQualitySignalIdentity(signal, { answerText, questionText });
+
+  return {
+    confidence: normalizeConfidence(signal.confidence),
+    createdAt: now,
+    existingKnowledgeMatches: [],
+    generatedEvalCases: [
+      createGeneratedEvalCase({
+        answerText,
+        expectedIntent: toSupportedIntent(signal.intent),
+        minCitations: 0,
+        questionText,
+        requireExpectedAnswerText: false,
+      }),
+    ],
+    id: createCandidateId(signalIdentity),
+    proposedAnswer: answerText,
+    question: questionText,
+    redactionReport,
+    riskLevel: redactionReport.riskLevel,
+    sourceRefs: [createSourceRef(signalIdentity)],
+    status: 'needs_review',
+    targetCategory: 'eval_case',
+    type: 'eval_case',
     updatedAt: now,
   };
 }
@@ -387,6 +432,13 @@ function isTransactionFailureSignal(signal: AnswerQualitySignal): boolean {
   return (
     signal.intent === 'tx_sandwich_detection' &&
     (signal.reason === 'tx_analysis_failure' || signal.reason === 'tool_failure')
+  );
+}
+
+function isProductToolFailureSignal(signal: AnswerQualitySignal): boolean {
+  return (
+    signal.reason === 'tool_failure' &&
+    (signal.intent === 'product_qa' || signal.intent === 'how_to')
   );
 }
 

@@ -582,6 +582,49 @@ describe('mineAnswerQualitySignals', () => {
     ]);
   });
 
+  it('creates a needs-review eval candidate from a product tool failure signal', () => {
+    const answer =
+      '当前产品知识库暂时不可用，无法基于 XXYY 文档确认这个问题。为了避免误导，我不会编造产品细节；请稍后重试，或换成更具体的功能、权益或配置步骤提问。';
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer,
+          channel: 'web',
+          errorCode: 'ProductToolFailure',
+          intent: 'product_qa',
+          reason: 'tool_failure',
+          redactedQuestion: 'XXYY Pro 有哪些权益？',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.5,
+      proposedAnswer: answer,
+      question: 'XXYY Pro 有哪些权益？',
+      status: 'needs_review',
+      targetCategory: 'eval_case',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer: answer,
+        expectedIntent: 'product_qa',
+        minCitations: 0,
+        question: 'XXYY Pro 有哪些权益？',
+        requireExpectedAnswerText: false,
+      },
+    ]);
+  });
+
   it('skips quality signals that do not yet contain publishable knowledge', () => {
     const result = mineAnswerQualitySignals({
       now,
@@ -596,8 +639,6 @@ describe('mineAnswerQualitySignals', () => {
           userIdPresent: false,
         },
         {
-          answer:
-            '当前产品知识库暂时不可用，无法基于 XXYY 文档确认这个问题。为了避免误导，我不会编造产品细节；请稍后重试。',
           channel: 'web',
           errorCode: 'ProductToolFailure',
           intent: 'product_qa',
