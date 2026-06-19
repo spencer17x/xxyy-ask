@@ -162,10 +162,21 @@ function formatRecentTransactionReference(reference: RecentTransactionReference)
 }
 
 function isTransactionFollowUp(message: string): boolean {
-  if (/^(什么是|什么叫|介绍|解释|how does|what is|what's)/iu.test(message)) {
+  if (/^(这笔|那笔|刚才那笔|上一笔)/u.test(message)) {
+    return true;
+  }
+
+  if (isDefinitionQuestion(message)) {
     return false;
   }
   return /^(这笔|那笔|刚才那笔|上一笔)|被夹|夹子|sandwich|transaction|tx/iu.test(message);
+}
+
+function isDefinitionQuestion(message: string): boolean {
+  return (
+    /^(什么是|什么叫|介绍|解释|how does|what is|what's|explain)/iu.test(message) ||
+    /(是什么|是什么意思|什么意思|什么含义)[？?]?$/iu.test(message)
+  );
 }
 
 function isShortProductFollowUp(message: string): boolean {

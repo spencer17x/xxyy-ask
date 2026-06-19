@@ -126,6 +126,33 @@ describe('resolveFollowUp', () => {
     });
   });
 
+  it('keeps inverted MEV definition questions unchanged instead of treating them as follow-ups', () => {
+    expect(
+      resolveFollowUp({
+        message: 'MEV sandwich 是什么？',
+        recentTurns: [],
+      }),
+    ).toEqual({
+      resolution: 'unchanged',
+      resolvedMessage: 'MEV sandwich 是什么？',
+    });
+  });
+
+  it('still treats referential transaction status questions as follow-ups', () => {
+    expect(
+      resolveFollowUp({
+        message: '这笔是什么情况？',
+        recentTurns: [],
+      }),
+    ).toEqual({
+      clarificationQuestion:
+        '我还不能确定“这笔”指哪一笔交易。请发送单笔完整交易哈希或对应主网浏览器链接。',
+      clarificationReason: 'missing_context',
+      dependency: 'transaction_reference',
+      resolution: 'needs_clarification',
+    });
+  });
+
   it('asks for clarification when the same transaction hash exists on multiple recent chains', () => {
     const recentTurns: SessionTurn[] = [
       {

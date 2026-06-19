@@ -159,6 +159,49 @@ describe('createCustomerAgentRuntime', () => {
     ]);
   });
 
+  it('routes inverted chain-forensics definition questions to boundary answers', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const txExecute = vi.fn(() => {
+      throw new Error('transaction tool should not be called');
+    });
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({ txHash: z.string() }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute: txExecute,
+    });
+
+    const response = await createCustomerAgentRuntime({ qualitySignals, registry }).ask({
+      channel: 'web',
+      message: 'MEV sandwich 是什么？',
+      sessionId: 'session-inverted-mev-boundary',
+    });
+
+    expect(txExecute).not.toHaveBeenCalled();
+    expect(response).toMatchObject({
+      citations: [],
+      confidence: 0.7,
+      intent: 'mev_or_chain_forensics',
+    });
+    expect(response.answer).toContain('不能仅凭当前问题判断某笔交易是否被夹或存在 MEV');
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: response.answer,
+        channel: 'web',
+        confidence: 0.7,
+        intent: 'mev_or_chain_forensics',
+        reason: 'boundary_chain_forensics',
+        redactedQuestion: 'MEV sandwich 是什么？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('returns an automatic product fallback when answer_product_question fails', async () => {
     const registry = createToolRegistry();
     const audit = createInMemoryAuditSink();
