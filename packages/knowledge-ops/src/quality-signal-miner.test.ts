@@ -452,6 +452,50 @@ describe('mineAnswerQualitySignals', () => {
     ]);
   });
 
+  it('creates a needs-review eval candidate from a blocked handoff wording signal', () => {
+    const answer =
+      '当前知识库回答包含不适合自动回复的处理路径。为了避免误导，我不会替你创建处理流程；可以继续问我 XXYY 产品功能、配置步骤或权益说明。';
+    const result = mineAnswerQualitySignals({
+      now,
+      signals: [
+        {
+          answer,
+          channel: 'web',
+          citationCount: 1,
+          confidence: 0.88,
+          intent: 'product_qa',
+          reason: 'handoff_wording',
+          redactedQuestion: 'XXYY Pro 异常怎么处理？',
+          sessionIdPresent: true,
+          userIdPresent: false,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      candidatesCreated: 1,
+      signalsRead: 1,
+      signalsSkipped: 0,
+    });
+    expect(result.candidates[0]).toMatchObject({
+      confidence: 0.88,
+      proposedAnswer: answer,
+      question: 'XXYY Pro 异常怎么处理？',
+      status: 'needs_review',
+      targetCategory: 'eval_case',
+      type: 'eval_case',
+    });
+    expect(result.candidates[0]?.generatedEvalCases).toEqual([
+      {
+        expectedAnswer: answer,
+        expectedIntent: 'product_qa',
+        minCitations: 0,
+        question: 'XXYY Pro 异常怎么处理？',
+        requireExpectedAnswerText: false,
+      },
+    ]);
+  });
+
   it('creates a needs-review eval candidate from an ambiguous follow-up clarification signal', () => {
     const result = mineAnswerQualitySignals({
       now,

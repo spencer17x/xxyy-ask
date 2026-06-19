@@ -1997,6 +1997,65 @@ describe('createCustomerAgentRuntime', () => {
     expect(qualitySignals.signals()).toEqual([]);
   });
 
+  it('blocks product answers that promise ticket or human handoff handling', async () => {
+    const registry = createToolRegistry();
+    const qualitySignals = createInMemoryQualitySignalSink();
+    const response: ChatResponse = {
+      answer: '已帮你提交工单，稍后会有人工客服接管处理。',
+      citations: [
+        {
+          excerpt: '异常处理可以联系客服。',
+          file: 'docs/product-features/support.md',
+          title: '异常处理',
+        },
+      ],
+      confidence: 0.88,
+      intent: 'product_qa',
+    };
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        channel: z.enum(['cli', 'web', 'telegram']).optional(),
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute: () => Promise.resolve(response),
+    });
+
+    const finalResponse = await createCustomerAgentRuntime({
+      qualitySignals,
+      registry,
+    }).ask({
+      channel: 'web',
+      message: 'XXYY Pro 异常怎么处理？',
+      sessionId: 'session-handoff-wording',
+    });
+
+    expect(finalResponse).toMatchObject({
+      citations: [],
+      confidence: 0.25,
+      intent: 'product_qa',
+    });
+    expect(finalResponse.answer).toContain('不适合自动回复');
+    expect(finalResponse.answer).not.toMatch(/提交工单|人工客服|人工接管|转人工/u);
+    expect(qualitySignals.signals()).toEqual([
+      {
+        answer: finalResponse.answer,
+        channel: 'web',
+        citationCount: 1,
+        confidence: 0.88,
+        intent: 'product_qa',
+        reason: 'handoff_wording',
+        redactedQuestion: 'XXYY Pro 异常怎么处理？',
+        sessionIdPresent: true,
+        userIdPresent: false,
+      },
+    ]);
+  });
+
   it('returns a conservative fallback and records one combined quality signal for low-confidence no-citation product answers', async () => {
     const registry = createToolRegistry();
     const qualitySignals = createInMemoryQualitySignalSink();

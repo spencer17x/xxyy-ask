@@ -9,6 +9,7 @@ export type QualitySignalReason =
   | 'boundary_private_data'
   | 'boundary_private_credentials'
   | 'boundary_unsafe_request'
+  | 'handoff_wording'
   | 'low_confidence'
   | 'low_confidence_missing_citations'
   | 'missing_citations'

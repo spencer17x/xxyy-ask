@@ -162,14 +162,28 @@ export function createCustomerAgentRuntime(
       userIdPresent: request.userId !== undefined,
     });
 
+    const hasHandoffWording = containsCustomerHandoffPromise(response.answer);
     const hasMissingCitations = response.citations.length === 0;
     const hasLowConfidence = response.confidence < qualityConfidenceThreshold;
+    const handoffBlockedResponse = hasHandoffWording
+      ? createProductHandoffBlockedAnswer(response.intent)
+      : undefined;
     const guardedResponse =
-      hasLowConfidence || hasMissingCitations
+      handoffBlockedResponse ??
+      (hasLowConfidence || hasMissingCitations
         ? createProductKnowledgeInsufficientAnswer(response.intent)
-        : undefined;
+        : undefined);
 
-    if (hasLowConfidence && hasMissingCitations) {
+    if (handoffBlockedResponse !== undefined) {
+      recordQualitySignal(qualitySignals, request, {
+        answer: handoffBlockedResponse.answer,
+        citationCount: response.citations.length,
+        confidence: response.confidence,
+        intent: response.intent,
+        reason: 'handoff_wording',
+        redactedQuestion: messageForTool,
+      });
+    } else if (hasLowConfidence && hasMissingCitations) {
       recordQualitySignal(qualitySignals, request, {
         answer: guardedResponse?.answer ?? response.answer,
         citationCount: 0,
@@ -461,6 +475,22 @@ function createProductKnowledgeInsufficientAnswer(intent: ChatResponse['intent']
     confidence: 0.25,
     intent,
   };
+}
+
+function createProductHandoffBlockedAnswer(intent: ChatResponse['intent']): ChatResponse {
+  return {
+    answer:
+      '当前知识库回答包含不适合自动回复的处理路径。为了避免误导，我不会替你创建处理流程；可以继续问我 XXYY 产品功能、配置步骤或权益说明。',
+    citations: [],
+    confidence: 0.25,
+    intent,
+  };
+}
+
+function containsCustomerHandoffPromise(answer: string): boolean {
+  return /提交工单|创建工单|工单.{0,12}(?:处理|跟进|回复)|转人工|人工接管|联系人工客服|人工客服.{0,12}(?:接管|处理|跟进|回复)|人工.{0,12}(?:接管|处理|跟进|回复)/u.test(
+    answer,
+  );
 }
 
 function detectProductPreferenceCapture(message: string): string | undefined {

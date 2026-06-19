@@ -22,6 +22,7 @@ export type AnswerQualitySignalReason =
   | 'boundary_private_data'
   | 'boundary_private_credentials'
   | 'boundary_unsafe_request'
+  | 'handoff_wording'
   | 'low_confidence'
   | 'low_confidence_missing_citations'
   | 'missing_citations'
@@ -112,6 +113,7 @@ function createCandidateFromSignal(
     signal.reason === 'boundary_business_action' ||
     signal.reason === 'boundary_chain_forensics' ||
     signal.reason === 'boundary_unsafe_request' ||
+    signal.reason === 'handoff_wording' ||
     signal.reason === 'missing_followup_context' ||
     signal.reason === 'unknown_intent' ||
     signal.reason === 'session_unavailable'
