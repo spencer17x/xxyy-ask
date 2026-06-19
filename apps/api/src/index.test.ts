@@ -333,6 +333,11 @@ describe('createRequestHandler', () => {
         sourceStats: [],
         sourceUrlCount: 8,
       },
+      knowledgeCandidateQueues: {
+        approvedEvalCaseCount: 0,
+        evalFailedCount: 0,
+        needsReviewCount: 0,
+      },
       txAnalysis: {
         byChain: {
           base: 2,
@@ -410,6 +415,11 @@ describe('createRequestHandler', () => {
         sourceStats: [],
         sourceUrlCount: 0,
       },
+      knowledgeCandidateQueues: {
+        approvedEvalCaseCount: 0,
+        evalFailedCount: 0,
+        needsReviewCount: 0,
+      },
       txAnalysis: {
         byChain: {},
         byRuleVersion: {},
@@ -460,6 +470,161 @@ describe('createRequestHandler', () => {
         reviewer: 'openai',
       },
     });
+  });
+
+  it('adds knowledge candidate queue counts to default ops summary responses', async () => {
+    vi.resetModules();
+
+    const listFilters: unknown[] = [];
+    const pgClient = {
+      end: vi.fn(),
+      query: vi.fn(() => Promise.resolve({ rows: [] })),
+    };
+    const createPgPool = vi.fn(() => pgClient);
+    const createPgVectorStore = vi.fn(() => ({
+      getStats: vi.fn(() =>
+        Promise.resolve({
+          chunkCount: 64,
+          documentCount: 12,
+          sourceStats: [],
+          sourceUrlCount: 8,
+        }),
+      ),
+    }));
+    const createPgFeedbackStore = vi.fn(() => ({
+      getFeedbackStats: vi.fn(() =>
+        Promise.resolve({
+          latest: [],
+          negativeCount: 1,
+          positiveCount: 2,
+          totalCount: 3,
+        }),
+      ),
+    }));
+    const listCandidates = vi.fn((filter: Record<string, unknown>) => {
+      listFilters.push(filter);
+      if (filter.status === 'needs_review') {
+        return Promise.resolve([
+          knowledgeCandidate({ id: 'kc_needs_review_1', status: 'needs_review' }),
+          knowledgeCandidate({ id: 'kc_needs_review_2', status: 'needs_review' }),
+        ]);
+      }
+      if (filter.status === 'approved' && filter.type === 'eval_case') {
+        return Promise.resolve([
+          knowledgeCandidate({
+            id: 'kc_eval_approved',
+            status: 'approved',
+            targetCategory: 'eval_case',
+            type: 'eval_case',
+          }),
+        ]);
+      }
+      if (filter.status === 'eval_failed' && filter.type === 'eval_case') {
+        return Promise.resolve([
+          knowledgeCandidate({
+            id: 'kc_eval_failed_1',
+            status: 'eval_failed',
+            targetCategory: 'eval_case',
+            type: 'eval_case',
+          }),
+          knowledgeCandidate({
+            id: 'kc_eval_failed_2',
+            status: 'eval_failed',
+            targetCategory: 'eval_case',
+            type: 'eval_case',
+          }),
+          knowledgeCandidate({
+            id: 'kc_eval_failed_3',
+            status: 'eval_failed',
+            targetCategory: 'eval_case',
+            type: 'eval_case',
+          }),
+        ]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgFeedbackStore,
+        createPgPool,
+        createPgVectorStore,
+        loadRagConfig: vi.fn(() => createRuntimeConfigForTest()),
+      };
+    });
+    vi.doMock('@xxyy/knowledge-ops', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createPgKnowledgeOpsStore: vi.fn(() => ({
+          listCandidates,
+        })),
+      };
+    });
+
+    try {
+      const { createRequestHandler: createRequestHandlerWithMocks } = await import('./index.js');
+      const handler = createRequestHandlerWithMocks({
+        env: { API_OPS_TOKEN: 'secret-token' },
+        getHealthStatus: () =>
+          Promise.resolve({
+            checks: {
+              config: { status: 'ok' },
+              embedding: { status: 'ok' },
+              llm: { status: 'ok' },
+              vectorStore: { status: 'ok' },
+            },
+            status: 'ok',
+          }),
+        getTxAnalysisReportStore: () =>
+          Promise.resolve({
+            findReports: () => Promise.resolve([]),
+            getReportDocument: () => Promise.resolve(undefined),
+            summarizeReports: () =>
+              Promise.resolve({
+                byChain: {},
+                byRuleVersion: {},
+                failureCount: 0,
+                failureReasons: {},
+                latestReports: [],
+                successCount: 0,
+                totalCount: 0,
+              }),
+            updateReportReview: () => Promise.reject(new Error('not used')),
+          }),
+        now: () => Date.parse('2026-06-19T08:00:00.000Z'),
+      });
+
+      const response = await callHandler(handler, {
+        headers: {
+          Authorization: 'Bearer secret-token',
+        },
+        method: 'GET',
+        url: '/api/ops/summary',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body)).toMatchObject({
+        generatedAt: '2026-06-19T08:00:00.000Z',
+        knowledgeCandidateQueues: {
+          approvedEvalCaseCount: 1,
+          evalFailedCount: 3,
+          needsReviewCount: 2,
+        },
+      });
+      expect(listFilters).toEqual([
+        { limit: 200, status: 'needs_review' },
+        { limit: 200, status: 'approved', type: 'eval_case' },
+        { limit: 200, status: 'eval_failed', type: 'eval_case' },
+      ]);
+      expect(pgClient.end).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.doUnmock('@xxyy/rag-core');
+      vi.doUnmock('@xxyy/knowledge-ops');
+    }
   });
 
   it('handles allowed CORS preflight requests for chat APIs', async () => {

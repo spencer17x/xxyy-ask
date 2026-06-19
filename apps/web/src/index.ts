@@ -1921,6 +1921,9 @@ export function renderOpsPage(): string {
           metric("Documents", summary.knowledge.documentCount, "ok"),
           metric("Chunks", summary.knowledge.chunkCount, "ok"),
           metric("Negative", summary.feedback.negativeCount, summary.feedback.negativeCount > 0 ? "warn" : "ok"),
+          metric("Candidates", summary.knowledgeCandidateQueues?.needsReviewCount || 0, (summary.knowledgeCandidateQueues?.needsReviewCount || 0) > 0 ? "warn" : "ok"),
+          metric("Eval Ready", summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0, (summary.knowledgeCandidateQueues?.approvedEvalCaseCount || 0) > 0 ? "warn" : "ok"),
+          metric("Eval Failed", summary.knowledgeCandidateQueues?.evalFailedCount || 0, (summary.knowledgeCandidateQueues?.evalFailedCount || 0) > 0 ? "error" : "ok"),
           metric("Tx Failures", summary.txAnalysis?.failureCount || 0, (summary.txAnalysis?.failureCount || 0) > 0 ? "warn" : "ok"),
         );
       }

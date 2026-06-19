@@ -217,8 +217,15 @@ interface OpsSummary {
   generatedAt: string;
   health: DeepHealthStatus;
   knowledge: KnowledgeStats;
+  knowledgeCandidateQueues: KnowledgeCandidateQueueSummary;
   txAnalysis: TxAnalysisReportSummary;
   txAnalysisRuntime?: TxAnalysisRuntimeSummary;
+}
+
+interface KnowledgeCandidateQueueSummary {
+  approvedEvalCaseCount: number;
+  evalFailedCount: number;
+  needsReviewCount: number;
 }
 
 interface TxAnalysisRuntimeSummary {
@@ -1427,10 +1434,12 @@ async function createOpsSummary(
       },
     });
     const feedbackStore = createPgFeedbackStore({ client: pool });
-    const [health, knowledge, feedback, txAnalysis] = await Promise.all([
+    const candidateStore = createPgKnowledgeOpsStore({ client: pool });
+    const [health, knowledge, feedback, knowledgeCandidateQueues, txAnalysis] = await Promise.all([
       getHealthStatus(),
       knowledgeStore.getStats(),
       feedbackStore.getFeedbackStats({ limit: 10 }),
+      summarizeKnowledgeCandidateQueues(candidateStore),
       getTxAnalysisReportStore().then((reportStore) => reportStore.summarizeReports({})),
     ]);
 
@@ -1439,11 +1448,38 @@ async function createOpsSummary(
       generatedAt: new Date(now()).toISOString(),
       health,
       knowledge,
+      knowledgeCandidateQueues,
       txAnalysis,
     };
   } finally {
     await pool.end();
   }
+}
+
+const OPS_CANDIDATE_QUEUE_LIMIT = 200;
+
+async function summarizeKnowledgeCandidateQueues(
+  store: KnowledgeCandidateStore,
+): Promise<KnowledgeCandidateQueueSummary> {
+  const [needsReview, approvedEvalCases, evalFailed] = await Promise.all([
+    store.listCandidates({ limit: OPS_CANDIDATE_QUEUE_LIMIT, status: 'needs_review' }),
+    store.listCandidates({
+      limit: OPS_CANDIDATE_QUEUE_LIMIT,
+      status: 'approved',
+      type: 'eval_case',
+    }),
+    store.listCandidates({
+      limit: OPS_CANDIDATE_QUEUE_LIMIT,
+      status: 'eval_failed',
+      type: 'eval_case',
+    }),
+  ]);
+
+  return {
+    approvedEvalCaseCount: approvedEvalCases.length,
+    evalFailedCount: evalFailed.length,
+    needsReviewCount: needsReview.length,
+  };
 }
 
 function checkRequiredConfig(config: ReturnType<typeof loadRagConfig>): HealthCheck {
