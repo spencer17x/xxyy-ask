@@ -9,6 +9,11 @@ const COMMANDS = {
     command: 'pnpm',
     label: 'full RAG production gate',
   },
+  approvedEvalKnowledgeGate: {
+    args: ['rag:gate:knowledge', '--', '--approved-eval', '--fast'],
+    command: 'pnpm',
+    label: 'approved eval knowledge gate',
+  },
   ingestKnowledge: {
     args: ['rag:ingest'],
     command: 'pnpm',
@@ -47,8 +52,13 @@ export function createRagRefreshPlan(args) {
   plan.push(
     options.full ? COMMANDS.ingestKnowledge : COMMANDS.syncXKnowledge,
     options.full ? COMMANDS.fullRagGate : COMMANDS.ragGate,
-    COMMANDS.negativeFeedbackQueue(options.feedbackLimit),
   );
+
+  if (!options.skipApprovedEvalGate) {
+    plan.push(COMMANDS.approvedEvalKnowledgeGate);
+  }
+
+  plan.push(COMMANDS.negativeFeedbackQueue(options.feedbackLimit));
 
   return plan.map((command) => ({
     args: [...command.args],
@@ -81,6 +91,7 @@ function parseRagRefreshArgs(args) {
   const normalizedArgs = args[0] === '--' ? args.slice(1) : args;
   let feedbackLimit = 25;
   let full = false;
+  let skipApprovedEvalGate = false;
   let skipScrape = false;
 
   for (let index = 0; index < normalizedArgs.length; index += 1) {
@@ -93,6 +104,11 @@ function parseRagRefreshArgs(args) {
 
     if (option === '--skip-scrape') {
       skipScrape = true;
+      continue;
+    }
+
+    if (option === '--skip-approved-eval-gate') {
+      skipApprovedEvalGate = true;
       continue;
     }
 
@@ -113,7 +129,7 @@ function parseRagRefreshArgs(args) {
     throw new Error(`Unknown option: ${option}`);
   }
 
-  return { feedbackLimit, full, skipScrape };
+  return { feedbackLimit, full, skipApprovedEvalGate, skipScrape };
 }
 
 function runShellCommand(command) {

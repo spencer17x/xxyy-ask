@@ -145,7 +145,7 @@ http://localhost:3000/ops
 pnpm sync
 ```
 
-`pnpm sync` 默认执行增量 `x:scrape`、`rag:sync:x`、RAG 生产检查，并导出负反馈队列。它适合放进 cron、GitHub Actions、云函数定时器或部署平台 scheduler。按天、周、月执行都可以，取决于你希望知识库更新多快。
+`pnpm sync` 默认执行增量 `x:scrape`、`rag:sync:x`、RAG 生产检查、已审核 eval-only 候选批量 gate，并导出负反馈队列。它适合放进 cron、GitHub Actions、云函数定时器或部署平台 scheduler。按天、周、月执行都可以，取决于你希望知识库更新多快。
 
 授权 Telegram 人工客服消息采集可以单独跑：
 
@@ -241,6 +241,7 @@ pnpm check           # lint + format check + typecheck + tests
 pnpm rag:ingest
 pnpm rag:publish:knowledge -- --id <candidate-id>
 pnpm rag:gate:knowledge -- --id <candidate-id> --fast
+pnpm rag:gate:knowledge -- --approved-eval --fast
 pnpm rag:sync:telegram
 pnpm rag:sync:x
 pnpm rag:migrate
@@ -252,11 +253,11 @@ pnpm rag:evaluate
 pnpm ops:smoke
 ```
 
-`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录一次 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用来增量同步 X 更新日志：只 embedding 新增或内容变化的 X chunks，不会 prune 旧知识块。`pnpm rag:sync:telegram` 用来增量采集授权 Telegram 人工客服消息并生成待审核候选，不会发布或 embedding 未审核内容。`pnpm rag:publish:knowledge -- --id <candidate-id>` 只发布人工审核为 `approved` 的候选，把内容追加到 `docs/product-features/pages/65-reviewed-support-knowledge.md` 或 `--target` 指定的 `pages/*.md` 正式知识源，并把候选状态标记为 `published`。`pnpm rag:gate:knowledge -- --id <candidate-id> --fast` 会对已 `published` 候选执行正式 ingest/embedding，基于候选生成的 eval case 运行 targeted eval gate，并把候选推进到 `ingested` 后标记为 `eval_passed` 或 `eval_failed`；未审核或未发布候选不会进入 gate。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 用来查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
+`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录一次 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用来增量同步 X 更新日志：只 embedding 新增或内容变化的 X chunks，不会 prune 旧知识块。`pnpm rag:sync:telegram` 用来增量采集授权 Telegram 人工客服消息并生成待审核候选，不会发布或 embedding 未审核内容。`pnpm rag:publish:knowledge -- --id <candidate-id>` 只发布人工审核为 `approved` 的候选，把内容追加到 `docs/product-features/pages/65-reviewed-support-knowledge.md` 或 `--target` 指定的 `pages/*.md` 正式知识源，并把候选状态标记为 `published`。`pnpm rag:gate:knowledge -- --id <candidate-id> --fast` 会对已 `published` 候选执行正式 ingest/embedding，基于候选生成的 eval case 运行 targeted eval gate，并把候选推进到 `ingested` 后标记为 `eval_passed` 或 `eval_failed`；`pnpm rag:gate:knowledge -- --approved-eval --fast` 会批量运行已 `approved` 的 eval-only 候选，不会发布或 embedding 未审核内容。未审核或未发布候选不会进入正式知识 gate。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 用来查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 
 `pnpm rag:feedback` 用来查看用户反馈总数、正负反馈数量和最近反馈明细，便于把低质量回答补进知识库或评测集。支持 `--rating positive|negative`、`--limit <数量>` 和 `--json`，例如 `pnpm rag:feedback -- --rating negative --limit 25 --json` 可输出可被脚本消费的负反馈队列。
 
-`pnpm sync` 是对底层刷新流程的主入口：默认顺序是增量 `x:scrape`、`rag:sync:x`、RAG 生产检查、导出负反馈 JSON 队列。只刷新本地/已更新文档时可以用 `pnpm sync -- --skip-scrape`，发布前可用 `pnpm sync -- --full` 执行全量 scrape、全量 ingest 和完整 LLM eval。
+`pnpm sync` 是对底层刷新流程的主入口：默认顺序是增量 `x:scrape`、`rag:sync:x`、RAG 生产检查、`rag:gate:knowledge -- --approved-eval --fast`、导出负反馈 JSON 队列。只刷新本地/已更新文档时可以用 `pnpm sync -- --skip-scrape`，应急刷新可用 `pnpm sync -- --skip-approved-eval-gate` 暂时跳过已审核 eval-only 批量 gate，发布前可用 `pnpm sync -- --full` 执行全量 scrape、全量 ingest 和完整 LLM eval。
 
 `pnpm ops:smoke` 用于检查已经启动的 API 服务，默认检查 `http://localhost:3000/health` 和 `/health/deep`。线上可用 `pnpm ops:smoke -- --base-url https://你的域名 --ops-token "$API_OPS_TOKEN"` 检查受保护的 ops summary，并校验 `txAnalysisRuntime` 里 provider、reviewer、报告 store、浏览器并发、重试、超时、headless 模式和截图 URL 前缀完整可读；加 `--chat` 会额外请求一次 `/api/chat` 并校验回答和 citations；加 `--tx-analysis --tx-hash <hash-or-explorer-url> --tx-chain base|ethereum|bsc|solana|unknown` 会请求 `/api/tx-analysis` 并校验返回 `tx_sandwich_detection` intent，`--tx-chain` 和 `TX_ANALYSIS_SMOKE_CHAIN` 在校验报告链名时也会兼容 `ETH`、`SOL`、`BNBChain`、`BNB Smart Chain`、`Binance SmartChain` 和 `BEP20` 等常见别名。真实 browser provider 验收时可再加 `--tx-require-screenshot --tx-require-report`，要求返回图片附件和报告链接；加 `--tx-verify-assets` 会先要求响应包含图片附件和报告链接，再进一步 GET 截图和报告链接，并要求截图响应是 `image/*` 且正文是非空的 PNG/JPEG/WebP/GIF/SVG 图片内容，校验报告 JSON 至少包含 `version: 1`、`status`、`reference` 和成功/失败正文，同时确认报告 reference 与 success result 都匹配本次请求的交易哈希和显式链，success result 包含 verdict、confidence、summary、evidence、relatedTransactions、analyzedAt、交易浏览器 URL 和 XXYY 池子页 URL，且 summary、analyzedAt 和 evidence 文本都不能是空白或带首尾空白，targetTradeSide 和 relatedTransactions 的可选 side 只能是 `buy`、`sell` 或 `unknown`，relatedTransactions 里有用户交易、不能包含重复交易哈希（EVM 大小写无关），且每条相关交易都有合法角色、非空 hash/summary、可选 timestamp/traderAddress 非空且无首尾空白，以及有效且匹配显式链的 explorer URL，XXYY 池子页 URL 也必须匹配显式链，`sandwiched` 结论还必须同时包含前置和后置交易，failure report 包含受支持的 reason 和非空且无首尾空白的 message，failure metadata 的普通复查字符串和 probeAttempts 错误信息不能是空白或带首尾空白，`target_trade_not_found` / `screenshot_unavailable` 失败报告还必须在 metadata 中包含交易浏览器 URL 和 XXYY 池子页 URL，且这些复查链接也必须匹配显式链；如果 failure metadata 已包含 relatedTransactions，也会先确认没有重复交易哈希（EVM 大小写无关），再逐条确认相关交易有合法角色、非空 hash/summary、可选 timestamp/traderAddress 非空且无首尾空白，且 explorer 链接匹配显式链；success result 或 failure metadata 的截图 URL 必须与返回图片附件一致，确认静态资产或报告详情可打开且不是空响应；也可以用 `TX_ANALYSIS_SMOKE_TX_HASH`、`TX_ANALYSIS_SMOKE_CHAIN`、`TX_ANALYSIS_SMOKE_REQUIRE_SCREENSHOT=true`、`TX_ANALYSIS_SMOKE_REQUIRE_REPORT=true` 和 `TX_ANALYSIS_SMOKE_VERIFY_ASSETS=true` 提供交易分析 smoke 参数。
 成功交易分析报告还会写入 `screenshotTargetRowMarked: true`，表示返回的 XXYY 原页面截图已经把用户提交的目标交易行框选出来；报告列表和 `/ops` 页面会展示该状态，`--tx-verify-assets` 会把缺少该标记的成功报告视为失败。

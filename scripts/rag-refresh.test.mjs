@@ -21,6 +21,11 @@ describe('createRagRefreshPlan', () => {
         label: 'RAG production gate',
       },
       {
+        args: ['rag:gate:knowledge', '--', '--approved-eval', '--fast'],
+        command: 'pnpm',
+        label: 'approved eval knowledge gate',
+      },
+      {
         args: ['rag:feedback', '--', '--rating', 'negative', '--limit', '25', '--json'],
         command: 'pnpm',
         label: 'negative feedback triage queue',
@@ -46,6 +51,11 @@ describe('createRagRefreshPlan', () => {
         label: 'full RAG production gate',
       },
       {
+        args: ['rag:gate:knowledge', '--', '--approved-eval', '--fast'],
+        command: 'pnpm',
+        label: 'approved eval knowledge gate',
+      },
+      {
         args: ['rag:feedback', '--', '--rating', 'negative', '--limit', '25', '--json'],
         command: 'pnpm',
         label: 'negative feedback triage queue',
@@ -68,6 +78,11 @@ describe('createRagRefreshPlan', () => {
         label: 'full RAG production gate',
       },
       {
+        args: ['rag:gate:knowledge', '--', '--approved-eval', '--fast'],
+        command: 'pnpm',
+        label: 'approved eval knowledge gate',
+      },
+      {
         args: ['rag:feedback', '--', '--rating', 'negative', '--limit', '50', '--json'],
         command: 'pnpm',
         label: 'negative feedback triage queue',
@@ -79,6 +94,26 @@ describe('createRagRefreshPlan', () => {
     expect(() => createRagRefreshPlan(['--feedback-limit', '0'])).toThrow(
       'Invalid --feedback-limit: 0',
     );
+  });
+
+  it('can skip approved eval gating for emergency refreshes', () => {
+    expect(createRagRefreshPlan(['--skip-scrape', '--skip-approved-eval-gate'])).toEqual([
+      {
+        args: ['rag:sync:x'],
+        command: 'pnpm',
+        label: 'sync X knowledge',
+      },
+      {
+        args: ['ops:check:rag'],
+        command: 'pnpm',
+        label: 'RAG production gate',
+      },
+      {
+        args: ['rag:feedback', '--', '--rating', 'negative', '--limit', '25', '--json'],
+        command: 'pnpm',
+        label: 'negative feedback triage queue',
+      },
+    ]);
   });
 });
 
