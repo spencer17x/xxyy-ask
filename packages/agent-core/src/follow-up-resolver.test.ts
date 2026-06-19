@@ -41,6 +41,43 @@ describe('resolveFollowUp', () => {
     });
   });
 
+  it('resolves pronoun product follow-ups using the most recent product topic', () => {
+    const recentTurns: SessionTurn[] = [
+      {
+        content: 'Telegram 钱包监控配置步骤。',
+        createdAt: '2026-06-19T00:00:00.000Z',
+        metadata: { intent: 'how_to' },
+        role: 'assistant',
+      },
+    ];
+
+    expect(
+      resolveFollowUp({
+        message: '它支持导出吗？',
+        recentTurns,
+      }),
+    ).toEqual({
+      contextSummary: 'resolved product follow-up from previous product turn',
+      resolution: 'resolved_followup',
+      resolvedMessage: 'Telegram 钱包监控 它支持导出吗？',
+    });
+  });
+
+  it('asks for clarification when a pronoun product follow-up has no usable product context', () => {
+    expect(
+      resolveFollowUp({
+        message: '它支持导出吗？',
+        recentTurns: [],
+      }),
+    ).toEqual({
+      clarificationQuestion:
+        '我还不能确定你想继续咨询哪个具体功能。请补充具体功能、权益或配置步骤，例如“XXYY Pro 怎么升级？”。',
+      clarificationReason: 'missing_context',
+      dependency: 'product_topic',
+      resolution: 'needs_clarification',
+    });
+  });
+
   it('keeps explicit product questions unchanged even when previous product context exists', () => {
     const recentTurns: SessionTurn[] = [
       {

@@ -184,7 +184,9 @@ function isShortProductFollowUp(message: string): boolean {
   if (normalized.length > 24 || hasExplicitProductTopic(normalized)) {
     return false;
   }
-  return /^(那|这个|刚才|上一条)?(怎么|如何|有哪些|可以|支持|升级|配置|设置)/u.test(normalized);
+  return /^(那|这个|那个|它|刚才|刚才那个|上一条)?(怎么|如何|有哪些|可以|支持|升级|配置|设置|导出|导入)/u.test(
+    normalized,
+  );
 }
 
 function hasExplicitProductTopic(message: string): boolean {
