@@ -6,10 +6,10 @@ export interface ToolPolicy {
 }
 
 export interface ToolContext {
-  channel?: string;
-  requestId?: string;
-  sessionId?: string;
-  userIdPresent?: boolean;
+  channel?: string | undefined;
+  requestId?: string | undefined;
+  sessionId?: string | undefined;
+  userIdPresent?: boolean | undefined;
 }
 
 export interface ToolDefinition<

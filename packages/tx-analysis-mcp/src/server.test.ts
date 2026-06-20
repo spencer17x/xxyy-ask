@@ -1,3 +1,5 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -92,6 +94,56 @@ describe('tx analysis MCP server', () => {
       channel: 'ops',
       txHash: evmTx,
     });
+  });
+
+  it('returns analyze_transaction structured content through the MCP transport', async () => {
+    let receivedInput: unknown;
+    const server = createTxAnalysisMcpServer({
+      handlers: {
+        analyzeTransaction(input) {
+          receivedInput = input;
+          return Promise.resolve({
+            result: {
+              analyzedAt: '2026-06-14T00:00:00.000Z',
+              chain: 'base',
+              confidence: 0.6,
+              dataSource: 'fixture',
+              evidence: [],
+              relatedTransactions: [],
+              summary: '未发现典型 sandwich。',
+              txHash: evmTx,
+              verdict: 'not_sandwiched',
+            },
+            status: 'success',
+          });
+        },
+      },
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'tx-analysis-mcp-test', version: '0.0.0' });
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const result = await client.callTool({
+        arguments: { chain: 'base', channel: 'web', txHash: evmTx },
+        name: 'analyze_transaction',
+      });
+
+      expect(receivedInput).toEqual({ chain: 'base', channel: 'web', txHash: evmTx });
+      expect(result.structuredContent).toMatchObject({
+        result: {
+          chain: 'base',
+          txHash: evmTx,
+          verdict: 'not_sandwiched',
+        },
+        status: 'success',
+      });
+    } finally {
+      await client.close();
+      await server.close();
+    }
   });
 
   it('records quality signals for failed transaction analysis results', async () => {

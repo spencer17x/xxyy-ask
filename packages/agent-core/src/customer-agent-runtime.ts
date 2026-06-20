@@ -41,7 +41,7 @@ import {
   type SessionTurn,
   type SessionTurnMetadata,
 } from './session-context.js';
-import type { ToolRegistry } from './tool-registry.js';
+import type { ToolContext, ToolRegistry } from './tool-registry.js';
 
 export interface CustomerAgentRuntime {
   ask(request: ChatRequest): Promise<ChatResponse>;
@@ -78,9 +78,13 @@ export function createCustomerAgentRuntime(
     const startedAt = Date.now();
     let output: AnalyzeTransactionOutput;
     try {
-      output = (await options.registry.execute('analyze_transaction', {
-        txHash: messageForTool,
-      })) as AnalyzeTransactionOutput;
+      output = (await options.registry.execute(
+        'analyze_transaction',
+        {
+          txHash: messageForTool,
+        },
+        toolContextFromRequest(request),
+      )) as AnalyzeTransactionOutput;
     } catch (error) {
       recordToolFailure(audit, request, {
         error,
@@ -142,10 +146,14 @@ export function createCustomerAgentRuntime(
     const startedAt = Date.now();
     let response: ChatResponse;
     try {
-      response = (await options.registry.execute('answer_product_question', {
-        channel: request.channel,
-        question: messageForTool,
-      })) as ChatResponse;
+      response = (await options.registry.execute(
+        'answer_product_question',
+        {
+          channel: request.channel,
+          question: messageForTool,
+        },
+        toolContextFromRequest(request),
+      )) as ChatResponse;
     } catch (error) {
       recordToolFailure(audit, request, {
         error,
@@ -547,6 +555,14 @@ function missingSessionDependencyForRequest(request: ChatRequest): FollowUpDepen
   }
 
   return dependency;
+}
+
+function toolContextFromRequest(request: ChatRequest): ToolContext {
+  return {
+    channel: request.channel,
+    sessionId: request.sessionId,
+    userIdPresent: request.userId !== undefined,
+  };
 }
 
 function recordToolFailure(

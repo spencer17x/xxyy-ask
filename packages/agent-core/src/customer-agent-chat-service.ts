@@ -1,11 +1,5 @@
 import type { RagIndex } from '@xxyy/shared';
-import type {
-  AnswerProvider,
-  RagConfig,
-  Retriever,
-  TxAnalysisProvider,
-  TxAnalysisReportReader,
-} from '@xxyy/rag-core';
+import type { AnswerProvider, RagConfig, Retriever, TxAnalysisProvider } from '@xxyy/rag-core';
 
 import type { ToolAuditSink } from './audit.js';
 import { createCustomerAgentRuntime, type CustomerAgentRuntime } from './customer-agent-runtime.js';
@@ -25,7 +19,6 @@ export interface CreateCustomerAgentChatServiceOptions {
   retriever?: Retriever;
   sessionContext?: SessionContextStore;
   txAnalysisProvider: TxAnalysisProvider | undefined;
-  txAnalysisReportReader?: TxAnalysisReportReader;
 }
 
 export function createCustomerAgentChatService(
@@ -44,9 +37,6 @@ export function createCustomerAgentChatService(
 
   for (const tool of createTxAnalysisTools({
     provider: options.txAnalysisProvider,
-    ...(options.txAnalysisReportReader === undefined
-      ? {}
-      : { reportReader: options.txAnalysisReportReader }),
   })) {
     registry.register(tool);
   }

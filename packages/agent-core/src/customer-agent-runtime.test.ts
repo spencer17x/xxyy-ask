@@ -73,7 +73,7 @@ describe('createCustomerAgentRuntime', () => {
         channel: 'web',
         question: 'XXYY Pro 有哪些权益？',
       },
-      {},
+      { channel: 'web', sessionId: 'session-1', userIdPresent: false },
     );
     const auditEvents = audit.events();
     expect(auditEvents).toHaveLength(1);
@@ -672,7 +672,10 @@ describe('createCustomerAgentRuntime', () => {
       userId: 'user-1',
     });
 
-    expect(execute).toHaveBeenCalledWith({ txHash }, {});
+    expect(execute).toHaveBeenCalledWith(
+      { txHash },
+      { channel: 'telegram', sessionId: undefined, userIdPresent: true },
+    );
     expect(response).toMatchObject({
       agentRoute: 'transaction_analysis',
       citations: [],
@@ -950,7 +953,7 @@ describe('createCustomerAgentRuntime', () => {
         channel: 'web',
         question: 'XXYY Pro 怎么升级？',
       },
-      {},
+      { channel: 'web', sessionId: 'session-product', userIdPresent: false },
     );
   });
 
@@ -1005,7 +1008,7 @@ describe('createCustomerAgentRuntime', () => {
         channel: 'web',
         question: 'XXYY 移动端登录 怎么登录？',
       },
-      {},
+      { channel: 'web', sessionId: 'session-product-summary', userIdPresent: false },
     );
   });
 
@@ -1056,7 +1059,7 @@ describe('createCustomerAgentRuntime', () => {
         channel: 'web',
         question: 'XXYY Pro 在哪里升级？',
       },
-      {},
+      { channel: 'web', sessionId: 'session-upgrade-location', userIdPresent: false },
     );
   });
 
@@ -1107,7 +1110,7 @@ describe('createCustomerAgentRuntime', () => {
         channel: 'web',
         question: 'XXYY Pro 入口在哪？',
       },
-      {},
+      { channel: 'web', sessionId: 'session-entry-location', userIdPresent: false },
     );
   });
 
@@ -1158,7 +1161,7 @@ describe('createCustomerAgentRuntime', () => {
         channel: 'web',
         question: 'XXYY Pro 多少钱？',
       },
-      {},
+      { channel: 'web', sessionId: 'session-price-followup', userIdPresent: false },
     );
   });
 
@@ -1209,7 +1212,7 @@ describe('createCustomerAgentRuntime', () => {
         channel: 'web',
         question: 'XXYY Pro 有效期多久？',
       },
-      {},
+      { channel: 'web', sessionId: 'session-validity-followup', userIdPresent: false },
     );
   });
 
@@ -1271,7 +1274,7 @@ describe('createCustomerAgentRuntime', () => {
         channel: 'web',
         question: 'XXYY 移动端登录 怎么登录？',
       },
-      {},
+      { channel: 'web', sessionId: 'session-mobile-preference', userIdPresent: false },
     );
   });
 
@@ -1683,7 +1686,7 @@ describe('createCustomerAgentRuntime', () => {
         channel: 'web',
         question: '如何设置 Telegram 钱包监控？',
       },
-      {},
+      { channel: 'web', sessionId: undefined, userIdPresent: false },
     );
   });
 
@@ -1856,7 +1859,10 @@ describe('createCustomerAgentRuntime', () => {
     await runtime.ask({ channel: 'web', message: txHash, sessionId: 'session-tx' });
     await runtime.ask({ channel: 'web', message: '这笔被夹了吗？', sessionId: 'session-tx' });
 
-    expect(execute).toHaveBeenLastCalledWith({ txHash: `base ${txHash} 这笔被夹了吗？` }, {});
+    expect(execute).toHaveBeenLastCalledWith(
+      { txHash: `base ${txHash} 这笔被夹了吗？` },
+      { channel: 'web', sessionId: 'session-tx', userIdPresent: false },
+    );
   });
 
   it('uses session context to resolve one recent Solana transaction follow-up', async () => {
@@ -1898,7 +1904,10 @@ describe('createCustomerAgentRuntime', () => {
       sessionId: 'session-solana-tx',
     });
 
-    expect(execute).toHaveBeenLastCalledWith({ txHash: `solana ${txHash} 这笔被夹了吗？` }, {});
+    expect(execute).toHaveBeenLastCalledWith(
+      { txHash: `solana ${txHash} 这笔被夹了吗？` },
+      { channel: 'web', sessionId: 'session-solana-tx', userIdPresent: false },
+    );
   });
 
   it('records session_unavailable when a transaction follow-up has no session context store', async () => {
