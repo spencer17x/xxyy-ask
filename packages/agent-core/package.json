@@ -7,6 +7,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@langchain/core": "^1.2.0",
+    "@langchain/langgraph": "^1.4.4",
     "@xxyy/rag-core": "workspace:*",
     "@xxyy/shared": "workspace:*",
     "zod": "^4.0.0"
