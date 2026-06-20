@@ -111,49 +111,10 @@ describe('createApiSmokeChecks', () => {
     });
   });
 
-  it('supports chat clear-session smoke checks with a shared session', () => {
-    const checks = createApiSmokeChecks(
-      ['--base-url', 'https://ask.example.com', '--chat-clear-session'],
-      {},
-    );
-
-    expect(checks).toEqual([
-      expect.objectContaining({ kind: 'health' }),
-      expect.objectContaining({ kind: 'deepHealth' }),
-      expect.objectContaining({
-        body: expect.any(String),
-        kind: 'chatClearSessionSetup',
-        label: 'chat clear-session setup',
-        url: 'https://ask.example.com/api/chat',
-      }),
-      expect.objectContaining({
-        body: expect.any(String),
-        kind: 'chatClearSessionClear',
-        label: 'chat clear-session clear',
-        url: 'https://ask.example.com/api/chat',
-      }),
-      expect.objectContaining({
-        body: expect.any(String),
-        kind: 'chatClearSessionFollowUp',
-        label: 'chat clear-session follow-up',
-        url: 'https://ask.example.com/api/chat',
-      }),
-    ]);
-    expect(JSON.parse(checks[2].body)).toEqual({
-      channel: 'cli',
-      message: '我主要用手机端。',
-      sessionId: 'api-smoke-session',
-    });
-    expect(JSON.parse(checks[3].body)).toEqual({
-      channel: 'cli',
-      message: '清除本次会话上下文',
-      sessionId: 'api-smoke-session',
-    });
-    expect(JSON.parse(checks[4].body)).toEqual({
-      channel: 'cli',
-      message: '怎么登录？',
-      sessionId: 'api-smoke-session',
-    });
+  it('rejects the removed chat clear-session smoke option', () => {
+    expect(() =>
+      createApiSmokeChecks(['--base-url', 'https://ask.example.com', '--chat-clear-session'], {}),
+    ).toThrow('Unknown option: --chat-clear-session');
   });
 
   it('supports boundary chat smoke checks', () => {
@@ -1093,107 +1054,6 @@ describe('runApiSmoke', () => {
     expect(exitCode).toBe(1);
     expect(messages).toContain(
       'Failed chat follow-up: chat follow-up response must use product_answer agent route.',
-    );
-  });
-
-  it('runs chat clear-session smoke and verifies the follow-up asks for clarification', async () => {
-    const calls = [];
-    const exitCode = await runApiSmoke({
-      args: ['--chat-clear-session'],
-      env: {},
-      fetch: (url, request) => {
-        calls.push({ request, url });
-        if (url.endsWith('/api/chat')) {
-          const body = JSON.parse(request.body);
-          if (body.message === '我主要用手机端。') {
-            return Promise.resolve(
-              jsonResponse({
-                agentRoute: 'preference_capture',
-                answer: '已记录：后续我会优先按 XXYY 移动端登录相关问题理解你的短追问。',
-                citations: [],
-                intent: 'product_qa',
-              }),
-            );
-          }
-          if (body.message === '清除本次会话上下文') {
-            return Promise.resolve(
-              jsonResponse({
-                agentRoute: 'preference_capture',
-                answer: '已清除本次会话上下文。',
-                citations: [],
-                intent: 'product_qa',
-              }),
-            );
-          }
-          return Promise.resolve(
-            jsonResponse({
-              agentRoute: 'clarify',
-              answer: '我还不能确定你想继续咨询哪个具体功能。',
-              citations: [],
-              intent: 'how_to',
-            }),
-          );
-        }
-        return Promise.resolve(jsonResponse({ status: 'ok' }));
-      },
-      log: () => {},
-    });
-
-    expect(exitCode).toBe(0);
-    expect(calls.map((call) => call.url)).toEqual([
-      'http://localhost:3000/health',
-      'http://localhost:3000/health/deep',
-      'http://localhost:3000/api/chat',
-      'http://localhost:3000/api/chat',
-      'http://localhost:3000/api/chat',
-    ]);
-  });
-
-  it('fails chat clear-session smoke when the follow-up still uses cleared context', async () => {
-    const messages = [];
-    const exitCode = await runApiSmoke({
-      args: ['--chat-clear-session'],
-      env: {},
-      fetch: (url, request) => {
-        if (url.endsWith('/api/chat')) {
-          const body = JSON.parse(request.body);
-          if (body.message === '清除本次会话上下文') {
-            return Promise.resolve(
-              jsonResponse({
-                agentRoute: 'preference_capture',
-                answer: '已清除本次会话上下文。',
-                citations: [],
-                intent: 'product_qa',
-              }),
-            );
-          }
-          if (body.message === '怎么登录？') {
-            return Promise.resolve(
-              jsonResponse({
-                agentRoute: 'product_answer',
-                answer: 'XXYY 移动端可以这样登录。',
-                citations: [{ title: '移动端登录' }],
-                intent: 'how_to',
-              }),
-            );
-          }
-          return Promise.resolve(
-            jsonResponse({
-              agentRoute: 'preference_capture',
-              answer: '已记录移动端偏好。',
-              citations: [],
-              intent: 'product_qa',
-            }),
-          );
-        }
-        return Promise.resolve(jsonResponse({ status: 'ok' }));
-      },
-      log: (message) => messages.push(message),
-    });
-
-    expect(exitCode).toBe(1);
-    expect(messages).toContain(
-      'Failed chat clear-session follow-up: chat clear-session follow-up response must ask for clarification after clearing context.',
     );
   });
 
