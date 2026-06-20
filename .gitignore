@@ -9,6 +9,7 @@ logs/
 
 # Node / TypeScript
 node_modules/
+.pnpm-store/
 .next/
 out/
 dist/
