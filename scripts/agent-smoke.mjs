@@ -33,13 +33,14 @@ export async function runAgentSmoke(options = {}) {
       requireAnswer: true,
     });
 
-    if (env.API_SMOKE_TX_HASH !== undefined && env.API_SMOKE_TX_HASH.trim().length > 0) {
+    const txHash = env.API_SMOKE_TX_HASH?.trim();
+    if (txHash !== undefined && txHash.length > 0) {
       await expectChatRoute({
         baseUrl,
         expectedAgentRoute: 'transaction_analysis',
         fetchFn,
         label: 'transaction analysis',
-        message: env.API_SMOKE_TX_HASH,
+        message: txHash,
         requireAnswer: true,
       });
     }
@@ -53,9 +54,16 @@ export async function runAgentSmoke(options = {}) {
 }
 
 async function expectHealth(fetchFn, baseUrl) {
-  const response = await fetchFn(resolveUrl(baseUrl, '/health'));
+  const url = resolveUrl(baseUrl, '/health');
+  let response;
+  try {
+    response = await fetchFn(url);
+  } catch (error) {
+    throw new Error(`GET ${url} failed: ${formatError(error)}`, { cause: error });
+  }
+
   if (response.status !== 200) {
-    throw new Error(`health returned HTTP ${response.status}`);
+    throw new Error(`GET ${url} returned HTTP ${response.status}`);
   }
 }
 
@@ -67,10 +75,15 @@ async function expectChatRoute({
   message,
   requireAnswer,
 }) {
-  const payload = await postJson(fetchFn, resolveUrl(baseUrl, '/api/chat'), {
-    channel: 'web',
-    message,
-  });
+  const payload = await postJson(
+    fetchFn,
+    resolveUrl(baseUrl, '/api/chat'),
+    {
+      channel: 'web',
+      message,
+    },
+    label,
+  );
 
   if (payload.agentRoute !== expectedAgentRoute) {
     throw new Error(
@@ -83,23 +96,38 @@ async function expectChatRoute({
   }
 }
 
-async function postJson(fetchFn, url, body) {
-  const response = await fetchFn(url, {
-    body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
-    method: 'POST',
-  });
+async function postJson(fetchFn, url, body, label) {
+  let response;
+  try {
+    response = await fetchFn(url, {
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    });
+  } catch (error) {
+    throw new Error(`${label} POST ${url} failed: ${formatError(error)}`, { cause: error });
+  }
+
   const responseText = await response.text();
 
   if (!response.ok) {
-    throw new Error(`chat returned HTTP ${response.status}: ${responseText}`);
+    throw new Error(`${label} POST ${url} returned HTTP ${response.status}: ${responseText}`);
   }
 
+  let payload;
   try {
-    return JSON.parse(responseText);
+    payload = JSON.parse(responseText);
   } catch {
-    throw new Error(`chat returned invalid JSON: ${responseText}`);
+    throw new Error(`${label} POST ${url} returned invalid JSON: ${responseText}`);
   }
+
+  if (!isRecord(payload)) {
+    throw new Error(
+      `${label} POST ${url} returned JSON ${describeJsonPayload(payload)}; expected object`,
+    );
+  }
+
+  return payload;
 }
 
 function normalizeBaseUrl(baseUrl) {
@@ -114,8 +142,32 @@ function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function describeJsonPayload(value) {
+  if (value === null) {
+    return 'null';
+  }
+
+  if (Array.isArray(value)) {
+    return 'array';
+  }
+
+  return typeof value;
+}
+
 function formatValue(value) {
   return value === undefined ? 'undefined' : JSON.stringify(value);
+}
+
+function formatError(error) {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+
+  return String(error);
 }
 
 function isDirectRun() {
