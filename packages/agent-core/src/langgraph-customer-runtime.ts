@@ -15,7 +15,7 @@ import {
   isBusinessActionClassification,
   isPrivateCredentialClassification,
   isUnsafeUnsupportedClassification,
-} from './answer-planner.js';
+} from './classification-guards.js';
 import {
   AGENT_MAX_STEPS_DEFAULT,
   AgentStateAnnotation,

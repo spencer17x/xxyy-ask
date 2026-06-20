@@ -376,7 +376,7 @@ describe('planner model', () => {
                       kind: 'final',
                       reason: 'unsupported preference capture',
                       response: {
-                        agentRoute: 'preference_capture',
+                        agentRoute: 'ops_report',
                         answer: '我不能记录这个偏好。',
                         citations: [],
                         confidence: 0.4,

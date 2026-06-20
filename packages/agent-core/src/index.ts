@@ -1,27 +1,7 @@
 export const workspacePackageName = '@xxyy/agent-core';
 
-export { planAnswer } from './answer-planner.js';
-export type { AnswerPlan, AnswerPlanRoute, PlanAnswerInput } from './answer-planner.js';
-export {
-  createInMemoryAuditSink,
-  createNoopAuditSink,
-  createPgToolAuditSink,
-  migratePgToolAuditStore,
-  summarizePgToolAudit,
-} from './audit.js';
-export type { InMemoryAuditSink, ToolAuditEvent, ToolAuditSink, ToolAuditStatus } from './audit.js';
-export type {
-  CreatePgToolAuditSinkOptions,
-  PgToolAuditClientLike,
-  PgToolAuditOpsSummary,
-  RecentToolAuditFailure,
-  SummarizePgToolAuditOptions,
-  ToolAuditStatusCounts,
-} from './audit.js';
 export { createCustomerAgentChatService } from './customer-agent-chat-service.js';
 export type { CreateCustomerAgentChatServiceOptions } from './customer-agent-chat-service.js';
-export { createCustomerAgentRuntime } from './customer-agent-runtime.js';
-export type { CreateCustomerAgentRuntimeOptions } from './customer-agent-runtime.js';
 export { createLangGraphCustomerRuntime } from './langgraph-customer-runtime.js';
 export type {
   CreateLangGraphCustomerRuntimeOptions,
@@ -60,77 +40,6 @@ export type {
   PlannerModelInput,
   PlannerToolDescriptor,
 } from './planner-model.js';
-export { resolveFollowUp } from './follow-up-resolver.js';
-export type {
-  FollowUpResolution,
-  ResolveFollowUpInput,
-  ResolveFollowUpOutput,
-} from './follow-up-resolver.js';
-export {
-  KnowledgeOpsAgentUnauthorizedError,
-  createKnowledgeOpsAgentRuntime,
-} from './knowledge-ops-agent-runtime.js';
-export type {
-  CreateKnowledgeOpsAgentRuntimeOptions,
-  KnowledgeOpsAgentRuntime,
-} from './knowledge-ops-agent-runtime.js';
-export { createInMemoryQualitySignalSink, createNoopQualitySignalSink } from './quality-signals.js';
-export type {
-  InMemoryQualitySignalSink,
-  QualitySignal,
-  QualitySignalChannel,
-  QualitySignalReason,
-  QualitySignalSink,
-} from './quality-signals.js';
-export {
-  createPgSessionContextStore,
-  migratePgSessionContextStore,
-  summarizePgSessionContext,
-} from './pg-session-context.js';
-export type {
-  CreatePgSessionContextStoreOptions,
-  PgSessionContextOpsSummary,
-  PgClientLike as PgSessionContextClientLike,
-  RecentPgSessionContextSummary,
-  SessionContextAgeBuckets,
-  SummarizePgSessionContextOptions,
-} from './pg-session-context.js';
-export { createInMemorySessionContextStore, sanitizeSessionText } from './session-context.js';
-export type {
-  InMemorySessionContextStoreOptions,
-  SessionContextSummary,
-  SessionContextStore,
-  SessionTurn,
-  SessionTurnMetadata,
-  SessionTurnRole,
-} from './session-context.js';
-export {
-  KNOWLEDGE_OPS_TOOL_NAMES,
-  createKnowledgeOpsTools,
-  listKnowledgeCandidatesInputSchema,
-  listKnowledgeCandidatesOutputSchema,
-  publishKnowledgeCandidateInputSchema,
-  publishKnowledgeCandidateOutputSchema,
-  reviewKnowledgeCandidateInputSchema,
-  reviewKnowledgeCandidateOutputSchema,
-  runKnowledgeGateInputSchema,
-  runKnowledgeGateOutputSchema,
-  syncTelegramSupportInputSchema,
-  syncTelegramSupportOutputSchema,
-} from './tools/knowledge-ops-tools.js';
-export type {
-  CreateKnowledgeOpsToolsOptions,
-  KnowledgeOpsCandidate,
-  KnowledgeOpsToolName,
-  ListKnowledgeCandidatesInput,
-  PublishKnowledgeCandidateInput,
-  PublishKnowledgeCandidateOutput,
-  ReviewKnowledgeCandidateInput,
-  RunKnowledgeGateInput,
-  RunKnowledgeGateOutput,
-  SyncTelegramSupportInput,
-  SyncTelegramSupportOutput,
-} from './tools/knowledge-ops-tools.js';
 export {
   PRODUCT_TOOL_NAMES,
   answerProductQuestionInputSchema,

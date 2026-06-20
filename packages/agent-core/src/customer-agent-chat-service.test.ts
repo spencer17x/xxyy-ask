@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatResponse } from '@xxyy/shared';
-import type { AnswerProvider, RetrievedChunk, Retriever } from '@xxyy/rag-core';
+import type { AnswerProvider, RetrievedChunk, Retriever, TxAnalysisProvider } from '@xxyy/rag-core';
 
 import { createCustomerAgentChatService } from './customer-agent-chat-service.js';
 import { createScriptedPlannerModel } from './planner-model.js';
-import { createInMemorySessionContextStore } from './session-context.js';
 
 const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 const originalOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
@@ -13,9 +12,9 @@ const originalOpenAiModel = process.env.OPENAI_MODEL;
 
 describe('createCustomerAgentChatService', () => {
   afterEach(() => {
-    process.env.OPENAI_API_KEY = originalOpenAiApiKey;
-    process.env.OPENAI_BASE_URL = originalOpenAiBaseUrl;
-    process.env.OPENAI_MODEL = originalOpenAiModel;
+    restoreEnvValue('OPENAI_API_KEY', originalOpenAiApiKey);
+    restoreEnvValue('OPENAI_BASE_URL', originalOpenAiBaseUrl);
+    restoreEnvValue('OPENAI_MODEL', originalOpenAiModel);
     vi.unstubAllGlobals();
   });
 
@@ -134,9 +133,9 @@ describe('createCustomerAgentChatService', () => {
         });
       },
     };
-    const sessionContext = createInMemorySessionContextStore();
     const service = createCustomerAgentChatService({
       answerProvider,
+      audit: {},
       planner: createScriptedPlannerModel([
         {
           input: { question: 'XXYY Pro 有哪些权益？' },
@@ -153,8 +152,9 @@ describe('createCustomerAgentChatService', () => {
           toolName: 'answer_product_question',
         },
       ]),
+      qualitySignals: {},
       retriever,
-      sessionContext,
+      sessionContext: {},
       txAnalysisProvider: undefined,
     });
 
@@ -162,6 +162,89 @@ describe('createCustomerAgentChatService', () => {
     await service.ask({ channel: 'web', message: '怎么升级？', sessionId: 's1' });
 
     expect(retrieveCalls.at(-1)).toBe('怎么升级？');
+  });
+
+  it('uses local first-slice routing for product questions without OpenAI planner config', async () => {
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_MODEL;
+    const retrieveCalls: Array<{ question: string; topK: number | undefined }> = [];
+    const retriever: Retriever = {
+      retrieve(question, options) {
+        retrieveCalls.push({ question, topK: options.topK });
+        return [createRetrievedChunk()];
+      },
+    };
+    const answerProvider: AnswerProvider = {
+      answer(input) {
+        return Promise.resolve({
+          answer: `fallback answered ${input.question}`,
+          citations: [],
+          confidence: 0.88,
+          intent: input.classification.intent,
+        });
+      },
+    };
+
+    const service = createCustomerAgentChatService({
+      answerProvider,
+      config: { topK: 2 },
+      retriever,
+      txAnalysisProvider: undefined,
+    });
+
+    await expect(
+      service.ask({
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？',
+      }),
+    ).resolves.toMatchObject({
+      agentRoute: 'product_answer',
+      answer: 'fallback answered XXYY Pro 有哪些权益？',
+      confidence: 0.88,
+      intent: 'product_qa',
+    });
+    expect(retrieveCalls).toEqual([{ question: 'XXYY Pro 有哪些权益？', topK: 2 }]);
+  });
+
+  it('uses local first-slice routing to clarify multiple transaction hashes', async () => {
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_MODEL;
+    const firstTxHash = `0x${'a'.repeat(64)}`;
+    const secondTxHash = `0x${'b'.repeat(64)}`;
+    const txAnalysisProvider: TxAnalysisProvider = {
+      analyze() {
+        throw new Error('tx analysis provider should not be called');
+      },
+    };
+
+    const service = createCustomerAgentChatService({
+      answerProvider: {
+        answer() {
+          throw new Error('answer provider should not be called');
+        },
+      },
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
+      txAnalysisProvider,
+    });
+
+    const response = await service.ask({
+      channel: 'web',
+      message: `帮我分析 ${firstTxHash} 和 ${secondTxHash} 有没有被夹`,
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'clarify',
+      citations: [],
+      confidence: 0.55,
+      intent: 'tx_sandwich_detection',
+    });
+    expect(response.answer).toContain('一次只能分析一笔交易');
   });
 
   it('uses passed config values when creating the default planner', async () => {
@@ -257,4 +340,13 @@ function createRetrievedChunk(): RetrievedChunk {
     tokens: [],
     vectorScore: 0,
   };
+}
+
+function restoreEnvValue(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+
+  process.env[key] = value;
 }
