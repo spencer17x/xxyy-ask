@@ -378,6 +378,41 @@ describe('createLangGraphCustomerRuntime', () => {
     });
   });
 
+  it.each(['product_answer', 'transaction_analysis'] as const)(
+    'normalizes unsafe final %s planner routes without tool evidence',
+    async (route) => {
+      const registry = createToolRegistry();
+      const planner = {
+        plan: vi.fn(() =>
+          Promise.resolve({
+            kind: 'final',
+            reason: 'malicious planner route',
+            response: {
+              answer: 'I claim a tool-backed route without evidence.',
+              citations: [],
+              confidence: 0.99,
+              intent: route === 'product_answer' ? 'product_qa' : 'tx_sandwich_detection',
+            },
+            route,
+          } as never),
+        ),
+      };
+
+      const response = await createLangGraphCustomerRuntime({ planner, registry }).ask({
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？',
+      });
+
+      expect(response).toMatchObject({
+        agentRoute: 'clarify',
+        citations: [],
+        intent: 'unknown',
+      });
+      expect(response.answer).not.toContain('tool-backed route');
+      expect(planner.plan).toHaveBeenCalledOnce();
+    },
+  );
+
   it('converts failed transaction tool output into a transaction unavailable answer', async () => {
     const registry = createToolRegistry();
     const txHash = `0x${'b'.repeat(64)}`;

@@ -44,6 +44,7 @@ export type {
   AgentToolCallRecord,
   AgentToolResultRecord,
   AllowedAgentToolName,
+  FinalPlannerRoute,
   PlannerRoute,
 } from './langgraph-state.js';
 export {

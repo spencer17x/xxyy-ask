@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatResponse } from '@xxyy/shared';
 import type { AnswerProvider, RetrievedChunk, Retriever } from '@xxyy/rag-core';
@@ -7,7 +7,18 @@ import { createCustomerAgentChatService } from './customer-agent-chat-service.js
 import { createScriptedPlannerModel } from './planner-model.js';
 import { createInMemorySessionContextStore } from './session-context.js';
 
+const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+const originalOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
+const originalOpenAiModel = process.env.OPENAI_MODEL;
+
 describe('createCustomerAgentChatService', () => {
+  afterEach(() => {
+    process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+    process.env.OPENAI_BASE_URL = originalOpenAiBaseUrl;
+    process.env.OPENAI_MODEL = originalOpenAiModel;
+    vi.unstubAllGlobals();
+  });
+
   it('answers product questions through registered product tools', async () => {
     const retrieveCalls: Array<{ question: string; topK: number | undefined }> = [];
     const retriever: Retriever = {
@@ -151,6 +162,79 @@ describe('createCustomerAgentChatService', () => {
     await service.ask({ channel: 'web', message: '怎么升级？', sessionId: 's1' });
 
     expect(retrieveCalls.at(-1)).toBe('怎么升级？');
+  });
+
+  it('uses passed config values when creating the default planner', async () => {
+    process.env.OPENAI_API_KEY = 'env-key';
+    process.env.OPENAI_BASE_URL = 'https://env.example/v1';
+    process.env.OPENAI_MODEL = 'env-model';
+    const fetchImpl = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    kind: 'final',
+                    reason: 'test planner response',
+                    response: {
+                      answer: '请补充更具体的问题。',
+                      citations: [],
+                      confidence: 0.45,
+                      intent: 'unknown',
+                    },
+                    route: 'clarify',
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchImpl);
+
+    const service = createCustomerAgentChatService({
+      answerProvider: {
+        answer() {
+          throw new Error('answer provider should not be called');
+        },
+      },
+      config: {
+        databaseUrl: 'postgres://xxyy:test@localhost:5432/xxyy_ask',
+        openAiApiKey: 'config-key',
+        openAiBaseUrl: 'https://config.example/v1',
+        openAiModel: 'config-model',
+      },
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
+      txAnalysisProvider: undefined,
+    });
+
+    await expect(
+      service.ask({
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？',
+      }),
+    ).resolves.toMatchObject({
+      agentRoute: 'clarify',
+      intent: 'unknown',
+    });
+
+    const call = fetchImpl.mock.calls[0];
+    expect(call?.[0]).toBe('https://config.example/v1/chat/completions');
+    const init = call?.[1];
+    expect(init?.headers).toMatchObject({
+      authorization: 'Bearer config-key',
+    });
+    expect(typeof init?.body).toBe('string');
+    const requestBody = JSON.parse(init?.body as string) as { model?: unknown };
+    expect(requestBody.model).toBe('config-model');
   });
 });
 

@@ -25,6 +25,8 @@ export type PlannerRoute =
   | 'transaction_analysis'
   | 'unsupported';
 
+export type FinalPlannerRoute = 'boundary' | 'clarify' | 'unsupported';
+
 export type AgentPlan =
   | {
       kind: 'tool';
@@ -36,7 +38,7 @@ export type AgentPlan =
   | {
       kind: 'final';
       reason: string;
-      route: PlannerRoute;
+      route: FinalPlannerRoute;
       response: ChatResponse;
     };
 

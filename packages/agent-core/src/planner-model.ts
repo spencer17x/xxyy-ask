@@ -2,7 +2,12 @@ import { z } from 'zod';
 
 import type { ChatRequest } from '@xxyy/shared';
 
-import { ALLOWED_AGENT_TOOL_NAMES, type AgentPlan, type PlannerRoute } from './langgraph-state.js';
+import {
+  ALLOWED_AGENT_TOOL_NAMES,
+  type AgentPlan,
+  type FinalPlannerRoute,
+  type PlannerRoute,
+} from './langgraph-state.js';
 
 export interface PlannerToolDescriptor {
   name: string;
@@ -46,7 +51,13 @@ const plannerRoutes = [
 ] as const satisfies readonly PlannerRoute[];
 
 const plannerRouteSchema = z.enum(plannerRoutes);
-const plannerFinalRouteSchema = z.enum(['boundary', 'clarify', 'unsupported']);
+const finalPlannerRoutes = [
+  'boundary',
+  'clarify',
+  'unsupported',
+] as const satisfies readonly FinalPlannerRoute[];
+
+const plannerFinalRouteSchema = z.enum(finalPlannerRoutes);
 const allowedToolNameSchema = z.enum(ALLOWED_AGENT_TOOL_NAMES);
 
 const citationSchema = z.object({

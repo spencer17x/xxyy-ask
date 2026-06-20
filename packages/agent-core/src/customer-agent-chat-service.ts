@@ -2,6 +2,7 @@ import type { RagIndex } from '@xxyy/shared';
 import {
   classifyQuestion,
   createBoundaryAnswer,
+  loadRagConfig,
   type AnswerProvider,
   type RagConfig,
   type Retriever,
@@ -59,17 +60,22 @@ export function createCustomerAgentChatService(
   }
 
   return createLangGraphCustomerRuntime({
-    planner: options.planner ?? createDefaultPlannerModel(),
+    planner: options.planner ?? createDefaultPlannerModel(options.config),
     registry,
   });
 }
 
-function createDefaultPlannerModel(): PlannerModel {
-  if (hasOpenAiPlannerConfiguration()) {
+function createDefaultPlannerModel(configOverrides: Partial<RagConfig> | undefined): PlannerModel {
+  const config = {
+    ...loadRagConfig(),
+    ...(configOverrides ?? {}),
+  };
+
+  if (hasOpenAiPlannerConfiguration(config)) {
     return createOpenAiCompatiblePlannerModel({
-      apiKey: process.env.OPENAI_API_KEY,
-      baseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
-      model: process.env.OPENAI_MODEL,
+      apiKey: config.openAiApiKey,
+      baseUrl: config.openAiBaseUrl,
+      model: config.openAiModel,
     });
   }
 
@@ -145,11 +151,15 @@ function createDefaultPlannerModel(): PlannerModel {
   };
 }
 
-function hasOpenAiPlannerConfiguration(): boolean {
+function hasOpenAiPlannerConfiguration(
+  config: Pick<RagConfig, 'databaseUrl' | 'openAiApiKey' | 'openAiModel'>,
+): boolean {
   return (
-    process.env.OPENAI_API_KEY !== undefined &&
-    process.env.OPENAI_API_KEY.trim().length > 0 &&
-    process.env.OPENAI_MODEL !== undefined &&
-    process.env.OPENAI_MODEL.trim().length > 0
+    config.databaseUrl !== undefined &&
+    config.databaseUrl.trim().length > 0 &&
+    config.openAiApiKey !== undefined &&
+    config.openAiApiKey.trim().length > 0 &&
+    config.openAiModel !== undefined &&
+    config.openAiModel.trim().length > 0
   );
 }

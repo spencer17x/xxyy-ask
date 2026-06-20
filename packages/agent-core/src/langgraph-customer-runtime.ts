@@ -26,6 +26,7 @@ import {
   type AgentPlan,
   type AgentPolicyDecision,
   type AgentState,
+  type FinalPlannerRoute,
 } from './langgraph-state.js';
 import {
   PlannerConfigurationError,
@@ -257,6 +258,16 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
   }
 
   if (state.plan?.kind === 'final') {
+    if (!isFinalPlannerRoute(state.plan.route)) {
+      return {
+        errors: [`Invalid final planner route: ${String(state.plan.route)}`],
+        finalResponse: createClarificationResponse(
+          '当前自动规划返回了不安全的最终路线，无法可靠回答。请补充具体功能、配置步骤或单笔公开交易哈希后重试。',
+        ),
+        route: 'clarify',
+      };
+    }
+
     return {
       finalResponse: withAgentRoute(state.plan.response, normalizeAgentRoute(state.plan.route)),
     };
@@ -356,6 +367,10 @@ function isBoundaryClassification(classification: ReturnType<typeof classifyQues
     isPrivateCredentialClassification(classification) ||
     isUnsafeUnsupportedClassification(classification)
   );
+}
+
+function isFinalPlannerRoute(route: unknown): route is FinalPlannerRoute {
+  return route === 'boundary' || route === 'clarify' || route === 'unsupported';
 }
 
 function createRuntimeBoundaryAnswer(
