@@ -3,18 +3,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   TX_ANALYSIS_TOOL_NAMES,
   analyzeTransactionInputSchema,
-  getAnalysisReportInputSchema,
-  listAnalysisReportsInputSchema,
   sanitizeSessionText,
   type QualitySignalChannel,
   type QualitySignalSink,
 } from '@xxyy/agent-core';
-import type {
-  AnalyzeTransactionOutput,
-  FindTxAnalysisReportsOptions,
-  TxAnalysisUnavailableReason,
-} from '@xxyy/rag-core';
-import type { z } from 'zod';
+import type { AnalyzeTransactionOutput, TxAnalysisUnavailableReason } from '@xxyy/rag-core';
 
 import type { TxAnalysisToolHandlers } from './tools.js';
 
@@ -91,53 +84,7 @@ export function createTxAnalysisMcpServer(options: CreateTxAnalysisMcpServerOpti
     },
   );
 
-  server.registerTool(
-    TX_ANALYSIS_MCP_TOOL_NAMES[1],
-    {
-      description: 'Fetch one stored XXYY transaction analysis report document by report id.',
-      inputSchema: getAnalysisReportInputSchema,
-      title: 'Get Transaction Analysis Report',
-    },
-    async ({ id }) => {
-      const output = await options.handlers.getAnalysisReport({ id });
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
-      };
-    },
-  );
-
-  server.registerTool(
-    TX_ANALYSIS_MCP_TOOL_NAMES[2],
-    {
-      description: 'List stored XXYY transaction analysis reports with optional filters.',
-      inputSchema: listAnalysisReportsInputSchema,
-      title: 'List Transaction Analysis Reports',
-    },
-    async (input) => {
-      const output = await options.handlers.listAnalysisReports(toFindReportsInput(input));
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
-      };
-    },
-  );
-
   return server;
-}
-
-function toFindReportsInput(
-  input: z.output<typeof listAnalysisReportsInputSchema>,
-): FindTxAnalysisReportsOptions {
-  return {
-    ...(input.chain === undefined ? {} : { chain: input.chain }),
-    ...(input.limit === undefined ? {} : { limit: input.limit }),
-    ...(input.reason === undefined ? {} : { reason: input.reason }),
-    ...(input.reviewAssignee === undefined ? {} : { reviewAssignee: input.reviewAssignee }),
-    ...(input.reviewStatus === undefined ? {} : { reviewStatus: input.reviewStatus }),
-    ...(input.status === undefined ? {} : { status: input.status }),
-    ...(input.txHash === undefined ? {} : { txHash: input.txHash }),
-  };
 }
 
 function createProviderUnavailableOutput(): AnalyzeTransactionFailureOutput {

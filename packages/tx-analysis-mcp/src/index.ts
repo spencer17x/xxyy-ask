@@ -2,7 +2,6 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createPgKnowledgeOpsStore } from '@xxyy/knowledge-ops';
 import {
   createConfiguredTxAnalysisProvider,
-  createConfiguredTxAnalysisReportReader,
   createPgPool,
   loadRagConfig,
   loadWorkspaceEnv,
@@ -19,7 +18,6 @@ const env = loadWorkspaceEnv({
 });
 const config = loadRagConfig(env);
 const provider = createConfiguredTxAnalysisProvider(config);
-const reportReader = createConfiguredTxAnalysisReportReader(config);
 let qualityPool: ReturnType<typeof createPgPool> | undefined;
 const qualitySignals = createTxAnalysisMcpQualitySignalRuntime({
   getStore() {
@@ -28,7 +26,7 @@ const qualitySignals = createTxAnalysisMcpQualitySignalRuntime({
   },
 });
 const server = createTxAnalysisMcpServer({
-  handlers: createTxAnalysisToolHandlers({ provider, reportReader }),
+  handlers: createTxAnalysisToolHandlers({ provider }),
   qualitySignals: qualitySignals.sink,
 });
 const transport = new StdioServerTransport();

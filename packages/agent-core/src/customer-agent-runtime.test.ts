@@ -68,10 +68,13 @@ describe('createCustomerAgentRuntime', () => {
       ...response,
       agentRoute: 'product_answer',
     });
-    expect(execute).toHaveBeenCalledWith({
-      channel: 'web',
-      question: 'XXYY Pro 有哪些权益？',
-    });
+    expect(execute).toHaveBeenCalledWith(
+      {
+        channel: 'web',
+        question: 'XXYY Pro 有哪些权益？',
+      },
+      {},
+    );
     const auditEvents = audit.events();
     expect(auditEvents).toHaveLength(1);
     const event = auditEvents[0];
@@ -669,7 +672,7 @@ describe('createCustomerAgentRuntime', () => {
       userId: 'user-1',
     });
 
-    expect(execute).toHaveBeenCalledWith({ txHash });
+    expect(execute).toHaveBeenCalledWith({ txHash }, {});
     expect(response).toMatchObject({
       agentRoute: 'transaction_analysis',
       citations: [],
@@ -942,10 +945,13 @@ describe('createCustomerAgentRuntime', () => {
       sessionId: 'session-product',
     });
 
-    expect(execute).toHaveBeenLastCalledWith({
-      channel: 'web',
-      question: 'XXYY Pro 怎么升级？',
-    });
+    expect(execute).toHaveBeenLastCalledWith(
+      {
+        channel: 'web',
+        question: 'XXYY Pro 怎么升级？',
+      },
+      {},
+    );
   });
 
   it('uses safe session summaries to resolve product follow-ups after older turns are pruned', async () => {
@@ -994,10 +1000,13 @@ describe('createCustomerAgentRuntime', () => {
       sessionId: 'session-product-summary',
     });
 
-    expect(execute).toHaveBeenLastCalledWith({
-      channel: 'web',
-      question: 'XXYY 移动端登录 怎么登录？',
-    });
+    expect(execute).toHaveBeenLastCalledWith(
+      {
+        channel: 'web',
+        question: 'XXYY 移动端登录 怎么登录？',
+      },
+      {},
+    );
   });
 
   it('uses session context to resolve product upgrade-location follow-ups', async () => {
@@ -1042,10 +1051,13 @@ describe('createCustomerAgentRuntime', () => {
     });
 
     expect(followUpResponse.answer).toContain('升级入口');
-    expect(execute).toHaveBeenLastCalledWith({
-      channel: 'web',
-      question: 'XXYY Pro 在哪里升级？',
-    });
+    expect(execute).toHaveBeenLastCalledWith(
+      {
+        channel: 'web',
+        question: 'XXYY Pro 在哪里升级？',
+      },
+      {},
+    );
   });
 
   it('uses session context to resolve product entry-location follow-ups', async () => {
@@ -1090,10 +1102,13 @@ describe('createCustomerAgentRuntime', () => {
     });
 
     expect(followUpResponse.answer).toContain('入口');
-    expect(execute).toHaveBeenLastCalledWith({
-      channel: 'web',
-      question: 'XXYY Pro 入口在哪？',
-    });
+    expect(execute).toHaveBeenLastCalledWith(
+      {
+        channel: 'web',
+        question: 'XXYY Pro 入口在哪？',
+      },
+      {},
+    );
   });
 
   it('uses session context to resolve product price follow-ups', async () => {
@@ -1138,10 +1153,13 @@ describe('createCustomerAgentRuntime', () => {
     });
 
     expect(followUpResponse.answer).toContain('价格');
-    expect(execute).toHaveBeenLastCalledWith({
-      channel: 'web',
-      question: 'XXYY Pro 多少钱？',
-    });
+    expect(execute).toHaveBeenLastCalledWith(
+      {
+        channel: 'web',
+        question: 'XXYY Pro 多少钱？',
+      },
+      {},
+    );
   });
 
   it('uses session context to resolve product validity-period follow-ups', async () => {
@@ -1186,10 +1204,13 @@ describe('createCustomerAgentRuntime', () => {
     });
 
     expect(followUpResponse.answer).toContain('有效期');
-    expect(execute).toHaveBeenLastCalledWith({
-      channel: 'web',
-      question: 'XXYY Pro 有效期多久？',
-    });
+    expect(execute).toHaveBeenLastCalledWith(
+      {
+        channel: 'web',
+        question: 'XXYY Pro 有效期多久？',
+      },
+      {},
+    );
   });
 
   it('uses safe session preferences to resolve product follow-ups through the runtime', async () => {
@@ -1245,10 +1266,13 @@ describe('createCustomerAgentRuntime', () => {
     });
 
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenLastCalledWith({
-      channel: 'web',
-      question: 'XXYY 移动端登录 怎么登录？',
-    });
+    expect(execute).toHaveBeenLastCalledWith(
+      {
+        channel: 'web',
+        question: 'XXYY 移动端登录 怎么登录？',
+      },
+      {},
+    );
   });
 
   it('clears session context on explicit reset requests without calling answer tools', async () => {
@@ -1654,10 +1678,13 @@ describe('createCustomerAgentRuntime', () => {
       ...response,
       agentRoute: 'product_answer',
     });
-    expect(execute).toHaveBeenCalledWith({
-      channel: 'web',
-      question: '如何设置 Telegram 钱包监控？',
-    });
+    expect(execute).toHaveBeenCalledWith(
+      {
+        channel: 'web',
+        question: '如何设置 Telegram 钱包监控？',
+      },
+      {},
+    );
   });
 
   it('records missing_followup_context when a product follow-up has no usable session context', async () => {
@@ -1829,7 +1856,7 @@ describe('createCustomerAgentRuntime', () => {
     await runtime.ask({ channel: 'web', message: txHash, sessionId: 'session-tx' });
     await runtime.ask({ channel: 'web', message: '这笔被夹了吗？', sessionId: 'session-tx' });
 
-    expect(execute).toHaveBeenLastCalledWith({ txHash: `base ${txHash} 这笔被夹了吗？` });
+    expect(execute).toHaveBeenLastCalledWith({ txHash: `base ${txHash} 这笔被夹了吗？` }, {});
   });
 
   it('uses session context to resolve one recent Solana transaction follow-up', async () => {
@@ -1871,7 +1898,7 @@ describe('createCustomerAgentRuntime', () => {
       sessionId: 'session-solana-tx',
     });
 
-    expect(execute).toHaveBeenLastCalledWith({ txHash: `solana ${txHash} 这笔被夹了吗？` });
+    expect(execute).toHaveBeenLastCalledWith({ txHash: `solana ${txHash} 这笔被夹了吗？` }, {});
   });
 
   it('records session_unavailable when a transaction follow-up has no session context store', async () => {

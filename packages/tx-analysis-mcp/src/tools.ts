@@ -1,9 +1,4 @@
-import {
-  type AnalyzeTransactionOutput,
-  type FindTxAnalysisReportsOptions,
-  type TxAnalysisReportReader,
-  type TxAnalysisProvider,
-} from '@xxyy/rag-core';
+import { type AnalyzeTransactionOutput, type TxAnalysisProvider } from '@xxyy/rag-core';
 import {
   TX_ANALYSIS_TOOL_NAMES,
   createToolRegistry,
@@ -16,15 +11,10 @@ export type TxAnalysisToolChannel = NonNullable<AnalyzeTransactionToolInput['cha
 
 export interface TxAnalysisToolHandlersOptions {
   provider: TxAnalysisProvider | undefined;
-  reportReader?: TxAnalysisReportReader;
 }
 
 export interface TxAnalysisToolHandlers {
   analyzeTransaction(input: AnalyzeTransactionToolInput): Promise<AnalyzeTransactionOutput>;
-  getAnalysisReport(input: { id: string }): Promise<{ document?: unknown }>;
-  listAnalysisReports(
-    input: FindTxAnalysisReportsOptions,
-  ): Promise<{ reports: Awaited<ReturnType<TxAnalysisReportReader['findReports']>> }>;
 }
 
 export function createTxAnalysisToolHandlers(
@@ -41,14 +31,6 @@ export function createTxAnalysisToolHandlers(
         TX_ANALYSIS_TOOL_NAMES[0],
         input,
       ) as Promise<AnalyzeTransactionOutput>;
-    },
-    getAnalysisReport(input) {
-      return registry.execute(TX_ANALYSIS_TOOL_NAMES[1], input) as Promise<{ document?: unknown }>;
-    },
-    listAnalysisReports(input) {
-      return registry.execute(TX_ANALYSIS_TOOL_NAMES[2], input) as Promise<{
-        reports: Awaited<ReturnType<TxAnalysisReportReader['findReports']>>;
-      }>;
     },
   };
 }
