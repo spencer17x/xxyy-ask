@@ -84,6 +84,7 @@ Delete:
 ### Task 1: Add LangGraph Dependencies And Planner Contracts
 
 **Files:**
+
 - Modify: `packages/agent-core/package.json`
 - Create: `packages/agent-core/src/langgraph-state.ts`
 - Create: `packages/agent-core/src/langgraph-state.test.ts`
@@ -512,7 +513,7 @@ Error: Failed to load url ./planner-model.js
 
 Create `packages/agent-core/src/planner-model.ts`:
 
-```ts
+````ts
 import { z } from 'zod';
 
 import type { ChatRequest } from '@xxyy/shared';
@@ -660,7 +661,10 @@ export function createOpenAiCompatiblePlannerModel(
   };
 }
 
-function createPlannerRequestBody(model: string, input: PlannerModelInput): Record<string, unknown> {
+function createPlannerRequestBody(
+  model: string,
+  input: PlannerModelInput,
+): Record<string, unknown> {
   return {
     model,
     temperature: 0,
@@ -711,7 +715,10 @@ function stripJsonFence(content: string): string {
   if (!trimmed.startsWith('```')) {
     return trimmed;
   }
-  return trimmed.replace(/^```(?:json)?/u, '').replace(/```$/u, '').trim();
+  return trimmed
+    .replace(/^```(?:json)?/u, '')
+    .replace(/```$/u, '')
+    .trim();
 }
 
 async function fetchWithTimeout(
@@ -743,7 +750,7 @@ async function fetchWithTimeout(
     clearTimeout(timeout);
   }
 }
-```
+````
 
 - [ ] **Step 9: Run planner tests to verify pass**
 
@@ -779,6 +786,7 @@ Expected:
 ### Task 2: Make Tool Registry Context-Aware And Trim First-Slice Tools
 
 **Files:**
+
 - Modify: `packages/agent-core/src/tool-registry.ts`
 - Modify: `packages/agent-core/src/tool-registry.test.ts`
 - Modify: `packages/agent-core/src/tools/tx-analysis-tools.ts`
@@ -916,15 +924,15 @@ export const TX_ANALYSIS_TOOL_NAMES = ['analyze_transaction'] as const;
 Remove these exports and definitions from the file:
 
 ```ts
-getAnalysisReportInputSchema
-getAnalysisReportOutputSchema
-listAnalysisReportsInputSchema
-listAnalysisReportsOutputSchema
-GetAnalysisReportToolDefinition
-ListAnalysisReportsToolDefinition
-getAnalysisReportTool
-listAnalysisReportsTool
-toReportFindOptions
+getAnalysisReportInputSchema;
+getAnalysisReportOutputSchema;
+listAnalysisReportsInputSchema;
+listAnalysisReportsOutputSchema;
+GetAnalysisReportToolDefinition;
+ListAnalysisReportsToolDefinition;
+getAnalysisReportTool;
+listAnalysisReportsTool;
+toReportFindOptions;
 ```
 
 Keep `CreateTxAnalysisToolsOptions.reportReader` out of the first-slice type:
@@ -1013,6 +1021,7 @@ Expected:
 ### Task 3: Build The LangGraph Customer Runtime
 
 **Files:**
+
 - Create: `packages/agent-core/src/langgraph-customer-runtime.ts`
 - Create: `packages/agent-core/src/langgraph-customer-runtime.test.ts`
 - Modify: `packages/agent-core/src/customer-agent-chat-service.ts`
@@ -1159,7 +1168,9 @@ describe('createLangGraphCustomerRuntime', () => {
       registry,
     });
 
-    await expect(runtime.ask({ channel: 'web', message: '帮我查一下钱包余额' })).resolves.toMatchObject({
+    await expect(
+      runtime.ask({ channel: 'web', message: '帮我查一下钱包余额' }),
+    ).resolves.toMatchObject({
       agentRoute: 'boundary',
       citations: [],
       intent: 'realtime_account_query',
@@ -1183,7 +1194,9 @@ describe('createLangGraphCustomerRuntime', () => {
       registry,
     });
 
-    await expect(runtime.ask({ channel: 'web', message: 'do something unsafe' })).resolves.toMatchObject({
+    await expect(
+      runtime.ask({ channel: 'web', message: 'do something unsafe' }),
+    ).resolves.toMatchObject({
       agentRoute: 'clarify',
       citations: [],
       confidence: 0.2,
@@ -1264,7 +1277,9 @@ export function createLangGraphCustomerRuntime(
     .compile();
 
   async function ask(request: ChatRequest): Promise<ChatResponse> {
-    const result = await graph.invoke(createInitialAgentState(request, { maxSteps: options.maxSteps }));
+    const result = await graph.invoke(
+      createInitialAgentState(request, { maxSteps: options.maxSteps }),
+    );
     return result.finalResponse ?? createAgentFailureAnswer('agent_finished_without_response');
   }
 
@@ -1366,7 +1381,9 @@ function answerComposerNode(state: GraphState): Partial<AgentState> {
         ? createTxAnalysisAnswer(output.result)
         : createTxAnalysisUnavailableAnswer(output.failure.reason, {
             ...(output.failure.metadata === undefined ? {} : { metadata: output.failure.metadata }),
-            ...(output.failure.reportUrl === undefined ? {} : { reportUrl: output.failure.reportUrl }),
+            ...(output.failure.reportUrl === undefined
+              ? {}
+              : { reportUrl: output.failure.reportUrl }),
           });
     return { finalResponse: withAgentRoute(response, 'transaction_analysis') };
   }
@@ -1400,7 +1417,11 @@ function routeAfterToolExecutor(): string {
 }
 
 function toEvidence(plan: AgentPlan, output: unknown): AgentState['evidence'][number] {
-  if (plan.toolName === 'answer_product_question' || plan.toolName === 'boundary_reply' || plan.toolName === 'clarify_request') {
+  if (
+    plan.toolName === 'answer_product_question' ||
+    plan.toolName === 'boundary_reply' ||
+    plan.toolName === 'clarify_request'
+  ) {
     return { kind: 'chat_response', response: output as ChatResponse, toolName: plan.toolName };
   }
   return { kind: 'tx_analysis', output, toolName: plan.toolName };
@@ -1424,7 +1445,10 @@ function createAgentFailureAnswer(reason: string): ChatResponse {
   };
 }
 
-function withAgentRoute(response: ChatResponse, agentRoute: ChatResponse['agentRoute']): ChatResponse {
+function withAgentRoute(
+  response: ChatResponse,
+  agentRoute: ChatResponse['agentRoute'],
+): ChatResponse {
   return { ...response, agentRoute };
 }
 
@@ -1583,7 +1607,7 @@ planner: createScriptedPlannerModel([
     route: 'product_answer',
     toolName: 'answer_product_question',
   },
-])
+]);
 ```
 
 - [ ] **Step 8: Run all agent-core runtime tests**
@@ -1623,6 +1647,7 @@ Expected:
 ### Task 4: Remove Deprecated Agent-Core Runtime, Session, Audit, Quality, And Knowledge-Ops Code
 
 **Files:**
+
 - Delete: deprecated agent-core files listed in File Structure
 - Modify: `packages/agent-core/src/index.ts`
 - Modify: `packages/agent-core/tsconfig.json` only if deleted tests were explicitly listed
@@ -1656,6 +1681,7 @@ rm packages/agent-core/src/customer-agent-runtime.ts \
 Expected:
 
 ```text
+
 ```
 
 - [ ] **Step 2: Remove deleted exports**
@@ -1663,15 +1689,15 @@ Expected:
 In `packages/agent-core/src/index.ts`, remove all export blocks that reference:
 
 ```ts
-answer-planner
-audit
-customer-agent-runtime
-follow-up-resolver
-knowledge-ops-agent-runtime
-quality-signals
-pg-session-context
-session-context
-tools/knowledge-ops-tools
+answer - planner;
+audit;
+customer - agent - runtime;
+follow - up - resolver;
+knowledge - ops - agent - runtime;
+quality - signals;
+pg - session - context;
+session - context;
+tools / knowledge - ops - tools;
 ```
 
 Keep only:
@@ -1683,13 +1709,13 @@ export const workspacePackageName = '@xxyy/agent-core';
 and exports for:
 
 ```ts
-customer-agent-chat-service
-langgraph-customer-runtime
-langgraph-state
-planner-model
-tool-registry
-tools/product-tools
-tools/tx-analysis-tools
+customer - agent - chat - service;
+langgraph - customer - runtime;
+langgraph - state;
+planner - model;
+tool - registry;
+tools / product - tools;
+tools / tx - analysis - tools;
 ```
 
 - [ ] **Step 3: Remove `preference_capture` from shared routes**
@@ -1759,6 +1785,7 @@ Expected:
 ### Task 5: Simplify API To Chat, Stream, Direct TX Analysis, Health, And Assets
 
 **Files:**
+
 - Modify: `apps/api/src/index.ts`
 - Modify: `apps/api/src/index.test.ts`
 - Modify: `apps/api/package.json` if dependency graph changes
@@ -1769,43 +1796,43 @@ Expected:
 In `apps/api/src/index.ts`, remove imports from `@xxyy/knowledge-ops`. Remove these `@xxyy/agent-core` imports:
 
 ```ts
-createInMemoryQualitySignalSink
-createInMemorySessionContextStore
-createNoopAuditSink
-createPgSessionContextStore
-createPgToolAuditSink
-sanitizeSessionText
-summarizePgSessionContext
-summarizePgToolAudit
-PgSessionContextOpsSummary
-PgToolAuditOpsSummary
-QualitySignalSink
-SessionContextStore
-ToolAuditSink
+createInMemoryQualitySignalSink;
+createInMemorySessionContextStore;
+createNoopAuditSink;
+createPgSessionContextStore;
+createPgToolAuditSink;
+sanitizeSessionText;
+summarizePgSessionContext;
+summarizePgToolAudit;
+PgSessionContextOpsSummary;
+PgToolAuditOpsSummary;
+QualitySignalSink;
+SessionContextStore;
+ToolAuditSink;
 ```
 
 Remove these `@xxyy/rag-core` imports if they are used only by ops/feedback/report review:
 
 ```ts
-captureAnswerQualitySignals
-createPgKnowledgeOpsStore
-createPgFeedbackStore
-findFileTxAnalysisReports
-getFileTxAnalysisReportDocument
-summarizeFileTxAnalysisReports
-updateFileTxAnalysisReportReview
-RecordFeedbackInput
-FeedbackStats
-FindTxAnalysisReportsOptions
-KnowledgeStats
-PgFeedbackStore
-SummarizeTxAnalysisReportsOptions
-TxAnalysisReportIndexEntry
-TxAnalysisReportReview
-TxAnalysisReportReviewStatus
-TxAnalysisReportSummary
-TxAnalysisStoredReportDocument
-UpdateTxAnalysisReportReviewInput
+captureAnswerQualitySignals;
+createPgKnowledgeOpsStore;
+createPgFeedbackStore;
+findFileTxAnalysisReports;
+getFileTxAnalysisReportDocument;
+summarizeFileTxAnalysisReports;
+updateFileTxAnalysisReportReview;
+RecordFeedbackInput;
+FeedbackStats;
+FindTxAnalysisReportsOptions;
+KnowledgeStats;
+PgFeedbackStore;
+SummarizeTxAnalysisReportsOptions;
+TxAnalysisReportIndexEntry;
+TxAnalysisReportReview;
+TxAnalysisReportReviewStatus;
+TxAnalysisReportSummary;
+TxAnalysisStoredReportDocument;
+UpdateTxAnalysisReportReviewInput;
 ```
 
 Remove `renderOpsPage` from the `@xxyy/web` import.
@@ -1831,12 +1858,12 @@ type ApiEnv = RagEnv &
 Change `CreateRequestHandlerOptions` to remove:
 
 ```ts
-getKnowledgeCandidateStore
-getOpsSummary
-getTxAnalysisReportStore
-recordFeedback
-recordFeedbackCandidate
-renderOpsHtml
+getKnowledgeCandidateStore;
+getOpsSummary;
+getTxAnalysisReportStore;
+recordFeedback;
+recordFeedbackCandidate;
+renderOpsHtml;
 ```
 
 Keep:
@@ -1958,6 +1985,7 @@ Expected:
 ### Task 6: Remove Knowledge-Ops Packages, Skills, And Scripts
 
 **Files:**
+
 - Delete: `packages/knowledge-ops`
 - Delete: `packages/knowledge-ops-mcp`
 - Delete: `skills/xxyy-knowledge-ops`
@@ -2037,6 +2065,7 @@ rm -rf packages/knowledge-ops packages/knowledge-ops-mcp skills/xxyy-knowledge-o
 Expected:
 
 ```text
+
 ```
 
 - [ ] **Step 4: Remove references to deleted packages**
@@ -2097,6 +2126,7 @@ Expected:
 ### Task 7: Add Lightweight Agent Smoke
 
 **Files:**
+
 - Create: `scripts/agent-smoke.mjs`
 - Modify: `package.json`
 
@@ -2212,6 +2242,7 @@ Expected:
 ### Task 8: Update Documentation
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `AGENTS.md`
 - Modify: `docs/feature-status.md`
@@ -2336,6 +2367,7 @@ Expected:
 ### Task 9: Final Verification
 
 **Files:**
+
 - No source edits unless verification exposes a defect.
 
 - [ ] **Step 1: Run focused agent tests**
