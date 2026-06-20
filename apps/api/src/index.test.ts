@@ -250,6 +250,29 @@ describe('createRequestHandler', () => {
     expect(response.body).toBe('');
   });
 
+  it('does not handle CORS preflight for removed API routes', async () => {
+    const handler = createRequestHandler({
+      env: {
+        API_CORS_ORIGIN: 'https://app.example',
+      },
+    });
+
+    const response = await callHandler(handler, {
+      headers: {
+        'access-control-request-headers': 'Content-Type',
+        origin: 'https://app.example',
+      },
+      method: 'OPTIONS',
+      url: '/api/feedback',
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'not_found',
+      message: 'Route not found.',
+    });
+  });
+
   it('adds CORS headers to allowed chat responses', async () => {
     const handler = createRequestHandler({
       env: {

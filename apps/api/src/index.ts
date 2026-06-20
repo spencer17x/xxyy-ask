@@ -403,13 +403,13 @@ function isCorsOriginAllowed(origin: string, allowedOrigins: string[]): boolean 
 }
 
 function isApiRoute(pathname: string): boolean {
-  return pathname.startsWith('/api/');
-}
-
-function isRateLimitedPostApiRoute(pathname: string): boolean {
   return (
     pathname === '/api/chat' || pathname === '/api/chat/stream' || pathname === '/api/tx-analysis'
   );
+}
+
+function isRateLimitedPostApiRoute(pathname: string): boolean {
+  return isApiRoute(pathname);
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {
