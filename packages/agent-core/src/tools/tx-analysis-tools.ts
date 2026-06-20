@@ -5,16 +5,11 @@ import {
   type AnalyzeTransactionInput,
   type AnalyzeTransactionOutput,
   type TxAnalysisProvider,
-  type TxAnalysisReportReader,
 } from '@xxyy/rag-core';
 
 import type { ToolDefinition } from '../tool-registry.js';
 
-export const TX_ANALYSIS_TOOL_NAMES = [
-  'analyze_transaction',
-  'get_analysis_report',
-  'list_analysis_reports',
-] as const;
+export const TX_ANALYSIS_TOOL_NAMES = ['analyze_transaction'] as const;
 
 export type TxAnalysisToolName = (typeof TX_ANALYSIS_TOOL_NAMES)[number];
 
@@ -26,7 +21,6 @@ export type AnalyzeTransactionToolInput = AnalyzeTransactionInput & {
 
 export interface CreateTxAnalysisToolsOptions {
   provider: TxAnalysisProvider | undefined;
-  reportReader?: TxAnalysisReportReader;
 }
 
 const txAnalysisToolPolicy = {
@@ -36,8 +30,6 @@ const txAnalysisToolPolicy = {
 
 const txAnalysisChainSchema = z.enum(['solana', 'base', 'ethereum', 'bsc', 'unknown']);
 const txAnalysisChannelSchema = z.enum(['agent', 'cli', 'ops', 'support', 'telegram', 'web']);
-const txAnalysisReportStatusSchema = z.enum(['failure', 'success']);
-const txAnalysisReviewStatusSchema = z.enum(['closed', 'in_review', 'open']);
 const nonEmptyStringSchema = z.string().trim().min(1);
 const txAnalysisUnavailableReasonSchema = z.enum([
   'not_configured',
@@ -94,44 +86,10 @@ export const analyzeTransactionOutputSchema = z.discriminatedUnion('status', [
   }),
 ]);
 
-export const getAnalysisReportInputSchema = z.object({
-  id: nonEmptyStringSchema,
-});
-
-export const getAnalysisReportOutputSchema = z.strictObject({
-  document: z.unknown().optional(),
-});
-
-export const listAnalysisReportsInputSchema = z.object({
-  chain: txAnalysisChainSchema.optional(),
-  limit: z.number().int().positive().optional(),
-  reason: txAnalysisUnavailableReasonSchema.optional(),
-  reviewAssignee: nonEmptyStringSchema.optional(),
-  reviewStatus: txAnalysisReviewStatusSchema.optional(),
-  status: txAnalysisReportStatusSchema.optional(),
-  txHash: nonEmptyStringSchema.optional(),
-});
-
-export const listAnalysisReportsOutputSchema = z.object({
-  reports: z.array(z.unknown()),
-});
-
 type AnalyzeTransactionToolDefinition = ToolDefinition<
   'analyze_transaction',
   typeof analyzeTransactionInputSchema,
   typeof analyzeTransactionOutputSchema
->;
-
-type GetAnalysisReportToolDefinition = ToolDefinition<
-  'get_analysis_report',
-  typeof getAnalysisReportInputSchema,
-  typeof getAnalysisReportOutputSchema
->;
-
-type ListAnalysisReportsToolDefinition = ToolDefinition<
-  'list_analysis_reports',
-  typeof listAnalysisReportsInputSchema,
-  typeof listAnalysisReportsOutputSchema
 >;
 
 export function createTxAnalysisTools(
@@ -151,31 +109,7 @@ export function createTxAnalysisTools(
     },
   };
 
-  const getAnalysisReportTool: GetAnalysisReportToolDefinition = {
-    name: 'get_analysis_report',
-    description: 'Fetch a stored transaction-analysis report document by report id.',
-    inputSchema: getAnalysisReportInputSchema,
-    outputSchema: getAnalysisReportOutputSchema,
-    policy: txAnalysisToolPolicy,
-    async execute(input) {
-      const document = await options.reportReader?.getReportDocument?.(input.id);
-      return document === undefined ? {} : { document };
-    },
-  };
-
-  const listAnalysisReportsTool: ListAnalysisReportsToolDefinition = {
-    name: 'list_analysis_reports',
-    description: 'List stored transaction-analysis reports for support and review workflows.',
-    inputSchema: listAnalysisReportsInputSchema,
-    outputSchema: listAnalysisReportsOutputSchema,
-    policy: txAnalysisToolPolicy,
-    async execute(input) {
-      const reports = await options.reportReader?.findReports(toReportFindOptions(input));
-      return { reports: reports ?? [] };
-    },
-  };
-
-  return [analyzeTransactionTool, getAnalysisReportTool, listAnalysisReportsTool];
+  return [analyzeTransactionTool];
 }
 
 export function toRagAnalyzeTransactionInput(
@@ -187,17 +121,3 @@ export function toRagAnalyzeTransactionInput(
 }
 
 export type AnalyzeTransactionToolOutput = AnalyzeTransactionOutput;
-
-function toReportFindOptions(
-  input: z.output<typeof listAnalysisReportsInputSchema>,
-): Parameters<TxAnalysisReportReader['findReports']>[0] {
-  return {
-    ...(input.chain === undefined ? {} : { chain: input.chain }),
-    ...(input.limit === undefined ? {} : { limit: input.limit }),
-    ...(input.reason === undefined ? {} : { reason: input.reason }),
-    ...(input.reviewAssignee === undefined ? {} : { reviewAssignee: input.reviewAssignee }),
-    ...(input.reviewStatus === undefined ? {} : { reviewStatus: input.reviewStatus }),
-    ...(input.status === undefined ? {} : { status: input.status }),
-    ...(input.txHash === undefined ? {} : { txHash: input.txHash }),
-  };
-}

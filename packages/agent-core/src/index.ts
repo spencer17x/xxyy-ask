@@ -114,10 +114,6 @@ export {
   analyzeTransactionInputSchema,
   analyzeTransactionOutputSchema,
   createTxAnalysisTools,
-  getAnalysisReportInputSchema,
-  getAnalysisReportOutputSchema,
-  listAnalysisReportsInputSchema,
-  listAnalysisReportsOutputSchema,
   toRagAnalyzeTransactionInput,
 } from './tools/tx-analysis-tools.js';
 export type {
@@ -134,6 +130,7 @@ export {
 } from './tool-registry.js';
 export type {
   ListToolsOptions,
+  ToolContext,
   ToolDefinition,
   ToolPolicy,
   ToolRegistry,
