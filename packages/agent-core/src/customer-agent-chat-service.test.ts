@@ -4,6 +4,7 @@ import type { ChatResponse } from '@xxyy/shared';
 import type { AnswerProvider, RetrievedChunk, Retriever } from '@xxyy/rag-core';
 
 import { createCustomerAgentChatService } from './customer-agent-chat-service.js';
+import { createScriptedPlannerModel } from './planner-model.js';
 import { createInMemorySessionContextStore } from './session-context.js';
 
 describe('createCustomerAgentChatService', () => {
@@ -36,6 +37,15 @@ describe('createCustomerAgentChatService', () => {
     const service = createCustomerAgentChatService({
       answerProvider,
       config: { topK: 1 },
+      planner: createScriptedPlannerModel([
+        {
+          input: { channel: 'web', question: 'XXYY Pro 有哪些权益？' },
+          kind: 'tool',
+          reason: 'Use product docs.',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
+        },
+      ]),
       retriever,
       txAnalysisProvider: undefined,
     });
@@ -67,6 +77,19 @@ describe('createCustomerAgentChatService', () => {
 
     const service = createCustomerAgentChatService({
       answerProvider,
+      planner: createScriptedPlannerModel([
+        {
+          kind: 'final',
+          reason: 'Boundary guard should answer before this plan is used.',
+          response: {
+            answer: 'planner should not be called',
+            citations: [],
+            confidence: 0,
+            intent: 'unknown',
+          },
+          route: 'clarify',
+        },
+      ]),
       retriever,
       txAnalysisProvider: undefined,
     });
@@ -82,7 +105,7 @@ describe('createCustomerAgentChatService', () => {
     });
   });
 
-  it('passes optional session context through the customer agent runtime', async () => {
+  it('keeps deprecated session context from affecting single-run planning', async () => {
     const retrieveCalls: string[] = [];
     const retriever: Retriever = {
       retrieve(question) {
@@ -103,6 +126,22 @@ describe('createCustomerAgentChatService', () => {
     const sessionContext = createInMemorySessionContextStore();
     const service = createCustomerAgentChatService({
       answerProvider,
+      planner: createScriptedPlannerModel([
+        {
+          input: { question: 'XXYY Pro 有哪些权益？' },
+          kind: 'tool',
+          reason: 'Use product docs.',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
+        },
+        {
+          input: { question: '怎么升级？' },
+          kind: 'tool',
+          reason: 'Use the current user message only.',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
+        },
+      ]),
       retriever,
       sessionContext,
       txAnalysisProvider: undefined,
@@ -111,7 +150,7 @@ describe('createCustomerAgentChatService', () => {
     await service.ask({ channel: 'web', message: 'XXYY Pro 有哪些权益？', sessionId: 's1' });
     await service.ask({ channel: 'web', message: '怎么升级？', sessionId: 's1' });
 
-    expect(retrieveCalls.at(-1)).toBe('XXYY Pro 怎么升级？');
+    expect(retrieveCalls.at(-1)).toBe('怎么升级？');
   });
 });
 

@@ -21,10 +21,44 @@ export type {
 export { createCustomerAgentChatService } from './customer-agent-chat-service.js';
 export type { CreateCustomerAgentChatServiceOptions } from './customer-agent-chat-service.js';
 export { createCustomerAgentRuntime } from './customer-agent-runtime.js';
+export type { CreateCustomerAgentRuntimeOptions } from './customer-agent-runtime.js';
+export { createLangGraphCustomerRuntime } from './langgraph-customer-runtime.js';
 export type {
-  CreateCustomerAgentRuntimeOptions,
+  CreateLangGraphCustomerRuntimeOptions,
   CustomerAgentRuntime,
-} from './customer-agent-runtime.js';
+} from './langgraph-customer-runtime.js';
+export {
+  AGENT_MAX_STEPS_DEFAULT,
+  ALLOWED_AGENT_TOOL_NAMES,
+  AgentStateAnnotation,
+  createInitialAgentState,
+  isAllowedAgentToolName,
+  normalizeAgentRoute,
+} from './langgraph-state.js';
+export type {
+  AgentEvidence,
+  AgentMessage,
+  AgentPlan,
+  AgentPolicyDecision,
+  AgentState,
+  AgentToolCallRecord,
+  AgentToolResultRecord,
+  AllowedAgentToolName,
+  PlannerRoute,
+} from './langgraph-state.js';
+export {
+  PlannerConfigurationError,
+  PlannerModelParseError,
+  PlannerModelRequestError,
+  createOpenAiCompatiblePlannerModel,
+  createScriptedPlannerModel,
+} from './planner-model.js';
+export type {
+  OpenAiCompatiblePlannerModelOptions,
+  PlannerModel,
+  PlannerModelInput,
+  PlannerToolDescriptor,
+} from './planner-model.js';
 export { resolveFollowUp } from './follow-up-resolver.js';
 export type {
   FollowUpResolution,
