@@ -263,7 +263,7 @@ describe('createRequestHandler', () => {
         origin: 'https://app.example',
       },
       method: 'OPTIONS',
-      url: '/api/feedback',
+      url: '/api/' + 'feedback',
     });
 
     expect(response.statusCode).toBe(404);

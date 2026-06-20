@@ -176,7 +176,7 @@ export interface UpdateFileTxAnalysisReportReviewInput extends UpdateTxAnalysisR
 }
 
 const DEFAULT_REPORT_BASE_URL = '/assets';
-const DEFAULT_PG_REPORT_BASE_URL = '/api/tx-analysis/reports';
+const DEFAULT_PG_REPORT_BASE_URL = '/assets/tx-analysis-reports';
 const EVM_TX_HASH_PATTERN = /^0x[a-f0-9]{64}$/iu;
 const MAX_REPORT_QUERY_LIMIT = 100;
 const REPORT_INDEX_FILE_NAME = 'tx-analysis-report-index.jsonl';
