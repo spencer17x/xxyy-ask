@@ -70,31 +70,30 @@ const attachmentSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
-const chatResponseSchema = z.object({
-  agentRoute: z
-    .enum(['boundary', 'clarify', 'preference_capture', 'product_answer', 'transaction_analysis'])
-    .optional(),
-  answer: z.string(),
-  attachments: z.array(attachmentSchema).optional(),
-  citations: z.array(citationSchema).default([]),
-  confidence: z.number(),
-  intent: z.enum([
-    'product_qa',
-    'how_to',
-    'tx_sandwich_detection',
-    'realtime_account_query',
-    'mev_or_chain_forensics',
-    'investment_advice',
-    'unknown',
-  ]),
-  tokenUsage: z
-    .object({
-      completionTokens: z.number().optional(),
-      promptTokens: z.number().optional(),
-      totalTokens: z.number(),
-    })
-    .optional(),
-});
+const chatResponseSchema = z
+  .object({
+    answer: z.string(),
+    attachments: z.array(attachmentSchema).optional(),
+    citations: z.array(citationSchema).default([]),
+    confidence: z.number(),
+    intent: z.enum([
+      'product_qa',
+      'how_to',
+      'tx_sandwich_detection',
+      'realtime_account_query',
+      'mev_or_chain_forensics',
+      'investment_advice',
+      'unknown',
+    ]),
+    tokenUsage: z
+      .object({
+        completionTokens: z.number().optional(),
+        promptTokens: z.number().optional(),
+        totalTokens: z.number(),
+      })
+      .optional(),
+  })
+  .strict();
 
 const plannerToolPlanSchema = z.object({
   input: z.unknown(),
@@ -131,8 +130,8 @@ export class PlannerModelParseError extends Error {
 }
 
 export class PlannerModelRequestError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options: { cause?: unknown } = {}) {
+    super(message, options);
     this.name = 'PlannerModelRequestError';
   }
 }
@@ -265,15 +264,28 @@ async function fetchWithTimeout(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.requestTimeoutMs);
   try {
-    const response = await fetchImpl(endpoint, {
-      body: JSON.stringify(options.body),
-      headers: {
-        authorization: `Bearer ${options.apiKey}`,
-        'content-type': 'application/json',
-      },
-      method: 'POST',
-      signal: controller.signal,
-    });
+    let response: Response;
+    try {
+      response = await fetchImpl(endpoint, {
+        body: JSON.stringify(options.body),
+        headers: {
+          authorization: `Bearer ${options.apiKey}`,
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new PlannerModelRequestError(
+          `Planner request timed out after ${options.requestTimeoutMs}ms.`,
+          { cause: error },
+        );
+      }
+      throw new PlannerModelRequestError(`Planner request failed: ${String(error)}`, {
+        cause: error,
+      });
+    }
     if (!response.ok) {
       throw new PlannerModelRequestError(`Planner request failed with status ${response.status}.`);
     }
