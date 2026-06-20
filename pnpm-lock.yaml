@@ -47,9 +47,6 @@ importers:
       '@xxyy/knowledge':
         specifier: workspace:*
         version: link:../../packages/knowledge
-      '@xxyy/knowledge-ops':
-        specifier: workspace:*
-        version: link:../../packages/knowledge-ops
       '@xxyy/rag-core':
         specifier: workspace:*
         version: link:../../packages/rag-core
