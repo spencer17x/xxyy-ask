@@ -4,11 +4,13 @@
 
 ## 项目目标
 
-这是 XXYY 产品客服 Agentic RAG 系统。当前阶段只做产品问答客服：
+这是 XXYY 客服 Agentic RAG 系统。当前阶段使用 LangGraph JS 作为 Agent Runtime：产品问题调用 Product RAG，交易哈希调用交易分析工具，未来扩展交易池子查询和链上分析工具。系统会自动根据官方 X / Twitter 和产品文档更新知识库。
 
-- 可以回答 XXYY 产品功能、配置步骤、权益说明、文档更新等问题。
-- 不直接查询用户账户、订单、钱包余额、交易记录。
-- 不查询用户账户、余额、订单或私有交易记录。交易哈希夹子检测已有 MVP 路由：默认未接数据源时返回“暂未启用”，`TX_ANALYSIS_PROVIDER=mock` 只用于 fixture 演示，`TX_ANALYSIS_PROVIDER=browser` 使用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页，当前支持 Solana，并已接入 Base、Ethereum、BSC 浏览器取证初版。
+当前边界：
+
+- 可以回答 XXYY 产品功能、配置步骤、权益说明和官方更新相关问题。
+- 可以把公开交易哈希或受支持 explorer 链接路由到交易分析工具。
+- 不直接查询用户账户、订单、钱包余额或私有交易记录。
 - 不提供投资建议。
 - 对边界问题必须返回边界回复，不要编造实时数据。
 
@@ -17,6 +19,7 @@
 - TypeScript ESM
 - pnpm workspace
 - Vitest
+- LangGraph JS
 - Node `fetch`
 - Postgres + pgvector
 - OpenAI-compatible `/embeddings` 和 `/chat/completions`
@@ -25,18 +28,18 @@
 
 - `packages/shared`：共享类型和聊天契约。
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、本地索引、OpenAI embedding provider。
-- `packages/rag-core`：意图分类、检索接口、pgvector store、反馈 store、LLM answer provider、评测。
+- `packages/rag-core`：意图分类、检索接口、pgvector store、LLM answer provider、交易分析和配置错误类型。
 - `packages/agent-core`：LangGraph 客服 Agent runtime、planner、tool registry 和产品/交易工具定义。
 - `packages/product-qa-mcp`：产品问答 MCP stdio server。
 - `packages/tx-analysis-mcp`：交易分析 MCP stdio server。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:ask`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/web`：静态聊天 UI。
-- `docs/product-features`：知识库种子文档。
+- `docs/product-features`：知识库种子文档和静态资产。
 
 ## 运行模式
 
-当前项目只保留正式 Agentic RAG 路径：Postgres + pgvector + OpenAI-compatible embeddings。
+当前项目保留正式 Agentic RAG 路径：Postgres + pgvector + OpenAI-compatible embeddings/chat。
 
 ```bash
 POSTGRES_DB=xxyy_ask
@@ -45,6 +48,7 @@ POSTGRES_PORT=5432
 POSTGRES_USER=xxyy
 POSTGRES_PASSWORD=replace_me_with_a_strong_password
 OPENAI_API_KEY=...
+OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=...
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_REQUEST_TIMEOUT_MS=30000
@@ -70,17 +74,28 @@ API_RATE_LIMIT_WINDOW_MS=60000
 ```
 
 `pnpm start`、`pnpm sync` 和 `pnpm rag:*` 会读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
-主入口是 `pnpm start`、`pnpm sync` 和 `pnpm check`：本地 `pnpm start` 会尝试启动本地 pgvector、检查知识库并在空库时 ingest，然后执行增量 `x:scrape` 和 `rag:sync:x`，最后启动 API + Web；线上用 `NODE_ENV=production pnpm start` 会跳过本地 Docker，但同样会做知识库检查和增量同步；完全跳过启动前同步的内部入口是 `pnpm start:service`。线上定时增量更新用 `pnpm sync`，低频全量重建用 `pnpm sync -- --full`。
-OpenAI-compatible 请求默认 30 秒超时、重试 1 次；需要调整时再配置 `OPENAI_REQUEST_TIMEOUT_MS` 和 `OPENAI_MAX_RETRIES`。
-交易分析默认只使用规则化 SandwichAnalyzer；规则化判断会排除复用目标交易哈希的候选腿，也会排除前腿和后腿哈希相同的重复行，EVM 交易哈希大小写无关，Solana 签名按原始字符串精确匹配；配置 `TX_ANALYSIS_REVIEWER=openai` 后，会复用 OpenAI-compatible chat completion 对已抓取的交易窗口和规则证据做模型复核，并兼容 `confidence`、`confidenceScore`、`confidence_score`、`score`、`probability` 和 `likelihood` 等常见置信度字段。模型复核不可用、超时或返回不可解析内容时，交易分析会保留规则结果，不应让可选复核影响基础取证链路；如果模型复核返回 `sandwiched`，但规则结果没有可复查的前置和后置交易，系统也会保留规则 verdict 并写入模型复核 warning，避免生成无前后腿证据的被夹结论。
-交易分析的 success evidence 写入成功报告前会 trim label/detail 并丢弃空白项。relatedTransactions 写入成功/失败报告前会清洗 hash、summary、explorerUrl、timestamp 和 traderAddress，丢弃空白 hash，并和最终客服回答、文件/Postgres 报告列表读取历史 JSON/DB 行一样按交易哈希去重；同一哈希重复出现时保留角色优先级更高的记录，完整 EVM 交易哈希按大小写无关归并，Solana 等非 EVM 哈希保持原始精确匹配。浏览器取证成功结果会保留交易窗口前后文，规则命中的前置/用户/后置腿标为 `front_run`、`user`、`back_run`，其它窗口交易标为 `related`。最终客服回答会展示相关交易可用的方向、交易者、时间和 explorer 复查链接，空白字段不会渲染给用户。失败回答的链探测摘要、失败报告写入 JSON/Postgres、文件/Postgres 报告列表读取历史行时都会 trim probeAttempts 错误信息并丢弃空白 attempt；如果清洗后 metadata 已没有任何字段，会省略 metadata 空对象，避免裸 EVM 自动探测失败队列出现空白复查证据。
-API 的 `GET /health` 是轻量存活检查；`GET /health/deep` 是生产依赖自检，会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM，失败时返回 503 和分项原因。
-通过 `pnpm start` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、agentRoute、引用数、耗时、状态码和错误码；`agentRoute` 表示自动回答总调度内部路线，只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文。
-API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
-`GET /api/ops/summary` 是受保护的运维摘要接口，默认关闭；配置 `API_OPS_TOKEN` 后才可用。请求必须带 `Authorization: Bearer <token>` 或 `x-ops-token`，响应聚合 deep health、知识库 stats 和反馈 stats。`GET /ops` 提供同源运维页，但页面不内置 token，需要手动输入。不要把 `API_OPS_TOKEN` 暴露到公开前端。
-`API_TOOL_AUDIT_PROMPT_TOKEN_USD_PER_1M` 和 `API_TOOL_AUDIT_COMPLETION_TOKEN_USD_PER_1M` 可配置当前供应商/模型的 prompt 与 completion 每百万 token 美元单价；`API_TOOL_AUDIT_COST_BUDGET_USD` 和 `API_TOOL_AUDIT_COST_WARNING_RATIO` 用于 `/api/ops/summary` 和 `/ops` 的最近 24 小时成本估算与预算状态告警，不会改变实际模型调用。
-Web UI 会把每条回答后的正负反馈提交到 `POST /api/feedback`，API 写入 Postgres `rag_feedback` 表，不记录明文 `userId`。反馈表迁移由 `pnpm rag:ingest` 完成。
-交易分析报告默认使用 `TX_ANALYSIS_REPORT_STORE=file` 写入静态资产目录的 JSON/JSONL；文件模式和 Postgres 模式都支持通过受保护接口保存处理状态、备注和负责人。需要数据库化复查时配置 `TX_ANALYSIS_REPORT_STORE=postgres`，成功/失败报告会写入 `tx_analysis_reports` 表，`/api/tx-analysis/reports`、`/api/tx-analysis/reports/summary`、`/api/tx-analysis/reports/:id` 和 `/ops` 会从同一个报告 store 读取。表迁移由 `pnpm rag:migrate`、`pnpm rag:ingest` 或 `pnpm sync` 完成。
+
+主入口：
+
+- `pnpm start`：本地会尝试启动 pgvector，检查知识库，空库时 ingest，然后执行增量 X / Twitter 抓取和 `rag:sync:x`，最后启动 API + Web。
+- `NODE_ENV=production pnpm start`：生产模式跳过本地 Docker，但同样做知识库检查和启动前增量同步。
+- `pnpm sync`：线上定时增量更新官方 X / Twitter 和知识库。
+- `pnpm sync -- --full`：低频全量抓取 X / Twitter 并重建知识库。
+- `pnpm check`：lint、format check、typecheck、tests。
+
+交易分析默认使用规则化 SandwichAnalyzer。`TX_ANALYSIS_PROVIDER=none` 时返回暂未启用；`mock` 只用于 fixture 演示；`browser` 使用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页，当前支持 Solana，并已接入 Base、Ethereum、BSC 浏览器取证初版。`TX_ANALYSIS_REVIEWER=openai` 会复用 OpenAI-compatible chat completion 对已抓取的交易窗口和规则证据做可选复核；复核不可用时必须保留规则结果。
+
+API 保留的公开服务面：
+
+- `GET /`：Web UI。
+- `GET /health`：轻量存活检查。
+- `GET /health/deep`：生产依赖自检，检查必填配置、pgvector 知识库、embedding 模型和 chat LLM，失败时返回 `503` 和分项原因。
+- `POST /api/chat`：非流式客服问答。
+- `POST /api/chat/stream`：流式客服问答。
+- `POST /api/tx-analysis`：直接交易分析入口，返回与聊天入口一致的客服响应形态。
+- `GET /assets/*`：产品视频、交易分析截图和本地静态报告等资产。
+
+API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat`、`/api/chat/stream` 和 `/api/tx-analysis` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 
 ## 常用验证
 
@@ -90,30 +105,30 @@ Web UI 会把每条回答后的正负反馈提交到 `POST /api/feedback`，API 
 pnpm check
 ```
 
-更新产品文档、X 推文或检索/回答逻辑后，优先跑：
+更新产品文档、X / Twitter 数据或检索/回答逻辑后，优先跑：
 
 ```bash
 pnpm sync
 pnpm check
 ```
 
-如果改了正式文档结构、需要重建全部知识库，或要做发布前全量确认，再跑 `pnpm sync -- --full`。
-
-`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：读取当前 X 文档和 JSONL，按 DB 里的 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧 chunk。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 用于查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
-
-`pnpm x:scrape` 默认是增量抓取：读取 `docs/product-features/sources/usexxyyio-x-posts.jsonl` 的最新推文时间，只获取该时间之后的 @useXXYYio 公开主页更新并合并写回；`pnpm x:scrape -- --full` 才会全量重抓。
-
-`pnpm sync` 是知识库更新流水线，默认执行增量 `x:scrape` 和 `rag:sync:x`。用 `pnpm sync -- --skip-scrape` 跳过 X 抓取，用 `pnpm sync -- --full` 执行全量 `x:scrape -- --full` 和 `rag:ingest`。
-
-`pnpm ops:smoke` 用于检查已经启动的 API 服务，默认检查 `/health` 和 `/health/deep`。线上检查可传 `--base-url` 和 `--ops-token`，带 `--ops-token` 时会校验 ops summary 的 `txAnalysisRuntime` 包含 provider、reviewer、报告 store、浏览器并发、重试、超时、headless 模式和截图 URL 前缀；加 `--chat` 会额外调用一次 `/api/chat` 并校验回答和 citations；加 `--tx-analysis --tx-hash <hash-or-explorer-url> --tx-chain base|ethereum|bsc|solana|unknown` 会额外调用 `/api/tx-analysis` 并校验返回交易分析 intent。真实 browser provider 验收时可再加 `--tx-require-screenshot --tx-require-report`，要求返回图片附件和报告链接；加 `--tx-verify-assets` 会进一步 GET 截图和报告链接，并要求截图响应是 `image/*` 且正文是非空的 PNG/JPEG/WebP/GIF/SVG 图片内容，校验报告 JSON 至少包含 `version: 1`、`status`、`reference` 和成功/失败正文，同时确认报告 reference 与 success result 都匹配本次请求的交易哈希和显式链，success result 包含 verdict、confidence、summary、evidence、relatedTransactions、analyzedAt、交易浏览器 URL 和 XXYY 池子页 URL，relatedTransactions 里有用户交易、没有重复交易哈希（EVM 大小写无关），且每条相关交易都有有效 explorer URL，`sandwiched` 结论还必须同时包含前置和后置交易，failure report 包含受支持的 reason 和非空 message，`target_trade_not_found` / `screenshot_unavailable` 失败报告还必须在 metadata 中包含交易浏览器 URL 和 XXYY 池子页 URL，failure metadata 的 relatedTransactions 也不能出现重复交易哈希，且 success result 或 failure metadata 的截图 URL 与返回图片附件一致，确认静态资产或报告详情可打开且不是空响应；多链真实样本验收可用 `--tx-samples <file.json>` 或 `TX_ANALYSIS_SMOKE_SAMPLES_FILE` 批量跑 Solana/Base/Ethereum/BSC 和裸 EVM 自动识别 Base/Ethereum/BSC 样本，并可配合 `--tx-verify-assets` 复用严格资产和报告校验；批量验收可加 `--continue-on-error` 或 `API_SMOKE_CONTINUE_ON_ERROR=true`，单条样本失败后继续执行后续样本并汇总失败数量；样本可声明 `expectedStatus`、`expectedChain`、`expectedDataSource`、`expectedVerdict`、`expectedConfidence`、`expectedAnalysisRuleVersion`、`expectedFailureReason`、`expectedFailureMessage`、`expectedProbeAttempts`、`expectedExplorerUrl`、`expectedXxyyPoolUrl`、`expectedPoolAddress`、`expectedContractAddress`、`expectedRouterAddress`、`expectedScreenshotTargetRowMarked`、`expectedTargetTradeSide`、`expectedTargetTraderAddress`、`expectedTransactionTime`、`expectedRelatedTransactionCount`、`expectedRelatedTransactionRoles` 或 `expectedRelatedTransactions` 固定预期结果、最终归档链、数据源、判断结论、0-1 置信度、判断规则版本、失败根因、失败报告文案、裸 EVM 自动探测过程、实际复查入口、关键解析字段、路由合约、截图目标行标记状态、目标交易方向、交易时间和前置/用户/后置/上下文交易窗口，`expectedChain` 可配合 `chain: "unknown"` 验证裸 EVM 哈希最终自动识别到 Base/Ethereum/BSC 哪条链，`expectedDataSource: "browser"` 可防止真实样本误走 fixture 演示路径，`expectedProbeAttempts` 每项可声明 chain、reason 和可选 message，`expectedRelatedTransactionCount` 可固定窗口交易条数，`expectedRelatedTransactionRoles` 可固定 `front_run`、`user`、`back_run`、`related` 的顺序，`expectedRelatedTransactions` 每项还可声明 `explorerUrl`、`side`、`traderAddress` 与 `timestamp` 固定相关交易细节，交易复查链接字段也兼容 `explorer_url`、`explorerLink`、`explorer_link`、`txUrl`、`tx_url`、`txLink`、`tx_link`、`transactionUrl`、`transaction_url`、`transactionLink`、`transaction_link`、`url`、`link` 和 `href`，且必须是 HTTP(S) URL，role 支持 `front_run`、`user`、`back_run` 和 `related`；如果 probe chain/reason/message 不匹配、expectedChain 不匹配、related transaction 数量或角色顺序不匹配，或同一 related transaction hash 和 role 已命中但细节字段不匹配，smoke 会返回字段级错误；也可用 `TX_ANALYSIS_SMOKE_TX_HASH`、`TX_ANALYSIS_SMOKE_CHAIN`、`TX_ANALYSIS_SMOKE_REQUIRE_SCREENSHOT=true`、`TX_ANALYSIS_SMOKE_REQUIRE_REPORT=true` 和 `TX_ANALYSIS_SMOKE_VERIFY_ASSETS=true` 提供参数。
-
-聚焦测试可以按文件运行：
+如果改了正式文档结构、需要重建全部知识库，或要做发布前全量确认，再跑：
 
 ```bash
-pnpm test apps/cli/src/index.test.ts
-pnpm test apps/api/src/index.test.ts
-pnpm test packages/rag-core/src/pgvector-store.test.ts
+pnpm sync -- --full
 ```
+
+命令说明：
+
+- `pnpm rag:ingest`：执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run。
+- `pnpm rag:sync:x`：同步官方 X / Twitter 更新，只 embedding 新增或变更的 X chunks，不会 prune 旧 chunk。
+- `pnpm rag:migrate`：只执行数据库迁移，不调用 embedding 或 LLM。
+- `pnpm rag:stats`：查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
+- `pnpm rag:ask -- "问题"`：命令行临时调用客服 Agent。
+- `pnpm agent:smoke`：检查已启动服务的 health、产品问题路线和边界路线；可用 `API_SMOKE_TX_HASH` 额外检查交易分析路线。
+- `pnpm product:mcp`：启动产品问答 MCP stdio server。
+- `pnpm tx:mcp`：启动交易分析 MCP stdio server。
+- `TX_ANALYSIS_PROVIDER=mock pnpm tx:mcp:smoke`：跑交易分析 MCP 样本验收，可传 `-- --tx-samples <file>`。
 
 关键行为验证：
 
@@ -133,7 +148,7 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
 - 不要提交 `.rag/`、`.env`、数据库数据或密钥。
 - 不要在 `docker-compose.yml` 写死数据库密码；使用 `.env` 注入。
 - 不要把真实 API key 写入测试、README 或日志。
-- 生产 API 服务端不负责迁移，迁移和写库由 `pnpm sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成；本地 `pnpm start` 的启动脚本可以为空知识库做首次 bootstrap。
+- 生产 API 服务端不负责迁移；迁移和写库由 `pnpm sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成。本地 `pnpm start` 可以为空知识库做首次 bootstrap。
 - 新增行为需要加测试；风险较高的改动跑 `pnpm check`。
 - 对外错误信息应清晰区分：
   - LLM 配置缺失

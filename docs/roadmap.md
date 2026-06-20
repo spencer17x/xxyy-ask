@@ -1,24 +1,24 @@
 # Roadmap
 
-本文档记录 XXYY 客服应用的后续工程方向。用户和运营可感知功能状态见 [feature-status.md](feature-status.md)。
+本文档记录 LangGraph Agentic RAG 迁移后的工程方向。当前功能状态见 [feature-status.md](feature-status.md)。
 
 ## Completed First Slice
 
-- [x] 自动回答总调度第一版：`CustomerAgentRuntime` 已统一澄清问题、产品问答、交易分析、边界回复和工具降级，不依赖用户侧人工接管。
-- [x] 多轮会话理解第一版：API/Web/CLI/Agent Runtime 已支持基于 `sessionId` 的上一轮引用、省略指代解析和非敏感产品偏好，不保存明文用户身份。
-- [x] 回答质量策略第一版：低置信度、无引用、工具不可用、实时私有数据请求、投资建议请求和负反馈会走一致的自动降级、拒答或质量信号路径，并已在 ops 暴露质量趋势、质量缺口聚类和 eval 失败跨运行聚类。
-- [x] 知识缺口闭环第一版：负反馈、未知意图、会话上下文缺失、工具失败和部分质量信号可转换为待审候选或 eval case，继续走审核、发布和 gate 流程。
+- [x] LangGraph 客服 Runtime：`CustomerAgentRuntime` 已迁移到 LangGraph JS，统一处理产品问答、交易分析、边界回复、工具降级和最终回答合成。
+- [x] Product RAG：产品问题基于 Postgres + pgvector 检索产品文档和官方 X / Twitter 更新，再调用 OpenAI-compatible chat completion 生成带引用回答。
+- [x] 官方 X / Twitter 同步：`pnpm sync` 做增量抓取和入库，`pnpm sync -- --full` 做低频全量重建。
+- [x] 交易哈希工具路线：公开交易哈希或受支持 explorer 链接可以通过聊天入口或 `POST /api/tx-analysis` 进入交易分析工具。
+- [x] MCP 第一片：产品问答 MCP 和交易分析 MCP 已复用同一套 agent-core 工具定义。
+- [x] 服务基础面：Web UI、health/deep health、chat/stream、direct transaction analysis、static assets、请求体限制、基础限流和 CORS 配置已保留。
 
 ## Planned Work
 
-- [ ] 多轮会话理解增强：补会话摘要、更多省略指代样例、多渠道上下文一致性，以及上下文保留/删除策略。
-- [ ] 自动回答验收与观测：补 API/Web/CLI/MCP 端到端 smoke、自动路由指标、外部告警推送和渠道一致性回归。
-- [ ] 回答质量后台：继续把低质量回答、工具失败和知识缺口做更完整的队列可视化、自动重跑、外部告警推送和样本补充。
-- [ ] 知识缺口闭环增强：补候选合并、失败修正、回滚工作台、自动回归重跑和更多 targeted eval 生成策略。
-- [ ] Telegram 知识学习闭环增强：在已完成的 `@xxyy/knowledge-ops`、审核 API、approved-only 发布入口、第一版 `rag:gate:knowledge`、`knowledge-ops:mcp`、`skills/xxyy-knowledge-ops`、run 追踪和知识运营 Agent Runtime 上，补更细的权限角色、审计查询/可视化、候选合并和失败修正/回滚工作台。
-- [ ] 交易分析多链稳定性：继续补 Base、Ethereum、BSC 真实样本，覆盖更多 explorer 页面结构、XXYY 搜索结果和池子交易窗口。
-- [ ] 自动复查和质量队列：把交易分析失败、低质量回答和知识缺口统一沉淀为内部质量队列，用于自动重跑、报告聚合、样本补充和知识修正。
-- [ ] 多渠道接入：支持 Telegram、Discord、站内 widget、移动端等入口，所有渠道复用同一个自动回答核心。
-- [ ] 工具权限与审计：为回答工具、链上公开查询、知识运营和后台操作增加权限控制与审计日志。
-- [ ] 安全与隐私增强：完善敏感信息脱敏、prompt injection 防护、数据保留和删除策略。
-- [ ] 质量与成本观测：已有工具耗时、降级原因、用户反馈、质量趋势、模型 token 使用量、配置化成本估算、预算状态和机器可读告警观测；继续补检索命中明细和外部告警推送。
+- [ ] 池子查询工具：设计公开池子查询 tool schema、权限边界、回答格式和 MCP 复用方式，并接入 LangGraph planner。
+- [ ] 链上分析工具：在单笔交易哈希分析之外，扩展公开链上分析能力；保持不查询用户私有账户或订单数据。
+- [ ] 交易分析真实样本扩展：继续补 Solana、Base、Ethereum、BSC 样本，覆盖更多 explorer 页面结构、备用浏览器、XXYY 池子搜索和截图场景。
+- [ ] Product RAG 质量增强：补充产品文档结构、X / Twitter 更新清洗、引用稳定性和回归样本。
+- [ ] Agent planning 增强：让 planner 在产品问答、交易分析、未来池子查询和链上分析之间做更稳的工具选择，并保留清晰边界回复。
+- [ ] MCP 使用文档：补外部 Agent 如何调用 `product:mcp` 与 `tx:mcp` 的示例、错误处理和边界说明。
+- [ ] 部署验收增强：围绕 `pnpm agent:smoke` 增加更多产品问题、边界问题、流式回答和交易分析路线样本。
+- [ ] 多渠道接入：复用同一个客服 Agent runtime，接入更多客服入口，同时保持隐私边界和日志脱敏。
+- [ ] 安全与隐私增强：完善 prompt injection 防护、敏感信息脱敏、数据保留和删除策略。
