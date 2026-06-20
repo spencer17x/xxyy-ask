@@ -1528,10 +1528,7 @@ describe('createPgTxAnalysisReportStore', () => {
   it('persists success and failure reports in Postgres', async () => {
     const client = new FakePgClient();
     client.queuedRows = [[{ id: 'txr_success_1' }], [{ id: 'txr_failure_1' }]];
-    const store = createPgTxAnalysisReportStore({
-      client,
-      reportBaseUrl: '/assets/tx-analysis-reports',
-    });
+    const store = createPgTxAnalysisReportStore({ client });
 
     const success = await store.writeReport({
       reference: { chain: 'solana', txHash: SOLANA_TX },
@@ -1575,8 +1572,8 @@ describe('createPgTxAnalysisReportStore', () => {
       reference: { chain: 'solana', txHash: SOLANA_TX },
     });
 
-    expect(success.reportUrl).toBe('/assets/tx-analysis-reports/txr_success_1');
-    expect(failure.reportUrl).toBe('/assets/tx-analysis-reports/txr_failure_1');
+    expect(success.reportUrl).toBe('tx-analysis-report:txr_success_1');
+    expect(failure.reportUrl).toBe('tx-analysis-report:txr_failure_1');
     expect(client.queries[0]?.sql).toContain('insert into tx_analysis_reports');
     expect(client.queries[0]?.values).toEqual([
       expect.stringMatching(/^txr_/u),
@@ -1584,7 +1581,7 @@ describe('createPgTxAnalysisReportStore', () => {
       'solana',
       'success',
       expect.any(String),
-      '/assets/tx-analysis-reports',
+      'tx-analysis-report:',
       '/assets/tx-analysis-solana-window.png',
       `https://solscan.io/tx/${SOLANA_TX}`,
       'https://www.xxyy.io/sol/Pool1111111111111111111111111111111111111111',
@@ -1606,7 +1603,7 @@ describe('createPgTxAnalysisReportStore', () => {
       'solana',
       'failure',
       expect.any(String),
-      '/assets/tx-analysis-reports',
+      'tx-analysis-report:',
       '/assets/tx-analysis-failure-solana.png',
       `https://solscan.io/tx/${SOLANA_TX}`,
       'https://www.xxyy.io/sol/Pool1111111111111111111111111111111111111111',

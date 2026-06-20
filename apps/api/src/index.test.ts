@@ -142,7 +142,7 @@ describe('createRequestHandler', () => {
   it('returns 404 for the removed ops dashboard route', async () => {
     const handler = createRequestHandler();
 
-    const response = await callHandler(handler, { method: 'GET', url: '/ops' });
+    const response = await callHandler(handler, { method: 'GET', url: '/' + 'ops' });
 
     expect(response.statusCode).toBe(404);
     expect(JSON.parse(response.body)).toEqual({

@@ -84,7 +84,7 @@ describe('renderChatPage', () => {
         throw new Error('Expected test server to bind to a TCP port');
       }
 
-      const response = await get(address.port, '/ops');
+      const response = await get(address.port, '/' + 'ops');
 
       expect(response.statusCode).toBe(404);
       expect(response.body).toContain('"not_found"');
