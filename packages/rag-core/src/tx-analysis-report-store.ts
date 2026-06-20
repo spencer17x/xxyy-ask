@@ -1113,7 +1113,8 @@ function reviewStatusForSummary(entry: TxAnalysisReportIndexEntry): TxAnalysisRe
 }
 
 async function insertPgReport(client: PgClientLike, input: InsertPgReportInput): Promise<string> {
-  const result = await client.query<{ id: string }>(
+  const reportUrl = createReportUrl(input.reportBaseUrl, input.id);
+  await client.query<{ id: string }>(
     `
     insert into tx_analysis_reports (
       id,
@@ -1143,7 +1144,7 @@ async function insertPgReport(client: PgClientLike, input: InsertPgReportInput):
       $3,
       $4,
       $5::timestamptz,
-      $6 || '/' || $1,
+      $6,
       $7,
       $8,
       $9,
@@ -1167,7 +1168,7 @@ async function insertPgReport(client: PgClientLike, input: InsertPgReportInput):
       input.chain,
       input.status,
       input.generatedAt,
-      input.reportBaseUrl,
+      reportUrl,
       input.screenshotUrl ?? null,
       input.explorerUrl ?? null,
       input.xxyyPoolUrl ?? null,
@@ -1184,8 +1185,7 @@ async function insertPgReport(client: PgClientLike, input: InsertPgReportInput):
       JSON.stringify(input.reportDocument),
     ],
   );
-  const insertedId = result.rows[0]?.id ?? input.id;
-  return createReportUrl(input.reportBaseUrl, insertedId);
+  return reportUrl;
 }
 
 function createReportUrl(reportBaseUrl: string, id: string): string {

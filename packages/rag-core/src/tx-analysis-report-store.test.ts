@@ -1527,7 +1527,6 @@ describe('createPgTxAnalysisReportStore', () => {
 
   it('persists success and failure reports in Postgres', async () => {
     const client = new FakePgClient();
-    client.queuedRows = [[{ id: 'txr_success_1' }], [{ id: 'txr_failure_1' }]];
     const store = createPgTxAnalysisReportStore({ client });
 
     const success = await store.writeReport({
@@ -1572,16 +1571,23 @@ describe('createPgTxAnalysisReportStore', () => {
       reference: { chain: 'solana', txHash: SOLANA_TX },
     });
 
-    expect(success.reportUrl).toBe('tx-analysis-report:txr_success_1');
-    expect(failure.reportUrl).toBe('tx-analysis-report:txr_failure_1');
+    const successValues = client.queries[0]?.values;
+    const failureValues = client.queries[1]?.values;
+    if (successValues === undefined || failureValues === undefined) {
+      throw new Error('expected success and failure insert queries');
+    }
+    const successReportId = successValues[0] as string;
+    const failureReportId = failureValues[0] as string;
+    expect(success.reportUrl).toBe(`tx-analysis-report:${successReportId}`);
+    expect(failure.reportUrl).toBe(`tx-analysis-report:${failureReportId}`);
     expect(client.queries[0]?.sql).toContain('insert into tx_analysis_reports');
-    expect(client.queries[0]?.values).toEqual([
+    expect(successValues).toEqual([
       expect.stringMatching(/^txr_/u),
       SOLANA_TX,
       'solana',
       'success',
       expect.any(String),
-      'tx-analysis-report:',
+      `tx-analysis-report:${successReportId}`,
       '/assets/tx-analysis-solana-window.png',
       `https://solscan.io/tx/${SOLANA_TX}`,
       'https://www.xxyy.io/sol/Pool1111111111111111111111111111111111111111',
@@ -1597,13 +1603,13 @@ describe('createPgTxAnalysisReportStore', () => {
       true,
       expect.any(String),
     ]);
-    expect(client.queries[1]?.values).toEqual([
+    expect(failureValues).toEqual([
       expect.stringMatching(/^txr_/u),
       SOLANA_TX,
       'solana',
       'failure',
       expect.any(String),
-      'tx-analysis-report:',
+      `tx-analysis-report:${failureReportId}`,
       '/assets/tx-analysis-failure-solana.png',
       `https://solscan.io/tx/${SOLANA_TX}`,
       'https://www.xxyy.io/sol/Pool1111111111111111111111111111111111111111',
