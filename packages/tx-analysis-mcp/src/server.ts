@@ -1,13 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import {
-  TX_ANALYSIS_TOOL_NAMES,
-  analyzeTransactionInputSchema,
-  sanitizeSessionText,
-  type QualitySignalChannel,
-  type QualitySignalSink,
-} from '@xxyy/agent-core';
-import type { AnalyzeTransactionOutput, TxAnalysisUnavailableReason } from '@xxyy/rag-core';
+import { TX_ANALYSIS_TOOL_NAMES, analyzeTransactionInputSchema } from '@xxyy/agent-core';
+import type { AnalyzeTransactionOutput } from '@xxyy/rag-core';
 
 import type { TxAnalysisToolHandlers } from './tools.js';
 
@@ -23,7 +17,6 @@ export const TX_ANALYSIS_MCP_INSTRUCTIONS = [
 
 export interface CreateTxAnalysisMcpServerOptions {
   handlers: TxAnalysisToolHandlers;
-  qualitySignals?: QualitySignalSink;
 }
 
 export function createTxAnalysisMcpServer(options: CreateTxAnalysisMcpServerOptions): McpServer {
@@ -47,35 +40,14 @@ export function createTxAnalysisMcpServer(options: CreateTxAnalysisMcpServerOpti
     },
     async ({ chain, channel, txHash }) => {
       let output: AnalyzeTransactionOutput;
-      let qualitySignalRecorded = false;
       try {
         output = await options.handlers.analyzeTransaction({
           ...(chain === undefined ? {} : { chain }),
           ...(channel === undefined ? {} : { channel }),
           txHash,
         });
-      } catch (error) {
-        const failureOutput = createProviderUnavailableOutput();
-        output = failureOutput;
-        recordTxAnalysisQualitySignal(options.qualitySignals, {
-          answer: failureOutput.failure.message,
-          channel: toQualitySignalChannel(channel),
-          chain,
-          errorCode: errorCodeFrom(error),
-          reason: 'tool_failure',
-          txHash,
-        });
-        qualitySignalRecorded = true;
-      }
-      if (!qualitySignalRecorded && output.status === 'failure') {
-        recordTxAnalysisQualitySignal(options.qualitySignals, {
-          answer: output.failure.message,
-          channel: toQualitySignalChannel(channel),
-          chain,
-          errorCode: output.failure.reason,
-          reason: output.failure.reason,
-          txHash,
-        });
+      } catch {
+        output = createProviderUnavailableOutput();
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
@@ -95,45 +67,4 @@ function createProviderUnavailableOutput(): AnalyzeTransactionFailureOutput {
     },
     status: 'failure',
   };
-}
-
-function recordTxAnalysisQualitySignal(
-  qualitySignals: QualitySignalSink | undefined,
-  input: {
-    answer: string;
-    channel: QualitySignalChannel;
-    chain: string | undefined;
-    errorCode: string;
-    reason: 'tool_failure' | TxAnalysisUnavailableReason;
-    txHash: string;
-  },
-): void {
-  qualitySignals?.record({
-    answer: sanitizeSessionText(input.answer),
-    channel: input.channel,
-    errorCode: input.errorCode,
-    intent: 'tx_sandwich_detection',
-    reason: input.reason === 'tool_failure' ? 'tool_failure' : 'tx_analysis_failure',
-    redactedQuestion: sanitizeSessionText(
-      input.chain === undefined ? input.txHash : `${input.chain} ${input.txHash}`,
-    ),
-    sessionIdPresent: false,
-    userIdPresent: false,
-  });
-}
-
-function toQualitySignalChannel(channel: string | undefined): QualitySignalChannel {
-  if (channel === 'cli' || channel === 'telegram' || channel === 'web') {
-    return channel;
-  }
-
-  return 'agent';
-}
-
-function errorCodeFrom(error: unknown): string {
-  if (error instanceof Error && error.name.trim().length > 0) {
-    return error.name;
-  }
-
-  return 'unknown_error';
 }

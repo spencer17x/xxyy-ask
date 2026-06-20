@@ -146,8 +146,7 @@ describe('tx analysis MCP server', () => {
     }
   });
 
-  it('records quality signals for failed transaction analysis results', async () => {
-    const qualitySignals: unknown[] = [];
+  it('returns failed transaction analysis results unchanged', async () => {
     const server = createTxAnalysisMcpServer({
       handlers: {
         analyzeTransaction() {
@@ -160,11 +159,6 @@ describe('tx analysis MCP server', () => {
           });
         },
       },
-      qualitySignals: {
-        record(signal) {
-          qualitySignals.push(signal);
-        },
-      },
     });
 
     const handler = getToolHandler<{ chain?: 'base'; channel?: 'ops'; txHash: string }>(
@@ -172,33 +166,24 @@ describe('tx analysis MCP server', () => {
       'analyze_transaction',
     );
 
-    await handler({ chain: 'base', channel: 'ops', txHash: evmTx }, {});
+    const output = await handler({ chain: 'base', channel: 'ops', txHash: evmTx }, {});
 
-    expect(qualitySignals).toEqual([
-      {
-        answer: 'Transaction analysis provider is not configured.',
-        channel: 'agent',
-        errorCode: 'not_configured',
-        intent: 'tx_sandwich_detection',
-        reason: 'tx_analysis_failure',
-        redactedQuestion: 'base [evm_tx_hash]',
-        sessionIdPresent: false,
-        userIdPresent: false,
+    expect(output).toMatchObject({
+      structuredContent: {
+        failure: {
+          message: 'Transaction analysis provider is not configured.',
+          reason: 'not_configured',
+        },
+        status: 'failure',
       },
-    ]);
+    });
   });
 
-  it('returns provider_unavailable and records tool failure quality signals when analysis throws', async () => {
-    const qualitySignals: unknown[] = [];
+  it('returns provider_unavailable when analysis throws', async () => {
     const server = createTxAnalysisMcpServer({
       handlers: {
         analyzeTransaction() {
           throw new Error('browser crashed with sensitive stack');
-        },
-      },
-      qualitySignals: {
-        record(signal) {
-          qualitySignals.push(signal);
         },
       },
     });
@@ -220,17 +205,5 @@ describe('tx analysis MCP server', () => {
       },
     });
     expect(JSON.stringify(output)).not.toContain('browser crashed');
-    expect(qualitySignals).toEqual([
-      {
-        answer: 'Transaction analysis provider is temporarily unavailable.',
-        channel: 'web',
-        errorCode: 'Error',
-        intent: 'tx_sandwich_detection',
-        reason: 'tool_failure',
-        redactedQuestion: 'base [evm_tx_hash]',
-        sessionIdPresent: false,
-        userIdPresent: false,
-      },
-    ]);
   });
 });

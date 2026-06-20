@@ -65,9 +65,6 @@ importers:
       '@xxyy/knowledge':
         specifier: workspace:*
         version: link:../../packages/knowledge
-      '@xxyy/knowledge-ops':
-        specifier: workspace:*
-        version: link:../../packages/knowledge-ops
       '@xxyy/rag-core':
         specifier: workspace:*
         version: link:../../packages/rag-core
@@ -101,23 +98,6 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
-  packages/knowledge-ops: {}
-
-  packages/knowledge-ops-mcp:
-    dependencies:
-      '@modelcontextprotocol/sdk':
-        specifier: ^1.29.0
-        version: 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)
-      '@xxyy/agent-core':
-        specifier: workspace:*
-        version: link:../agent-core
-      '@xxyy/knowledge-ops':
-        specifier: workspace:*
-        version: link:../knowledge-ops
-      '@xxyy/rag-core':
-        specifier: workspace:*
-        version: link:../rag-core
-
   packages/product-qa-mcp:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -129,9 +109,6 @@ importers:
       '@xxyy/knowledge':
         specifier: workspace:*
         version: link:../knowledge
-      '@xxyy/knowledge-ops':
-        specifier: workspace:*
-        version: link:../knowledge-ops
       '@xxyy/rag-core':
         specifier: workspace:*
         version: link:../rag-core
@@ -171,9 +148,6 @@ importers:
       '@xxyy/agent-core':
         specifier: workspace:*
         version: link:../agent-core
-      '@xxyy/knowledge-ops':
-        specifier: workspace:*
-        version: link:../knowledge-ops
       '@xxyy/rag-core':
         specifier: workspace:*
         version: link:../rag-core

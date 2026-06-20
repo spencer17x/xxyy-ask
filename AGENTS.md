@@ -25,10 +25,11 @@
 
 - `packages/shared`：共享类型和聊天契约。
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、本地索引、OpenAI embedding provider。
-- `packages/knowledge-ops`：Telegram 授权采集、客服消息脱敏、候选知识挖掘、Raw Source 持久化、Candidate 待审队列和增量 cursor。
 - `packages/rag-core`：意图分类、检索接口、pgvector store、反馈 store、LLM answer provider、评测。
-- `packages/knowledge-ops-mcp`：知识运营内部 MCP stdio server，复用 agent-core 工具定义，暴露候选查询/审核、approved-only 发布、发布后 gate 和 Telegram sync。
-- `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:sync:telegram`、`rag:publish:knowledge`、`rag:gate:knowledge`、`rag:migrate`、`rag:stats`、`rag:feedback`、`rag:ask`、`rag:evaluate`。
+- `packages/agent-core`：LangGraph 客服 Agent runtime、planner、tool registry 和产品/交易工具定义。
+- `packages/product-qa-mcp`：产品问答 MCP stdio server。
+- `packages/tx-analysis-mcp`：交易分析 MCP stdio server。
+- `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:ask`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/web`：静态聊天 UI。
 - `docs/product-features`：知识库种子文档。
@@ -50,10 +51,6 @@ OPENAI_REQUEST_TIMEOUT_MS=30000
 OPENAI_MAX_RETRIES=1
 RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_ALLOWED_CHAT_IDS=
-TELEGRAM_SUPPORT_USER_IDS=
-TELEGRAM_UPDATES_LIMIT=100
 TX_ANALYSIS_PROVIDER=none
 TX_ANALYSIS_REVIEWER=none
 TX_ANALYSIS_BROWSER_HEADLESS=false
@@ -68,13 +65,8 @@ TX_ANALYSIS_SCREENSHOT_BASE_URL=/assets
 TX_ANALYSIS_SCREENSHOT_DIR=
 API_CORS_ORIGIN=
 API_MAX_BODY_BYTES=65536
-API_OPS_TOKEN=
 API_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_WINDOW_MS=60000
-API_TOOL_AUDIT_PROMPT_TOKEN_USD_PER_1M=
-API_TOOL_AUDIT_COMPLETION_TOKEN_USD_PER_1M=
-API_TOOL_AUDIT_COST_BUDGET_USD=
-API_TOOL_AUDIT_COST_WARNING_RATIO=0.8
 ```
 
 `pnpm start`、`pnpm sync` 和 `pnpm rag:*` 会读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
@@ -87,7 +79,7 @@ API 的 `GET /health` 是轻量存活检查；`GET /health/deep` 是生产依赖
 API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 `GET /api/ops/summary` 是受保护的运维摘要接口，默认关闭；配置 `API_OPS_TOKEN` 后才可用。请求必须带 `Authorization: Bearer <token>` 或 `x-ops-token`，响应聚合 deep health、知识库 stats 和反馈 stats。`GET /ops` 提供同源运维页，但页面不内置 token，需要手动输入。不要把 `API_OPS_TOKEN` 暴露到公开前端。
 `API_TOOL_AUDIT_PROMPT_TOKEN_USD_PER_1M` 和 `API_TOOL_AUDIT_COMPLETION_TOKEN_USD_PER_1M` 可配置当前供应商/模型的 prompt 与 completion 每百万 token 美元单价；`API_TOOL_AUDIT_COST_BUDGET_USD` 和 `API_TOOL_AUDIT_COST_WARNING_RATIO` 用于 `/api/ops/summary` 和 `/ops` 的最近 24 小时成本估算与预算状态告警，不会改变实际模型调用。
-Web UI 会把每条回答后的正负反馈提交到 `POST /api/feedback`，API 写入 Postgres `rag_feedback` 表，不记录明文 `userId`。反馈表迁移由 `pnpm rag:ingest` 完成，`pnpm rag:feedback` 可查看反馈数量和最近反馈明细。
+Web UI 会把每条回答后的正负反馈提交到 `POST /api/feedback`，API 写入 Postgres `rag_feedback` 表，不记录明文 `userId`。反馈表迁移由 `pnpm rag:ingest` 完成。
 交易分析报告默认使用 `TX_ANALYSIS_REPORT_STORE=file` 写入静态资产目录的 JSON/JSONL；文件模式和 Postgres 模式都支持通过受保护接口保存处理状态、备注和负责人。需要数据库化复查时配置 `TX_ANALYSIS_REPORT_STORE=postgres`，成功/失败报告会写入 `tx_analysis_reports` 表，`/api/tx-analysis/reports`、`/api/tx-analysis/reports/summary`、`/api/tx-analysis/reports/:id` 和 `/ops` 会从同一个报告 store 读取。表迁移由 `pnpm rag:migrate`、`pnpm rag:ingest` 或 `pnpm sync` 完成。
 
 ## 常用验证
@@ -107,17 +99,13 @@ pnpm check
 
 如果改了正式文档结构、需要重建全部知识库，或要做发布前全量确认，再跑 `pnpm sync -- --full`。
 
-`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：读取当前 X 文档和 JSONL，按 DB 里的 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧 chunk。`pnpm rag:sync:telegram` 用于授权 Telegram 人工客服消息增量采集：读取 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_ALLOWED_CHAT_IDS`、可选 `TELEGRAM_SUPPORT_USER_IDS` 和 `TELEGRAM_UPDATES_LIMIT`，写入 Raw Source Store，生成 `needs_review` 候选知识，并推进 getUpdates offset；该命令不会发布候选知识，也不会把未审核内容写入正式 RAG 知识库。`pnpm rag:publish:knowledge -- --id <candidate-id>` 只发布已人工审核为 `approved` 的候选，默认追加到 `docs/product-features/pages/65-reviewed-support-knowledge.md`，并把候选状态标记为 `published`。`pnpm rag:gate:knowledge -- --id <candidate-id> --fast` 只接受已 `published` 候选，执行正式 ingest/embedding，运行候选生成的 targeted eval gate，并把候选推进到 `ingested` 后标记为 `eval_passed` 或 `eval_failed`；`pnpm rag:gate:knowledge -- --approved-eval --fast` 会批量运行已 `approved` 的 eval-only 候选，不会发布或 embedding 未审核内容；未审核或未发布内容不得进入正式 RAG 知识库。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 用于查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
-
-`pnpm rag:feedback -- --rating negative --limit 25 --json` 用于导出负反馈 triage 队列，方便把低质量回答补进知识库或评测集。不要在反馈记录里写入明文用户身份或密钥。
+`pnpm rag:ingest` 会执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run，包括 run id、文档数、chunk 数、来源分布和内容指纹。`pnpm rag:sync:x` 用于 X 更新日志增量入库：读取当前 X 文档和 JSONL，按 DB 里的 chunk content hash 只 embedding 新增或变更的 X chunks，并且不会 prune 旧 chunk。`pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。`pnpm rag:stats` 用于查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 
 `pnpm x:scrape` 默认是增量抓取：读取 `docs/product-features/sources/usexxyyio-x-posts.jsonl` 的最新推文时间，只获取该时间之后的 @useXXYYio 公开主页更新并合并写回；`pnpm x:scrape -- --full` 才会全量重抓。
 
-`pnpm sync` 是知识库更新流水线，默认执行增量 `x:scrape`、`rag:sync:x`、RAG 生产检查、已审核 eval-only 候选批量 gate，最后导出负反馈 JSON 队列。用 `pnpm sync -- --skip-scrape` 跳过 X 抓取，用 `pnpm sync -- --skip-approved-eval-gate` 应急跳过已审核 eval-only 批量 gate，用 `pnpm sync -- --full` 才会执行全量 `x:scrape -- --full`、`rag:ingest` 和完整 LLM eval。
+`pnpm sync` 是知识库更新流水线，默认执行增量 `x:scrape` 和 `rag:sync:x`。用 `pnpm sync -- --skip-scrape` 跳过 X 抓取，用 `pnpm sync -- --full` 执行全量 `x:scrape -- --full` 和 `rag:ingest`。
 
 `pnpm ops:smoke` 用于检查已经启动的 API 服务，默认检查 `/health` 和 `/health/deep`。线上检查可传 `--base-url` 和 `--ops-token`，带 `--ops-token` 时会校验 ops summary 的 `txAnalysisRuntime` 包含 provider、reviewer、报告 store、浏览器并发、重试、超时、headless 模式和截图 URL 前缀；加 `--chat` 会额外调用一次 `/api/chat` 并校验回答和 citations；加 `--tx-analysis --tx-hash <hash-or-explorer-url> --tx-chain base|ethereum|bsc|solana|unknown` 会额外调用 `/api/tx-analysis` 并校验返回交易分析 intent。真实 browser provider 验收时可再加 `--tx-require-screenshot --tx-require-report`，要求返回图片附件和报告链接；加 `--tx-verify-assets` 会进一步 GET 截图和报告链接，并要求截图响应是 `image/*` 且正文是非空的 PNG/JPEG/WebP/GIF/SVG 图片内容，校验报告 JSON 至少包含 `version: 1`、`status`、`reference` 和成功/失败正文，同时确认报告 reference 与 success result 都匹配本次请求的交易哈希和显式链，success result 包含 verdict、confidence、summary、evidence、relatedTransactions、analyzedAt、交易浏览器 URL 和 XXYY 池子页 URL，relatedTransactions 里有用户交易、没有重复交易哈希（EVM 大小写无关），且每条相关交易都有有效 explorer URL，`sandwiched` 结论还必须同时包含前置和后置交易，failure report 包含受支持的 reason 和非空 message，`target_trade_not_found` / `screenshot_unavailable` 失败报告还必须在 metadata 中包含交易浏览器 URL 和 XXYY 池子页 URL，failure metadata 的 relatedTransactions 也不能出现重复交易哈希，且 success result 或 failure metadata 的截图 URL 与返回图片附件一致，确认静态资产或报告详情可打开且不是空响应；多链真实样本验收可用 `--tx-samples <file.json>` 或 `TX_ANALYSIS_SMOKE_SAMPLES_FILE` 批量跑 Solana/Base/Ethereum/BSC 和裸 EVM 自动识别 Base/Ethereum/BSC 样本，并可配合 `--tx-verify-assets` 复用严格资产和报告校验；批量验收可加 `--continue-on-error` 或 `API_SMOKE_CONTINUE_ON_ERROR=true`，单条样本失败后继续执行后续样本并汇总失败数量；样本可声明 `expectedStatus`、`expectedChain`、`expectedDataSource`、`expectedVerdict`、`expectedConfidence`、`expectedAnalysisRuleVersion`、`expectedFailureReason`、`expectedFailureMessage`、`expectedProbeAttempts`、`expectedExplorerUrl`、`expectedXxyyPoolUrl`、`expectedPoolAddress`、`expectedContractAddress`、`expectedRouterAddress`、`expectedScreenshotTargetRowMarked`、`expectedTargetTradeSide`、`expectedTargetTraderAddress`、`expectedTransactionTime`、`expectedRelatedTransactionCount`、`expectedRelatedTransactionRoles` 或 `expectedRelatedTransactions` 固定预期结果、最终归档链、数据源、判断结论、0-1 置信度、判断规则版本、失败根因、失败报告文案、裸 EVM 自动探测过程、实际复查入口、关键解析字段、路由合约、截图目标行标记状态、目标交易方向、交易时间和前置/用户/后置/上下文交易窗口，`expectedChain` 可配合 `chain: "unknown"` 验证裸 EVM 哈希最终自动识别到 Base/Ethereum/BSC 哪条链，`expectedDataSource: "browser"` 可防止真实样本误走 fixture 演示路径，`expectedProbeAttempts` 每项可声明 chain、reason 和可选 message，`expectedRelatedTransactionCount` 可固定窗口交易条数，`expectedRelatedTransactionRoles` 可固定 `front_run`、`user`、`back_run`、`related` 的顺序，`expectedRelatedTransactions` 每项还可声明 `explorerUrl`、`side`、`traderAddress` 与 `timestamp` 固定相关交易细节，交易复查链接字段也兼容 `explorer_url`、`explorerLink`、`explorer_link`、`txUrl`、`tx_url`、`txLink`、`tx_link`、`transactionUrl`、`transaction_url`、`transactionLink`、`transaction_link`、`url`、`link` 和 `href`，且必须是 HTTP(S) URL，role 支持 `front_run`、`user`、`back_run` 和 `related`；如果 probe chain/reason/message 不匹配、expectedChain 不匹配、related transaction 数量或角色顺序不匹配，或同一 related transaction hash 和 role 已命中但细节字段不匹配，smoke 会返回字段级错误；也可用 `TX_ANALYSIS_SMOKE_TX_HASH`、`TX_ANALYSIS_SMOKE_CHAIN`、`TX_ANALYSIS_SMOKE_REQUIRE_SCREENSHOT=true`、`TX_ANALYSIS_SMOKE_REQUIRE_REPORT=true` 和 `TX_ANALYSIS_SMOKE_VERIFY_ASSETS=true` 提供参数。
-
-`pnpm rag:evaluate -- --fast` 使用 embedding + pgvector 检索，但回答阶段走本地 grounded answer，不调用 chat LLM；用来快速定位检索、引用和边界分类问题。`pnpm rag:evaluate` 会调用配置的大模型，用于发布前验证最终回答质量。
 
 聚焦测试可以按文件运行：
 
@@ -145,7 +133,7 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
 - 不要提交 `.rag/`、`.env`、数据库数据或密钥。
 - 不要在 `docker-compose.yml` 写死数据库密码；使用 `.env` 注入。
 - 不要把真实 API key 写入测试、README 或日志。
-- 生产 API 服务端不负责迁移，迁移和写库由 `pnpm sync`、`pnpm rag:ingest`、`pnpm rag:sync:x`、`pnpm rag:sync:telegram`、`pnpm rag:publish:knowledge` 或 `pnpm rag:gate:knowledge` 完成；本地 `pnpm start` 的启动脚本可以为空知识库做首次 bootstrap。
+- 生产 API 服务端不负责迁移，迁移和写库由 `pnpm sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成；本地 `pnpm start` 的启动脚本可以为空知识库做首次 bootstrap。
 - 新增行为需要加测试；风险较高的改动跑 `pnpm check`。
 - 对外错误信息应清晰区分：
   - LLM 配置缺失

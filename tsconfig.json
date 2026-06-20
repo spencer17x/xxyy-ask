@@ -13,9 +13,6 @@
       "path": "./packages/knowledge"
     },
     {
-      "path": "./packages/knowledge-ops"
-    },
-    {
       "path": "./packages/rag-core"
     },
     {
@@ -23,9 +20,6 @@
     },
     {
       "path": "./packages/product-qa-mcp"
-    },
-    {
-      "path": "./packages/knowledge-ops-mcp"
     },
     {
       "path": "./packages/tx-analysis-mcp"

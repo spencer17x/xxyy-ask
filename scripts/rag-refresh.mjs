@@ -4,30 +4,10 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const COMMANDS = {
-  fullRagGate: {
-    args: ['ops:check:full'],
-    command: 'pnpm',
-    label: 'full RAG production gate',
-  },
-  approvedEvalKnowledgeGate: {
-    args: ['rag:gate:knowledge', '--', '--approved-eval', '--fast'],
-    command: 'pnpm',
-    label: 'approved eval knowledge gate',
-  },
   ingestKnowledge: {
     args: ['rag:ingest'],
     command: 'pnpm',
     label: 'ingest knowledge',
-  },
-  negativeFeedbackQueue: (limit) => ({
-    args: ['rag:feedback', '--', '--rating', 'negative', '--limit', String(limit), '--json'],
-    command: 'pnpm',
-    label: 'negative feedback triage queue',
-  }),
-  ragGate: {
-    args: ['ops:check:rag'],
-    command: 'pnpm',
-    label: 'RAG production gate',
   },
   refreshXUpdates: (full) => ({
     args: full ? ['x:scrape', '--', '--full'] : ['x:scrape'],
@@ -49,16 +29,7 @@ export function createRagRefreshPlan(args) {
     plan.push(COMMANDS.refreshXUpdates(options.full));
   }
 
-  plan.push(
-    options.full ? COMMANDS.ingestKnowledge : COMMANDS.syncXKnowledge,
-    options.full ? COMMANDS.fullRagGate : COMMANDS.ragGate,
-  );
-
-  if (!options.skipApprovedEvalGate) {
-    plan.push(COMMANDS.approvedEvalKnowledgeGate);
-  }
-
-  plan.push(COMMANDS.negativeFeedbackQueue(options.feedbackLimit));
+  plan.push(options.full ? COMMANDS.ingestKnowledge : COMMANDS.syncXKnowledge);
 
   return plan.map((command) => ({
     args: [...command.args],
@@ -89,14 +60,10 @@ export async function runRagRefresh(options = {}) {
 
 function parseRagRefreshArgs(args) {
   const normalizedArgs = args[0] === '--' ? args.slice(1) : args;
-  let feedbackLimit = 25;
   let full = false;
-  let skipApprovedEvalGate = false;
   let skipScrape = false;
 
-  for (let index = 0; index < normalizedArgs.length; index += 1) {
-    const option = normalizedArgs[index];
-
+  for (const option of normalizedArgs) {
     if (option === '--full') {
       full = true;
       continue;
@@ -107,29 +74,10 @@ function parseRagRefreshArgs(args) {
       continue;
     }
 
-    if (option === '--skip-approved-eval-gate') {
-      skipApprovedEvalGate = true;
-      continue;
-    }
-
-    if (option === '--feedback-limit') {
-      const rawLimit = normalizedArgs[index + 1];
-      if (rawLimit === undefined) {
-        throw new Error('Missing value for --feedback-limit.');
-      }
-      const parsedLimit = Number(rawLimit);
-      if (!Number.isInteger(parsedLimit) || parsedLimit <= 0) {
-        throw new Error(`Invalid --feedback-limit: ${rawLimit}`);
-      }
-      feedbackLimit = parsedLimit;
-      index += 1;
-      continue;
-    }
-
     throw new Error(`Unknown option: ${option}`);
   }
 
-  return { feedbackLimit, full, skipApprovedEvalGate, skipScrape };
+  return { full, skipScrape };
 }
 
 function runShellCommand(command) {

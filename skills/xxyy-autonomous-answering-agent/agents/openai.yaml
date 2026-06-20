@@ -1,4 +1,0 @@
-interface:
-  display_name: 'XXYY Autonomous Answering Agent'
-  short_description: 'Route XXYY support messages without human handoff'
-  default_prompt: 'Use $xxyy-autonomous-answering-agent to route this XXYY support message through automatic answering, clarification, transaction analysis, or boundary reply.'

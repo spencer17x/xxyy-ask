@@ -6,9 +6,6 @@ import {
   PRODUCT_TOOL_NAMES,
   answerProductQuestionInputSchema,
   searchProductDocsInputSchema,
-  sanitizeSessionText,
-  type QualitySignalReason,
-  type QualitySignalSink,
 } from '@xxyy/agent-core';
 
 import type { ProductQaToolHandlers } from './tools.js';
@@ -28,7 +25,6 @@ export const PRODUCT_QA_MCP_INSTRUCTIONS = [
 
 export interface CreateProductQaMcpServerOptions {
   handlers: ProductQaToolHandlers;
-  qualitySignals?: QualitySignalSink;
 }
 
 export function createProductQaMcpServer(options: CreateProductQaMcpServerOptions): McpServer {
@@ -70,7 +66,6 @@ export function createProductQaMcpServer(options: CreateProductQaMcpServerOption
     },
     async ({ channel, question }) => {
       let guarded: GuardedProductAnswer;
-      let qualitySignalRecorded = false;
       try {
         guarded = guardProductAnswerOutput(
           await options.handlers.answerProductQuestion({
@@ -88,27 +83,6 @@ export function createProductQaMcpServer(options: CreateProductQaMcpServerOption
           reason: 'tool_failure',
           response,
         };
-        recordProductQualitySignal(options.qualitySignals, {
-          answer: guarded.response.answer,
-          channel: channel ?? 'agent',
-          confidence: guarded.response.confidence,
-          errorCode: errorCodeFrom(error),
-          intent: guarded.response.intent,
-          question,
-          reason: 'tool_failure',
-        });
-        qualitySignalRecorded = true;
-      }
-      if (!qualitySignalRecorded && guarded.reason !== undefined) {
-        recordProductQualitySignal(options.qualitySignals, {
-          answer: guarded.response.answer,
-          channel: channel ?? 'agent',
-          citationCount: guarded.original.citations.length,
-          confidence: guarded.original.confidence,
-          intent: guarded.original.intent,
-          question,
-          reason: guarded.reason,
-        });
       }
       const output = guarded.response;
       return {
@@ -123,9 +97,16 @@ export function createProductQaMcpServer(options: CreateProductQaMcpServerOption
 
 interface GuardedProductAnswer {
   original: ChatResponse;
-  reason?: QualitySignalReason;
+  reason?: ProductAnswerGuardReason;
   response: ChatResponse;
 }
+
+type ProductAnswerGuardReason =
+  | 'handoff_wording'
+  | 'low_confidence'
+  | 'low_confidence_missing_citations'
+  | 'missing_citations'
+  | 'tool_failure';
 
 function guardProductAnswerOutput(output: ChatResponse): GuardedProductAnswer {
   if (containsCustomerHandoffPromise(output.answer)) {
@@ -151,33 +132,6 @@ function guardProductAnswerOutput(output: ChatResponse): GuardedProductAnswer {
   }
 
   return { original: output, response: output };
-}
-
-function recordProductQualitySignal(
-  qualitySignals: QualitySignalSink | undefined,
-  input: {
-    answer: string;
-    channel: 'agent' | 'cli' | 'telegram' | 'web';
-    citationCount?: number;
-    confidence: number;
-    errorCode?: string;
-    intent: ChatResponse['intent'];
-    question: string;
-    reason: QualitySignalReason;
-  },
-): void {
-  qualitySignals?.record({
-    answer: sanitizeSessionText(input.answer),
-    channel: input.channel,
-    ...(input.citationCount === undefined ? {} : { citationCount: input.citationCount }),
-    confidence: input.confidence,
-    ...(input.errorCode === undefined ? {} : { errorCode: input.errorCode }),
-    intent: input.intent,
-    reason: input.reason,
-    redactedQuestion: sanitizeSessionText(input.question),
-    sessionIdPresent: false,
-    userIdPresent: false,
-  });
 }
 
 function createProductKnowledgeUnavailableAnswer(intent: ChatResponse['intent']): ChatResponse {
@@ -208,7 +162,7 @@ function hasInsufficientProductGrounding(output: ChatResponse): boolean {
   return output.citations.length === 0 || output.confidence < PRODUCT_ANSWER_CONFIDENCE_THRESHOLD;
 }
 
-function productGroundingQualityReason(output: ChatResponse): QualitySignalReason {
+function productGroundingQualityReason(output: ChatResponse): ProductAnswerGuardReason {
   const missingCitations = output.citations.length === 0;
   const lowConfidence = output.confidence < PRODUCT_ANSWER_CONFIDENCE_THRESHOLD;
 
@@ -238,12 +192,4 @@ function isProductConfigurationError(error: unknown): boolean {
     error.constructor.name === 'EmbeddingConfigurationError' ||
     error.message.includes('required for embedding generation')
   );
-}
-
-function errorCodeFrom(error: unknown): string {
-  if (error instanceof Error && error.name.trim().length > 0) {
-    return error.name;
-  }
-
-  return 'unknown_error';
 }
