@@ -50,7 +50,7 @@ describe('loadRagConfig', () => {
         OPENAI_MAX_RETRIES: '2',
         OPENAI_MODEL: 'gpt-test',
         OPENAI_REQUEST_TIMEOUT_MS: '12000',
-        TX_ANALYSIS_PROVIDER: 'mock',
+        TX_ANALYSIS_PROVIDER: 'browser',
         TX_ANALYSIS_REVIEWER: 'openai',
         TX_ANALYSIS_BROWSER_HEADLESS: 'true',
         TX_ANALYSIS_BROWSER_MAX_CONCURRENCY: '2',
@@ -67,7 +67,7 @@ describe('loadRagConfig', () => {
     ).toEqual({
       topK: 3,
       answerProvider: 'future-provider',
-      txAnalysisProvider: 'mock',
+      txAnalysisProvider: 'browser',
       txAnalysisReviewer: 'openai',
       txAnalysisBrowserHeadless: true,
       txAnalysisDiscoverUrl: 'https://staging.xxyy.io/discover',

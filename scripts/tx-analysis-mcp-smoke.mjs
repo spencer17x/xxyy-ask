@@ -8,13 +8,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WORKSPACE_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_SAMPLES_FILE = path.join(
   WORKSPACE_ROOT,
-  'docs/tx-analysis-mcp-smoke-samples.mock.json',
+  'docs/tx-analysis-smoke-samples.example.json',
 );
 const MCP_PACKAGE_REQUIRE = createRequire(
   new URL('../packages/tx-analysis-mcp/package.json', import.meta.url),
 );
 const TX_ANALYSIS_CHAINS = new Set(['solana', 'base', 'ethereum', 'bsc', 'unknown']);
-const TX_ANALYSIS_DATA_SOURCES = new Set(['fixture', 'browser']);
+const TX_ANALYSIS_DATA_SOURCES = new Set(['browser']);
 const TX_ANALYSIS_FAILURE_REASONS = new Set([
   'not_configured',
   'provider_unavailable',
@@ -194,9 +194,9 @@ function parseTxAnalysisMcpSmokeArgs(args) {
 function printUsage() {
   process.stdout.write(
     [
-      'Usage: TX_ANALYSIS_PROVIDER=mock pnpm tx:mcp:smoke [-- --tx-samples <file>]',
+      'Usage: TX_ANALYSIS_PROVIDER=browser pnpm tx:mcp:smoke [-- --tx-samples <file>]',
       '',
-      'Runs the transaction analysis MCP server through the official stdio client transport.',
+      'Runs the transaction analysis MCP server through the official stdio client transport using real transaction-analysis samples.',
     ].join('\n'),
   );
   process.stdout.write('\n');

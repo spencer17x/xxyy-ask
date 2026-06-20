@@ -96,8 +96,8 @@ describe('createChatService', () => {
             },
           ],
           relatedTransactions: [],
-          screenshotUrl: '/assets/tx-analysis-fixture.svg',
-          summary: '测试 provider：疑似存在 sandwich 模式。',
+          screenshotUrl: '/assets/tx-analysis-browser-window.svg',
+          summary: '测试 browser provider：疑似存在 sandwich 模式。',
           txHash: reference.txHash,
           verdict: 'sandwiched',
         });
@@ -127,7 +127,7 @@ describe('createChatService', () => {
     expect(response.answer).toContain('疑似被夹');
     expect(response.attachments?.[0]).toMatchObject({
       kind: 'image',
-      url: '/assets/tx-analysis-fixture.svg',
+      url: '/assets/tx-analysis-browser-window.svg',
     });
     expect(analyzedHashes).toEqual([
       '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
@@ -291,8 +291,8 @@ describe('createChatService', () => {
             confidence: 0.71,
             evidence: [],
             relatedTransactions: [],
-            screenshotUrl: '/assets/tx-analysis-fixture.svg',
-            summary: '演示数据：当前无法确认是否被夹。',
+            screenshotUrl: '/assets/tx-analysis-browser-window.svg',
+            summary: '浏览器取证：当前无法确认是否被夹。',
             txHash: reference.txHash,
             verdict: 'inconclusive',
           });
@@ -315,7 +315,7 @@ describe('createChatService', () => {
       attachments: [
         {
           kind: 'image',
-          url: '/assets/tx-analysis-fixture.svg',
+          url: '/assets/tx-analysis-browser-window.svg',
         },
       ],
       citations: [],
@@ -324,27 +324,17 @@ describe('createChatService', () => {
     });
   });
 
-  it('can enable the fixture transaction analysis provider through config', async () => {
-    const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
-      retriever: {
-        retrieve() {
-          throw new Error('retriever should not be called');
+  it('rejects unsupported transaction analysis provider config', () => {
+    expect(() =>
+      createChatService({
+        config: { txAnalysisProvider: 'future-provider' },
+        retriever: {
+          retrieve() {
+            throw new Error('retriever should not be called');
+          },
         },
-      },
-    });
-
-    const response = await service.ask({
-      channel: 'web',
-      message: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 被夹了吗？',
-    });
-
-    expect(response.intent).toBe('tx_sandwich_detection');
-    expect(response.answer).toContain('演示数据');
-    expect(response.attachments?.[0]).toMatchObject({
-      kind: 'image',
-      url: '/assets/tx-analysis-fixture.svg',
-    });
+      }),
+    ).toThrow('Unsupported TX_ANALYSIS_PROVIDER: future-provider');
   });
 
   it('returns a clear unavailable response when transaction analysis is not configured', async () => {
@@ -369,7 +359,7 @@ describe('createChatService', () => {
 
   it('asks the user to send one transaction when multiple hashes are provided', async () => {
     const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -393,7 +383,7 @@ describe('createChatService', () => {
 
   it('asks the user to send one transaction when only multiple hashes are provided', async () => {
     const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -416,7 +406,7 @@ describe('createChatService', () => {
 
   it('does not probe supported mainnets when the user sends an unsupported Etherscan-family explorer link', async () => {
     const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -433,13 +423,13 @@ describe('createChatService', () => {
     expect(response.intent).toBe('tx_sandwich_detection');
     expect(response.answer).toContain('其他链暂不支持');
     expect(response.answer).toContain('optimistic.etherscan.io');
-    expect(response.answer).not.toContain('演示数据');
+    expect(response.answer).not.toContain('疑似被夹');
     expect(response.citations).toEqual([]);
   });
 
   it('does not probe supported mainnets when the user names an unsupported EVM chain', async () => {
     const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -456,13 +446,13 @@ describe('createChatService', () => {
     expect(response.intent).toBe('tx_sandwich_detection');
     expect(response.answer).toContain('其他链暂不支持');
     expect(response.answer).toContain('polygon');
-    expect(response.answer).not.toContain('演示数据');
+    expect(response.answer).not.toContain('疑似被夹');
     expect(response.citations).toEqual([]);
   });
 
   it('does not analyze a transaction when explicit chain text conflicts with the explorer link', async () => {
     const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -478,13 +468,13 @@ describe('createChatService', () => {
 
     expect(response.intent).toBe('tx_sandwich_detection');
     expect(response.answer).toContain('一笔完整交易哈希');
-    expect(response.answer).not.toContain('演示数据');
+    expect(response.answer).not.toContain('疑似被夹');
     expect(response.citations).toEqual([]);
   });
 
   it('does not analyze a Solana explorer link when the user labels it as an EVM chain', async () => {
     const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -500,13 +490,13 @@ describe('createChatService', () => {
 
     expect(response.intent).toBe('tx_sandwich_detection');
     expect(response.answer).toContain('一笔完整交易哈希');
-    expect(response.answer).not.toContain('演示数据');
+    expect(response.answer).not.toContain('疑似被夹');
     expect(response.citations).toEqual([]);
   });
 
   it('does not analyze a bare Solana signature when the user labels it as an EVM chain', async () => {
     const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -522,13 +512,13 @@ describe('createChatService', () => {
 
     expect(response.intent).toBe('tx_sandwich_detection');
     expect(response.answer).toContain('一笔完整交易哈希');
-    expect(response.answer).not.toContain('演示数据');
+    expect(response.answer).not.toContain('疑似被夹');
     expect(response.citations).toEqual([]);
   });
 
   it('does not analyze a bare EVM hash when the user labels it as Solana', async () => {
     const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -544,13 +534,13 @@ describe('createChatService', () => {
 
     expect(response.intent).toBe('tx_sandwich_detection');
     expect(response.answer).toContain('一笔完整交易哈希');
-    expect(response.answer).not.toContain('演示数据');
+    expect(response.answer).not.toContain('疑似被夹');
     expect(response.citations).toEqual([]);
   });
 
   it('does not analyze a bare EVM hash when the user labels it as SOL chain', async () => {
     const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -566,13 +556,13 @@ describe('createChatService', () => {
 
     expect(response.intent).toBe('tx_sandwich_detection');
     expect(response.answer).toContain('一笔完整交易哈希');
-    expect(response.answer).not.toContain('演示数据');
+    expect(response.answer).not.toContain('疑似被夹');
     expect(response.citations).toEqual([]);
   });
 
   it('does not analyze Solana devnet explorer links as mainnet Solana transactions', async () => {
     const service = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -590,7 +580,7 @@ describe('createChatService', () => {
     expect(response.answer).toContain('其他链暂不支持');
     expect(response.answer).toContain('explorer.solana.com');
     expect(response.answer).toContain('devnet');
-    expect(response.answer).not.toContain('演示数据');
+    expect(response.answer).not.toContain('疑似被夹');
     expect(response.citations).toEqual([]);
   });
 

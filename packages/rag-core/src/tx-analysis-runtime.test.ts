@@ -100,7 +100,7 @@ describe('tx-analysis-runtime', () => {
             analyzedAt: '2026-06-14T00:00:00.000Z',
             chain: reference.chain,
             confidence: 0.6,
-            dataSource: 'fixture',
+            dataSource: 'browser',
             evidence: [],
             relatedTransactions: [],
             summary: '未发现典型 sandwich。',
@@ -171,30 +171,19 @@ describe('tx-analysis-runtime', () => {
     expect(createConfiguredTxAnalysisProvider({ txAnalysisProvider: 'none' })).toBeUndefined();
   });
 
-  it('creates a usable mock provider when TX_ANALYSIS_PROVIDER is mock', async () => {
-    const provider = createConfiguredTxAnalysisProvider({ txAnalysisProvider: 'mock' });
-
-    await expect(provider?.analyze({ chain: 'base', txHash: evmTx })).resolves.toMatchObject({
-      chain: 'base',
-      dataSource: 'fixture',
-      txHash: evmTx,
-      verdict: 'sandwiched',
-    });
-  });
-
   it('preserves unsupported TX_ANALYSIS_PROVIDER error messages', () => {
-    expect(() => createConfiguredTxAnalysisProvider({ txAnalysisProvider: 'fixture' })).toThrow(
-      'Unsupported TX_ANALYSIS_PROVIDER: fixture',
-    );
+    expect(() =>
+      createConfiguredTxAnalysisProvider({ txAnalysisProvider: 'future-provider' }),
+    ).toThrow('Unsupported TX_ANALYSIS_PROVIDER: future-provider');
   });
 
   it('preserves unsupported TX_ANALYSIS_REVIEWER error messages', () => {
     expect(() =>
       createConfiguredTxAnalysisProvider({
         txAnalysisProvider: 'browser',
-        txAnalysisReviewer: 'fixture',
+        txAnalysisReviewer: 'future-reviewer',
       }),
-    ).toThrow('Unsupported TX_ANALYSIS_REVIEWER: fixture');
+    ).toThrow('Unsupported TX_ANALYSIS_REVIEWER: future-reviewer');
   });
 
   it('preserves unsupported TX_ANALYSIS_REPORT_STORE error messages', () => {

@@ -519,7 +519,7 @@ describe('createTxAnalysisTools', () => {
             analyzedAt: '2026-06-16T00:00:00.000Z',
             chain: reference.chain,
             confidence: 0.61,
-            dataSource: 'fixture',
+            dataSource: 'browser',
             evidence: [],
             relatedTransactions: [],
             summary: '未发现典型 sandwich。',
@@ -1502,10 +1502,10 @@ Expected: PASS.
 Run:
 
 ```bash
-TX_ANALYSIS_PROVIDER=mock pnpm tx:mcp:smoke
+TX_ANALYSIS_PROVIDER=browser pnpm tx:mcp:smoke
 ```
 
-Expected: PASS using existing mock MCP smoke samples.
+Expected: PASS using configured browser MCP smoke samples.
 
 - [ ] **Step 5: Commit verification fixes if needed**
 

@@ -29,7 +29,6 @@ import {
   type UpdateTxAnalysisReportReviewInput,
 } from './tx-analysis-report-store.js';
 import {
-  createMockTxAnalysisProvider,
   TxAnalysisProviderUnavailableError,
   TxAnalysisUnsupportedChainError,
   type TxAnalysisFailureMetadata,
@@ -168,9 +167,6 @@ export function createConfiguredTxAnalysisProvider(
 ): TxAnalysisProvider | undefined {
   if (config.txAnalysisProvider === 'none') {
     return undefined;
-  }
-  if (config.txAnalysisProvider === 'mock') {
-    return createMockTxAnalysisProvider();
   }
   if (config.txAnalysisProvider === 'browser') {
     const analysisReviewer = createConfiguredTxAnalysisReviewer(config);

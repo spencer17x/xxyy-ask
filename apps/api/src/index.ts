@@ -2547,11 +2547,7 @@ function checkRequiredConfig(config: ReturnType<typeof loadRagConfig>): HealthCh
       status: 'error',
     };
   }
-  if (
-    config.txAnalysisProvider !== 'none' &&
-    config.txAnalysisProvider !== 'mock' &&
-    config.txAnalysisProvider !== 'browser'
-  ) {
+  if (config.txAnalysisProvider !== 'none' && config.txAnalysisProvider !== 'browser') {
     return {
       message: `Unsupported TX_ANALYSIS_PROVIDER: ${config.txAnalysisProvider}`,
       missing,

@@ -851,9 +851,9 @@ function normalizeExpectedDataSource(value, index) {
   if (expectedDataSource === undefined) {
     return undefined;
   }
-  if (expectedDataSource !== 'fixture' && expectedDataSource !== 'browser') {
+  if (expectedDataSource !== 'browser') {
     throw new Error(
-      `Transaction analysis smoke sample ${index + 1} expectedDataSource must be fixture or browser.`,
+      `Transaction analysis smoke sample ${index + 1} expectedDataSource must be browser.`,
     );
   }
 

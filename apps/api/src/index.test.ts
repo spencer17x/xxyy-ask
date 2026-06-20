@@ -1836,7 +1836,7 @@ describe('createRequestHandler', () => {
 
   it('keeps direct transaction analysis from treating Solana devnet explorer links as mainnet', async () => {
     const chatService = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -2013,7 +2013,7 @@ describe('createRequestHandler', () => {
   it('returns unsupported_chain for direct transaction analysis chain fields that are not yet supported', async () => {
     const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
     const chatService = createChatService({
-      config: { txAnalysisProvider: 'mock' },
+      config: { txAnalysisProvider: 'none' },
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');
@@ -2390,7 +2390,7 @@ describe('createRequestHandler', () => {
     const assetsDir = path.join(workspaceRoot, 'docs', 'product-features', 'assets');
     await mkdir(assetsDir, { recursive: true });
     await writeFile(path.join(assetsDir, 'xxyy-add-to-home.mp4'), Buffer.from('video-bytes'));
-    await writeFile(path.join(assetsDir, 'tx-analysis-fixture.svg'), Buffer.from('<svg />'));
+    await writeFile(path.join(assetsDir, 'tx-analysis-browser-window.svg'), Buffer.from('<svg />'));
     await writeFile(
       path.join(assetsDir, 'tx-analysis-report-solana.json'),
       Buffer.from('{"version":1}'),
@@ -2408,7 +2408,7 @@ describe('createRequestHandler', () => {
 
     const imageResponse = await callHandler(handler, {
       method: 'GET',
-      url: '/assets/tx-analysis-fixture.svg',
+      url: '/assets/tx-analysis-browser-window.svg',
     });
 
     expect(imageResponse.statusCode).toBe(200);
@@ -4238,7 +4238,7 @@ describe('createRequestHandler', () => {
           kind: 'image',
           mediaType: 'image/svg+xml',
           title: '交易分析截图',
-          url: '/assets/tx-analysis-fixture.svg',
+          url: '/assets/tx-analysis-browser-window.svg',
         },
       ],
       confidence: 0.8,

@@ -1,38 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  createMockTxAnalysisProvider,
   createTxAnalysisAnswer,
   createTxAnalysisUnavailableAnswer,
   TxAnalysisProviderUnavailableError,
 } from './tx-analysis.js';
 
 describe('transaction analysis', () => {
-  it('creates a fixture analysis result from the mock provider', async () => {
-    const provider = createMockTxAnalysisProvider();
-
-    const result = await provider.analyze({
-      chain: 'base',
-      txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-    });
-
-    expect(result.txHash).toBe(
-      '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-    );
-    expect(result.chain).toBe('base');
-    expect(result.screenshotUrl).toBe('/assets/tx-analysis-fixture.svg');
-    expect(result.summary).toContain('演示');
-  });
-
   it('formats transaction analysis as a chat response with an image attachment', () => {
     const response = createTxAnalysisAnswer({
       analyzedAt: '2026-06-10T00:00:00.000Z',
       analysisRuleVersion: 'sandwich-v1',
       chain: 'base',
       confidence: 0.76,
+      dataSource: 'browser',
       evidence: [
         {
-          detail: '用户交易前后存在同向 swap 的 fixture 证据。',
+          detail: '用户交易前后存在同向 swap 的浏览器证据。',
           label: '前后交易模式',
           severity: 'warning',
         },
@@ -53,8 +37,8 @@ describe('transaction analysis', () => {
       poolAddress: '0xPool0000000000000000000000000000000000000',
       reportUrl: '/assets/tx-analysis-report-base.json',
       routerAddress: '0xRouter0000000000000000000000000000000000',
-      screenshotUrl: '/assets/tx-analysis-fixture.svg',
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      screenshotUrl: '/assets/tx-analysis-browser-window.svg',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       targetTradeSide: 'buy',
       targetTraderAddress: '0xUser0000000000000000000000000000000000000',
       transactionTime: '2026-06-10T01:00:05.000Z',
@@ -65,7 +49,7 @@ describe('transaction analysis', () => {
 
     expect(response.intent).toBe('tx_sandwich_detection');
     expect(response.answer).toContain('疑似被夹');
-    expect(response.answer).toContain('演示数据');
+    expect(response.answer).toContain('浏览器取证');
     expect(response.answer).toContain(
       '交易浏览器：https://basescan.org/tx/0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
     );
@@ -80,7 +64,7 @@ describe('transaction analysis', () => {
     expect(response.answer).toContain(
       'XXYY 池子页：https://www.xxyy.io/base/0xpool0000000000000000000000000000000000000',
     );
-    expect(response.answer).toContain('截图：/assets/tx-analysis-fixture.svg');
+    expect(response.answer).toContain('截图：/assets/tx-analysis-browser-window.svg');
     expect(response.answer).toContain(
       '前置交易：0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa，疑似前置买入，方向：买入，浏览器：https://basescan.org/tx/0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     );
@@ -90,7 +74,7 @@ describe('transaction analysis', () => {
         kind: 'image',
         mediaType: 'image/svg+xml',
         title: '交易分析截图',
-        url: '/assets/tx-analysis-fixture.svg',
+        url: '/assets/tx-analysis-browser-window.svg',
       },
     ]);
   });
@@ -100,17 +84,18 @@ describe('transaction analysis', () => {
       analyzedAt: '2026-06-10T00:00:00.000Z',
       chain: 'base',
       confidence: 0.76,
+      dataSource: 'browser',
       evidence: [],
       relatedTransactions: [],
       reportUrl: '  /assets/tx-analysis-report-base.json  ',
-      screenshotUrl: '  /assets/tx-analysis-fixture.svg  ',
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      screenshotUrl: '  /assets/tx-analysis-browser-window.svg  ',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       verdict: 'sandwiched',
     });
 
     expect(response.answer).toContain('报告：/assets/tx-analysis-report-base.json');
-    expect(response.answer).toContain('截图：/assets/tx-analysis-fixture.svg');
+    expect(response.answer).toContain('截图：/assets/tx-analysis-browser-window.svg');
     expect(response.answer).not.toContain('报告：  /assets');
     expect(response.answer).not.toContain('截图：  /assets');
     expect(response.attachments).toEqual([
@@ -118,7 +103,7 @@ describe('transaction analysis', () => {
         kind: 'image',
         mediaType: 'image/svg+xml',
         title: '交易分析截图',
-        url: '/assets/tx-analysis-fixture.svg',
+        url: '/assets/tx-analysis-browser-window.svg',
       },
     ]);
   });
@@ -128,6 +113,7 @@ describe('transaction analysis', () => {
       analyzedAt: '2026-06-10T00:00:00.000Z',
       chain: 'base',
       confidence: 0.76,
+      dataSource: 'browser',
       evidence: [
         {
           detail: '  用户交易前后存在同向 swap 证据。  ',
@@ -146,7 +132,7 @@ describe('transaction analysis', () => {
         },
       ],
       relatedTransactions: [],
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       verdict: 'sandwiched',
     });
@@ -187,7 +173,7 @@ describe('transaction analysis', () => {
       confidence: 1.42,
       evidence: [],
       relatedTransactions: [],
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       verdict: 'sandwiched',
     });
@@ -197,7 +183,7 @@ describe('transaction analysis', () => {
       confidence: -0.2,
       evidence: [],
       relatedTransactions: [],
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       verdict: 'sandwiched',
     });
@@ -215,7 +201,7 @@ describe('transaction analysis', () => {
       confidence: 0.76,
       evidence: [],
       relatedTransactions: [],
-      summary: '  演示数据：疑似存在 sandwich 模式。  ',
+      summary: '  浏览器取证：疑似存在 sandwich 模式。  ',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       verdict: 'sandwiched',
     });
@@ -230,7 +216,7 @@ describe('transaction analysis', () => {
       verdict: 'inconclusive',
     });
 
-    expect(trimmedResponse.answer).toContain('摘要：演示数据：疑似存在 sandwich 模式。');
+    expect(trimmedResponse.answer).toContain('摘要：浏览器取证：疑似存在 sandwich 模式。');
     expect(trimmedResponse.answer).toContain('分析时间：2026-06-10T00:00:00.000Z');
     expect(trimmedResponse.answer).not.toContain('摘要：  ');
     expect(trimmedResponse.answer).not.toContain('分析时间：  ');
@@ -246,7 +232,7 @@ describe('transaction analysis', () => {
       relatedTransactions: [],
       reportUrl: '   ',
       screenshotUrl: '   ',
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       verdict: 'sandwiched',
     });
@@ -279,7 +265,7 @@ describe('transaction analysis', () => {
           summary: '用户交易',
         },
       ],
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       verdict: 'sandwiched',
       xxyyPoolUrl: '  https://www.xxyy.io/base/0xpool0000000000000000000000000000000000000  ',
@@ -330,7 +316,7 @@ describe('transaction analysis', () => {
           summary: '   ',
         },
       ],
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       verdict: 'sandwiched',
     });
@@ -380,7 +366,7 @@ describe('transaction analysis', () => {
           summary: '用户交易',
         },
       ],
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       txHash: userTx,
       verdict: 'sandwiched',
     });
@@ -405,7 +391,7 @@ describe('transaction analysis', () => {
       evidence: [],
       explorerUrl: '   ',
       relatedTransactions: [],
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
       verdict: 'sandwiched',
       xxyyPoolUrl: '   ',
@@ -426,7 +412,7 @@ describe('transaction analysis', () => {
       poolAddress: '  0xPool0000000000000000000000000000000000000  ',
       relatedTransactions: [],
       routerAddress: '  0xRouter0000000000000000000000000000000000  ',
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       targetTraderAddress: '  0xUser0000000000000000000000000000000000000  ',
       transactionTime: '  2026-06-10T01:00:05.000Z  ',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
@@ -458,7 +444,7 @@ describe('transaction analysis', () => {
       poolAddress: '   ',
       relatedTransactions: [],
       routerAddress: '   ',
-      summary: '演示数据：疑似存在 sandwich 模式。',
+      summary: '浏览器取证：疑似存在 sandwich 模式。',
       targetTraderAddress: '   ',
       transactionTime: '   ',
       txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',

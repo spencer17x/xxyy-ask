@@ -46,7 +46,6 @@ export {
   createConfiguredTxAnalysisReportReader,
 } from './tx-analysis-runtime.js';
 export {
-  createMockTxAnalysisProvider,
   createTxAnalysisAnswer,
   createTxAnalysisUnavailableAnswer,
   TxAnalysisProviderUnavailableError,
@@ -126,11 +125,7 @@ export type {
   SandwichWindowAnalysis,
   SandwichWindowAnalysisOptions,
 } from './sandwich-analyzer.js';
-export type {
-  MockTxAnalysisProviderOptions,
-  TxAnalysisProvider,
-  TxAnalysisUnavailableReason,
-} from './tx-analysis.js';
+export type { TxAnalysisProvider, TxAnalysisUnavailableReason } from './tx-analysis.js';
 export type {
   AnalyzeTransactionInput,
   AnalyzeTransactionOptions,

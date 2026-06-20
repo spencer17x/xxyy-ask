@@ -26,7 +26,7 @@
 - 支持 `sandwiched`、`not_sandwiched`、`inconclusive` 三类判断。
 - 支持返回结构化证据和一张截图附件。
 - 支持 provider 不可用、链不支持、交易不存在、证据不足等错误分支。
-- 支持 mock/fixture provider，用于不依赖真实链上 API 的测试和评测。
+- 单元测试可以注入 fake provider；正式配置只支持 `none` 和 `browser`。
 
 ## User Experience
 
@@ -174,7 +174,7 @@ export type ChatAttachment =
 
 - 按链查询交易详情、相邻交易、swap 路径、价格变化和地址信息。
 - 隔离真实数据源差异。
-- 支持 mock provider 和 fixture provider。
+- 正式配置只接入真实数据源 provider；测试可注入 fake provider。
 - 支持 browser provider：本地用可见 Chrome 访问公开网页，不要求 RPC URL 或第三方 API key。
 
 接口草案：
@@ -341,7 +341,7 @@ XXYY 成交窗口或其它结构化 fetch 如果抛出 `UND_ERR_SOCKET`、`EPIPE
 
 - 根据 `TxAnalysisResult` 生成交易分析截图。
 - 输出可由 Web UI 展示的图片 URL。
-- MVP 可以先使用服务端生成的静态 PNG 或 fixture 图片。
+- 截图应来自真实取证页面；无法生成真实页面截图时返回失败原因，不用静态演示图替代。
 
 ### TxAnalysisAnswerProvider
 
@@ -430,7 +430,7 @@ MVP 可以不持久化完整分析结果，但如果截图需要稳定 URL，需
 - 分类测试：带交易哈希和夹子/MEV 语义的问题进入 `tx_sandwich_detection`。
 - 优先级测试：交易哈希 + 投资建议时，仍走投资建议边界。
 - parser 测试：Solana/EVM/hash/link/无效输入。
-- provider 测试：mock success、not found、unsupported chain、provider unavailable。
+- provider 测试：browser success、not found、unsupported chain、provider unavailable。
 - analyzer 测试：sandwiched、not sandwiched、inconclusive。
 - API 测试：`/api/chat` 返回截图附件和结构化回答。
 - 报告测试：浏览器分析成功后写入报告；浏览器分析失败后写入 failure 报告，回答中返回报告 URL。
@@ -443,11 +443,11 @@ MVP 可以不持久化完整分析结果，但如果截图需要稳定 URL，需
 以下第一版闭环已经落地：
 
 1. 增加共享类型、intent 和分类测试。
-2. 增加 mock `TxAnalysisProvider` 和分析服务接口。
+2. 增加可注入 `TxAnalysisProvider` 和分析服务接口。
 3. 让 `ChatService` 支持 `tx_sandwich_detection` 路由。
 4. 扩展 `ChatAttachment` 支持 image。
 5. 更新 API/Web/CLI 展示交易分析结果。
-6. 增加 fixture 截图和 browser provider 的 XXYY 原页面截图链路。
+6. 增加 browser provider 的 XXYY 原页面截图链路。
 7. 接入 Solana、Base、Ethereum、BSC 浏览器取证初版。
 8. 增加生产 health/ops 指标、报告存储、报告筛选和复查处理状态。
 

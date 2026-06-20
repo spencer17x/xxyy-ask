@@ -46,7 +46,7 @@ export type TxAnalysisVerdict = 'sandwiched' | 'not_sandwiched' | 'inconclusive'
 
 export type TxAnalysisChain = 'solana' | 'base' | 'ethereum' | 'bsc' | 'unknown';
 
-export type TxAnalysisDataSource = 'fixture' | 'browser';
+export type TxAnalysisDataSource = 'browser';
 
 export type TxAnalysisTradeSide = 'buy' | 'sell' | 'unknown';
 

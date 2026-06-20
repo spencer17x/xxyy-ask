@@ -71,16 +71,16 @@ Web UI 会在每条回答后提供正负反馈入口，写入 Postgres `rag_feed
 夹子判断会排除复用目标交易哈希的候选腿，也会排除前腿和后腿哈希相同的重复行；EVM 交易哈希大小写无关，Solana 签名按原始字符串精确匹配。
 多链真实样本验收可用 `pnpm ops:smoke -- --tx-samples ./tx-smoke-samples.json --tx-verify-assets` 一次跑完整样本集；样本文件可以是数组或 `{ "samples": [...] }`，每条样本支持 `label`、`chain`、`txHash`，以及可选的 `verifyAssets`、`requireScreenshot`、`requireReport`、`expectedStatus`、`expectedChain`、`expectedDataSource`、`expectedVerdict`、`expectedConfidence`、`expectedAnalysisRuleVersion`、`expectedFailureReason`、`expectedFailureMessage`、`expectedProbeAttempts`、`expectedExplorerUrl`、`expectedXxyyPoolUrl`、`expectedPoolAddress`、`expectedContractAddress`、`expectedRouterAddress`、`expectedScreenshotTargetRowMarked`、`expectedTargetTradeSide`、`expectedTargetTraderAddress`、`expectedTransactionTime`、`expectedRelatedTransactionCount`、`expectedRelatedTransactionRoles`、`expectedRelatedTransactions` 覆盖项；写了任一预期字段会自动启用截图和报告资产校验。
 
-`expectedChain` 可固定报告最终归档链，适合 `chain: "unknown"` 的裸 EVM 自动识别样本；`expectedDataSource` 可写 `browser` 来确认真实样本没有误走 fixture 演示路径，`expectedConfidence` 可固定报告里的 0-1 置信度，`expectedAnalysisRuleVersion` 可固定 sandwich 判断规则版本，`expectedFailureReason` 和 `expectedFailureMessage` 可固定失败根因与报告文案，`expectedProbeAttempts` 可固定裸 EVM 自动探测过程，`expectedExplorerUrl` 和 `expectedXxyyPoolUrl` 可固定实际复查入口，`expectedRouterAddress` 可固定 EVM 路由合约解析结果，`expectedScreenshotTargetRowMarked` 可固定目标交易行是否已在截图中标记，`expectedTargetTradeSide` 可固定目标交易方向，`expectedTransactionTime` 可固定报告解析出的交易时间。
+`expectedChain` 可固定报告最终归档链，适合 `chain: "unknown"` 的裸 EVM 自动识别样本；`expectedDataSource` 可写 `browser` 来确认报告来自真实 browser provider，`expectedConfidence` 可固定报告里的 0-1 置信度，`expectedAnalysisRuleVersion` 可固定 sandwich 判断规则版本，`expectedFailureReason` 和 `expectedFailureMessage` 可固定失败根因与报告文案，`expectedProbeAttempts` 可固定裸 EVM 自动探测过程，`expectedExplorerUrl` 和 `expectedXxyyPoolUrl` 可固定实际复查入口，`expectedRouterAddress` 可固定 EVM 路由合约解析结果，`expectedScreenshotTargetRowMarked` 可固定目标交易行是否已在截图中标记，`expectedTargetTradeSide` 可固定目标交易方向，`expectedTransactionTime` 可固定报告解析出的交易时间。
 
 `expectedRelatedTransactionCount` 和 `expectedRelatedTransactionRoles` 可固定窗口内相关交易数量和角色顺序，其中 `expectedRelatedTransactionCount` 必须是非负整数，`expectedRelatedTransactionRoles` 必须是非空数组且每项只能是 `front_run`、`user`、`back_run` 或 `related`。`expectedRelatedTransactions` 可锁定报告里必须出现的 `front_run`、`user`、`back_run` 或 `related` 交易 hash 和 role，并可进一步固定该条相关交易的 `explorerUrl`、`side`、`traderAddress` 和 `timestamp`；相关交易复查链接也兼容 `explorer_url`、`explorerLink`、`explorer_link`、`txUrl`、`tx_url`、`txLink`、`tx_link`、`transactionUrl`、`transaction_url`、`transactionLink`、`transaction_link`、`url`、`link` 和 `href`；如果 probe chain/reason/message 不匹配、related transaction 数量或角色顺序不匹配，或 related transaction 的 hash 和 role 已命中但细节字段不匹配，smoke 会返回字段级错误；显式写入的可选预期文本字段、probe message、related transaction 的复查链接 / `traderAddress` / `timestamp` 都不能是空白，复查链接还必须是 HTTP(S) URL，方向字段只能写 `buy`、`sell` 或 `unknown`。也可用 `TX_ANALYSIS_SMOKE_SAMPLES_FILE` 指向样本文件。批量样本验收可加 `--continue-on-error` 或设置 `API_SMOKE_CONTINUE_ON_ERROR=true`，单条样本失败后继续跑后续样本，最后汇总失败数量。
 仓库内置了 `docs/tx-analysis-smoke-samples.example.json` 作为真实 Solana、Base、Ethereum、BSC，以及裸 EVM 自动识别 Base/Ethereum/BSC 样本，可用 `pnpm ops:smoke -- --tx-samples docs/tx-analysis-smoke-samples.example.json --tx-verify-assets` 检查本地 browser provider 的截图、报告、规则版本、交易时间和交易窗口。
 浏览器取证生成成功结果和失败 metadata，以及文件/Postgres 报告写入器落盘 relatedTransactions 时，会清洗相关交易摘要；空摘要会按角色兜底为“前置交易”“用户交易”“后置交易”或“相关交易”；同一交易哈希重复出现时会只保留一条复查记录，EVM 交易哈希按大小写无关归并，避免报告、ops 队列和 smoke 验收出现空白或重复复查行。
 
-MCP stdio 服务可用仓库内置 mock 样本验证真实协议路径：
+MCP stdio 服务可用仓库内置真实样本验证协议路径：
 
 ```bash
-TX_ANALYSIS_PROVIDER=mock pnpm tx:mcp:smoke
+TX_ANALYSIS_PROVIDER=browser pnpm tx:mcp:smoke
 ```
 
 产品客服 MCP 可以用 `pnpm product:mcp` 作为 stdio MCP server 启动命令，暴露 `search_product_docs` 和 `answer_product_question`，并复用 `@xxyy/agent-core` 的产品工具定义。Agent 接入时配套使用 `skills/xxyy-product-support`，只回答 XXYY 产品功能、配置步骤、权益说明和公开更新，不用于账户、订单、余额、私有交易记录或投资建议。
@@ -89,7 +89,7 @@ TX_ANALYSIS_PROVIDER=mock pnpm tx:mcp:smoke
 
 Agent 接入时可以把 `pnpm tx:mcp` 作为 stdio MCP server 启动命令，并配套使用仓库内的 Skill 源文件 `skills/xxyy-transaction-analysis`。该 Skill 会提醒 agent 只对公开交易哈希/浏览器链接做 交易夹子检测，`unknown` 只表示裸 EVM 哈希在 Base、Ethereum、BSC 间自动探测，不能用于账户、订单、余额、私有交易记录或投资建议。
 
-默认读取 `docs/tx-analysis-mcp-smoke-samples.mock.json`，也可以用 `pnpm tx:mcp:smoke -- --tx-samples ./your-samples.json` 指定样本文件。MCP smoke 校验 MCP `analyze_transaction` 返回的 `structuredContent`，不下载截图或报告资产；需要 GET 截图、报告 JSON 和静态资产内容时继续使用 `pnpm ops:smoke -- --tx-verify-assets`。
+默认读取 `docs/tx-analysis-smoke-samples.example.json`，也可以用 `pnpm tx:mcp:smoke -- --tx-samples ./your-samples.json` 指定样本文件。MCP smoke 校验 MCP `analyze_transaction` 返回的 `structuredContent`，不下载截图或报告资产；需要 GET 截图、报告 JSON 和静态资产内容时继续使用 `pnpm ops:smoke -- --tx-verify-assets`。
 
 MCP 样本文件可以是数组或 `{ "samples": [...] }`，每条样本支持 `label`、`chain`、`txHash`，以及顶层 `expectedStatus`、`expectedChain`、`expectedDataSource`、`expectedVerdict`、`expectedConfidence`、`expectedAnalysisRuleVersion`、`expectedFailureReason`、`expectedFailureMessage`、`expectedProbeAttempts`、`expectedExplorerUrl`、`expectedXxyyPoolUrl`、`expectedPoolAddress`、`expectedContractAddress`、`expectedRouterAddress`、`expectedScreenshotTargetRowMarked`、`expectedTargetTradeSide`、`expectedTargetTraderAddress`、`expectedTransactionTime`、`expectedRelatedTransactionCount`、`expectedRelatedTransactionRoles`、`expectedRelatedTransactions`；也可以写在嵌套 `expected` 对象里并去掉 `expected` 前缀，例如 `expected.status`、`expected.analysisRuleVersion`、`expected.relatedTransactions`。样本中出现未支持的顶层 `expected*` 字段或 `expected` 对象字段会直接失败为 unsupported expected field，避免预期漂移被静默忽略。
 
@@ -124,7 +124,7 @@ POST /api/feedback
 }
 ```
 
-第一期仍以产品客服为主。涉及个人账户、订单、钱包余额、交易记录、泛 MEV/链上取证和投资建议的问题会走边界回复，不会假装查询实时数据。交易哈希夹子检测已有专用路由；默认未接真实数据源时会提示暂未启用，`TX_ANALYSIS_PROVIDER=mock` 只返回 fixture 演示结果和截图，`TX_ANALYSIS_PROVIDER=browser` 会用本机 Chrome 查询公开交易浏览器页面和 XXYY 原池子页。当前 Solana 已能定位目标交易前后窗口，返回带目标行标记的 XXYY 原表格截图；截图前会先在 XXYY 原页面按目标交易本地时间前后 30 秒和目标交易者地址过滤最新成交，再检查可见成交行并框选目标交易；成功结果会保留前后窗口复查交易，规则确认的前置/用户/后置腿标为 `front_run` / `user` / `back_run`，其它上下文交易标为 `related`；标记目标行时会优先按可见交易哈希或交易链接匹配，再用滚动坐标兜底，并为成功或失败结果保存 JSON 分析报告；Base、Ethereum、BSC 已接入初版 browser adapter，带链名或 explorer 链接时会直连对应交易浏览器，裸 EVM 交易哈希会按 Base、Ethereum、BSC 顺序自动探测；如果用户把 `0x` EVM 哈希标成 Solana、`SOL 链` 或 `SOL chain`，会要求重新发送清晰的单笔交易引用。EVM 取证会优先按解析到的池子地址直达 XXYY 原池子页，目标交易匹配失败时再通过 XXYY 合约搜索复用交易窗口和截图链路。
+第一期仍以产品客服为主。涉及个人账户、订单、钱包余额、交易记录、泛 MEV/链上取证和投资建议的问题会走边界回复，不会假装查询实时数据。交易哈希夹子检测已有专用路由；默认未接真实数据源时会提示暂未启用，`TX_ANALYSIS_PROVIDER=browser` 会用本机 Chrome 查询公开交易浏览器页面和 XXYY 原池子页。当前 Solana 已能定位目标交易前后窗口，返回带目标行标记的 XXYY 原表格截图；截图前会先在 XXYY 原页面按目标交易本地时间前后 30 秒和目标交易者地址过滤最新成交，再检查可见成交行并框选目标交易；成功结果会保留前后窗口复查交易，规则确认的前置/用户/后置腿标为 `front_run` / `user` / `back_run`，其它上下文交易标为 `related`；标记目标行时会优先按可见交易哈希或交易链接匹配，再用滚动坐标兜底，并为成功或失败结果保存 JSON 分析报告；Base、Ethereum、BSC 已接入初版 browser adapter，带链名或 explorer 链接时会直连对应交易浏览器，裸 EVM 交易哈希会按 Base、Ethereum、BSC 顺序自动探测；如果用户把 `0x` EVM 哈希标成 Solana、`SOL 链` 或 `SOL chain`，会要求重新发送清晰的单笔交易引用。EVM 取证会优先按解析到的池子地址直达 XXYY 原池子页，目标交易匹配失败时再通过 XXYY 合约搜索复用交易窗口和截图链路。
 
 ## 正式 RAG：Postgres + pgvector
 

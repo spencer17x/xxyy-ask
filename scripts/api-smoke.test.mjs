@@ -2527,7 +2527,7 @@ describe('runApiSmoke', () => {
               jsonResponse({
                 generatedAt: '2026-06-13T00:00:00.000Z',
                 reference: { chain: 'base', txHash },
-                result: successReportResult(txHash, { dataSource: 'fixture' }),
+                result: successReportResult(txHash, { dataSource: 'legacy-demo' }),
                 status: 'success',
                 version: 1,
               }),

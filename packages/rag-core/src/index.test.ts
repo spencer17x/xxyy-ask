@@ -8,7 +8,6 @@ import {
   createFileTxAnalysisReportWriter,
   createGroundedAnswer,
   createLocalRetriever,
-  createMockTxAnalysisProvider,
   createOpenAiAnswerProvider,
   createPlaywrightBrowserTxAnalysisDriver,
   createPgPool,
@@ -46,7 +45,6 @@ describe('rag-core public exports', () => {
     expect(findFileTxAnalysisReports).toBeTypeOf('function');
     expect(createSolanaBrowserTxChainAdapter).toBeTypeOf('function');
     expect(createPlaywrightBrowserTxAnalysisDriver).toBeTypeOf('function');
-    expect(createMockTxAnalysisProvider).toBeTypeOf('function');
     expect(createTxAnalysisAnswer).toBeTypeOf('function');
     expect(analyzeSandwichWindow).toBeTypeOf('function');
     expect(SANDWICH_ANALYZER_VERSION).toBe('sandwich-window-rules-v1');

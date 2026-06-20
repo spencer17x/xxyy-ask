@@ -26,11 +26,6 @@ export type TxAnalysisUnavailableReason =
   | 'screenshot_unavailable'
   | 'timeout';
 
-export interface MockTxAnalysisProviderOptions {
-  analyzedAt?: string;
-  screenshotUrl?: string;
-}
-
 export interface TxAnalysisErrorOptions {
   metadata?: TxAnalysisFailureMetadata;
   reference?: TransactionReference;
@@ -101,54 +96,6 @@ export class TxAnalysisUnsupportedChainError extends Error {
       this.reportUrl = options.reportUrl;
     }
   }
-}
-
-export function createMockTxAnalysisProvider(
-  options: MockTxAnalysisProviderOptions = {},
-): TxAnalysisProvider {
-  return {
-    analyze(reference) {
-      return Promise.resolve({
-        analyzedAt: options.analyzedAt ?? new Date().toISOString(),
-        chain: reference.chain,
-        confidence: 0.62,
-        dataSource: 'fixture',
-        evidence: [
-          {
-            detail: 'Fixture 中用户交易前后各存在一笔相邻 swap，用于演示截图与结果结构。',
-            label: '前后交易模式',
-            severity: 'warning',
-          },
-          {
-            detail: '当前结果未连接真实链上数据源，不能作为真实取证结论。',
-            label: '数据来源',
-            severity: 'info',
-          },
-        ],
-        relatedTransactions: [
-          {
-            hash: `${reference.txHash.slice(0, 10)}...front`,
-            role: 'front_run',
-            summary: '演示前置交易',
-          },
-          {
-            hash: reference.txHash,
-            role: 'user',
-            summary: '用户提交的交易',
-          },
-          {
-            hash: `${reference.txHash.slice(0, 10)}...back`,
-            role: 'back_run',
-            summary: '演示后置交易',
-          },
-        ],
-        screenshotUrl: options.screenshotUrl ?? '/assets/tx-analysis-fixture.svg',
-        summary: '演示数据：疑似存在 sandwich 模式。该结论来自本地 fixture，不代表真实链上分析。',
-        txHash: reference.txHash,
-        verdict: 'sandwiched',
-      });
-    },
-  };
 }
 
 export function createTxAnalysisAnswer(result: TxAnalysisResult): ChatResponse {
@@ -689,5 +636,5 @@ function formatAnalysisHint(result: TxAnalysisResult): string {
     return '提示：这是基于公开浏览器页面和 XXYY 交易窗口的辅助分析，不构成投资建议；页面缺失或筛选不完整时可能无法确认。';
   }
 
-  return '提示：只有接入正式链上数据源后的结果才可作为真实分析；fixture 或 demo 结果只用于展示产品形态。';
+  return '提示：交易分析只作为公开链上页面和 XXYY 交易窗口的辅助判断，不构成投资建议；数据源缺失时不会生成结论。';
 }

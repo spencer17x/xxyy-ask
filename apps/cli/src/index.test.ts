@@ -307,7 +307,7 @@ describe('CLI output formatting', () => {
             kind: 'image',
             mediaType: 'image/svg+xml',
             title: '交易分析截图',
-            url: '/assets/tx-analysis-fixture.svg',
+            url: '/assets/tx-analysis-browser-window.svg',
           },
         ],
         citations: [],
@@ -320,7 +320,7 @@ describe('CLI output formatting', () => {
         '',
         'Attachments:',
         '[1] 交易分析截图',
-        '    /assets/tx-analysis-fixture.svg',
+        '    /assets/tx-analysis-browser-window.svg',
       ].join('\n'),
     );
   });

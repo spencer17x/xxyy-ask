@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  type TxAnalysisProvider,
-  type TxAnalysisReportReader,
-  createMockTxAnalysisProvider,
-} from '@xxyy/rag-core';
+import { type TxAnalysisProvider, type TxAnalysisReportReader } from '@xxyy/rag-core';
 
 import { createToolRegistry } from '../tool-registry.js';
 import {
@@ -26,12 +22,21 @@ describe('createTxAnalysisTools', () => {
 
   it('registers analyze_transaction, strips channel, and returns success for a Base EVM transaction', async () => {
     const registry = createToolRegistry();
-    const mockProvider = createMockTxAnalysisProvider({ analyzedAt: '2026-06-16T00:00:00.000Z' });
     let receivedReference: unknown;
     const provider: TxAnalysisProvider = {
       analyze(reference) {
         receivedReference = reference;
-        return mockProvider.analyze(reference);
+        return Promise.resolve({
+          analyzedAt: '2026-06-16T00:00:00.000Z',
+          chain: reference.chain,
+          confidence: 0.62,
+          dataSource: 'browser',
+          evidence: [],
+          relatedTransactions: [{ hash: reference.txHash, role: 'user', summary: '目标交易' }],
+          summary: '浏览器取证测试结果。',
+          txHash: reference.txHash,
+          verdict: 'not_sandwiched',
+        });
       },
     };
 
@@ -49,7 +54,7 @@ describe('createTxAnalysisTools', () => {
       result: {
         analyzedAt: '2026-06-16T00:00:00.000Z',
         chain: 'base',
-        dataSource: 'fixture',
+        dataSource: 'browser',
         txHash: '0x1111111111111111111111111111111111111111111111111111111111111111',
       },
       status: 'success',
@@ -81,7 +86,7 @@ describe('createTxAnalysisTools', () => {
         confidence: 0.62,
         evidence: [],
         relatedTransactions: [],
-        summary: 'fixture',
+        summary: '浏览器取证报告。',
         txHash: '0x1111111111111111111111111111111111111111111111111111111111111111',
         verdict: 'not_sandwiched',
       },
