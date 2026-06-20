@@ -6,9 +6,16 @@ import {
   createBoundaryAnswer,
   createTxAnalysisAnswer,
   createTxAnalysisUnavailableAnswer,
+  LlmConfigurationError,
   type AnalyzeTransactionOutput,
+  VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
 
+import {
+  isBusinessActionClassification,
+  isPrivateCredentialClassification,
+  isUnsafeUnsupportedClassification,
+} from './answer-planner.js';
 import {
   AGENT_MAX_STEPS_DEFAULT,
   AgentStateAnnotation,
@@ -20,7 +27,13 @@ import {
   type AgentPolicyDecision,
   type AgentState,
 } from './langgraph-state.js';
-import type { PlannerModel, PlannerToolDescriptor } from './planner-model.js';
+import {
+  PlannerConfigurationError,
+  PlannerModelParseError,
+  PlannerModelRequestError,
+  type PlannerModel,
+  type PlannerToolDescriptor,
+} from './planner-model.js';
 import type { ToolContext, ToolRegistry } from './tool-registry.js';
 
 export interface CustomerAgentRuntime {
@@ -91,13 +104,13 @@ function createCustomerGraph(options: CreateLangGraphCustomerRuntimeOptions) {
 
 function policyGuardNode(state: LangGraphAgentState): Partial<AgentState> {
   const classification = classifyQuestion(state.request.message);
-  if (!BOUNDARY_INTENTS.has(classification.intent)) {
+  if (!isBoundaryClassification(classification)) {
     return {
       policyDecision: { action: 'continue' },
     };
   }
 
-  const response = withAgentRoute(createBoundaryAnswer(classification), 'boundary');
+  const response = withAgentRoute(createRuntimeBoundaryAnswer(classification), 'boundary');
   return {
     finalResponse: response,
     policyDecision: {
@@ -125,11 +138,38 @@ async function plannerNode(
     };
   }
 
-  const plan = await options.planner.plan({
-    request: state.request,
-    stateSummary: summarizeState(state),
-    tools: listPlannerTools(options.registry),
-  });
+  let plan: AgentPlan;
+  try {
+    plan = await options.planner.plan({
+      request: state.request,
+      stateSummary: summarizeState(state),
+      tools: listPlannerTools(options.registry),
+    });
+  } catch (error) {
+    if (error instanceof PlannerConfigurationError) {
+      throw error;
+    }
+    if (
+      error instanceof PlannerModelParseError ||
+      error instanceof PlannerModelRequestError ||
+      error instanceof Error
+    ) {
+      return {
+        errors: [`Planner failed: ${errorMessageFrom(error)}`],
+        finalResponse: createClarificationResponse(
+          '当前自动规划暂时不可用，无法可靠选择处理路径。请补充具体功能、配置步骤或单笔公开交易哈希后重试。',
+        ),
+        route: 'clarify',
+      };
+    }
+    return {
+      errors: ['Planner failed with an unknown error.'],
+      finalResponse: createClarificationResponse(
+        '当前自动规划暂时不可用，无法可靠选择处理路径。请补充具体功能、配置步骤或单笔公开交易哈希后重试。',
+      ),
+      route: 'clarify',
+    };
+  }
 
   return {
     currentStep: state.currentStep + 1,
@@ -165,15 +205,28 @@ async function toolExecutorNode(
     };
   }
 
-  const output = await registry.execute(
-    plan.toolName,
-    plan.input,
-    toolContextFromRequest(state.request),
-  );
+  let output: unknown;
+  try {
+    output = await registry.execute(
+      plan.toolName,
+      plan.input,
+      toolContextFromRequest(state.request),
+    );
+  } catch (error) {
+    if (isProductConfigurationError(error)) {
+      throw error;
+    }
+    return {
+      errors: [`Tool ${plan.toolName} failed: ${errorMessageFrom(error)}`],
+      finalResponse: toolFailureResponse(plan.toolName),
+      route: 'clarify',
+    };
+  }
   const evidence = evidenceFromToolOutput(plan.toolName, output);
 
   return {
     evidence: [evidence],
+    route: routeForToolName(plan.toolName),
     toolCalls: [
       {
         input: plan.input,
@@ -199,7 +252,7 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
   const evidence = state.evidence.at(-1);
   if (evidence !== undefined) {
     return {
-      finalResponse: responseFromEvidence(evidence, state.route),
+      finalResponse: responseFromEvidence(evidence),
     };
   }
 
@@ -251,12 +304,9 @@ function evidenceFromToolOutput(toolName: string, output: unknown): AgentEvidenc
   };
 }
 
-function responseFromEvidence(
-  evidence: AgentEvidence,
-  route: AgentRoute | undefined,
-): ChatResponse {
+function responseFromEvidence(evidence: AgentEvidence): ChatResponse {
   if (evidence.kind === 'chat_response') {
-    return withAgentRoute(evidence.response, route ?? routeForChatResponseTool(evidence.toolName));
+    return withAgentRoute(evidence.response, routeForToolName(evidence.toolName));
   }
 
   const output = evidence.output as AnalyzeTransactionOutput;
@@ -273,7 +323,10 @@ function responseFromEvidence(
   return withAgentRoute(response, 'transaction_analysis');
 }
 
-function routeForChatResponseTool(toolName: string): AgentRoute {
+function routeForToolName(toolName: string): AgentRoute {
+  if (toolName === 'analyze_transaction') {
+    return 'transaction_analysis';
+  }
   if (toolName === 'boundary_reply') {
     return 'boundary';
   }
@@ -281,6 +334,54 @@ function routeForChatResponseTool(toolName: string): AgentRoute {
     return 'clarify';
   }
   return 'product_answer';
+}
+
+function toolFailureResponse(toolName: string): ChatResponse {
+  if (toolName === 'analyze_transaction') {
+    return withAgentRoute(
+      createTxAnalysisUnavailableAnswer('provider_unavailable'),
+      'transaction_analysis',
+    );
+  }
+
+  return createClarificationResponse(
+    '当前工具暂时不可用，无法可靠处理这个请求。请补充具体功能、配置步骤或单笔公开交易哈希后重试。',
+  );
+}
+
+function isBoundaryClassification(classification: ReturnType<typeof classifyQuestion>): boolean {
+  return (
+    BOUNDARY_INTENTS.has(classification.intent) ||
+    isBusinessActionClassification(classification) ||
+    isPrivateCredentialClassification(classification) ||
+    isUnsafeUnsupportedClassification(classification)
+  );
+}
+
+function createRuntimeBoundaryAnswer(
+  classification: ReturnType<typeof classifyQuestion>,
+): ChatResponse {
+  if (isPrivateCredentialClassification(classification)) {
+    return {
+      answer:
+        '不要发送私钥、助记词或 seed phrase。XXYY 客服 Agent 不需要这些信息，也不能帮你保管或恢复凭证；如果你已经泄露了凭证，请立即停止使用相关钱包并在自己的钱包工具里转移资产或更换钱包。',
+      citations: [],
+      confidence: Math.min(classification.confidence, 0.7),
+      intent: classification.intent,
+    };
+  }
+
+  if (isUnsafeUnsupportedClassification(classification)) {
+    return {
+      answer:
+        '我不能帮助攻击、盗号、破解或钓鱼，也不会提供绕过安全保护的步骤。可以继续问我 XXYY 产品功能、配置步骤、权益说明，或发送单笔公开交易哈希做夹子检测。',
+      citations: [],
+      confidence: Math.min(classification.confidence, 0.7),
+      intent: classification.intent,
+    };
+  }
+
+  return createBoundaryAnswer(classification);
 }
 
 function toolContextFromRequest(request: ChatRequest): ToolContext {
@@ -306,6 +407,29 @@ function withAgentRoute(response: ChatResponse, agentRoute: AgentRoute): ChatRes
     ...response,
     agentRoute,
   };
+}
+
+function errorMessageFrom(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function isProductConfigurationError(error: unknown): boolean {
+  if (error instanceof LlmConfigurationError || error instanceof VectorStoreConfigurationError) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.constructor.name === 'EmbeddingConfigurationError' ||
+    error.message.includes('required for embedding generation')
+  );
 }
 
 function streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
