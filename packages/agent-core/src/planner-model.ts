@@ -46,6 +46,7 @@ const plannerRoutes = [
 ] as const satisfies readonly PlannerRoute[];
 
 const plannerRouteSchema = z.enum(plannerRoutes);
+const plannerFinalRouteSchema = z.enum(['boundary', 'clarify', 'unsupported']);
 const allowedToolNameSchema = z.enum(ALLOWED_AGENT_TOOL_NAMES);
 
 const citationSchema = z.object({
@@ -107,7 +108,7 @@ const plannerFinalPlanSchema = z.object({
   kind: z.literal('final'),
   reason: z.string().trim().min(1),
   response: chatResponseSchema,
-  route: plannerRouteSchema,
+  route: plannerFinalRouteSchema,
 });
 
 const plannerPlanSchema = z.discriminatedUnion('kind', [

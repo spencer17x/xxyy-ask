@@ -20,14 +20,14 @@ describe('planner model', () => {
       },
       {
         kind: 'final',
-        reason: 'tool returned an answer',
+        reason: 'needs clarification',
         response: {
-          answer: 'XXYY Pro 提供更多产品权益。',
+          answer: '请补充更具体的问题。',
           citations: [],
-          confidence: 0.7,
-          intent: 'product_qa',
+          confidence: 0.45,
+          intent: 'unknown',
         },
-        route: 'product_answer',
+        route: 'clarify',
       },
     ]);
 
@@ -51,9 +51,9 @@ describe('planner model', () => {
       }),
     ).resolves.toMatchObject({
       kind: 'final',
-      route: 'product_answer',
+      route: 'clarify',
       response: {
-        answer: 'XXYY Pro 提供更多产品权益。',
+        answer: '请补充更具体的问题。',
       },
     });
   });
@@ -402,4 +402,48 @@ describe('planner model', () => {
       }),
     ).rejects.toBeInstanceOf(PlannerModelParseError);
   });
+
+  it.each(['product_answer', 'transaction_analysis'] as const)(
+    'rejects %s final routes from model output',
+    async (route) => {
+      const planner = createOpenAiCompatiblePlannerModel({
+        apiKey: 'test-key',
+        baseUrl: 'https://example.test/v1',
+        fetchImpl: () =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        kind: 'final',
+                        reason: 'model tried to claim a tool route',
+                        response: {
+                          answer: 'final response without tool evidence',
+                          citations: [],
+                          confidence: 0.4,
+                          intent: 'unknown',
+                        },
+                        route,
+                      }),
+                    },
+                  },
+                ],
+              }),
+              { status: 200 },
+            ),
+          ),
+        model: 'test-model',
+      });
+
+      await expect(
+        planner.plan({
+          request: { channel: 'web', message: 'XXYY Pro 有哪些权益？' },
+          stateSummary: 'no tools called',
+          tools: [],
+        }),
+      ).rejects.toBeInstanceOf(PlannerModelParseError);
+    },
+  );
 });
