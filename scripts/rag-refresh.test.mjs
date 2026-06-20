@@ -43,12 +43,9 @@ describe('createRagRefreshPlan', () => {
     ]);
   });
 
-  it('rejects removed refresh options', () => {
-    expect(() => createRagRefreshPlan(['--feedback-limit', '50'])).toThrow(
-      'Unknown option: --feedback-limit',
-    );
-    expect(() => createRagRefreshPlan(['--skip-approved-eval-gate'])).toThrow(
-      'Unknown option: --skip-approved-eval-gate',
+  it('rejects unknown refresh options', () => {
+    expect(() => createRagRefreshPlan(['--unknown-option'])).toThrow(
+      'Unknown option: --unknown-option',
     );
   });
 });

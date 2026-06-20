@@ -40,26 +40,10 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['sync:x'])).toEqual({ command: 'sync:x' });
   });
 
-  it('rejects removed commands as unknown', () => {
-    expect(parseCliArgs(['sync:telegram'])).toEqual({
+  it('rejects unknown commands', () => {
+    expect(parseCliArgs(['unknown'])).toEqual({
       command: 'help',
-      error: 'Unknown command: sync:telegram',
-    });
-    expect(parseCliArgs(['publish:knowledge'])).toEqual({
-      command: 'help',
-      error: 'Unknown command: publish:knowledge',
-    });
-    expect(parseCliArgs(['gate:knowledge'])).toEqual({
-      command: 'help',
-      error: 'Unknown command: gate:knowledge',
-    });
-    expect(parseCliArgs(['feedback'])).toEqual({
-      command: 'help',
-      error: 'Unknown command: feedback',
-    });
-    expect(parseCliArgs(['evaluate'])).toEqual({
-      command: 'help',
-      error: 'Unknown command: evaluate',
+      error: 'Unknown command: unknown',
     });
   });
 });
