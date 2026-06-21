@@ -1527,11 +1527,7 @@ describe('createPgTxAnalysisReportStore', () => {
 
   it('persists success and failure reports in Postgres', async () => {
     const client = new FakePgClient();
-    client.queuedRows = [[{ id: 'txr_success_1' }], [{ id: 'txr_failure_1' }]];
-    const store = createPgTxAnalysisReportStore({
-      client,
-      reportBaseUrl: '/api/tx-analysis/reports',
-    });
+    const store = createPgTxAnalysisReportStore({ client });
 
     const success = await store.writeReport({
       reference: { chain: 'solana', txHash: SOLANA_TX },
@@ -1575,16 +1571,23 @@ describe('createPgTxAnalysisReportStore', () => {
       reference: { chain: 'solana', txHash: SOLANA_TX },
     });
 
-    expect(success.reportUrl).toBe('/api/tx-analysis/reports/txr_success_1');
-    expect(failure.reportUrl).toBe('/api/tx-analysis/reports/txr_failure_1');
+    const successValues = client.queries[0]?.values;
+    const failureValues = client.queries[1]?.values;
+    if (successValues === undefined || failureValues === undefined) {
+      throw new Error('expected success and failure insert queries');
+    }
+    const successReportId = successValues[0] as string;
+    const failureReportId = failureValues[0] as string;
+    expect(success.reportUrl).toBe(`tx-analysis-report:${successReportId}`);
+    expect(failure.reportUrl).toBe(`tx-analysis-report:${failureReportId}`);
     expect(client.queries[0]?.sql).toContain('insert into tx_analysis_reports');
-    expect(client.queries[0]?.values).toEqual([
+    expect(successValues).toEqual([
       expect.stringMatching(/^txr_/u),
       SOLANA_TX,
       'solana',
       'success',
       expect.any(String),
-      '/api/tx-analysis/reports',
+      `tx-analysis-report:${successReportId}`,
       '/assets/tx-analysis-solana-window.png',
       `https://solscan.io/tx/${SOLANA_TX}`,
       'https://www.xxyy.io/sol/Pool1111111111111111111111111111111111111111',
@@ -1600,13 +1603,13 @@ describe('createPgTxAnalysisReportStore', () => {
       true,
       expect.any(String),
     ]);
-    expect(client.queries[1]?.values).toEqual([
+    expect(failureValues).toEqual([
       expect.stringMatching(/^txr_/u),
       SOLANA_TX,
       'solana',
       'failure',
       expect.any(String),
-      '/api/tx-analysis/reports',
+      `tx-analysis-report:${failureReportId}`,
       '/assets/tx-analysis-failure-solana.png',
       `https://solscan.io/tx/${SOLANA_TX}`,
       'https://www.xxyy.io/sol/Pool1111111111111111111111111111111111111111',
@@ -1909,7 +1912,7 @@ describe('createPgTxAnalysisReportStore', () => {
               summary: '用户交易',
             },
           ],
-          report_url: '/api/tx-analysis/reports/txr_base_success',
+          report_url: '/assets/tx-analysis-reports/txr_base_success',
           review_assignee: 'alice',
           review_note: '已回复用户并附上截图。',
           review_status: 'closed',
@@ -1973,7 +1976,7 @@ describe('createPgTxAnalysisReportStore', () => {
             summary: '用户交易',
           },
         ],
-        reportUrl: '/api/tx-analysis/reports/txr_base_success',
+        reportUrl: '/assets/tx-analysis-reports/txr_base_success',
         review: {
           assignee: 'alice',
           note: '已回复用户并附上截图。',
@@ -2028,7 +2031,7 @@ describe('createPgTxAnalysisReportStore', () => {
               summary: '空链接交易',
             },
           ],
-          report_url: '/api/tx-analysis/reports/txr_base_success',
+          report_url: '/assets/tx-analysis-reports/txr_base_success',
           review_assignee: null,
           review_note: null,
           review_status: null,
@@ -2088,7 +2091,7 @@ describe('createPgTxAnalysisReportStore', () => {
               summary: '用户交易',
             },
           ],
-          report_url: '/api/tx-analysis/reports/txr_base_success',
+          report_url: '/assets/tx-analysis-reports/txr_base_success',
           review_assignee: null,
           review_note: null,
           review_status: null,
@@ -2135,7 +2138,7 @@ describe('createPgTxAnalysisReportStore', () => {
           generated_at: '2026-06-11T00:02:00.000Z',
           pool_address: null,
           related_transactions: null,
-          report_url: '/api/tx-analysis/reports/txr_base_legacy',
+          report_url: '/assets/tx-analysis-reports/txr_base_legacy',
           review_assignee: null,
           review_note: null,
           review_status: null,
@@ -2162,7 +2165,7 @@ describe('createPgTxAnalysisReportStore', () => {
     expect(client.queries[0]?.sql).toContain("coalesce(review_status, 'open') = $1");
     expect(reports).toHaveLength(1);
     expect(reports[0]).toMatchObject({
-      reportUrl: '/api/tx-analysis/reports/txr_base_legacy',
+      reportUrl: '/assets/tx-analysis-reports/txr_base_legacy',
       txHash: evmTx,
     });
     expect(reports[0]?.review).toMatchObject({ status: 'open' });
@@ -2219,7 +2222,7 @@ describe('createPgTxAnalysisReportStore', () => {
             },
           ],
           related_transactions: null,
-          report_url: '/api/tx-analysis/reports/txr_eth_failure',
+          report_url: '/assets/tx-analysis-reports/txr_eth_failure',
           review_assignee: null,
           review_note: null,
           review_status: 'open',
@@ -2306,7 +2309,7 @@ describe('createPgTxAnalysisReportStore', () => {
             },
           ],
           related_transactions: null,
-          report_url: '/api/tx-analysis/reports/txr_unknown_failure',
+          report_url: '/assets/tx-analysis-reports/txr_unknown_failure',
           review_assignee: null,
           review_note: null,
           review_status: 'open',
@@ -2361,7 +2364,7 @@ describe('createPgTxAnalysisReportStore', () => {
           pool_address: null,
           probe_attempts: null,
           related_transactions: null,
-          report_url: '/api/tx-analysis/reports/txr_base_failure',
+          report_url: '/assets/tx-analysis-reports/txr_base_failure',
           review_assignee: null,
           review_note: null,
           review_status: 'open',
@@ -2388,7 +2391,7 @@ describe('createPgTxAnalysisReportStore', () => {
           pool_address: null,
           probe_attempts: null,
           related_transactions: null,
-          report_url: '/api/tx-analysis/reports/txr_eth_failure',
+          report_url: '/assets/tx-analysis-reports/txr_eth_failure',
           review_assignee: null,
           review_note: null,
           review_status: 'open',
@@ -2580,7 +2583,7 @@ describe('createPgTxAnalysisReportStore', () => {
           generated_at: '2026-06-11T00:02:00.000Z',
           pool_address: null,
           router_address: '0xRouter',
-          report_url: '/api/tx-analysis/reports/txr_timeout',
+          report_url: '/assets/tx-analysis-reports/txr_timeout',
           screenshot_url: null,
           status: 'failure',
           tx_hash: '0xabc',
@@ -2618,7 +2621,7 @@ describe('createPgTxAnalysisReportStore', () => {
           generatedAt: '2026-06-11T00:02:00.000Z',
           message: 'Browser timeout',
           reason: 'timeout',
-          reportUrl: '/api/tx-analysis/reports/txr_timeout',
+          reportUrl: '/assets/tx-analysis-reports/txr_timeout',
           review: {
             status: 'open',
             updatedAt: '2026-06-11T00:02:00.000Z',

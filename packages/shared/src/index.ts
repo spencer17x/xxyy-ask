@@ -19,7 +19,6 @@ export type Intent = (typeof supportedIntents)[number];
 export const supportedAgentRoutes = [
   'boundary',
   'clarify',
-  'preference_capture',
   'product_answer',
   'transaction_analysis',
 ] as const;

@@ -1,0 +1,194 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { runAgentSmoke } from './agent-smoke.mjs';
+
+describe('runAgentSmoke', () => {
+  it('checks health and first-slice agent routes', async () => {
+    const calls = [];
+    const fetch = vi.fn(async (url, init = {}) => {
+      calls.push({ body: init.body, method: init.method ?? 'GET', url });
+
+      if (url === 'https://ask.example.test/health') {
+        return jsonResponse({ ok: true });
+      }
+
+      if (url !== 'https://ask.example.test/api/chat') {
+        throw new Error(`unexpected URL: ${url}`);
+      }
+
+      const body = JSON.parse(init.body);
+      if (body.message === 'product question') {
+        return jsonResponse({ agentRoute: 'product_answer', answer: 'product answer' });
+      }
+      if (body.message === 'boundary question') {
+        return jsonResponse({ agentRoute: 'boundary', answer: 'boundary answer' });
+      }
+      if (body.message === 'tx-hash-1') {
+        return jsonResponse({ agentRoute: 'transaction_analysis', answer: 'tx answer' });
+      }
+
+      throw new Error(`unexpected message: ${body.message}`);
+    });
+    const output = [];
+
+    const exitCode = await runAgentSmoke({
+      env: {
+        API_SMOKE_BASE_URL: 'https://ask.example.test/',
+        API_SMOKE_BOUNDARY_QUESTION: 'boundary question',
+        API_SMOKE_PRODUCT_QUESTION: 'product question',
+        API_SMOKE_TX_HASH: ' tx-hash-1 ',
+      },
+      fetch,
+      log: (message) => output.push(message),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(output).toEqual(['agent smoke passed']);
+    expect(calls).toEqual([
+      { body: undefined, method: 'GET', url: 'https://ask.example.test/health' },
+      {
+        body: JSON.stringify({ channel: 'web', message: 'product question' }),
+        method: 'POST',
+        url: 'https://ask.example.test/api/chat',
+      },
+      {
+        body: JSON.stringify({ channel: 'web', message: 'boundary question' }),
+        method: 'POST',
+        url: 'https://ask.example.test/api/chat',
+      },
+      {
+        body: JSON.stringify({ channel: 'web', message: 'tx-hash-1' }),
+        method: 'POST',
+        url: 'https://ask.example.test/api/chat',
+      },
+    ]);
+  });
+
+  it('reports health non-200 with endpoint context', async () => {
+    const result = await runSmokeWithResponses([textResponse('maintenance', 503)]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors).toEqual(['GET https://ask.example.test/health returned HTTP 503']);
+  });
+
+  it('reports chat non-200 with endpoint context', async () => {
+    const result = await runSmokeWithResponses([
+      jsonResponse({ ok: true }),
+      textResponse('bad request', 400),
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors).toEqual([
+      'product question POST https://ask.example.test/api/chat returned HTTP 400: bad request',
+    ]);
+  });
+
+  it('reports invalid chat JSON with endpoint context', async () => {
+    const result = await runSmokeWithResponses([
+      jsonResponse({ ok: true }),
+      textResponse('not-json'),
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors).toEqual([
+      'product question POST https://ask.example.test/api/chat returned invalid JSON: not-json',
+    ]);
+  });
+
+  it('reports null chat JSON as a non-object payload', async () => {
+    const result = await runSmokeWithResponses([jsonResponse({ ok: true }), jsonResponse(null)]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors).toEqual([
+      'product question POST https://ask.example.test/api/chat returned JSON null; expected object',
+    ]);
+  });
+
+  it('reports wrong agent routes', async () => {
+    const result = await runSmokeWithResponses([
+      jsonResponse({ ok: true }),
+      jsonResponse({ agentRoute: 'boundary', answer: 'answer' }),
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors).toEqual([
+      'product question expected agentRoute product_answer, got "boundary"',
+    ]);
+  });
+
+  it('reports empty answers', async () => {
+    const result = await runSmokeWithResponses([
+      jsonResponse({ ok: true }),
+      jsonResponse({ agentRoute: 'product_answer', answer: '   ' }),
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors).toEqual(['product question returned an empty answer']);
+  });
+
+  it.each([undefined, '', '   '])(
+    'omits transaction analysis when tx hash is %s',
+    async (txHash) => {
+      const calls = [];
+      const result = await runSmokeWithResponses(
+        [
+          jsonResponse({ ok: true }),
+          jsonResponse({ agentRoute: 'product_answer', answer: 'product answer' }),
+          jsonResponse({ agentRoute: 'boundary', answer: 'boundary answer' }),
+        ],
+        {
+          calls,
+          env: {
+            API_SMOKE_TX_HASH: txHash,
+          },
+        },
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(calls).toHaveLength(3);
+    },
+  );
+});
+
+async function runSmokeWithResponses(responses, options = {}) {
+  const output = [];
+  const errors = [];
+  const calls = options.calls ?? [];
+  const fetch = vi.fn(async (url, init = {}) => {
+    calls.push({ body: init.body, method: init.method ?? 'GET', url });
+    const response = responses.shift();
+    if (response === undefined) {
+      throw new Error(`unexpected fetch: ${init.method ?? 'GET'} ${url}`);
+    }
+
+    return response;
+  });
+
+  const exitCode = await runAgentSmoke({
+    env: {
+      API_SMOKE_BASE_URL: 'https://ask.example.test',
+      API_SMOKE_BOUNDARY_QUESTION: 'boundary question',
+      API_SMOKE_PRODUCT_QUESTION: 'product question',
+      ...options.env,
+    },
+    error: (message) => errors.push(message),
+    fetch,
+    log: (message) => output.push(message),
+  });
+
+  return { calls, errors, exitCode, output };
+}
+
+function textResponse(body, status = 200) {
+  return new Response(body, {
+    headers: { 'Content-Type': 'text/plain' },
+    status,
+  });
+}
+
+function jsonResponse(payload, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    headers: { 'Content-Type': 'application/json' },
+    status,
+  });
+}

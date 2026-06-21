@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createRagRefreshPlan, runRagRefresh } from './rag-refresh.mjs';
 
 describe('createRagRefreshPlan', () => {
-  it('refreshes sources, syncs X knowledge, runs the RAG gate, and exports negative feedback', () => {
+  it('refreshes sources and syncs X knowledge by default', () => {
     expect(createRagRefreshPlan([])).toEqual([
       {
         args: ['x:scrape'],
@@ -14,21 +14,6 @@ describe('createRagRefreshPlan', () => {
         args: ['rag:sync:x'],
         command: 'pnpm',
         label: 'sync X knowledge',
-      },
-      {
-        args: ['ops:check:rag'],
-        command: 'pnpm',
-        label: 'RAG production gate',
-      },
-      {
-        args: ['rag:gate:knowledge', '--', '--approved-eval', '--fast'],
-        command: 'pnpm',
-        label: 'approved eval knowledge gate',
-      },
-      {
-        args: ['rag:feedback', '--', '--rating', 'negative', '--limit', '25', '--json'],
-        command: 'pnpm',
-        label: 'negative feedback triage queue',
       },
     ]);
   });
@@ -45,75 +30,23 @@ describe('createRagRefreshPlan', () => {
         command: 'pnpm',
         label: 'ingest knowledge',
       },
-      {
-        args: ['ops:check:full'],
-        command: 'pnpm',
-        label: 'full RAG production gate',
-      },
-      {
-        args: ['rag:gate:knowledge', '--', '--approved-eval', '--fast'],
-        command: 'pnpm',
-        label: 'approved eval knowledge gate',
-      },
-      {
-        args: ['rag:feedback', '--', '--rating', 'negative', '--limit', '25', '--json'],
-        command: 'pnpm',
-        label: 'negative feedback triage queue',
-      },
     ]);
   });
 
-  it('supports full evaluation and source refresh overrides', () => {
-    expect(
-      createRagRefreshPlan(['--', '--skip-scrape', '--full', '--feedback-limit', '50']),
-    ).toEqual([
+  it('can skip source refreshes', () => {
+    expect(createRagRefreshPlan(['--', '--skip-scrape', '--full'])).toEqual([
       {
         args: ['rag:ingest'],
         command: 'pnpm',
         label: 'ingest knowledge',
       },
-      {
-        args: ['ops:check:full'],
-        command: 'pnpm',
-        label: 'full RAG production gate',
-      },
-      {
-        args: ['rag:gate:knowledge', '--', '--approved-eval', '--fast'],
-        command: 'pnpm',
-        label: 'approved eval knowledge gate',
-      },
-      {
-        args: ['rag:feedback', '--', '--rating', 'negative', '--limit', '50', '--json'],
-        command: 'pnpm',
-        label: 'negative feedback triage queue',
-      },
     ]);
   });
 
-  it('rejects invalid feedback limits', () => {
-    expect(() => createRagRefreshPlan(['--feedback-limit', '0'])).toThrow(
-      'Invalid --feedback-limit: 0',
+  it('rejects unknown refresh options', () => {
+    expect(() => createRagRefreshPlan(['--unknown-option'])).toThrow(
+      'Unknown option: --unknown-option',
     );
-  });
-
-  it('can skip approved eval gating for emergency refreshes', () => {
-    expect(createRagRefreshPlan(['--skip-scrape', '--skip-approved-eval-gate'])).toEqual([
-      {
-        args: ['rag:sync:x'],
-        command: 'pnpm',
-        label: 'sync X knowledge',
-      },
-      {
-        args: ['ops:check:rag'],
-        command: 'pnpm',
-        label: 'RAG production gate',
-      },
-      {
-        args: ['rag:feedback', '--', '--rating', 'negative', '--limit', '25', '--json'],
-        command: 'pnpm',
-        label: 'negative feedback triage queue',
-      },
-    ]);
   });
 });
 
@@ -121,15 +54,15 @@ describe('runRagRefresh', () => {
   it('stops at the first failed command', async () => {
     const commands = [];
     const exitCode = await runRagRefresh({
-      args: ['--skip-scrape'],
+      args: [],
       log: () => {},
       runCommand(command) {
         commands.push(command.label);
-        return Promise.resolve(command.label === 'RAG production gate' ? 1 : 0);
+        return Promise.resolve(command.label === 'sync X knowledge' ? 1 : 0);
       },
     });
 
     expect(exitCode).toBe(1);
-    expect(commands).toEqual(['sync X knowledge', 'RAG production gate']);
+    expect(commands).toEqual(['refresh X updates', 'sync X knowledge']);
   });
 });

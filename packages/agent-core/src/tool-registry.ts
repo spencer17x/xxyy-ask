@@ -5,6 +5,13 @@ export interface ToolPolicy {
   requiresOpsAuth: boolean;
 }
 
+export interface ToolContext {
+  channel?: string | undefined;
+  requestId?: string | undefined;
+  sessionId?: string | undefined;
+  userIdPresent?: boolean | undefined;
+}
+
 export interface ToolDefinition<
   Name extends string = string,
   InputSchema extends z.ZodType = z.ZodType,
@@ -15,7 +22,10 @@ export interface ToolDefinition<
   inputSchema: InputSchema;
   outputSchema: OutputSchema;
   policy: ToolPolicy;
-  execute: (input: z.output<InputSchema>) => z.input<OutputSchema> | Promise<z.input<OutputSchema>>;
+  execute: (
+    input: z.output<InputSchema>,
+    context: ToolContext,
+  ) => z.input<OutputSchema> | Promise<z.input<OutputSchema>>;
 }
 
 export interface ListToolsOptions {
@@ -23,7 +33,7 @@ export interface ListToolsOptions {
 }
 
 type RegisteredToolDefinition = Omit<ToolDefinition, 'execute'> & {
-  execute: (input: unknown) => unknown;
+  execute: (input: unknown, context: ToolContext) => unknown;
 };
 
 export class ToolRegistryDuplicateNameError extends Error {
@@ -41,7 +51,7 @@ export class ToolRegistryToolNotFoundError extends Error {
 }
 
 export interface ToolRegistry {
-  execute(name: string, input: unknown): Promise<z.output<z.ZodType>>;
+  execute(name: string, input: unknown, context?: ToolContext): Promise<z.output<z.ZodType>>;
   get(name: string): ToolDefinition | undefined;
   list(options?: ListToolsOptions): ToolDefinition[];
   register<Name extends string, InputSchema extends z.ZodType, OutputSchema extends z.ZodType>(
@@ -53,14 +63,14 @@ export function createToolRegistry(): ToolRegistry {
   const tools = new Map<string, RegisteredToolDefinition>();
 
   return {
-    async execute(name, input) {
+    async execute(name, input, context = {}) {
       const definition = tools.get(name);
       if (!definition) {
         throw new ToolRegistryToolNotFoundError(name);
       }
 
       const parsedInput = definition.inputSchema.parse(input);
-      const output = await definition.execute(parsedInput);
+      const output = await definition.execute(parsedInput, context);
       return definition.outputSchema.parse(output);
     },
 

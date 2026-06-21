@@ -9,20 +9,14 @@
   "dependencies": {
     "@xxyy/agent-core": "workspace:*",
     "@xxyy/knowledge": "workspace:*",
-    "@xxyy/knowledge-ops": "workspace:*",
     "@xxyy/rag-core": "workspace:*",
     "@xxyy/shared": "workspace:*"
   },
   "scripts": {
     "rag:ask": "tsx src/index.ts ask",
-    "rag:evaluate": "tsx src/index.ts evaluate",
-    "rag:feedback": "tsx src/index.ts feedback",
-    "rag:gate:knowledge": "tsx src/index.ts gate:knowledge",
     "rag:ingest": "tsx src/index.ts ingest",
     "rag:migrate": "tsx src/index.ts migrate",
-    "rag:publish:knowledge": "tsx src/index.ts publish:knowledge",
     "rag:stats": "tsx src/index.ts stats",
-    "rag:sync:telegram": "tsx src/index.ts sync:telegram",
     "rag:sync:x": "tsx src/index.ts sync:x",
     "start": "tsx src/index.ts",
     "test": "vitest run src",

@@ -41,6 +41,34 @@ describe('createToolRegistry', () => {
     await expect(registry.execute('string_to_number', {})).resolves.toBe(42);
   });
 
+  it('passes tool context into execute handlers', async () => {
+    const registry = createToolRegistry();
+    const calls: unknown[] = [];
+
+    registry.register({
+      name: 'context_tool',
+      description: 'Use context.',
+      inputSchema: z.object({ value: z.string() }),
+      outputSchema: z.object({ ok: z.literal(true) }),
+      policy: { allowExternalMcp: false, requiresOpsAuth: false },
+      execute(input, context) {
+        calls.push({ context, input });
+        return { ok: true as const };
+      },
+    });
+
+    await expect(
+      registry.execute('context_tool', { value: 'x' }, { channel: 'web', requestId: 'req-1' }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(calls).toEqual([
+      {
+        context: { channel: 'web', requestId: 'req-1' },
+        input: { value: 'x' },
+      },
+    ]);
+  });
+
   it('rejects duplicate tool names with ToolRegistryDuplicateNameError', () => {
     const registry = createToolRegistry();
     const definition = {

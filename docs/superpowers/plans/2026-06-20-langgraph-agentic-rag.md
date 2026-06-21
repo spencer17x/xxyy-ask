@@ -923,16 +923,16 @@ export const TX_ANALYSIS_TOOL_NAMES = ['analyze_transaction'] as const;
 
 Remove these exports and definitions from the file:
 
-```ts
-getAnalysisReportInputSchema;
-getAnalysisReportOutputSchema;
-listAnalysisReportsInputSchema;
-listAnalysisReportsOutputSchema;
-GetAnalysisReportToolDefinition;
-ListAnalysisReportsToolDefinition;
-getAnalysisReportTool;
-listAnalysisReportsTool;
-toReportFindOptions;
+```text
+getAnalysisReportInputSchema
+getAnalysisReportOutputSchema
+listAnalysisReportsInputSchema
+listAnalysisReportsOutputSchema
+GetAnalysisReportToolDefinition
+ListAnalysisReportsToolDefinition
+getAnalysisReportTool
+listAnalysisReportsTool
+toReportFindOptions
 ```
 
 Keep `CreateTxAnalysisToolsOptions.reportReader` out of the first-slice type:
@@ -1688,16 +1688,16 @@ Expected:
 
 In `packages/agent-core/src/index.ts`, remove all export blocks that reference:
 
-```ts
-answer - planner;
-audit;
-customer - agent - runtime;
-follow - up - resolver;
-knowledge - ops - agent - runtime;
-quality - signals;
-pg - session - context;
-session - context;
-tools / knowledge - ops - tools;
+```text
+answer-planner
+audit
+customer-agent-runtime
+follow-up-resolver
+knowledge-ops-agent-runtime
+quality-signals
+pg-session-context
+session-context
+tools/knowledge-ops-tools
 ```
 
 Keep only:
@@ -1708,14 +1708,14 @@ export const workspacePackageName = '@xxyy/agent-core';
 
 and exports for:
 
-```ts
-customer - agent - chat - service;
-langgraph - customer - runtime;
-langgraph - state;
-planner - model;
-tool - registry;
-tools / product - tools;
-tools / tx - analysis - tools;
+```text
+customer-agent-chat-service
+langgraph-customer-runtime
+langgraph-state
+planner-model
+tool-registry
+tools/product-tools
+tools/tx-analysis-tools
 ```
 
 - [ ] **Step 3: Remove `preference_capture` from shared routes**
