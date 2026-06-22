@@ -18,6 +18,7 @@ import {
   createOpenAiAnswerProvider,
   createPgPool,
   createPgVectorStore,
+  LlmConfigurationError,
   loadRagConfig,
   loadWorkspaceEnv,
   resolveWorkspaceCwd,
@@ -583,6 +584,11 @@ function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): 
 }
 
 function writeConfigurationError(io: CliIo, error: unknown): boolean {
+  if (error instanceof LlmConfigurationError) {
+    writeLine(io.stderr, error.message);
+    return true;
+  }
+
   if (error instanceof EmbeddingConfigurationError) {
     writeLine(io.stderr, error.message);
     return true;

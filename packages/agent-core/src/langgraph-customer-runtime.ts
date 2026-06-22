@@ -2,8 +2,6 @@ import { END, START, StateGraph } from '@langchain/langgraph';
 
 import type { AgentRoute, ChatRequest, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import {
-  classifyQuestion,
-  createBoundaryAnswer,
   createTxAnalysisAnswer,
   createTxAnalysisUnavailableAnswer,
   LlmConfigurationError,
@@ -11,11 +9,6 @@ import {
   VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
 
-import {
-  isBusinessActionClassification,
-  isPrivateCredentialClassification,
-  isUnsafeUnsupportedClassification,
-} from './classification-guards.js';
 import {
   AGENT_MAX_STEPS_DEFAULT,
   AgentStateAnnotation,
@@ -48,7 +41,7 @@ export interface CreateLangGraphCustomerRuntimeOptions {
   registry: ToolRegistry;
 }
 
-type CustomerRuntimeNode = 'answer_composer' | 'planner' | 'policy_guard' | 'tool_executor';
+type CustomerRuntimeNode = 'answer_composer' | 'planner' | 'tool_executor';
 
 type LangGraphAgentState = Omit<
   AgentState,
@@ -59,12 +52,6 @@ type LangGraphAgentState = Omit<
   policyDecision: AgentPolicyDecision | undefined;
   route: AgentRoute | undefined;
 };
-
-const BOUNDARY_INTENTS = new Set([
-  'investment_advice',
-  'mev_or_chain_forensics',
-  'realtime_account_query',
-]);
 
 export function createLangGraphCustomerRuntime(
   options: CreateLangGraphCustomerRuntimeOptions,
@@ -91,39 +78,14 @@ export function createLangGraphCustomerRuntime(
 
 function createCustomerGraph(options: CreateLangGraphCustomerRuntimeOptions) {
   return new StateGraph(AgentStateAnnotation)
-    .addNode('policy_guard', policyGuardNode)
     .addNode('planner', (state) => plannerNode(state, options))
     .addNode('tool_executor', (state) => toolExecutorNode(state, options.registry))
     .addNode('answer_composer', answerComposerNode)
-    .addEdge(START, 'policy_guard')
-    .addConditionalEdges('policy_guard', routeAfterPolicyGuard)
+    .addEdge(START, 'planner')
     .addConditionalEdges('planner', routeAfterPlanner)
     .addEdge('tool_executor', 'answer_composer')
     .addEdge('answer_composer', END)
     .compile();
-}
-
-function policyGuardNode(state: LangGraphAgentState): Partial<AgentState> {
-  const classification = classifyQuestion(state.request.message);
-  if (!isBoundaryClassification(classification)) {
-    return {
-      policyDecision: { action: 'continue' },
-    };
-  }
-
-  const response = withAgentRoute(createRuntimeBoundaryAnswer(classification), 'boundary');
-  return {
-    finalResponse: response,
-    policyDecision: {
-      action: 'final',
-      response,
-    },
-    route: 'boundary',
-  };
-}
-
-function routeAfterPolicyGuard(state: LangGraphAgentState): CustomerRuntimeNode {
-  return state.finalResponse === undefined ? 'planner' : 'answer_composer';
 }
 
 async function plannerNode(
@@ -147,7 +109,7 @@ async function plannerNode(
       tools: listPlannerTools(options.registry),
     });
   } catch (error) {
-    if (error instanceof PlannerConfigurationError) {
+    if (error instanceof PlannerConfigurationError || error instanceof LlmConfigurationError) {
       throw error;
     }
     if (
@@ -360,43 +322,8 @@ function toolFailureResponse(toolName: string): ChatResponse {
   );
 }
 
-function isBoundaryClassification(classification: ReturnType<typeof classifyQuestion>): boolean {
-  return (
-    BOUNDARY_INTENTS.has(classification.intent) ||
-    isBusinessActionClassification(classification) ||
-    isPrivateCredentialClassification(classification) ||
-    isUnsafeUnsupportedClassification(classification)
-  );
-}
-
 function isFinalPlannerRoute(route: unknown): route is FinalPlannerRoute {
   return route === 'boundary' || route === 'clarify' || route === 'unsupported';
-}
-
-function createRuntimeBoundaryAnswer(
-  classification: ReturnType<typeof classifyQuestion>,
-): ChatResponse {
-  if (isPrivateCredentialClassification(classification)) {
-    return {
-      answer:
-        '不要发送私钥、助记词或 seed phrase。XXYY 客服 Agent 不需要这些信息，也不能帮你保管或恢复凭证；如果你已经泄露了凭证，请立即停止使用相关钱包并在自己的钱包工具里转移资产或更换钱包。',
-      citations: [],
-      confidence: Math.min(classification.confidence, 0.7),
-      intent: classification.intent,
-    };
-  }
-
-  if (isUnsafeUnsupportedClassification(classification)) {
-    return {
-      answer:
-        '我不能帮助攻击、盗号、破解或钓鱼，也不会提供绕过安全保护的步骤。可以继续问我 XXYY 产品功能、配置步骤、权益说明，或发送单笔公开交易哈希做夹子检测。',
-      citations: [],
-      confidence: Math.min(classification.confidence, 0.7),
-      intent: classification.intent,
-    };
-  }
-
-  return createBoundaryAnswer(classification);
 }
 
 function toolContextFromRequest(request: ChatRequest): ToolContext {

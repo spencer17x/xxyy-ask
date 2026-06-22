@@ -6,10 +6,12 @@ import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CreateCustomerAgentChatServiceOptions } from '@xxyy/agent-core';
+import { EmbeddingConfigurationError } from '@xxyy/knowledge';
 import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import {
   createChatService,
   LlmConfigurationError,
+  VectorStoreConfigurationError,
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
 
@@ -1607,7 +1609,7 @@ describe('createRequestHandler', () => {
     ]);
   });
 
-  it('answers boundary questions in pgvector mode before requiring vector configuration', async () => {
+  it('requires planner configuration for boundary-like questions in agentic mode', async () => {
     const handler = createRequestHandler({ env: {} });
 
     const response = await callHandler(handler, {
@@ -1616,19 +1618,26 @@ describe('createRequestHandler', () => {
       body: { message: '帮我查一下钱包余额' },
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toMatchObject({
-      intent: 'realtime_account_query',
-      citations: [],
+    expect(response.statusCode).toBe(503);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'llm_configuration_missing',
+      message: 'OPENAI_API_KEY is required for agent planning.',
     });
   });
 
   it('returns a useful 503 when pgvector configuration is missing', async () => {
     const handler = createRequestHandler({
-      env: {
-        OPENAI_API_KEY: 'test-key',
-        OPENAI_MODEL: 'test-model',
-      },
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.reject(
+              new VectorStoreConfigurationError('DATABASE_URL is required for pgvector retrieval.'),
+            );
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
+        }),
     });
 
     const response = await callHandler(handler, {
@@ -1646,6 +1655,36 @@ describe('createRequestHandler', () => {
 
   it('returns a useful 503 when embedding configuration is missing', async () => {
     const handler = createRequestHandler({
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.reject(
+              new EmbeddingConfigurationError(
+                'OPENAI_API_KEY is required for embedding generation.',
+              ),
+            );
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat',
+      body: { message: 'XXYY Pro 有哪些权益？' },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'embedding_configuration_missing',
+      message: 'OPENAI_API_KEY is required for embedding generation.',
+    });
+  });
+
+  it('returns a useful 503 when default agent planner configuration is missing', async () => {
+    const handler = createRequestHandler({
       env: {
         DATABASE_URL: 'postgres://xxyy:password@localhost:5432/xxyy_ask',
         OPENAI_MODEL: 'test-model',
@@ -1660,8 +1699,8 @@ describe('createRequestHandler', () => {
 
     expect(response.statusCode).toBe(503);
     expect(JSON.parse(response.body)).toEqual({
-      error: 'embedding_configuration_missing',
-      message: 'OPENAI_API_KEY is required for embedding generation.',
+      error: 'llm_configuration_missing',
+      message: 'OPENAI_API_KEY is required for agent planning.',
     });
   });
 

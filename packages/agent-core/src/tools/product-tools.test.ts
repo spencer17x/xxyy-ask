@@ -106,14 +106,59 @@ describe('createProductTools', () => {
     });
   });
 
-  it('returns a boundary answer without retrieval or AnswerProvider for account questions', async () => {
+  it('trusts planner-selected product questions even when deterministic classification is unknown', async () => {
     const registry = createToolRegistry();
-    const retrieve = vi.fn<Retriever['retrieve']>(() => {
-      throw new Error('retriever should not be called');
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [
+      createRetrievedChunk({
+        text: '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链。',
+      }),
+    ]);
+    const answer = vi.fn<AnswerProvider['answer']>((input) =>
+      Promise.resolve({
+        answer: `intent ${input.classification.intent}; chunks ${input.retrievedChunks.length}`,
+        citations: [],
+        confidence: input.classification.confidence,
+        intent: input.classification.intent,
+      }),
+    );
+
+    for (const tool of createProductTools({
+      answerProvider: { answer },
+      retriever: { retrieve },
+    })) {
+      registry.register(tool);
+    }
+
+    await expect(
+      registry.execute('answer_product_question', {
+        channel: 'agent',
+        question: '支持跟单么',
+      }),
+    ).resolves.toMatchObject({
+      answer: 'intent product_qa; chunks 1',
+      intent: 'product_qa',
     });
-    const answer = vi.fn<AnswerProvider['answer']>(() => {
-      throw new Error('answer provider should not be called');
+    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 6 });
+    const answerInput = answer.mock.calls[0]?.[0];
+    expect(answerInput).toBeDefined();
+    expect(answerInput?.classification).toMatchObject({
+      intent: 'product_qa',
+      reason: 'planner selected product answer tool',
     });
+    expect(answerInput?.question).toBe('支持跟单么');
+  });
+
+  it('does not apply boundary logic inside answer_product_question after planner selection', async () => {
+    const registry = createToolRegistry();
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [createRetrievedChunk()]);
+    const answer = vi.fn<AnswerProvider['answer']>((input) =>
+      Promise.resolve({
+        answer: `planner routed ${input.classification.intent}`,
+        citations: [],
+        confidence: input.classification.confidence,
+        intent: input.classification.intent,
+      }),
+    );
 
     for (const tool of createProductTools({
       answerProvider: { answer },
@@ -127,11 +172,16 @@ describe('createProductTools', () => {
         question: '帮我查一下钱包余额',
       }),
     ).resolves.toMatchObject({
+      answer: 'planner routed product_qa',
       citations: [],
-      intent: 'realtime_account_query',
+      intent: 'product_qa',
     });
-    expect(retrieve).not.toHaveBeenCalled();
-    expect(answer).not.toHaveBeenCalled();
+    expect(retrieve).toHaveBeenCalledWith('帮我查一下钱包余额', { topK: 6 });
+    const answerInput = answer.mock.calls[0]?.[0];
+    expect(answerInput?.classification).toMatchObject({
+      intent: 'product_qa',
+      reason: 'planner selected product answer tool',
+    });
   });
 
   it('normalizes citation file paths, truncates excerpts, and limits citations for search results', async () => {

@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatResponse } from '@xxyy/shared';
-import type { AnswerProvider, RetrievedChunk, Retriever, TxAnalysisProvider } from '@xxyy/rag-core';
+import {
+  LlmConfigurationError,
+  type AnswerProvider,
+  type RetrievedChunk,
+  type Retriever,
+} from '@xxyy/rag-core';
 
 import { createCustomerAgentChatService } from './customer-agent-chat-service.js';
 import { createScriptedPlannerModel } from './planner-model.js';
@@ -73,7 +78,7 @@ describe('createCustomerAgentChatService', () => {
     expect(retrieveCalls).toEqual([{ question: 'XXYY Pro 有哪些权益？', topK: 1 }]);
   });
 
-  it('keeps boundary questions inside the runtime without touching retriever or answer provider', async () => {
+  it('lets the planner answer boundary-like questions without touching product retrieval', async () => {
     const retriever: Retriever = {
       retrieve() {
         throw new Error('retriever should not be called');
@@ -90,14 +95,14 @@ describe('createCustomerAgentChatService', () => {
       planner: createScriptedPlannerModel([
         {
           kind: 'final',
-          reason: 'Boundary guard should answer before this plan is used.',
+          reason: 'The planner cannot access private account data.',
           response: {
-            answer: 'planner should not be called',
+            answer: '我无法直接查询你的钱包余额，但可以说明 XXYY 产品里的相关入口。',
             citations: [],
-            confidence: 0,
-            intent: 'unknown',
+            confidence: 0.7,
+            intent: 'realtime_account_query',
           },
-          route: 'clarify',
+          route: 'boundary',
         },
       ]),
       retriever,
@@ -110,6 +115,8 @@ describe('createCustomerAgentChatService', () => {
         message: '帮我查一下钱包余额',
       }),
     ).resolves.toMatchObject({
+      agentRoute: 'boundary',
+      answer: '我无法直接查询你的钱包余额，但可以说明 XXYY 产品里的相关入口。',
       citations: [],
       intent: 'realtime_account_query',
     });
@@ -164,32 +171,23 @@ describe('createCustomerAgentChatService', () => {
     expect(retrieveCalls.at(-1)).toBe('怎么升级？');
   });
 
-  it('uses local first-slice routing for product questions without OpenAI planner config', async () => {
+  it('requires LLM planner config instead of falling back to local product routing', async () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_BASE_URL;
     delete process.env.OPENAI_MODEL;
-    const retrieveCalls: Array<{ question: string; topK: number | undefined }> = [];
-    const retriever: Retriever = {
-      retrieve(question, options) {
-        retrieveCalls.push({ question, topK: options.topK });
-        return [createRetrievedChunk()];
-      },
-    };
-    const answerProvider: AnswerProvider = {
-      answer(input) {
-        return Promise.resolve({
-          answer: `fallback answered ${input.question}`,
-          citations: [],
-          confidence: 0.88,
-          intent: input.classification.intent,
-        });
-      },
-    };
 
     const service = createCustomerAgentChatService({
-      answerProvider,
+      answerProvider: {
+        answer() {
+          throw new Error('answer provider should not be called');
+        },
+      },
       config: { topK: 2 },
-      retriever,
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
       txAnalysisProvider: undefined,
     });
 
@@ -198,26 +196,13 @@ describe('createCustomerAgentChatService', () => {
         channel: 'web',
         message: 'XXYY Pro 有哪些权益？',
       }),
-    ).resolves.toMatchObject({
-      agentRoute: 'product_answer',
-      answer: 'fallback answered XXYY Pro 有哪些权益？',
-      confidence: 0.88,
-      intent: 'product_qa',
-    });
-    expect(retrieveCalls).toEqual([{ question: 'XXYY Pro 有哪些权益？', topK: 2 }]);
+    ).rejects.toBeInstanceOf(LlmConfigurationError);
   });
 
-  it('uses local first-slice routing to clarify multiple transaction hashes', async () => {
+  it('requires LLM planner config instead of falling back to local transaction routing', async () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_BASE_URL;
     delete process.env.OPENAI_MODEL;
-    const firstTxHash = `0x${'a'.repeat(64)}`;
-    const secondTxHash = `0x${'b'.repeat(64)}`;
-    const txAnalysisProvider: TxAnalysisProvider = {
-      analyze() {
-        throw new Error('tx analysis provider should not be called');
-      },
-    };
 
     const service = createCustomerAgentChatService({
       answerProvider: {
@@ -230,21 +215,19 @@ describe('createCustomerAgentChatService', () => {
           throw new Error('retriever should not be called');
         },
       },
-      txAnalysisProvider,
+      txAnalysisProvider: {
+        analyze() {
+          throw new Error('tx analysis provider should not be called');
+        },
+      },
     });
 
-    const response = await service.ask({
-      channel: 'web',
-      message: `帮我分析 ${firstTxHash} 和 ${secondTxHash} 有没有被夹`,
-    });
-
-    expect(response).toMatchObject({
-      agentRoute: 'clarify',
-      citations: [],
-      confidence: 0.55,
-      intent: 'tx_sandwich_detection',
-    });
-    expect(response.answer).toContain('一次只能分析一笔交易');
+    await expect(
+      service.ask({
+        channel: 'web',
+        message: `帮我分析 0x${'a'.repeat(64)} 有没有被夹`,
+      }),
+    ).rejects.toBeInstanceOf(LlmConfigurationError);
   });
 
   it('uses passed config values when creating the default planner', async () => {
@@ -286,7 +269,6 @@ describe('createCustomerAgentChatService', () => {
         },
       },
       config: {
-        databaseUrl: 'postgres://xxyy:test@localhost:5432/xxyy_ask',
         openAiApiKey: 'config-key',
         openAiBaseUrl: 'https://config.example/v1',
         openAiModel: 'config-model',
@@ -319,10 +301,79 @@ describe('createCustomerAgentChatService', () => {
     const requestBody = JSON.parse(init?.body as string) as { model?: unknown };
     expect(requestBody.model).toBe('config-model');
   });
+
+  it('lets the LLM planner choose product tools for short feature questions', async () => {
+    process.env.OPENAI_API_KEY = 'env-key';
+    process.env.OPENAI_BASE_URL = 'https://env.example/v1';
+    process.env.OPENAI_MODEL = 'env-model';
+    const fetchImpl = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    input: { channel: 'web', question: '支持跟单么' },
+                    kind: 'tool',
+                    reason: 'The user asks whether an XXYY feature is supported.',
+                    route: 'product_answer',
+                    toolName: 'answer_product_question',
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchImpl);
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [
+      createRetrievedChunk({
+        text: '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链。',
+      }),
+    ]);
+    const answer = vi.fn<AnswerProvider['answer']>((input) =>
+      Promise.resolve({
+        answer: `planner answered ${input.question} with ${input.retrievedChunks.length} chunks`,
+        citations: [],
+        confidence: 0.81,
+        intent: input.classification.intent,
+      }),
+    );
+
+    const service = createCustomerAgentChatService({
+      answerProvider: { answer },
+      config: { topK: 1 },
+      retriever: { retrieve },
+      txAnalysisProvider: undefined,
+    });
+
+    await expect(
+      service.ask({
+        channel: 'web',
+        message: '支持跟单么',
+      }),
+    ).resolves.toMatchObject({
+      agentRoute: 'product_answer',
+      answer: 'planner answered 支持跟单么 with 1 chunks',
+      confidence: 0.81,
+      intent: 'product_qa',
+    });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 1 });
+    const answerInput = answer.mock.calls[0]?.[0];
+    expect(answerInput).toBeDefined();
+    expect(answerInput?.classification).toMatchObject({
+      intent: 'product_qa',
+      reason: 'planner selected product answer tool',
+    });
+  });
 });
 
-function createRetrievedChunk(): RetrievedChunk {
-  return {
+function createRetrievedChunk(overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
+  const base: RetrievedChunk = {
     documentId: 'pro',
     embedding: [],
     id: 'pro-benefits',
@@ -339,6 +390,15 @@ function createRetrievedChunk(): RetrievedChunk {
     text: 'XXYY Pro 提供更多权益。',
     tokens: [],
     vectorScore: 0,
+  };
+
+  return {
+    ...base,
+    ...overrides,
+    metadata: {
+      ...base.metadata,
+      ...overrides.metadata,
+    },
   };
 }
 

@@ -239,7 +239,7 @@ describe('CLI output formatting', () => {
 });
 
 describe('runCli', () => {
-  it('answers boundary questions before requiring vector configuration', async () => {
+  it('requires planner configuration for boundary-like questions in agentic mode', async () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
     const exitCode = await runCli(['ask', '帮我查一下钱包余额'], {
@@ -259,17 +259,17 @@ describe('runCli', () => {
       },
     });
 
-    expect(exitCode).toBe(0);
-    expect(stdout.join('')).toContain('Intent: realtime_account_query');
-    expect(stderr.join('')).toBe('');
+    expect(exitCode).toBe(1);
+    expect(stdout.join('')).toBe('');
+    expect(stderr.join('')).toContain('OPENAI_API_KEY is required for agent planning');
   });
 
-  it('prints database configuration errors from pgvector mode', async () => {
+  it('prints planner configuration errors from agentic mode', async () => {
     const stderr: string[] = [];
     const exitCode = await runCli(['ask', 'XXYY Pro 有哪些权益？'], {
       cwd: process.cwd(),
       env: {
-        OPENAI_API_KEY: 'test-key',
+        DATABASE_URL: 'postgres://xxyy:password@localhost:5432/xxyy_ask',
         OPENAI_MODEL: 'test-model',
       },
       stderr: {
@@ -282,7 +282,7 @@ describe('runCli', () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(stderr.join('')).toContain('DATABASE_URL is required for pgvector retrieval');
+    expect(stderr.join('')).toContain('OPENAI_API_KEY is required for agent planning');
   });
 
   it('creates the customer chat service without session, audit, feedback, or quality options', async () => {

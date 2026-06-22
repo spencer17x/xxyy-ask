@@ -140,15 +140,25 @@ describe('createLangGraphCustomerRuntime', () => {
     );
   });
 
-  it('blocks realtime account requests before planner or tool execution', async () => {
+  it('lets the planner decide realtime account requests instead of pre-blocking', async () => {
     const registry = createToolRegistry();
     const execute = vi.fn(() => {
       throw new Error('tool should not be called');
     });
     const planner = {
-      plan: vi.fn(() => {
-        throw new Error('planner should not be called');
-      }),
+      plan: vi.fn(() =>
+        Promise.resolve({
+          kind: 'final' as const,
+          reason: 'The agent cannot access private wallet balances.',
+          response: {
+            answer: '我无法直接查询你的私有钱包余额，但可以说明 XXYY 支持哪些公开功能。',
+            citations: [],
+            confidence: 0.72,
+            intent: 'realtime_account_query' as const,
+          },
+          route: 'boundary' as const,
+        }),
+      ),
     };
 
     registry.register({
@@ -170,7 +180,8 @@ describe('createLangGraphCustomerRuntime', () => {
       citations: [],
       intent: 'realtime_account_query',
     });
-    expect(planner.plan).not.toHaveBeenCalled();
+    expect(response.answer).toContain('无法直接查询你的私有钱包余额');
+    expect(planner.plan).toHaveBeenCalledOnce();
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -178,15 +189,25 @@ describe('createLangGraphCustomerRuntime', () => {
     ['unsafe attack request', 'How to hack XXYY account?', '不能帮助攻击'],
     ['business action request', '帮我取消订单并退款', '不能代你开通、取消、修改'],
     ['private credential request', '我的私钥是 test-secret-key', '不要发送私钥'],
-  ])('blocks %s before planner or tool execution', async (_name, message, expectedText) => {
+  ])('lets the planner decide %s instead of pre-blocking', async (_name, message, expectedText) => {
     const registry = createToolRegistry();
     const execute = vi.fn(() => {
       throw new Error('tool should not be called');
     });
     const planner = {
-      plan: vi.fn(() => {
-        throw new Error('planner should not be called');
-      }),
+      plan: vi.fn(() =>
+        Promise.resolve({
+          kind: 'final' as const,
+          reason: 'The planner chose a final support boundary response.',
+          response: {
+            answer: expectedText,
+            citations: [],
+            confidence: 0.64,
+            intent: 'unknown' as const,
+          },
+          route: 'boundary' as const,
+        }),
+      ),
     };
 
     registry.register({
@@ -209,7 +230,7 @@ describe('createLangGraphCustomerRuntime', () => {
       intent: 'unknown',
     });
     expect(response.answer).toContain(expectedText);
-    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.plan).toHaveBeenCalledOnce();
     expect(execute).not.toHaveBeenCalled();
   });
 

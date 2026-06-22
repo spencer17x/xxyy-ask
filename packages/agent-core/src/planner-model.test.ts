@@ -324,6 +324,59 @@ describe('planner model', () => {
     });
   });
 
+  it('sends XXYY support context to the planner for autonomous boundary decisions', async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const planner = createOpenAiCompatiblePlannerModel({
+      apiKey: 'test-key',
+      baseUrl: 'https://example.test/v1/',
+      fetchImpl: (_input, init) => {
+        if (typeof init?.body !== 'string') {
+          throw new Error('Expected JSON request body.');
+        }
+        requestBody = JSON.parse(init.body) as Record<string, unknown>;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      kind: 'final',
+                      reason: 'account data is outside XXYY public support scope',
+                      response: {
+                        answer: '我无法查询私有账户数据。',
+                        citations: [],
+                        confidence: 0.65,
+                        intent: 'realtime_account_query',
+                      },
+                      route: 'boundary',
+                    }),
+                  },
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        );
+      },
+      model: 'test-model',
+    });
+
+    await planner.plan({
+      request: { channel: 'web', message: '帮我查一下钱包余额' },
+      stateSummary: 'no tools called',
+      tools: [],
+    });
+
+    const messages = requestBody?.messages;
+    expect(Array.isArray(messages)).toBe(true);
+    const [systemMessage] = messages as Array<{ content?: unknown; role?: unknown }>;
+    expect(systemMessage).toMatchObject({ role: 'system' });
+    expect(systemMessage?.content).toEqual(expect.stringContaining('XXYY support context'));
+    expect(systemMessage?.content).toEqual(expect.stringContaining('private account'));
+    expect(systemMessage?.content).toEqual(expect.stringContaining('return a final response'));
+  });
+
   it('rejects unauthorized tool names from model output', async () => {
     const planner = createOpenAiCompatiblePlannerModel({
       apiKey: 'test-key',

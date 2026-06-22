@@ -1,9 +1,8 @@
 import { z } from 'zod';
 
-import type { ChatResponse, Citation, RagIndex } from '@xxyy/shared';
+import type { ChatResponse, Citation, Classification, RagIndex } from '@xxyy/shared';
 import {
   classifyQuestion,
-  createGroundedAnswer,
   createLocalRetriever,
   loadRagConfig,
   type AnswerProvider,
@@ -30,7 +29,6 @@ const productToolPolicy = {
   requiresOpsAuth: false,
 };
 
-const GROUNDED_INTENTS = new Set(['product_qa', 'how_to']);
 const MAX_TOP_K = 20;
 const DEFAULT_TOP_K = 6;
 const MAX_CITATIONS = 3;
@@ -142,11 +140,7 @@ export function createProductTools(
     outputSchema: answerProductQuestionOutputSchema,
     policy: productToolPolicy,
     async execute(input) {
-      const classification = classifyQuestion(input.question);
-      if (!GROUNDED_INTENTS.has(classification.intent)) {
-        return createGroundedAnswer(input.question, classification, []);
-      }
-
+      const classification = classificationForPlannerSelectedProductQuestion(input.question);
       if (options.answerProvider === undefined) {
         throw new Error('answer_product_question requires an answerProvider.');
       }
@@ -163,6 +157,19 @@ export function createProductTools(
   };
 
   return [searchProductDocsTool, answerProductQuestionTool];
+}
+
+function classificationForPlannerSelectedProductQuestion(question: string): Classification {
+  const classification = classifyQuestion(question);
+  if (classification.intent === 'product_qa' || classification.intent === 'how_to') {
+    return classification;
+  }
+
+  return {
+    confidence: 0.7,
+    intent: 'product_qa',
+    reason: 'planner selected product answer tool',
+  };
 }
 
 function createConfiguredRetriever(options: CreateProductToolsOptions): Retriever {
