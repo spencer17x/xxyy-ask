@@ -133,17 +133,27 @@ async function prepareKnowledgeBeforeServing({ cwd, env, log, runCommand }) {
     }
   }
 
-  for (const command of [COMMANDS.refreshXUpdates, COMMANDS.syncXKnowledge]) {
-    const exitCode = await runLoggedCommand({
-      command,
-      cwd,
-      env,
-      log,
-      runCommand,
-    });
-    if (exitCode !== 0) {
-      return exitCode;
-    }
+  const refreshExitCode = await runLoggedCommand({
+    command: COMMANDS.refreshXUpdates,
+    cwd,
+    env,
+    log,
+    runCommand,
+  });
+  if (refreshExitCode !== 0) {
+    log('Warning: refresh X updates failed; starting with existing knowledge.');
+    return 0;
+  }
+
+  const syncExitCode = await runLoggedCommand({
+    command: COMMANDS.syncXKnowledge,
+    cwd,
+    env,
+    log,
+    runCommand,
+  });
+  if (syncExitCode !== 0) {
+    return syncExitCode;
   }
 
   return 0;

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const ACCOUNT = 'useXXYYio';
 const X_HOME_URL = 'https://x.com';
+const X_PROFILE_URL = `${X_HOME_URL}/${ACCOUNT}`;
 const GUEST_ACTIVATE_URL = 'https://api.twitter.com/1.1/guest/activate.json';
 const OUTPUT_DIR = path.join('docs', 'product-features', 'sources');
 const JSONL_FILE = 'usexxyyio-x-posts.jsonl';
@@ -31,7 +32,7 @@ export async function main(args = process.argv.slice(2)) {
   const guestToken = await activateGuest(webConfig.bearerToken);
   const headers = createXHeaders(webConfig.bearerToken, guestToken);
   const account = await fetchAccount(webConfig, headers);
-  const fetchedPosts = await fetchTimelinePosts(webConfig, headers, account.restId, {
+  const fetchedPosts = await fetchTimelinePosts(webConfig, headers, account, {
     cutoff,
     fetchedAt,
   });
@@ -56,7 +57,7 @@ export async function main(args = process.argv.slice(2)) {
       totalPosts: posts.length,
     },
     fetchedAt,
-    mainJsUrl: webConfig.mainJsUrl,
+    configAssetUrl: webConfig.configAssetUrl,
     operations: {
       userByScreenName: webConfig.operations[USER_BY_SCREEN_NAME],
       userTweets: webConfig.operations[USER_TWEETS],
@@ -94,50 +95,148 @@ export function parseScrapeArgs(args) {
 }
 
 async function loadXWebConfig() {
-  const html = await fetchText(X_HOME_URL);
-  const mainJsUrl = findMainJsUrl(html);
-  const js = await fetchText(mainJsUrl);
-  const bearerToken = findBearerToken(js);
-  const operations = {
-    [USER_BY_SCREEN_NAME]: extractOperation(js, USER_BY_SCREEN_NAME),
-    [USER_TWEETS]: extractOperation(js, USER_TWEETS),
-  };
+  const html = await fetchText(X_PROFILE_URL);
+  const queue = prioritizeJavaScriptAssetUrls(findJavaScriptAssetUrls(html));
+  const seen = new Set();
+  const operations = {};
+  let bearerToken;
+  let configAssetUrl;
+
+  while (
+    queue.length > 0 &&
+    (bearerToken === undefined ||
+      operations[USER_BY_SCREEN_NAME] === undefined ||
+      operations[USER_TWEETS] === undefined)
+  ) {
+    const assetUrl = queue.shift();
+    if (assetUrl === undefined || seen.has(assetUrl)) {
+      continue;
+    }
+    seen.add(assetUrl);
+
+    const js = await fetchText(assetUrl);
+    const token = findBearerTokenInText(js);
+    if (bearerToken === undefined && token !== undefined) {
+      bearerToken = token;
+      configAssetUrl = assetUrl;
+    }
+
+    for (const operationName of [USER_BY_SCREEN_NAME, USER_TWEETS]) {
+      if (operations[operationName] === undefined) {
+        const operation = extractOptionalOperation(js, operationName);
+        if (operation !== undefined) {
+          operations[operationName] = operation;
+          configAssetUrl ??= assetUrl;
+        }
+      }
+    }
+
+    for (const importedAssetUrl of findRelativeJavaScriptImports(js, assetUrl).reverse()) {
+      if (!seen.has(importedAssetUrl)) {
+        queue.unshift(importedAssetUrl);
+      }
+    }
+  }
+
+  if (bearerToken === undefined) {
+    throw new Error('Unable to find X web bearer token.');
+  }
+  for (const operationName of [USER_BY_SCREEN_NAME, USER_TWEETS]) {
+    if (operations[operationName] === undefined) {
+      throw new Error(`Unable to find X GraphQL operation ${operationName}.`);
+    }
+  }
 
   return {
     bearerToken,
-    mainJsUrl,
+    configAssetUrl: configAssetUrl ?? X_PROFILE_URL,
     operations,
   };
 }
 
-function findMainJsUrl(html) {
-  const urls = html.match(/https:\/\/abs\.twimg\.com\/responsive-web\/client-web\/[^" ]+\.js/gu);
-  const mainJsUrl = urls?.find((url) => /\/main\.[A-Za-z0-9_-]+\.js$/u.test(url));
-  if (mainJsUrl === undefined) {
-    throw new Error('Unable to find X main JavaScript bundle.');
-  }
-
-  return mainJsUrl;
+export function findJavaScriptAssetUrls(html) {
+  return Array.from(
+    new Set(
+      Array.from(
+        html.matchAll(
+          /https:\/\/abs\.twimg\.com\/(?:responsive-web\/client-web|x-web\/x-web)\/[^"'<>\s]+\.js/gu,
+        ),
+        (match) => match[0],
+      ),
+    ),
+  );
 }
 
-function findBearerToken(js) {
+function prioritizeJavaScriptAssetUrls(urls) {
+  return [...urls].sort((left, right) => assetPriority(right) - assetPriority(left));
+}
+
+function assetPriority(url) {
+  if (url.includes('/main.')) {
+    return 100;
+  }
+  if (url.includes('guest-token')) {
+    return 90;
+  }
+  if (url.includes('user-profile')) {
+    return 80;
+  }
+  if (url.includes('profile')) {
+    return 70;
+  }
+  return 0;
+}
+
+function findRelativeJavaScriptImports(js, baseUrl) {
+  return Array.from(
+    new Set(
+      Array.from(js.matchAll(/(?:from|import\s*\()\s*[`'"]\.\/([^`'"]+\.js)[`'"]/gu), (match) =>
+        new URL(match[1], baseUrl).toString(),
+      ),
+    ),
+  );
+}
+
+function findBearerTokenInText(js) {
   const match = /Bearer ([A-Za-z0-9%]+)/u.exec(js);
   const encoded = match?.[1];
   if (encoded === undefined) {
-    throw new Error('Unable to find X web bearer token.');
+    return undefined;
   }
 
   return decodeURIComponent(encoded);
 }
 
-function extractOperation(js, operationName) {
+export function extractOperation(js, operationName) {
+  const legacyOperation = extractLegacyOperation(js, operationName);
+  if (legacyOperation !== undefined) {
+    return legacyOperation;
+  }
+
+  const relayOperation = extractRelayOperation(js, operationName);
+  if (relayOperation !== undefined) {
+    return relayOperation;
+  }
+
+  throw new Error(`Unable to find X GraphQL operation ${operationName}.`);
+}
+
+function extractOptionalOperation(js, operationName) {
+  try {
+    return extractOperation(js, operationName);
+  } catch {
+    return undefined;
+  }
+}
+
+function extractLegacyOperation(js, operationName) {
   const operationPattern = new RegExp(
     `queryId:"([^"]+)",operationName:"${escapeRegExp(operationName)}",operationType:"query",metadata:\\{featureSwitches:\\[(.*?)\\],fieldToggles:\\[(.*?)\\]`,
     'u',
   );
   const match = operationPattern.exec(js);
   if (match === null || match[1] === undefined || match[2] === undefined) {
-    throw new Error(`Unable to find X GraphQL operation ${operationName}.`);
+    return undefined;
   }
 
   return {
@@ -147,6 +246,28 @@ function extractOperation(js, operationName) {
     fieldToggles: Object.fromEntries(
       extractQuotedValues(match[3] ?? '').map((fieldToggle) => [fieldToggle, true]),
     ),
+    variableStyle: operationName === USER_TWEETS ? 'userId' : 'screenName',
+  };
+}
+
+function extractRelayOperation(js, operationName) {
+  const operationPattern = new RegExp(
+    `params:\\{id:\`([^\`]+)\`,metadata:\\{[^}]*\\},name:\`${escapeRegExp(
+      operationName,
+    )}\`,operationKind:\`query\`,text:null\\}`,
+    'u',
+  );
+  const match = operationPattern.exec(js);
+  if (match?.[1] === undefined) {
+    return undefined;
+  }
+
+  return {
+    queryId: match[1],
+    operationName,
+    features: {},
+    fieldToggles: {},
+    variableStyle: 'screenName',
   };
 }
 
@@ -191,37 +312,32 @@ function createXHeaders(bearerToken, guestToken) {
 async function fetchAccount(webConfig, headers) {
   const operation = webConfig.operations[USER_BY_SCREEN_NAME];
   const payload = await fetchGraphql(operation, headers, {
-    screen_name: ACCOUNT,
+    [operation.variableStyle === 'screenName' ? 'screenName' : 'screen_name']: ACCOUNT,
   });
-  const result = payload.data?.user?.result;
-  if (result?.rest_id === undefined) {
+  const result =
+    payload.data?.user?.result ?? payload.data?.user_result_by_screen_name?.result ?? {};
+  const user = result.user ?? result;
+  if (user.rest_id === undefined) {
     throw new Error(`Unable to resolve @${ACCOUNT}.`);
   }
 
   return {
-    createdAt: result.core?.created_at,
-    description: result.legacy?.description,
-    name: result.core?.name,
-    restId: result.rest_id,
-    screenName: result.core?.screen_name,
+    createdAt: user.core?.created_at ?? toUtcDate(user.core?.created_at_ms),
+    description: user.legacy?.description ?? user.profile_bio?.description,
+    name: user.core?.name,
+    restId: user.rest_id,
+    screenName: user.core?.screen_name,
     url: `https://x.com/${ACCOUNT}`,
   };
 }
 
-async function fetchTimelinePosts(webConfig, headers, userId, options) {
+async function fetchTimelinePosts(webConfig, headers, account, options) {
   const operation = webConfig.operations[USER_TWEETS];
   const seen = new Map();
   let cursor;
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const variables = {
-      userId,
-      count: PAGE_SIZE,
-      includePromotedContent: false,
-      withQuickPromoteEligibilityTweetFields: true,
-      withVoice: true,
-      ...(cursor === undefined ? {} : { cursor }),
-    };
+    const variables = createTimelineVariables(operation, account, cursor);
     const payload = await fetchGraphql(operation, headers, variables);
     const { bottomCursor, tweets } = extractTimelinePage(payload);
     let reachedCutoff = false;
@@ -253,6 +369,25 @@ async function fetchTimelinePosts(webConfig, headers, userId, options) {
   return Array.from(seen.values()).sort((left, right) =>
     right.createdAtIso.localeCompare(left.createdAtIso),
   );
+}
+
+function createTimelineVariables(operation, account, cursor) {
+  if (operation.variableStyle === 'screenName') {
+    return {
+      screenName: account.screenName ?? ACCOUNT,
+      count: PAGE_SIZE,
+      cursor: cursor ?? null,
+    };
+  }
+
+  return {
+    userId: account.restId,
+    count: PAGE_SIZE,
+    includePromotedContent: false,
+    withQuickPromoteEligibilityTweetFields: true,
+    withVoice: true,
+    ...(cursor === undefined ? {} : { cursor }),
+  };
 }
 
 async function readExistingXPosts(filePath) {
@@ -375,7 +510,7 @@ async function fetchText(url) {
   return response.text();
 }
 
-function extractTimelinePage(payload) {
+export function extractTimelinePage(payload) {
   const entries = collectEntries(payload);
   const tweets = [];
   let bottomCursor;
@@ -383,8 +518,9 @@ function extractTimelinePage(payload) {
   for (const entry of entries) {
     const content = entry.content ?? {};
     if (
-      content.entryType === 'TimelineTimelineCursor' &&
-      content.cursorType === 'Bottom' &&
+      (content.entryType === 'TimelineTimelineCursor' ||
+        content.__typename === 'TimelineTimelineCursor') &&
+      (content.cursorType ?? content.cursor_type) === 'Bottom' &&
       typeof content.value === 'string'
     ) {
       bottomCursor = content.value;
@@ -426,11 +562,15 @@ function tweetCandidates(content) {
   const candidates = [];
   const itemContent = content.itemContent ?? {};
   candidates.push(itemContent.tweet_results?.result);
+  candidates.push(content.content?.tweet_results?.result);
+  candidates.push(content.tweet_results?.result);
 
   for (const moduleItem of content.items ?? []) {
     const item = moduleItem.item ?? {};
     const moduleItemContent = item.itemContent ?? moduleItem.itemContent ?? {};
     candidates.push(moduleItemContent.tweet_results?.result);
+    candidates.push(item.content?.tweet_results?.result);
+    candidates.push(moduleItem.content?.tweet_results?.result);
   }
 
   return candidates;
@@ -449,17 +589,22 @@ function unwrapTweet(result) {
 
 function normalizeTweet(tweet, fetchedAt) {
   const legacy = tweet.legacy ?? {};
+  const details = tweet.details ?? {};
+  const counts = tweet.counts ?? {};
   const id = tweet.rest_id ?? legacy.id_str;
-  const quotedTweet = unwrapTweet(tweet.quoted_status_result?.result);
+  const quotedTweet = unwrapTweet(
+    tweet.quoted_status_result?.result ?? tweet.quoted_tweet_results?.result,
+  );
   const text = extractTweetText(tweet);
-  const createdAtIso = toIsoDate(legacy.created_at);
+  const createdAt = legacy.created_at ?? toUtcDate(details.created_at_ms);
+  const createdAtIso = toIsoDate(legacy.created_at ?? details.created_at_ms);
 
   return withoutUndefined({
     id,
     url: id === undefined ? undefined : `https://x.com/${ACCOUNT}/status/${id}`,
     account: ACCOUNT,
     authorId: tweet.core?.user_results?.result?.rest_id,
-    createdAt: legacy.created_at,
+    createdAt,
     createdAtIso,
     fetchedAt,
     lang: legacy.lang,
@@ -470,15 +615,19 @@ function normalizeTweet(tweet, fetchedAt) {
     isReply: legacy.in_reply_to_status_id_str !== undefined,
     isQuote: quotedTweet !== undefined,
     quotedTweet: quotedTweet === undefined ? undefined : normalizeQuotedTweet(quotedTweet),
-    hashtags: (legacy.entities?.hashtags ?? []).map((hashtag) => hashtag.text).filter(Boolean),
-    urls: extractUrls(legacy.entities?.urls ?? []),
-    media: extractMedia(legacy.extended_entities?.media ?? legacy.entities?.media ?? []),
+    hashtags: (legacy.entities?.hashtags ?? details.hashtag_entities ?? [])
+      .map((hashtag) => hashtag.text)
+      .filter(Boolean),
+    urls: extractUrls(legacy.entities?.urls ?? tweet.url_entities ?? []),
+    media: extractMedia(
+      legacy.extended_entities?.media ?? legacy.entities?.media ?? tweet.media_entities2 ?? [],
+    ),
     metrics: withoutUndefined({
-      bookmarkCount: legacy.bookmark_count,
-      favoriteCount: legacy.favorite_count,
-      quoteCount: legacy.quote_count,
-      replyCount: legacy.reply_count,
-      retweetCount: legacy.retweet_count,
+      bookmarkCount: legacy.bookmark_count ?? counts.bookmark_count,
+      favoriteCount: legacy.favorite_count ?? counts.favorite_count,
+      quoteCount: legacy.quote_count ?? counts.quote_count,
+      replyCount: legacy.reply_count ?? counts.reply_count,
+      retweetCount: legacy.retweet_count ?? counts.retweet_count,
       viewCount: tweet.views?.count,
     }),
     source: {
@@ -506,6 +655,7 @@ function extractTweetText(tweet) {
   const text = (
     tweet.note_tweet?.note_tweet_results?.result?.text ??
     tweet.legacy?.full_text ??
+    tweet.details?.full_text ??
     ''
   ).trim();
 
@@ -522,11 +672,19 @@ function decodeHtmlEntities(text) {
 }
 
 function toIsoDate(xDate) {
-  if (typeof xDate !== 'string') {
+  if (typeof xDate !== 'string' && typeof xDate !== 'number') {
     return '';
   }
 
   return new Date(xDate).toISOString();
+}
+
+function toUtcDate(xDate) {
+  if (typeof xDate !== 'number' && typeof xDate !== 'string') {
+    return undefined;
+  }
+
+  return new Date(xDate).toUTCString();
 }
 
 function extractUrls(urls) {

@@ -162,6 +162,31 @@ describe('runAgentStart', () => {
     expect(exitCode).toBe(1);
     expect(commands).toEqual(['knowledge stats', 'refresh X updates', 'sync X knowledge']);
   });
+
+  it('starts the service with existing knowledge when X refresh is temporarily unavailable', async () => {
+    const commands = [];
+    const logs = [];
+    const exitCode = await runAgentStart({
+      args: ['--service'],
+      env: { DATABASE_URL: 'postgres://xxyy:secret@example.com:5432/xxyy_ask' },
+      log(message) {
+        logs.push(message);
+      },
+      runCommand(command) {
+        commands.push(command.label);
+        return Promise.resolve({
+          exitCode: command.label === 'refresh X updates' ? 1 : 0,
+          stdout: command.label === 'knowledge stats' ? 'Knowledge stats:\nChunks: 42\n' : '',
+        });
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(commands).toEqual(['knowledge stats', 'refresh X updates', 'start API and Web']);
+    expect(logs.join('\n')).toContain(
+      'Warning: refresh X updates failed; starting with existing knowledge.',
+    );
+  });
 });
 
 describe('root package scripts', () => {
