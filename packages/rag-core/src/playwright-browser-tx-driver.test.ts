@@ -3914,6 +3914,132 @@ describe('extractSolanaTransaction', () => {
     });
   });
 
+  it('fills missing Solscan pool details from Solana RPC Pump AMM instructions', async () => {
+    const tokenMint = '66pQgfLHEfbHSBgYSZSrKEdJHHaGiYbgCtNbz48Apump';
+    const poolAddress = 'HZyqZRuAUCLdJaHqBfnoFHVBwXmuH3Sm1LyXnWu8Ee15';
+    const signerAddress = 'B1d1V7FosamHHNgXpL7ZHpiKW4cdNeejXaiGDHWFoJfG';
+    const rpcCalls: unknown[] = [];
+    const fetch = vi.fn((input: string, init?: { body?: string }) => {
+      rpcCalls.push({ input, body: init?.body });
+      return Promise.resolve({
+        ok: true,
+        json() {
+          return Promise.resolve({
+            jsonrpc: '2.0',
+            result: {
+              blockTime: 1782270375,
+              meta: {
+                err: null,
+                innerInstructions: [
+                  {
+                    index: 5,
+                    instructions: [
+                      {
+                        accounts: [
+                          poolAddress,
+                          signerAddress,
+                          'ADyA8hdefvWN2dbGGWFotbzWxrAvLW83WG6QCVXvJKqw',
+                          tokenMint,
+                          'So11111111111111111111111111111111111111112',
+                        ],
+                        programId: 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
+                      },
+                    ],
+                  },
+                ],
+                postTokenBalances: [
+                  {
+                    accountIndex: 1,
+                    mint: tokenMint,
+                    owner: signerAddress,
+                    uiTokenAmount: { amount: '152290841622', decimals: 6 },
+                  },
+                ],
+                preTokenBalances: [
+                  {
+                    accountIndex: 1,
+                    mint: tokenMint,
+                    owner: signerAddress,
+                    uiTokenAmount: { amount: '0', decimals: 6 },
+                  },
+                ],
+              },
+              transaction: {
+                message: {
+                  accountKeys: [{ pubkey: signerAddress, signer: true }],
+                  instructions: [],
+                },
+              },
+            },
+          });
+        },
+      });
+    });
+    const driverModule = (await import('./playwright-browser-tx-driver.js')) as unknown as {
+      extractSolanaTransaction?: (
+        page: unknown,
+        txHash: string,
+        options: { fetch?: typeof fetch; solanaRpcUrl?: string; timeoutMs?: number },
+      ) => Promise<{
+        contractAddress?: string;
+        poolAddress?: string;
+        poolCandidates?: Array<{ address: string }>;
+        side?: string;
+        signerAddress?: string;
+        transactionTime?: string;
+      }>;
+    };
+    const page = {
+      goto() {
+        return Promise.resolve();
+      },
+      locator(selector: string) {
+        if (selector === 'a[href]') {
+          return {
+            all() {
+              return Promise.resolve([]);
+            },
+          };
+        }
+        expect(selector).toBe('body');
+        return {
+          innerText() {
+            return Promise.resolve(`
+              Transaction Overview
+              Signature
+              ${SOLANA_TX}
+              Result
+              SUCCESS
+            `);
+          },
+        };
+      },
+      url() {
+        return `https://solscan.io/tx/${SOLANA_TX}`;
+      },
+      waitForTimeout() {
+        return Promise.resolve();
+      },
+    };
+
+    expect(driverModule.extractSolanaTransaction).toBeTypeOf('function');
+    const result = await driverModule.extractSolanaTransaction?.(page, SOLANA_TX, {
+      fetch,
+      solanaRpcUrl: 'https://rpc.example',
+      timeoutMs: 1000,
+    });
+
+    expect(result).toMatchObject({
+      contractAddress: tokenMint,
+      poolAddress,
+      poolCandidates: [{ address: poolAddress }],
+      side: 'buy',
+      signerAddress,
+      transactionTime: '2026-06-24T03:06:15.000Z',
+    });
+    expect(rpcCalls).toHaveLength(1);
+  });
+
   it('uses Solscan Fee Payer labels as the signer address', async () => {
     const tokenMint = '7vfCXTUXx5WJVd5JBF6FBfWDVYVDN2S7dczp4s1TCtci';
     const poolAddress = '9hXD8sti6UmCzAcYw1DjcyhsuHtry5MW8GPrx7rMMyJ7';

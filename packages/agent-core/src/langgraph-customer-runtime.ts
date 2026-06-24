@@ -5,6 +5,7 @@ import {
   createTxAnalysisAnswer,
   createTxAnalysisUnavailableAnswer,
   LlmConfigurationError,
+  parseTransactionReference,
   type AnalyzeTransactionOutput,
   VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
@@ -117,6 +118,21 @@ async function plannerNode(
       error instanceof PlannerModelRequestError ||
       error instanceof Error
     ) {
+      const fallbackPlan = createTransactionReferenceFallbackPlan(
+        state.request.message,
+        options.registry,
+      );
+      if (fallbackPlan !== undefined) {
+        return {
+          currentStep: state.currentStep + 1,
+          errors: [
+            `Planner failed: ${errorMessageFrom(error)}; using transaction analysis fallback.`,
+          ],
+          plan: fallbackPlan,
+          route: 'transaction_analysis',
+        };
+      }
+
       return {
         errors: [`Planner failed: ${errorMessageFrom(error)}`],
         finalResponse: createClarificationResponse(
@@ -138,6 +154,36 @@ async function plannerNode(
     currentStep: state.currentStep + 1,
     plan,
     route: normalizeAgentRoute(plan.route),
+  };
+}
+
+function createTransactionReferenceFallbackPlan(
+  message: string,
+  registry: ToolRegistry,
+): AgentPlan | undefined {
+  if (registry.get('analyze_transaction') === undefined) {
+    return undefined;
+  }
+
+  const reference = parseTransactionReference(message);
+  if (reference === undefined) {
+    return undefined;
+  }
+
+  const shouldPreserveOriginalMessage =
+    reference.unsupportedChainHint !== undefined || reference.unsupportedExplorerHost !== undefined;
+
+  return {
+    input: shouldPreserveOriginalMessage
+      ? { txHash: message }
+      : {
+          ...(reference.chain === 'unknown' ? {} : { chain: reference.chain }),
+          txHash: reference.txHash,
+        },
+    kind: 'tool',
+    reason: 'Planner failed, but the request contains one clear public transaction reference.',
+    route: 'transaction_analysis',
+    toolName: 'analyze_transaction',
   };
 }
 

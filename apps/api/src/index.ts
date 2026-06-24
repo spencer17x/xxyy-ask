@@ -7,8 +7,10 @@ import path from 'node:path';
 import { createCustomerAgentChatService } from '@xxyy/agent-core';
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
+  analyzeTransaction,
   createConfiguredTxAnalysisProvider,
   createOpenAiAnswerProvider,
+  createTxAnalysisAnswer,
   createTxAnalysisUnavailableAnswer,
   createLazyRetriever,
   createPgPool,
@@ -19,7 +21,6 @@ import {
   parseOptionalTxAnalysisChainInput,
   parseTransactionReference,
   resolveWorkspaceCwd,
-  toTxAnalysisReferenceInput,
   TX_ANALYSIS_CHAIN_ERROR,
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
@@ -32,7 +33,13 @@ import type {
   TxAnalysisChain,
 } from '@xxyy/shared';
 import { supportedChannels } from '@xxyy/shared';
-import type { AnswerProvider, ChatService, RagEnv } from '@xxyy/rag-core';
+import type {
+  AnalyzeTransactionOutput,
+  AnswerProvider,
+  ChatService,
+  RagEnv,
+  TxAnalysisProvider,
+} from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
 
 type ApiEnv = RagEnv &
@@ -75,6 +82,7 @@ export interface CreateRequestHandlerOptions {
   now?: () => number;
   renderHtml?: () => string;
   staticAssetsDir?: string;
+  txAnalysisProvider?: TxAnalysisProvider;
 }
 
 export interface StartServerOptions extends CreateRequestHandlerOptions {
@@ -160,6 +168,10 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const logger = options.logger ?? noopLogger;
   const now = options.now ?? Date.now;
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
+  const getTxAnalysisProvider =
+    options.txAnalysisProvider === undefined
+      ? createCachedTxAnalysisProviderLoader(config)
+      : () => options.txAnalysisProvider;
   const rateLimiter = createRateLimiter(apiConfig, Date.now);
 
   return async function handleRequest(request, response): Promise<void> {
@@ -231,10 +243,10 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
 
       if (request.method === 'POST' && requestUrl.pathname === '/api/tx-analysis') {
         await handleTxAnalysisRequest({
-          getChatService,
           maxBodyBytes: apiConfig.maxBodyBytes,
           request,
           response,
+          txAnalysisProvider: getTxAnalysisProvider(),
         });
         return;
       }
@@ -305,10 +317,10 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
 }
 
 async function handleTxAnalysisRequest(options: {
-  getChatService: () => Promise<ChatService>;
   maxBodyBytes: number;
   request: ApiRequestLike;
   response: ApiResponseLike;
+  txAnalysisProvider: TxAnalysisProvider | undefined;
 }): Promise<void> {
   const payload = parseTxAnalysisPayload(await readJsonBody(options.request, options.maxBodyBytes));
   if (payload.unsupportedChainText !== undefined) {
@@ -322,8 +334,25 @@ async function handleTxAnalysisRequest(options: {
     return;
   }
 
-  const service = await options.getChatService();
-  sendJson(options.response, 200, await service.ask(toTxAnalysisChatRequest(payload)));
+  const output = await analyzeTransaction({
+    input: {
+      ...(payload.chain === undefined ? {} : { chain: payload.chain }),
+      txHash: payload.txHash,
+    },
+    provider: options.txAnalysisProvider,
+  });
+  sendJson(options.response, 200, chatResponseFromTxAnalysisOutput(output));
+}
+
+function chatResponseFromTxAnalysisOutput(output: AnalyzeTransactionOutput): ChatResponse {
+  if (output.status === 'success') {
+    return createTxAnalysisAnswer(output.result);
+  }
+
+  return createTxAnalysisUnavailableAnswer(output.failure.reason, {
+    ...(output.failure.metadata === undefined ? {} : { metadata: output.failure.metadata }),
+    ...(output.failure.reportUrl === undefined ? {} : { reportUrl: output.failure.reportUrl }),
+  });
 }
 
 function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
@@ -898,6 +927,22 @@ function createCachedChatServiceLoader(
   };
 }
 
+function createCachedTxAnalysisProviderLoader(
+  config: ReturnType<typeof loadRagConfig>,
+): () => TxAnalysisProvider | undefined {
+  let cachedProvider: TxAnalysisProvider | undefined;
+  let loaded = false;
+
+  return () => {
+    if (!loaded) {
+      cachedProvider = createConfiguredTxAnalysisProvider(config);
+      loaded = true;
+    }
+
+    return cachedProvider;
+  };
+}
+
 function createLazyAnswerProvider(config: ReturnType<typeof loadRagConfig>): AnswerProvider {
   let cachedProvider: AnswerProvider | undefined;
 
@@ -981,14 +1026,10 @@ function parseTxAnalysisPayload(value: unknown): TxAnalysisPayload {
     const channel = parseOptionalChannel(record.channel);
     const sessionId = parseOptionalString(record.sessionId, 'sessionId');
     const userId = parseOptionalString(record.userId, 'userId');
-    const combinedReferenceInput = `${parsedChain.unsupportedChainText} ${txHash}`;
-    const combinedReference = parseTransactionReference(combinedReferenceInput);
 
     return {
-      txHash: combinedReference === undefined ? combinedReferenceInput : txHash,
-      ...(combinedReference === undefined
-        ? {}
-        : { unsupportedChainText: parsedChain.unsupportedChainText }),
+      txHash,
+      unsupportedChainText: parsedChain.unsupportedChainText,
       ...(channel === undefined ? {} : { channel }),
       ...(sessionId === undefined ? {} : { sessionId }),
       ...(userId === undefined ? {} : { userId }),
@@ -1088,18 +1129,6 @@ function toChatRequest(payload: ChatPayload): ChatRequest {
   return {
     channel: payload.channel ?? 'web',
     message: payload.message,
-    ...(payload.sessionId === undefined ? {} : { sessionId: payload.sessionId }),
-    ...(payload.userId === undefined ? {} : { userId: payload.userId }),
-  };
-}
-
-function toTxAnalysisChatRequest(payload: TxAnalysisPayload): ChatRequest {
-  return {
-    channel: payload.channel ?? 'web',
-    message: toTxAnalysisReferenceInput({
-      ...(payload.chain === undefined ? {} : { chain: payload.chain }),
-      txHash: payload.txHash,
-    }),
     ...(payload.sessionId === undefined ? {} : { sessionId: payload.sessionId }),
     ...(payload.userId === undefined ? {} : { userId: payload.userId }),
   };

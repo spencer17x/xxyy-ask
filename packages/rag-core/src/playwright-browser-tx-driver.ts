@@ -27,12 +27,29 @@ import { parseTransactionReference } from './tx-hash.js';
 export interface PlaywrightBrowserTxAnalysisDriverOptions {
   chromeExecutablePath?: string;
   discoverUrl?: string;
+  fetch?: TxAnalysisFetch;
   headless?: boolean;
   screenshotBaseUrl?: string;
   screenshotDir?: string;
+  solanaRpcUrl?: string;
   timeoutMs?: number;
   userDataDir?: string;
 }
+
+type TxAnalysisFetch = (
+  input: string,
+  init?: {
+    body?: string;
+    headers?: Record<string, string>;
+    method?: string;
+    signal?: AbortSignal;
+  },
+) => Promise<{
+  json(): Promise<unknown>;
+  ok?: boolean;
+  status?: number;
+  statusText?: string;
+}>;
 
 interface SolscanExtraction {
   contractAddress?: string;
@@ -172,7 +189,9 @@ interface BrowserGlobalLike {
 }
 
 const DEFAULT_DISCOVER_URL = 'https://www.xxyy.io/discover';
+const DEFAULT_SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
 const DEFAULT_TIMEOUT_MS = 60000;
+const PUMP_AMM_PROGRAM_ID = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
 const XXYY_ORIGINAL_SCREENSHOT_MIN_HEIGHT = 1800;
 const XXYY_ORIGINAL_SCREENSHOT_MIN_WIDTH = 1440;
 const SOLANA_ADDRESS_CAPTURE = '[1-9A-HJ-NP-Za-km-z]{32,44}';
@@ -502,16 +521,275 @@ async function extractSolscanTransaction(
   const signerAddress = extractSigner(bodyText);
   const transactionTime = extractTransactionTime(bodyText);
 
+  return enrichSolscanExtractionFromRpcIfNeeded(
+    {
+      ...(contractAddress === undefined ? {} : { contractAddress }),
+      ...(poolAddress === undefined ? {} : { poolAddress }),
+      poolCandidates,
+      ...(program === undefined ? {} : { program }),
+      ...(signerAddress === undefined ? {} : { signerAddress }),
+      side: inferEvmTradeSide(bodyText, contractToken?.text),
+      solscanUrl,
+      ...(transactionTime === undefined ? {} : { transactionTime }),
+    },
+    txHash,
+    options,
+  );
+}
+
+async function enrichSolscanExtractionFromRpcIfNeeded(
+  solscan: SolscanExtraction,
+  txHash: string,
+  options: PlaywrightBrowserTxAnalysisDriverOptions,
+): Promise<SolscanExtraction> {
+  if (
+    solscan.contractAddress !== undefined &&
+    solscan.poolAddress !== undefined &&
+    solscan.signerAddress !== undefined
+  ) {
+    return solscan;
+  }
+
+  const rpcExtraction = await extractSolanaRpcTransaction(txHash, options).catch(() => undefined);
+  if (rpcExtraction === undefined) {
+    return solscan;
+  }
+
+  const contractAddress = solscan.contractAddress ?? rpcExtraction.contractAddress;
+  const poolAddress = solscan.poolAddress ?? rpcExtraction.poolAddress;
+  const program = solscan.program ?? rpcExtraction.program;
+  const signerAddress = solscan.signerAddress ?? rpcExtraction.signerAddress;
+  const transactionTime = solscan.transactionTime ?? rpcExtraction.transactionTime;
+  const poolCandidates = uniquePoolCandidates([
+    ...solscan.poolCandidates,
+    ...(rpcExtraction.poolAddress === undefined ? [] : [{ address: rpcExtraction.poolAddress }]),
+  ]);
+
   return {
     ...(contractAddress === undefined ? {} : { contractAddress }),
     ...(poolAddress === undefined ? {} : { poolAddress }),
     poolCandidates,
     ...(program === undefined ? {} : { program }),
     ...(signerAddress === undefined ? {} : { signerAddress }),
-    side: inferEvmTradeSide(bodyText, contractToken?.text),
-    solscanUrl,
+    side: solscan.side === 'unknown' ? (rpcExtraction.side ?? solscan.side) : solscan.side,
+    solscanUrl: solscan.solscanUrl,
     ...(transactionTime === undefined ? {} : { transactionTime }),
   };
+}
+
+async function extractSolanaRpcTransaction(
+  txHash: string,
+  options: PlaywrightBrowserTxAnalysisDriverOptions,
+): Promise<Partial<SolscanExtraction> | undefined> {
+  const fetchFn = options.fetch ?? globalThis.fetch;
+  if (typeof fetchFn !== 'function') {
+    return undefined;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  try {
+    const response = await fetchFn(options.solanaRpcUrl ?? DEFAULT_SOLANA_RPC_URL, {
+      body: JSON.stringify({
+        id: 1,
+        jsonrpc: '2.0',
+        method: 'getTransaction',
+        params: [
+          txHash,
+          {
+            encoding: 'jsonParsed',
+            maxSupportedTransactionVersion: 0,
+          },
+        ],
+      }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+      signal: controller.signal,
+    });
+    if (response.ok === false) {
+      return undefined;
+    }
+
+    return solanaRpcExtractionFromResponse(await response.json());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function solanaRpcExtractionFromResponse(payload: unknown): Partial<SolscanExtraction> | undefined {
+  const result = readRecord(readRecord(payload).result);
+  if (Object.keys(result).length === 0) {
+    return undefined;
+  }
+
+  const pumpInstruction = findSolanaRpcPumpAmmInstruction(result);
+  const signerAddress =
+    readString(pumpInstruction?.accounts?.[1]) ?? findSolanaRpcSignerAddress(result);
+  const contractAddress =
+    readString(pumpInstruction?.accounts?.[3]) ?? findSolanaRpcPrimaryTokenMint(result);
+  const poolAddress = readString(pumpInstruction?.accounts?.[0]);
+  const side =
+    signerAddress === undefined || contractAddress === undefined
+      ? undefined
+      : inferSolanaRpcTradeSide(result, signerAddress, contractAddress);
+  const blockTime = readNumber(result.blockTime);
+  const transactionTime =
+    blockTime === undefined ? undefined : new Date(blockTime * 1000).toISOString();
+  const program = readString(pumpInstruction?.programId);
+
+  if (
+    contractAddress === undefined &&
+    poolAddress === undefined &&
+    signerAddress === undefined &&
+    transactionTime === undefined &&
+    program === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(contractAddress === undefined ? {} : { contractAddress }),
+    ...(poolAddress === undefined ? {} : { poolAddress }),
+    ...(program === undefined ? {} : { program }),
+    ...(signerAddress === undefined ? {} : { signerAddress }),
+    ...(side === undefined ? {} : { side }),
+    ...(transactionTime === undefined ? {} : { transactionTime }),
+  };
+}
+
+function findSolanaRpcPumpAmmInstruction(result: Record<string, unknown>):
+  | {
+      accounts: string[];
+      programId: string;
+    }
+  | undefined {
+  return solanaRpcInstructions(result).find(
+    (instruction) =>
+      instruction.programId === PUMP_AMM_PROGRAM_ID &&
+      instruction.accounts.length >= 5 &&
+      SOLANA_ADDRESS_PATTERN.test(instruction.accounts[0] ?? '') &&
+      SOLANA_ADDRESS_PATTERN.test(instruction.accounts[1] ?? '') &&
+      SOLANA_ADDRESS_PATTERN.test(instruction.accounts[3] ?? ''),
+  );
+}
+
+function solanaRpcInstructions(
+  result: Record<string, unknown>,
+): Array<{ accounts: string[]; programId: string }> {
+  const transaction = readRecord(result.transaction);
+  const message = readRecord(transaction.message);
+  const topLevelInstructions = readArray(message.instructions);
+  const meta = readRecord(result.meta);
+  const innerInstructionGroups = readArray(meta.innerInstructions);
+  const innerInstructions = innerInstructionGroups.flatMap((group) =>
+    readArray(readRecord(group).instructions),
+  );
+
+  return [...topLevelInstructions, ...innerInstructions].flatMap((instruction) => {
+    const record = readRecord(instruction);
+    const programId = readString(record.programId);
+    const accounts = readArray(record.accounts).flatMap((account) => {
+      const value = readString(account);
+      return value === undefined ? [] : [value];
+    });
+    return programId === undefined ? [] : [{ accounts, programId }];
+  });
+}
+
+function findSolanaRpcSignerAddress(result: Record<string, unknown>): string | undefined {
+  const transaction = readRecord(result.transaction);
+  const message = readRecord(transaction.message);
+  return readArray(message.accountKeys)
+    .map((account) => readRecord(account))
+    .find((account) => account.signer === true)?.pubkey as string | undefined;
+}
+
+function findSolanaRpcPrimaryTokenMint(result: Record<string, unknown>): string | undefined {
+  for (const balance of solanaRpcTokenBalances(result)) {
+    const mint = readString(balance.mint);
+    if (mint !== undefined && !STABLE_SOLANA_MINTS.has(mint)) {
+      return mint;
+    }
+  }
+
+  return undefined;
+}
+
+function inferSolanaRpcTradeSide(
+  result: Record<string, unknown>,
+  signerAddress: string,
+  contractAddress: string,
+): BrowserTradeSide | undefined {
+  const preAmount = solanaRpcTokenAmount(
+    result,
+    'preTokenBalances',
+    signerAddress,
+    contractAddress,
+  );
+  const postAmount = solanaRpcTokenAmount(
+    result,
+    'postTokenBalances',
+    signerAddress,
+    contractAddress,
+  );
+  if (preAmount === undefined || postAmount === undefined) {
+    return undefined;
+  }
+
+  const delta = postAmount - preAmount;
+  if (delta > 0n) {
+    return 'buy';
+  }
+  if (delta < 0n) {
+    return 'sell';
+  }
+
+  return undefined;
+}
+
+function solanaRpcTokenAmount(
+  result: Record<string, unknown>,
+  field: 'postTokenBalances' | 'preTokenBalances',
+  owner: string,
+  mint: string,
+): bigint | undefined {
+  const balance = solanaRpcTokenBalances(result, field).find(
+    (item) => readString(item.owner) === owner && readString(item.mint) === mint,
+  );
+  const amount = readString(readRecord(balance?.uiTokenAmount).amount);
+  if (amount === undefined || !/^\d+$/u.test(amount)) {
+    return undefined;
+  }
+
+  return BigInt(amount);
+}
+
+function solanaRpcTokenBalances(
+  result: Record<string, unknown>,
+  field?: 'postTokenBalances' | 'preTokenBalances',
+): Record<string, unknown>[] {
+  const meta = readRecord(result.meta);
+  const balances =
+    field === undefined
+      ? [...readArray(meta.preTokenBalances), ...readArray(meta.postTokenBalances)]
+      : readArray(meta[field]);
+  return balances.map((balance) => readRecord(balance));
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+function readArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 async function extractPublicSolanaTransactionFallback(

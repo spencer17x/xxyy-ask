@@ -140,6 +140,57 @@ describe('createLangGraphCustomerRuntime', () => {
     );
   });
 
+  it('falls back to the transaction tool when planner requests fail for one clear transaction reference', async () => {
+    const registry = createToolRegistry();
+    const txHash = `0x${'c'.repeat(64)}`;
+    const output: AnalyzeTransactionOutput = {
+      result: {
+        analyzedAt: '2026-06-24T00:00:00.000Z',
+        chain: 'base',
+        confidence: 0.86,
+        evidence: [],
+        relatedTransactions: [],
+        summary: '未发现明确 sandwich 模式。',
+        txHash,
+        verdict: 'not_sandwiched',
+      },
+      status: 'success',
+    };
+    const execute = vi.fn(() => Promise.resolve(output));
+    const planner = {
+      plan: vi.fn(() => Promise.reject(new PlannerModelRequestError('planner request failed'))),
+    };
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({
+        chain: z.string().optional(),
+        txHash: z.string(),
+      }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createLangGraphCustomerRuntime({ planner, registry }).ask({
+      channel: 'web',
+      message: `帮我看 https://basescan.org/tx/${txHash} 是否被夹`,
+      sessionId: 'session-1',
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'transaction_analysis',
+      confidence: 0.86,
+      intent: 'tx_sandwich_detection',
+    });
+    expect(planner.plan).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith(
+      { chain: 'base', txHash },
+      { channel: 'web', sessionId: 'session-1', userIdPresent: false },
+    );
+  });
+
   it('lets the planner decide realtime account requests instead of pre-blocking', async () => {
     const registry = createToolRegistry();
     const execute = vi.fn(() => {
