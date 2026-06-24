@@ -35,7 +35,9 @@ data/
 storage/
 *.sqlite
 *.sqlite3
+docs/product-features/assets/tx-analysis-*.json
 docs/product-features/assets/tx-analysis-*.png
+docs/product-features/assets/tx-analysis-report-index.jsonl
 
 # OS / editors
 .DS_Store
