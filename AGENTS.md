@@ -55,18 +55,6 @@ OPENAI_REQUEST_TIMEOUT_MS=30000
 OPENAI_MAX_RETRIES=1
 RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
-TX_ANALYSIS_PROVIDER=none
-TX_ANALYSIS_REVIEWER=none
-TX_ANALYSIS_BROWSER_HEADLESS=false
-TX_ANALYSIS_BROWSER_MAX_CONCURRENCY=1
-TX_ANALYSIS_BROWSER_MAX_RETRIES=1
-TX_ANALYSIS_BROWSER_TIMEOUT_MS=60000
-TX_ANALYSIS_BROWSER_USER_DATA_DIR=
-TX_ANALYSIS_CHROME_EXECUTABLE_PATH=
-TX_ANALYSIS_DISCOVER_URL=
-TX_ANALYSIS_REPORT_STORE=file
-TX_ANALYSIS_SCREENSHOT_BASE_URL=/assets
-TX_ANALYSIS_SCREENSHOT_DIR=
 API_CORS_ORIGIN=
 API_MAX_BODY_BYTES=65536
 API_RATE_LIMIT_MAX=60
@@ -83,7 +71,7 @@ API_RATE_LIMIT_WINDOW_MS=60000
 - `pnpm sync -- --full`：低频全量抓取 X / Twitter 并重建知识库。
 - `pnpm check`：lint、format check、typecheck、tests。
 
-交易分析默认使用规则化 SandwichAnalyzer。`TX_ANALYSIS_PROVIDER=none` 时返回暂未启用；`TX_ANALYSIS_PROVIDER=browser` 使用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页，当前支持 Solana，并已接入 Base、Ethereum、BSC 浏览器取证初版。`TX_ANALYSIS_REVIEWER=openai` 会复用 OpenAI-compatible chat completion 对已抓取的交易窗口和规则证据做可选复核；复核不可用时必须保留规则结果。
+交易分析默认使用真实 browser provider 和规则化 SandwichAnalyzer，不配置 `TX_ANALYSIS_*` 也会用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页，并默认复用 `.tx-analysis-browser-profile` 保存安全验证状态；当前支持 Solana，并已接入 Base、Ethereum、BSC 浏览器取证初版。显式 `TX_ANALYSIS_PROVIDER=none` 时才返回暂未启用。只有覆盖默认行为时才配置 `TX_ANALYSIS_*`：例如特殊 Chrome 路径、staging/代理页面、自定义截图目录、Postgres 报告存储或 `TX_ANALYSIS_REVIEWER=openai` 模型复核；复核不可用时必须保留规则结果。
 
 API 保留的公开服务面：
 
@@ -128,7 +116,7 @@ pnpm sync -- --full
 - `pnpm agent:smoke`：检查已启动服务的 health、产品问题路线和边界路线；可用 `API_SMOKE_TX_HASH` 额外检查交易分析路线。
 - `pnpm product:mcp`：启动产品问答 MCP stdio server。
 - `pnpm tx:mcp`：启动交易分析 MCP stdio server。
-- `TX_ANALYSIS_PROVIDER=browser pnpm tx:mcp:smoke`：用真实 browser provider 跑交易分析 MCP 样本验收，可传 `-- --tx-samples <file>`。
+- `pnpm tx:mcp:smoke`：用默认真实 browser provider 跑交易分析 MCP 样本验收，可传 `-- --tx-samples <file>`。
 
 关键行为验证：
 

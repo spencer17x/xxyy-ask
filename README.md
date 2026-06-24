@@ -59,19 +59,6 @@ OPENAI_MAX_RETRIES=1
 RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
 
-TX_ANALYSIS_PROVIDER=none
-TX_ANALYSIS_REVIEWER=none
-TX_ANALYSIS_BROWSER_HEADLESS=false
-TX_ANALYSIS_BROWSER_MAX_CONCURRENCY=1
-TX_ANALYSIS_BROWSER_MAX_RETRIES=1
-TX_ANALYSIS_BROWSER_TIMEOUT_MS=60000
-TX_ANALYSIS_BROWSER_USER_DATA_DIR=
-TX_ANALYSIS_CHROME_EXECUTABLE_PATH=
-TX_ANALYSIS_DISCOVER_URL=
-TX_ANALYSIS_REPORT_STORE=file
-TX_ANALYSIS_SCREENSHOT_BASE_URL=/assets
-TX_ANALYSIS_SCREENSHOT_DIR=
-
 API_CORS_ORIGIN=
 API_MAX_BODY_BYTES=65536
 API_RATE_LIMIT_MAX=60
@@ -80,12 +67,13 @@ API_RATE_LIMIT_WINDOW_MS=60000
 
 数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。
 
-交易分析 provider：
+交易分析 provider 默认启用真实 browser 数据源，不配置 `TX_ANALYSIS_*` 也会查询公开交易浏览器和 XXYY 原池子页：
 
-- `TX_ANALYSIS_PROVIDER=none`：不接真实数据源，交易哈希问题返回暂未启用。
-- `TX_ANALYSIS_PROVIDER=browser`：启动本机 Chrome 查询公开交易浏览器和 XXYY 原池子页。遇到公开站点安全验证时，建议保持 `TX_ANALYSIS_BROWSER_HEADLESS=false`，在弹出的 Chrome 中完成验证后重试。
+- 默认 `TX_ANALYSIS_PROVIDER=browser`：启动本机 Chrome 查询公开交易浏览器和 XXYY 原池子页，默认复用 `.tx-analysis-browser-profile` 保存安全验证状态。
+- 显式 `TX_ANALYSIS_PROVIDER=none`：关闭真实数据源，交易哈希问题返回暂未启用。
+- 遇到公开站点安全验证时，保持默认 `TX_ANALYSIS_BROWSER_HEADLESS=false`，在弹出的 Chrome 中完成验证后重试。
 
-`TX_ANALYSIS_REVIEWER=openai` 会在已抓取交易窗口和规则证据基础上做可选模型复核；复核不可用、超时或返回不可解析内容时，系统保留规则化分析结果。
+交易分析相关环境变量只在需要覆盖默认行为时配置：特殊 Chrome 路径用 `TX_ANALYSIS_CHROME_EXECUTABLE_PATH`，staging/代理页面用 `TX_ANALYSIS_DISCOVER_URL`，自定义资产目录用 `TX_ANALYSIS_SCREENSHOT_DIR` / `TX_ANALYSIS_SCREENSHOT_BASE_URL`，模型复核用 `TX_ANALYSIS_REVIEWER=openai`。复核不可用、超时或返回不可解析内容时，系统保留规则化分析结果。
 
 ## 启动
 
@@ -151,7 +139,7 @@ MCP：
 ```bash
 pnpm product:mcp
 pnpm tx:mcp
-TX_ANALYSIS_PROVIDER=browser pnpm tx:mcp:smoke
+pnpm tx:mcp:smoke
 ```
 
 `product:mcp` 暴露 `search_product_docs` 和 `answer_product_question`。`tx:mcp` 暴露 `analyze_transaction`。`tx:mcp:smoke` 通过 stdio MCP client 用真实 browser provider 跑交易分析 MCP 样本，默认使用 `docs/tx-analysis-smoke-samples.example.json`，也可传 `-- --tx-samples <file>`。

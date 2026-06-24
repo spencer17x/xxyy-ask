@@ -7,7 +7,7 @@
 - [x] LangGraph 客服 Runtime：`packages/agent-core` 使用 LangGraph JS 组织策略保护、planner、工具执行和回答合成。第一片允许的工具是产品问答和交易分析，账户、订单、钱包余额、私有交易记录和投资建议请求会先进入边界回复。
 - [x] Product RAG：产品问题会检索 Postgres + pgvector 中的知识库 chunks，并通过 OpenAI-compatible chat completion 生成带引用回答。知识来源包含 `docs/product-features` 产品文档和官方 X / Twitter 更新。
 - [x] X / Twitter 增量同步：`pnpm sync` 默认执行增量抓取和 `rag:sync:x`；`pnpm sync -- --full` 用于低频全量抓取和重建。
-- [x] 交易哈希分析路线：聊天入口和 `POST /api/tx-analysis` 都可以接收公开交易哈希或受支持 explorer 链接。`TX_ANALYSIS_PROVIDER=none` 时明确返回暂未启用，`TX_ANALYSIS_PROVIDER=browser` 使用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页。
+- [x] 交易哈希分析路线：聊天入口和 `POST /api/tx-analysis` 都可以接收公开交易哈希或受支持 explorer 链接。默认使用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页；显式 `TX_ANALYSIS_PROVIDER=none` 时才返回暂未启用。
 - [x] 多链交易分析初版：浏览器取证当前支持 Solana，并已接入 Base、Ethereum、BSC 初版。规则化 SandwichAnalyzer 会保留可复查的交易窗口、证据、截图和相关交易上下文。
 - [x] 可选模型复核：`TX_ANALYSIS_REVIEWER=openai` 会在已抓取窗口和规则证据基础上做复核；复核不可用或不可解析时保留规则结果。
 - [x] HTTP 服务面：保留 `GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream`、`POST /api/tx-analysis` 和 `GET /assets/*`。

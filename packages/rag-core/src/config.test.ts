@@ -7,14 +7,14 @@ describe('loadRagConfig', () => {
     expect(loadRagConfig({})).toEqual({
       topK: 6,
       answerProvider: 'openai',
-      txAnalysisProvider: 'none',
+      txAnalysisProvider: 'browser',
       txAnalysisReviewer: 'none',
       txAnalysisBrowserHeadless: false,
       txAnalysisDiscoverUrl: undefined,
       txAnalysisBrowserMaxConcurrency: 1,
       txAnalysisBrowserMaxRetries: 1,
       txAnalysisBrowserTimeoutMs: 60000,
-      txAnalysisBrowserUserDataDir: undefined,
+      txAnalysisBrowserUserDataDir: '.tx-analysis-browser-profile',
       txAnalysisChromeExecutablePath: undefined,
       txAnalysisReportStore: 'file',
       txAnalysisScreenshotBaseUrl: '/assets',
@@ -132,5 +132,9 @@ describe('loadRagConfig', () => {
 
   it('accepts the browser transaction analysis provider for local Solana checks', () => {
     expect(loadRagConfig({ TX_ANALYSIS_PROVIDER: 'browser' }).txAnalysisProvider).toBe('browser');
+  });
+
+  it('keeps an explicit transaction analysis provider override for disabling browser checks', () => {
+    expect(loadRagConfig({ TX_ANALYSIS_PROVIDER: 'none' }).txAnalysisProvider).toBe('none');
   });
 });

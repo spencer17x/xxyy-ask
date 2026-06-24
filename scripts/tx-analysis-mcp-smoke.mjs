@@ -194,7 +194,7 @@ function parseTxAnalysisMcpSmokeArgs(args) {
 function printUsage() {
   process.stdout.write(
     [
-      'Usage: TX_ANALYSIS_PROVIDER=browser pnpm tx:mcp:smoke [-- --tx-samples <file>]',
+      'Usage: pnpm tx:mcp:smoke [-- --tx-samples <file>]',
       '',
       'Runs the transaction analysis MCP server through the official stdio client transport using real transaction-analysis samples.',
     ].join('\n'),

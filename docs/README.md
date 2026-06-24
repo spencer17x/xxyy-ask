@@ -48,7 +48,7 @@ pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 pnpm rag:ingest
 pnpm rag:sync:x
 pnpm rag:stats
-TX_ANALYSIS_PROVIDER=browser pnpm tx:mcp:smoke
+pnpm tx:mcp:smoke
 ```
 
 `pnpm sync` 默认执行增量 `x:scrape` 和 `rag:sync:x`；`--full` 会执行全量 scrape 和正式 ingest。

@@ -62,9 +62,11 @@ const DEFAULT_OPENAI_MAX_RETRIES = 1;
 const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_POSTGRES_HOST = 'localhost';
 const DEFAULT_POSTGRES_PORT = '5432';
+const DEFAULT_TX_ANALYSIS_PROVIDER = 'browser';
 const DEFAULT_TX_ANALYSIS_BROWSER_MAX_CONCURRENCY = 1;
 const DEFAULT_TX_ANALYSIS_BROWSER_MAX_RETRIES = 1;
 const DEFAULT_TX_ANALYSIS_BROWSER_TIMEOUT_MS = 60000;
+const DEFAULT_TX_ANALYSIS_BROWSER_USER_DATA_DIR = '.tx-analysis-browser-profile';
 const DEFAULT_TX_ANALYSIS_REPORT_STORE = 'file';
 const DEFAULT_TX_ANALYSIS_REVIEWER = 'none';
 const DEFAULT_TX_ANALYSIS_SCREENSHOT_BASE_URL = '/assets';
@@ -73,7 +75,7 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
   const config: RagConfig = {
     topK: parseTopK(env.RAG_TOP_K),
     answerProvider: env.RAG_ANSWER_PROVIDER ?? 'openai',
-    txAnalysisProvider: env.TX_ANALYSIS_PROVIDER ?? 'none',
+    txAnalysisProvider: parseOptionalText(env.TX_ANALYSIS_PROVIDER) ?? DEFAULT_TX_ANALYSIS_PROVIDER,
     txAnalysisReviewer: env.TX_ANALYSIS_REVIEWER ?? DEFAULT_TX_ANALYSIS_REVIEWER,
     txAnalysisBrowserHeadless: parseBoolean(env.TX_ANALYSIS_BROWSER_HEADLESS, false),
     txAnalysisDiscoverUrl: parseOptionalText(env.TX_ANALYSIS_DISCOVER_URL),
@@ -89,12 +91,14 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
       env.TX_ANALYSIS_BROWSER_TIMEOUT_MS,
       DEFAULT_TX_ANALYSIS_BROWSER_TIMEOUT_MS,
     ),
-    txAnalysisBrowserUserDataDir: env.TX_ANALYSIS_BROWSER_USER_DATA_DIR,
-    txAnalysisChromeExecutablePath: env.TX_ANALYSIS_CHROME_EXECUTABLE_PATH,
+    txAnalysisBrowserUserDataDir:
+      parseOptionalText(env.TX_ANALYSIS_BROWSER_USER_DATA_DIR) ??
+      DEFAULT_TX_ANALYSIS_BROWSER_USER_DATA_DIR,
+    txAnalysisChromeExecutablePath: parseOptionalText(env.TX_ANALYSIS_CHROME_EXECUTABLE_PATH),
     txAnalysisReportStore: env.TX_ANALYSIS_REPORT_STORE ?? DEFAULT_TX_ANALYSIS_REPORT_STORE,
     txAnalysisScreenshotBaseUrl:
       env.TX_ANALYSIS_SCREENSHOT_BASE_URL ?? DEFAULT_TX_ANALYSIS_SCREENSHOT_BASE_URL,
-    txAnalysisScreenshotDir: env.TX_ANALYSIS_SCREENSHOT_DIR,
+    txAnalysisScreenshotDir: parseOptionalText(env.TX_ANALYSIS_SCREENSHOT_DIR),
     databaseUrl: env.DATABASE_URL ?? buildPostgresUrl(env),
     openAiApiKey: env.OPENAI_API_KEY,
     openAiApiKeyPresent: Boolean(env.OPENAI_API_KEY),
