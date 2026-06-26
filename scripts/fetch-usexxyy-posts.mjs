@@ -254,19 +254,21 @@ function extractRelayOperation(js, operationName) {
   const operationPattern = new RegExp(
     `params:\\{id:\`([^\`]+)\`,metadata:\\{[^}]*\\},name:\`${escapeRegExp(
       operationName,
-    )}\`,operationKind:\`query\`,text:null\\}`,
+    )}\`,operationKind:\`query\`,text:null(?:,providedVariables:\\{([^}]*)\\})?`,
     'u',
   );
   const match = operationPattern.exec(js);
   if (match?.[1] === undefined) {
     return undefined;
   }
+  const providedVariables = extractProvidedVariables(match[2] ?? '');
 
   return {
     queryId: match[1],
     operationName,
     features: {},
     fieldToggles: {},
+    ...(Object.keys(providedVariables).length === 0 ? {} : { providedVariables }),
     variableStyle: 'screenName',
   };
 }
@@ -279,6 +281,22 @@ function extractQuotedValues(value) {
   return Array.from(value.matchAll(/"([^"]+)"/gu), (match) => match[1]).filter(
     (item) => item !== undefined,
   );
+}
+
+function extractProvidedVariables(value) {
+  return Object.fromEntries(
+    Array.from(new Set(Array.from(value.matchAll(/([A-Za-z_$][\w$]*)\s*:/gu), (match) => match[1])))
+      .filter((name) => name !== undefined)
+      .map((name) => [name, resolveProvidedVariableValue(name)]),
+  );
+}
+
+function resolveProvidedVariableValue(name) {
+  if (name === '__relay_internal__pv__appviewerisloggedinprovider') {
+    return false;
+  }
+
+  return false;
 }
 
 async function activateGuest(bearerToken) {
@@ -469,17 +487,25 @@ function comparePostsByCreatedAtDesc(left, right) {
 }
 
 async function fetchGraphql(operation, headers, variables) {
+  const params = createGraphqlRequestParams(operation, variables);
+  const url = `https://x.com/i/api/graphql/${operation.queryId}/${operation.operationName}?${params.toString()}`;
+  const response = await fetchWithRetry(url, { headers });
+
+  return response.json();
+}
+
+export function createGraphqlRequestParams(operation, variables) {
   const params = new URLSearchParams({
-    variables: JSON.stringify(variables),
+    variables: JSON.stringify({
+      ...(operation.providedVariables ?? {}),
+      ...variables,
+    }),
     features: JSON.stringify(operation.features),
   });
   if (Object.keys(operation.fieldToggles).length > 0) {
     params.set('fieldToggles', JSON.stringify(operation.fieldToggles));
   }
-  const url = `https://x.com/i/api/graphql/${operation.queryId}/${operation.operationName}?${params.toString()}`;
-  const response = await fetchWithRetry(url, { headers });
-
-  return response.json();
+  return params;
 }
 
 async function fetchWithRetry(url, init = {}) {

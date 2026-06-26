@@ -10448,6 +10448,41 @@ describe('createSolanaPublicFallbackUnavailableError', () => {
     expect(error?.message).toContain('公开交易浏览器');
   });
 
+  it('does not wait for public Solana fallbacks after Solscan shows browser verification', async () => {
+    const visitedUrls: string[] = [];
+    const fakePage = {
+      goto(url: string) {
+        visitedUrls.push(url);
+        return Promise.resolve();
+      },
+      locator(selector: string) {
+        expect(selector).toBe('body');
+        return {
+          innerText() {
+            return Promise.resolve('Checking if the site connection is secure before proceeding');
+          },
+        };
+      },
+      waitForTimeout() {
+        return Promise.resolve();
+      },
+    };
+    const driverModule = (await import('./playwright-browser-tx-driver.js')) as unknown as {
+      extractSolanaTransaction?: (
+        page: typeof fakePage,
+        txHash: string,
+        options: { timeoutMs?: number },
+      ) => Promise<unknown>;
+    };
+
+    await expect(
+      driverModule.extractSolanaTransaction?.(fakePage, SOLANA_TX, { timeoutMs: 1000 }),
+    ).rejects.toMatchObject({
+      reason: 'browser_verification_required',
+    } satisfies Partial<TxAnalysisProviderUnavailableError>);
+    expect(visitedUrls).toEqual([`https://solscan.io/tx/${SOLANA_TX}`]);
+  });
+
   it('uses tx_not_found when public Solana fallbacks parse no transaction context for non-verification failures', async () => {
     const driverModule = (await import('./playwright-browser-tx-driver.js')) as {
       createSolanaPublicFallbackUnavailableError?: (

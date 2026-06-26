@@ -410,7 +410,10 @@ export async function extractSolanaTransaction(
 
 function isRecoverableSolscanExtractionError(error: unknown): boolean {
   if (error instanceof TxAnalysisProviderUnavailableError) {
-    return !isFinalTransactionStatusUnavailableError(error);
+    return (
+      error.reason !== 'browser_verification_required' &&
+      !isFinalTransactionStatusUnavailableError(error)
+    );
   }
 
   const message = error instanceof Error ? error.message : String(error);

@@ -13,25 +13,31 @@
     "mode": "incremental",
     "note": "Covers public profile timeline posts visible to the anonymous X web client. Replies not shown in UserTweets are not included unless X exposes them in the profile timeline.",
     "pageSize": 40,
-    "cutoffCreatedAtIso": "2026-06-12T09:33:59.000Z",
-    "cutoffPostId": "2065366998243303666",
-    "totalPosts": 279
+    "cutoffCreatedAtIso": "2026-06-25T10:22:43.000Z",
+    "cutoffPostId": "2070090302183071922",
+    "totalPosts": 280
   },
-  "fetchedAt": "2026-06-24T10:03:26.085Z",
-  "configAssetUrl": "https://abs.twimg.com/x-web/x-web/assets/guest-token-pxm0d9yq.js",
+  "fetchedAt": "2026-06-25T13:49:36.159Z",
+  "configAssetUrl": "https://abs.twimg.com/x-web/x-web/assets/guest-token-CtUEaOBG.js",
   "operations": {
     "userByScreenName": {
-      "queryId": "iAhB7PpOVltiFEfQBeA40Q",
+      "queryId": "aM1FsGHIp8AxZm2FkMOeIA",
       "operationName": "UserByScreenName",
       "features": {},
       "fieldToggles": {},
+      "providedVariables": {
+        "__relay_internal__pv__appviewerisloggedinprovider": false
+      },
       "variableStyle": "screenName"
     },
     "userTweets": {
-      "queryId": "CnSnoo277oTfdVQPIsRIbA",
+      "queryId": "ekw8D-9PawNwATJEBGW9dg",
       "operationName": "UserTweets",
       "features": {},
       "fieldToggles": {},
+      "providedVariables": {
+        "__relay_internal__pv__appviewerisloggedinprovider": false
+      },
       "variableStyle": "screenName"
     }
   }

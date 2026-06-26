@@ -102,6 +102,18 @@ async function plannerNode(
     };
   }
 
+  const transactionReferencePlan = createTransactionReferenceToolPlan(
+    state.request.message,
+    options.registry,
+  );
+  if (transactionReferencePlan !== undefined) {
+    return {
+      currentStep: state.currentStep + 1,
+      plan: transactionReferencePlan,
+      route: 'transaction_analysis',
+    };
+  }
+
   let plan: AgentPlan;
   try {
     plan = await options.planner.plan({
@@ -118,7 +130,7 @@ async function plannerNode(
       error instanceof PlannerModelRequestError ||
       error instanceof Error
     ) {
-      const fallbackPlan = createTransactionReferenceFallbackPlan(
+      const fallbackPlan = createTransactionReferenceToolPlan(
         state.request.message,
         options.registry,
       );
@@ -157,7 +169,7 @@ async function plannerNode(
   };
 }
 
-function createTransactionReferenceFallbackPlan(
+function createTransactionReferenceToolPlan(
   message: string,
   registry: ToolRegistry,
 ): AgentPlan | undefined {

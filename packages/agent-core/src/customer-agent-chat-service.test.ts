@@ -199,11 +199,24 @@ describe('createCustomerAgentChatService', () => {
     ).rejects.toBeInstanceOf(LlmConfigurationError);
   });
 
-  it('requires LLM planner config instead of falling back to local transaction routing', async () => {
+  it('routes clear transaction references without requiring LLM planner config', async () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_BASE_URL;
     delete process.env.OPENAI_MODEL;
 
+    const txHash = `0x${'a'.repeat(64)}`;
+    const analyze = vi.fn(() =>
+      Promise.resolve({
+        analyzedAt: '2026-06-25T00:00:00.000Z',
+        chain: 'unknown' as const,
+        confidence: 0.62,
+        evidence: [],
+        relatedTransactions: [],
+        summary: '未发现明确 sandwich 模式。',
+        txHash,
+        verdict: 'not_sandwiched' as const,
+      }),
+    );
     const service = createCustomerAgentChatService({
       answerProvider: {
         answer() {
@@ -216,18 +229,22 @@ describe('createCustomerAgentChatService', () => {
         },
       },
       txAnalysisProvider: {
-        analyze() {
-          throw new Error('tx analysis provider should not be called');
-        },
+        analyze,
       },
     });
 
-    await expect(
-      service.ask({
-        channel: 'web',
-        message: `帮我分析 0x${'a'.repeat(64)} 有没有被夹`,
-      }),
-    ).rejects.toBeInstanceOf(LlmConfigurationError);
+    const response = await service.ask({
+      channel: 'web',
+      message: `帮我分析 ${txHash} 有没有被夹`,
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'transaction_analysis',
+      confidence: 0.62,
+      intent: 'tx_sandwich_detection',
+    });
+    expect(response.answer).toContain('结论：未发现明确被夹');
+    expect(analyze).toHaveBeenCalledWith({ chain: 'unknown', txHash });
   });
 
   it('uses passed config values when creating the default planner', async () => {

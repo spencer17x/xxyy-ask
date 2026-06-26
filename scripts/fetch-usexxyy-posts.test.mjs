@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createGraphqlRequestParams,
   extractOperation,
   extractTimelinePage,
   findJavaScriptAssetUrls,
@@ -40,6 +41,43 @@ describe('X web config discovery', () => {
       operationName: 'UserTweets',
       queryId: 'CnSnoo277oTfdVQPIsRIbA',
       variableStyle: 'screenName',
+    });
+  });
+
+  it('extracts Relay persisted query params when x-web adds provided variables', () => {
+    const js =
+      'params:{id:`aM1FsGHIp8AxZm2FkMOeIA`,metadata:{},name:`UserByScreenName`,operationKind:`query`,text:null,providedVariables:{__relay_internal__pv__appviewerisloggedinprovider:p}}';
+
+    expect(extractOperation(js, 'UserByScreenName')).toEqual({
+      fieldToggles: {},
+      features: {},
+      operationName: 'UserByScreenName',
+      providedVariables: {
+        __relay_internal__pv__appviewerisloggedinprovider: false,
+      },
+      queryId: 'aM1FsGHIp8AxZm2FkMOeIA',
+      variableStyle: 'screenName',
+    });
+  });
+
+  it('includes Relay provided variables in GraphQL request variables', () => {
+    const params = createGraphqlRequestParams(
+      {
+        features: {},
+        fieldToggles: {},
+        operationName: 'UserByScreenName',
+        providedVariables: {
+          __relay_internal__pv__appviewerisloggedinprovider: false,
+        },
+        queryId: 'aM1FsGHIp8AxZm2FkMOeIA',
+        variableStyle: 'screenName',
+      },
+      { screenName: 'useXXYYio' },
+    );
+
+    expect(JSON.parse(params.get('variables'))).toEqual({
+      __relay_internal__pv__appviewerisloggedinprovider: false,
+      screenName: 'useXXYYio',
     });
   });
 });

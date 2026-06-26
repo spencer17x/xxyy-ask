@@ -140,7 +140,7 @@ describe('createLangGraphCustomerRuntime', () => {
     );
   });
 
-  it('falls back to the transaction tool when planner requests fail for one clear transaction reference', async () => {
+  it('routes one clear transaction reference to the transaction tool without planner latency', async () => {
     const registry = createToolRegistry();
     const txHash = `0x${'c'.repeat(64)}`;
     const output: AnalyzeTransactionOutput = {
@@ -158,7 +158,7 @@ describe('createLangGraphCustomerRuntime', () => {
     };
     const execute = vi.fn(() => Promise.resolve(output));
     const planner = {
-      plan: vi.fn(() => Promise.reject(new PlannerModelRequestError('planner request failed'))),
+      plan: vi.fn(() => Promise.reject(new PlannerModelRequestError('planner should not run'))),
     };
 
     registry.register({
@@ -184,10 +184,67 @@ describe('createLangGraphCustomerRuntime', () => {
       confidence: 0.86,
       intent: 'tx_sandwich_detection',
     });
-    expect(planner.plan).toHaveBeenCalledOnce();
+    expect(planner.plan).not.toHaveBeenCalled();
     expect(execute).toHaveBeenCalledWith(
       { chain: 'base', txHash },
       { channel: 'web', sessionId: 'session-1', userIdPresent: false },
+    );
+  });
+
+  it('prefers deterministic transaction routing over malformed planner tool input', async () => {
+    const registry = createToolRegistry();
+    const txHash =
+      'UUhMpRZtCVFENshTwTGy1FSJvodiJ2DxpXqQ9KMF3aQ8KEjfcJVKMLnURRmG6VEEhFKYMTuCiU7N4SohiTuRRUF';
+    const message = `查询下这笔交易是否被夹：https://solscan.io/tx/${txHash}`;
+    const output: AnalyzeTransactionOutput = {
+      failure: {
+        message: 'Browser verification required.',
+        reason: 'browser_verification_required',
+        reportUrl: '/assets/tx-analysis-failure-solana.json',
+      },
+      status: 'failure',
+    };
+    const execute = vi.fn(() => Promise.resolve(output));
+    const planner = {
+      plan: vi.fn(() =>
+        Promise.resolve({
+          input: { txHash: message },
+          kind: 'tool' as const,
+          reason: 'Planner kept the whole user message as txHash.',
+          route: 'transaction_analysis' as const,
+          toolName: 'analyze_transaction' as const,
+        }),
+      ),
+    };
+
+    registry.register({
+      name: 'analyze_transaction',
+      description: 'Analyze transaction.',
+      inputSchema: z.object({
+        chain: z.string().optional(),
+        txHash: z.string(),
+      }),
+      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createLangGraphCustomerRuntime({ planner, registry }).ask({
+      channel: 'web',
+      message,
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'transaction_analysis',
+      confidence: 0.35,
+      intent: 'tx_sandwich_detection',
+    });
+    expect(response.answer).toContain('浏览器安全验证');
+    expect(response.answer).toContain('报告：/assets/tx-analysis-failure-solana.json');
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledWith(
+      { chain: 'solana', txHash },
+      { channel: 'web', sessionId: undefined, userIdPresent: false },
     );
   });
 
