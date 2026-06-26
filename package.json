@@ -22,6 +22,7 @@
     "start": "node scripts/start-agent.mjs",
     "start:service": "pnpm --filter @xxyy/api start",
     "sync": "node scripts/rag-refresh.mjs",
+    "telegram:start": "pnpm --filter @xxyy/telegram-bot start",
     "test": "vitest run",
     "tx:mcp": "pnpm --filter @xxyy/tx-analysis-mcp start",
     "tx:mcp:smoke": "node scripts/tx-analysis-mcp-smoke.mjs",

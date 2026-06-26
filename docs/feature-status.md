@@ -12,6 +12,7 @@
 - [x] 可选模型复核：`TX_ANALYSIS_REVIEWER=openai` 会在已抓取窗口和规则证据基础上做复核；复核不可用或不可解析时保留规则结果。
 - [x] HTTP 服务面：保留 `GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream`、`POST /api/tx-analysis` 和 `GET /assets/*`。
 - [x] Web UI：`GET /` 提供静态聊天界面，支持普通回答、流式回答、引用展示、视频附件和交易分析图片附件。
+- [x] Telegram Bot：`pnpm telegram:start` 通过 Telegram Bot API long polling 接收文本消息，并以 `channel: "telegram"` 复用同一套 LangGraph 客服 Agent。
 - [x] 静态资产：`GET /assets/*` 返回产品文档视频、交易分析截图和本地报告文件等静态资源。
 - [x] 服务保护：API 对 JSON 请求体大小、聊天/交易分析 POST 请求频率和跨域来源做基础限制，配置项为 `API_MAX_BODY_BYTES`、`API_RATE_LIMIT_MAX`、`API_RATE_LIMIT_WINDOW_MS` 和 `API_CORS_ORIGIN`。
 - [x] MCP 工具：`pnpm product:mcp` 暴露 `search_product_docs` 和 `answer_product_question`；`pnpm tx:mcp` 暴露 `analyze_transaction`；`pnpm tx:mcp:smoke` 可跑交易分析 MCP 样本。
@@ -31,5 +32,5 @@
 - [ ] 链上分析工具：在交易哈希分析之外，扩展更多公开链上取证能力。
 - [ ] 交易分析多链稳定性：继续补 Base、Ethereum、BSC 的真实页面结构、备用浏览器和 XXYY 池子窗口样本。
 - [ ] 产品知识质量增强：继续补官方文档、X / Twitter 更新和回归样本，让 Product RAG 对新功能更新更稳。
-- [ ] 多渠道接入：在不改变客服 Agent 核心边界的前提下，接入更多入口。
+- [ ] 更多渠道接入：在不改变客服 Agent 核心边界的前提下，继续接入更多入口。
 - [ ] 工具权限策略：为未来池子查询、链上分析和其它公开工具补更细粒度的权限与安全策略。

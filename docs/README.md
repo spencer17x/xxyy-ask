@@ -29,6 +29,7 @@
 - `packages/tx-analysis-mcp`：交易哈希夹子查询 MCP stdio server。
 - `apps/cli`：`rag:ask`、`rag:ingest`、`rag:migrate`、`rag:stats`、`rag:sync:x`。
 - `apps/api`：`GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream`、`POST /api/tx-analysis`、`GET /assets/*`。
+- `apps/telegram-bot`：Telegram Bot long polling 入口，复用 LangGraph 客服 Agent。
 - `apps/web`：静态聊天 UI。
 
 ## 常用命令
@@ -48,6 +49,7 @@ pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 pnpm rag:ingest
 pnpm rag:sync:x
 pnpm rag:stats
+pnpm telegram:start
 pnpm tx:mcp:smoke
 ```
 
@@ -69,6 +71,14 @@ POST /api/tx-analysis
 `POST /api/chat` 和 `POST /api/chat/stream` 是客服入口。Agent 会在 `boundary`、`clarify`、`product_answer` 和 `transaction_analysis` 之间规划路线。
 
 `POST /api/tx-analysis` 是后台、测试工具或未来独立分析页可复用的交易分析入口，返回与聊天入口一致的 `ChatResponse`。
+
+## Telegram Bot
+
+```bash
+pnpm telegram:start
+```
+
+Bot 通过 Telegram Bot API long polling 接收文本消息，转成 `channel: "telegram"` 的客服请求。默认只需要配置 `TELEGRAM_BOT_TOKEN`。图片附件公网 URL、轮询超时和重试间隔都有默认处理，只有特殊部署才需要额外覆盖。
 
 ## 边界
 

@@ -72,6 +72,21 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
 
+  apps/telegram-bot:
+    dependencies:
+      '@xxyy/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+      '@xxyy/knowledge':
+        specifier: workspace:*
+        version: link:../../packages/knowledge
+      '@xxyy/rag-core':
+        specifier: workspace:*
+        version: link:../../packages/rag-core
+      '@xxyy/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+
   apps/web:
     dependencies:
       react:

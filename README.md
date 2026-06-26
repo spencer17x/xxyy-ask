@@ -19,6 +19,7 @@ XXYY 客服 Agentic RAG 项目。当前目标是做 LangGraph 驱动的产品客
 apps/
   api/        HTTP API 和 Web UI 服务入口
   cli/        RAG ingest、X sync、migrate、stats、ask 命令
+  telegram-bot/ Telegram Bot long polling 入口
   web/        静态聊天页面
 packages/
   shared/     共享类型和聊天契约
@@ -63,6 +64,8 @@ API_CORS_ORIGIN=
 API_MAX_BODY_BYTES=65536
 API_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_WINDOW_MS=60000
+
+TELEGRAM_BOT_TOKEN=
 ```
 
 数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。
@@ -143,6 +146,16 @@ pnpm tx:mcp:smoke
 ```
 
 `product:mcp` 暴露 `search_product_docs` 和 `answer_product_question`。`tx:mcp` 暴露 `analyze_transaction`。`tx:mcp:smoke` 通过 stdio MCP client 用真实 browser provider 跑交易分析 MCP 样本，默认使用 `docs/tx-analysis-smoke-samples.example.json`，也可传 `-- --tx-samples <file>`。
+
+Telegram Bot：
+
+```bash
+pnpm telegram:start
+```
+
+配置 `TELEGRAM_BOT_TOKEN` 后，Bot 会通过 long polling 接收文本消息，并以 `channel: "telegram"` 调用同一套 LangGraph 客服 Agent。
+
+不常用的 Telegram 配置不放进 `.env.example`：需要把交易分析截图等 `/assets/*` 相对路径作为 Telegram photo 发送时，再额外配置 `TELEGRAM_PUBLIC_BASE_URL`；轮询超时、失败重试间隔和 updates limit 都有内置默认值，通常不用配置。
 
 ## HTTP API
 
