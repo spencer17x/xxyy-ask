@@ -1,4 +1,4 @@
-import type { ChatResponse } from '@xxyy/shared';
+import type { ChatRequest, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import type { ChatService } from '@xxyy/rag-core';
 
 export interface TelegramBotConfig {
@@ -19,6 +19,7 @@ export interface TelegramUpdate {
 export interface TelegramMessage {
   chat: {
     id: number;
+    type?: 'channel' | 'group' | 'private' | 'supergroup';
   };
   from?: {
     id: number;
@@ -30,6 +31,7 @@ export interface TelegramMessage {
 export interface TelegramApi {
   getUpdates(input: TelegramGetUpdatesInput): Promise<TelegramUpdate[]>;
   sendMessage(input: TelegramSendMessageInput): Promise<void>;
+  sendMessageDraft?(input: TelegramSendMessageDraftInput): Promise<void>;
   sendPhoto(input: TelegramSendPhotoInput): Promise<void>;
 }
 
@@ -41,6 +43,12 @@ export interface TelegramGetUpdatesInput {
 
 export interface TelegramSendMessageInput {
   chatId: number;
+  text: string;
+}
+
+export interface TelegramSendMessageDraftInput {
+  chatId: number;
+  draftId: number;
   text: string;
 }
 
@@ -57,10 +65,12 @@ export interface TelegramBot {
 
 export interface CreateTelegramBotOptions {
   api: TelegramApi;
-  chatService: Pick<ChatService, 'ask'>;
+  chatService: TelegramChatService;
   config: TelegramBotConfig;
   logger?: TelegramBotLogger;
 }
+
+type TelegramChatService = Pick<ChatService, 'ask'> & Partial<Pick<ChatService, 'stream'>>;
 
 export interface TelegramBotLogger {
   error(message: string, error?: unknown): void;
@@ -91,6 +101,7 @@ export class TelegramBotConfigurationError extends Error {
 const DEFAULT_UPDATES_LIMIT = 100;
 const DEFAULT_POLL_TIMEOUT_SECONDS = 30;
 const DEFAULT_POLL_ERROR_RETRY_MS = 3000;
+const TELEGRAM_DRAFT_UPDATE_MIN_CHARS = 80;
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const HELP_TEXT = [
   '我是 XXYY 客服 Bot，可以回答产品使用问题，也可以检查公开交易链接是否被夹。',
@@ -154,12 +165,22 @@ export function createTelegramBot(options: CreateTelegramBotOptions): TelegramBo
       return;
     }
 
-    const response = await options.chatService.ask({
-      channel: 'telegram',
-      message: text,
-      sessionId: `telegram:${chatId}`,
-      ...(message.from?.id === undefined ? {} : { userId: `telegram:${message.from.id}` }),
-    });
+    const request = createTelegramChatRequest(message, text);
+    if (canStreamToDraft(message, options)) {
+      const streamed = await trySendStreamingChatResponse({
+        api: options.api,
+        chatId,
+        config: options.config,
+        draftId: createTelegramDraftId(update.update_id),
+        request,
+        stream: options.chatService.stream,
+      });
+      if (streamed) {
+        return;
+      }
+    }
+
+    const response = await options.chatService.ask(request);
 
     await sendChatResponse(options.api, chatId, response, options.config);
   }
@@ -180,6 +201,97 @@ export function createTelegramBot(options: CreateTelegramBotOptions): TelegramBo
       }
     },
   };
+}
+
+function createTelegramChatRequest(message: TelegramMessage, text: string): ChatRequest {
+  return {
+    channel: 'telegram',
+    message: text,
+    sessionId: `telegram:${message.chat.id}`,
+    ...(message.from?.id === undefined ? {} : { userId: `telegram:${message.from.id}` }),
+  };
+}
+
+function canStreamToDraft(message: TelegramMessage, options: CreateTelegramBotOptions): boolean {
+  return (
+    options.chatService.stream !== undefined &&
+    options.api.sendMessageDraft !== undefined &&
+    (message.chat.type === undefined || message.chat.type === 'private')
+  );
+}
+
+async function trySendStreamingChatResponse(options: {
+  api: Pick<TelegramApi, 'sendMessage' | 'sendMessageDraft' | 'sendPhoto'>;
+  chatId: number;
+  config: Pick<TelegramBotConfig, 'publicBaseUrl'>;
+  draftId: number;
+  request: ChatRequest;
+  stream: ChatService['stream'] | undefined;
+}): Promise<boolean> {
+  if (options.stream === undefined || options.api.sendMessageDraft === undefined) {
+    return false;
+  }
+
+  let answer = '';
+  let draftFailed = false;
+  let lastDraftLength = 0;
+  let metadata: Extract<ChatStreamEvent, { type: 'metadata' }> | undefined;
+
+  try {
+    for await (const event of options.stream(options.request)) {
+      if (event.type === 'answer_delta') {
+        answer += event.delta;
+        if (!draftFailed && shouldSendTelegramDraft(answer, lastDraftLength)) {
+          try {
+            await options.api.sendMessageDraft({
+              chatId: options.chatId,
+              draftId: options.draftId,
+              text: answer,
+            });
+            lastDraftLength = answer.length;
+          } catch {
+            draftFailed = true;
+          }
+        }
+        continue;
+      }
+
+      metadata = event;
+    }
+  } catch {
+    return false;
+  }
+
+  if (metadata === undefined) {
+    return false;
+  }
+
+  await sendChatResponse(
+    options.api,
+    options.chatId,
+    {
+      answer,
+      citations: metadata.citations,
+      confidence: metadata.confidence,
+      intent: metadata.intent,
+      ...(metadata.agentRoute === undefined ? {} : { agentRoute: metadata.agentRoute }),
+      ...(metadata.attachments === undefined ? {} : { attachments: metadata.attachments }),
+      ...(metadata.tokenUsage === undefined ? {} : { tokenUsage: metadata.tokenUsage }),
+    },
+    options.config,
+  );
+  return true;
+}
+
+function shouldSendTelegramDraft(answer: string, lastDraftLength: number): boolean {
+  return (
+    answer.length > 0 &&
+    (lastDraftLength === 0 || answer.length - lastDraftLength >= TELEGRAM_DRAFT_UPDATE_MIN_CHARS)
+  );
+}
+
+function createTelegramDraftId(updateId: number): number {
+  return Math.max(1, updateId);
 }
 
 export async function runTelegramBot(

@@ -41,7 +41,7 @@ describe('createTelegramApiClient', () => {
     });
   });
 
-  it('sends messages and photos through Bot API methods', async () => {
+  it('sends messages, drafts, and photos through Bot API methods', async () => {
     const fetch = vi.fn(() => Promise.resolve(createJsonResponse({ ok: true, result: true })));
     const api = createTelegramApiClient({
       apiBaseUrl: 'https://telegram.test/',
@@ -50,6 +50,10 @@ describe('createTelegramApiClient', () => {
     });
 
     await api.sendMessage({ chatId: -100, text: 'hello' });
+    if (api.sendMessageDraft === undefined) {
+      throw new Error('Expected sendMessageDraft to be implemented.');
+    }
+    await api.sendMessageDraft({ chatId: -100, draftId: 7, text: 'partial' });
     await api.sendPhoto({ caption: '截图', chatId: -100, photo: 'https://ask.example.com/a.png' });
 
     expect(fetch).toHaveBeenNthCalledWith(1, 'https://telegram.test/bot123:abc/sendMessage', {
@@ -57,7 +61,12 @@ describe('createTelegramApiClient', () => {
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     });
-    expect(fetch).toHaveBeenNthCalledWith(2, 'https://telegram.test/bot123:abc/sendPhoto', {
+    expect(fetch).toHaveBeenNthCalledWith(2, 'https://telegram.test/bot123:abc/sendMessageDraft', {
+      body: JSON.stringify({ chat_id: -100, draft_id: 7, text: 'partial' }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    expect(fetch).toHaveBeenNthCalledWith(3, 'https://telegram.test/bot123:abc/sendPhoto', {
       body: JSON.stringify({
         caption: '截图',
         chat_id: -100,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ChatResponse } from '@xxyy/shared';
+import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 
 import {
   TelegramBotConfigurationError,
@@ -84,6 +84,109 @@ describe('createTelegramBot', () => {
     expect(sendMessage).toHaveBeenCalledWith({
       chatId: 123,
       text: 'XXYY Pro 支持更多监控额度。',
+    });
+  });
+
+  it('streams answer deltas through Telegram message drafts before sending the final reply', async () => {
+    const ask = vi.fn(() => Promise.resolve(createResponse()));
+    const stream = vi.fn(() =>
+      streamEvents([
+        { type: 'answer_delta', delta: 'A'.repeat(90) },
+        { type: 'answer_delta', delta: 'B'.repeat(90) },
+        {
+          type: 'metadata',
+          agentRoute: 'product_answer',
+          citations: [],
+          confidence: 0.8,
+          intent: 'product_qa',
+        },
+      ]),
+    );
+    const sendMessage = createSendMessageMock();
+    const sendMessageDraft = vi.fn(() => Promise.resolve());
+    const bot = createTelegramBot({
+      api: {
+        getUpdates: vi.fn(),
+        sendMessage,
+        sendMessageDraft,
+        sendPhoto: vi.fn(),
+      },
+      chatService: { ask, stream },
+      config: loadTelegramBotConfig({ TELEGRAM_BOT_TOKEN: 'bot-token' }),
+    });
+
+    await bot.handleUpdate({
+      message: {
+        chat: { id: 123, type: 'private' },
+        from: { id: 456 },
+        message_id: 1,
+        text: 'XXYY Pro 有哪些权益？',
+      },
+      update_id: 10,
+    });
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(stream).toHaveBeenCalledWith({
+      channel: 'telegram',
+      message: 'XXYY Pro 有哪些权益？',
+      sessionId: 'telegram:123',
+      userId: 'telegram:456',
+    });
+    expect(sendMessageDraft).toHaveBeenNthCalledWith(1, {
+      chatId: 123,
+      draftId: 10,
+      text: 'A'.repeat(90),
+    });
+    expect(sendMessageDraft).toHaveBeenNthCalledWith(2, {
+      chatId: 123,
+      draftId: 10,
+      text: `${'A'.repeat(90)}${'B'.repeat(90)}`,
+    });
+    expect(sendMessage).toHaveBeenCalledWith({
+      chatId: 123,
+      text: `${'A'.repeat(90)}${'B'.repeat(90)}`,
+    });
+  });
+
+  it('keeps streaming final delivery when Telegram draft updates fail', async () => {
+    const ask = vi.fn(() => Promise.resolve(createResponse()));
+    const stream = vi.fn(() =>
+      streamEvents([
+        { type: 'answer_delta', delta: 'partial answer' },
+        {
+          type: 'metadata',
+          citations: [],
+          confidence: 0.7,
+          intent: 'product_qa',
+        },
+      ]),
+    );
+    const sendMessage = createSendMessageMock();
+    const bot = createTelegramBot({
+      api: {
+        getUpdates: vi.fn(),
+        sendMessage,
+        sendMessageDraft: vi.fn(() => Promise.reject(new Error('draft unsupported'))),
+        sendPhoto: vi.fn(),
+      },
+      chatService: { ask, stream },
+      config: loadTelegramBotConfig({ TELEGRAM_BOT_TOKEN: 'bot-token' }),
+    });
+
+    await bot.handleUpdate({
+      message: {
+        chat: { id: 123, type: 'private' },
+        from: { id: 456 },
+        message_id: 1,
+        text: 'XXYY Pro 有哪些权益？',
+      },
+      update_id: 10,
+    });
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledWith({
+      chatId: 123,
+      text: 'partial answer',
     });
   });
 
@@ -228,3 +331,10 @@ describe('message formatting helpers', () => {
     expect(splitTelegramMessage('abcdef', 3)).toEqual(['abc', 'def']);
   });
 });
+
+async function* streamEvents(events: ChatStreamEvent[]): AsyncIterable<ChatStreamEvent> {
+  for (const event of events) {
+    await Promise.resolve();
+    yield event;
+  }
+}
