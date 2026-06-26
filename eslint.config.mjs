@@ -5,12 +5,12 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['coverage/**', 'dist/**', 'node_modules/**', '*.tsbuildinfo'],
+    ignores: ['coverage/**', '**/dist/**', 'node_modules/**', '*.tsbuildinfo'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
-    files: ['**/*.ts'],
+    files: ['**/*.{ts,tsx}'],
     languageOptions: {
       globals: {
         ...globals.nodeBuiltin,
@@ -40,6 +40,19 @@ export default tseslint.config(
   },
   {
     files: ['**/*.{js,mjs,cjs}'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      globals: {
+        ...globals.nodeBuiltin,
+      },
+      parserOptions: {
+        project: false,
+        projectService: false,
+      },
+    },
+  },
+  {
+    files: ['**/*.config.ts'],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: {
       globals: {

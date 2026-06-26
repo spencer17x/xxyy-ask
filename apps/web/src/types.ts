@@ -1,0 +1,38 @@
+export interface Citation {
+  excerpt: string;
+  file: string;
+  sourceUrl?: string;
+  title: string;
+}
+
+export interface Attachment {
+  kind: 'image' | 'video';
+  mediaType?: string;
+  title: string;
+  url: string;
+}
+
+export interface ChatMetadata {
+  attachments?: Attachment[];
+  citations?: Citation[];
+  confidence: number;
+  intent: string;
+}
+
+export interface ChatMessage {
+  attachments: Attachment[];
+  citations: Citation[];
+  id: string;
+  intent?: string;
+  meta?: string;
+  rawAnswer: string;
+  role: 'assistant' | 'user';
+  status?: 'error' | 'streaming' | undefined;
+  text: string;
+}
+
+export type ChatStreamEvent =
+  | { event: 'answer_delta'; payload: { delta?: string } }
+  | { event: 'metadata'; payload: ChatMetadata }
+  | { event: 'error'; payload: { message?: string } }
+  | { event: 'unknown'; eventName: string; payload: unknown };

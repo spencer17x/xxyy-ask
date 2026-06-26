@@ -192,6 +192,7 @@ const DEFAULT_DISCOVER_URL = 'https://www.xxyy.io/discover';
 const DEFAULT_SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
 const DEFAULT_TIMEOUT_MS = 60000;
 const PUMP_AMM_PROGRAM_ID = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
+const SOLANA_SYSTEM_PROGRAM_ID = '11111111111111111111111111111111';
 const XXYY_ORIGINAL_SCREENSHOT_MIN_HEIGHT = 1800;
 const XXYY_ORIGINAL_SCREENSHOT_MIN_WIDTH = 1440;
 const SOLANA_ADDRESS_CAPTURE = '[1-9A-HJ-NP-Za-km-z]{32,44}';
@@ -288,11 +289,15 @@ export function createPlaywrightBrowserTxAnalysisDriver(
       }
     },
     async analyzeSolanaTransaction(input) {
+      const solanaOptions = withGlobalSolanaRpcFetch(options);
+      await assertSolanaRpcTransactionStatus(input.txHash, solanaOptions, {
+        allowGlobalFetch: false,
+      });
       const context = await launchBrowserContext(options);
       try {
         const page = await context.newPage();
         page.setDefaultTimeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-        const solscan = await extractSolanaTransaction(page, input.txHash, options);
+        const solscan = await extractSolanaTransaction(page, input.txHash, solanaOptions);
         const xxyy = await extractXxyyPoolWindow(page, input.txHash, solscan, options);
         const fallbackTradeWindow = extractTradeWindowFromText(xxyy.text, solscan.signerAddress);
 
@@ -321,6 +326,19 @@ export function createPlaywrightBrowserTxAnalysisDriver(
         await context.close();
       }
     },
+  };
+}
+
+function withGlobalSolanaRpcFetch(
+  options: PlaywrightBrowserTxAnalysisDriverOptions,
+): PlaywrightBrowserTxAnalysisDriverOptions {
+  if (options.fetch !== undefined || typeof globalThis.fetch !== 'function') {
+    return options;
+  }
+
+  return {
+    ...options,
+    fetch: globalThis.fetch,
   };
 }
 
@@ -397,15 +415,118 @@ export async function extractSolanaTransaction(
   txHash: string,
   options: PlaywrightBrowserTxAnalysisDriverOptions,
 ): Promise<SolscanExtraction> {
+  await assertSolanaRpcTransactionStatus(txHash, options, { allowGlobalFetch: false });
   try {
     return await extractSolscanTransaction(page, txHash, options);
   } catch (error) {
+    if (isBrowserVerificationUnavailableError(error)) {
+      const rpcFallback = await createSolanaRpcFallbackExtraction(txHash, options);
+      if (rpcFallback !== undefined) {
+        return rpcFallback;
+      }
+    }
     if (!isRecoverableSolscanExtractionError(error)) {
       throw error;
     }
 
     return extractPublicSolanaTransactionFallback(page, txHash, options, normalizeError(error));
   }
+}
+
+interface SolanaRpcStatusOptions {
+  allowGlobalFetch: boolean;
+}
+
+async function assertSolanaRpcTransactionStatus(
+  txHash: string,
+  options: PlaywrightBrowserTxAnalysisDriverOptions,
+  statusOptions: SolanaRpcStatusOptions,
+): Promise<void> {
+  const payload = await fetchSolanaRpcJson(
+    {
+      id: 1,
+      jsonrpc: '2.0',
+      method: 'getSignatureStatuses',
+      params: [[txHash], { searchTransactionHistory: true }],
+    },
+    options,
+    statusOptions,
+  );
+  if (payload === undefined) {
+    return;
+  }
+
+  const values = readArray(readRecord(readRecord(payload).result).value);
+  if (values.length === 0) {
+    return;
+  }
+
+  const statusValue = values[0];
+  if (statusValue === null) {
+    throw new TxAnalysisProviderUnavailableError(
+      'Solana RPC 找不到这笔交易签名。请检查交易哈希是否正确，当前不会继续依赖交易浏览器页面猜测结果。',
+      'tx_not_found',
+    );
+  }
+
+  const status = readRecord(statusValue);
+  if (Object.keys(status).length === 0) {
+    return;
+  }
+
+  if (status.err !== null && status.err !== undefined) {
+    throw new TxAnalysisProviderUnavailableError(
+      'Solana RPC 显示这笔交易执行失败，无法把它当作成功成交继续做夹子判断。',
+      'tx_failed',
+    );
+  }
+
+  const confirmationStatus = readString(status.confirmationStatus);
+  if (confirmationStatus !== undefined && confirmationStatus !== 'finalized') {
+    throw new TxAnalysisProviderUnavailableError(
+      'Solana RPC 显示这笔交易还未 finalized，当前没有最终成功成交记录可用于判断是否被夹。',
+      'tx_pending',
+    );
+  }
+}
+
+async function fetchSolanaRpcJson(
+  body: Record<string, unknown>,
+  options: PlaywrightBrowserTxAnalysisDriverOptions,
+  statusOptions: SolanaRpcStatusOptions,
+): Promise<unknown> {
+  const fetchFn = selectSolanaRpcFetch(options, statusOptions);
+  if (fetchFn === undefined) {
+    return undefined;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  try {
+    const response = await fetchFn(options.solanaRpcUrl ?? DEFAULT_SOLANA_RPC_URL, {
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+      signal: controller.signal,
+    });
+    if (response.ok === false) {
+      return undefined;
+    }
+
+    return await response.json();
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function selectSolanaRpcFetch(
+  options: PlaywrightBrowserTxAnalysisDriverOptions,
+  statusOptions: SolanaRpcStatusOptions,
+): TxAnalysisFetch | undefined {
+  const fetchFn = options.fetch ?? (statusOptions.allowGlobalFetch ? globalThis.fetch : undefined);
+  return typeof fetchFn === 'function' ? fetchFn : undefined;
 }
 
 function isRecoverableSolscanExtractionError(error: unknown): boolean {
@@ -421,6 +542,13 @@ function isRecoverableSolscanExtractionError(error: unknown): boolean {
     isBrowserTimeoutError(error) ||
     isTransientBrowserNetworkError(error) ||
     /net::err_/iu.test(message)
+  );
+}
+
+function isBrowserVerificationUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof TxAnalysisProviderUnavailableError &&
+    error.reason === 'browser_verification_required'
   );
 }
 
@@ -580,12 +708,54 @@ async function enrichSolscanExtractionFromRpcIfNeeded(
   };
 }
 
+async function createSolanaRpcFallbackExtraction(
+  txHash: string,
+  options: PlaywrightBrowserTxAnalysisDriverOptions,
+): Promise<SolscanExtraction | undefined> {
+  const rpcExtraction = await extractSolanaRpcTransaction(txHash, options).catch(() => undefined);
+  if (rpcExtraction === undefined) {
+    return undefined;
+  }
+
+  const poolCandidates = uniquePoolCandidates([
+    ...(rpcExtraction.poolCandidates ?? []),
+    ...(rpcExtraction.poolAddress === undefined ? [] : [{ address: rpcExtraction.poolAddress }]),
+  ]);
+  if (
+    rpcExtraction.contractAddress === undefined &&
+    rpcExtraction.poolAddress === undefined &&
+    rpcExtraction.program === undefined &&
+    rpcExtraction.signerAddress === undefined &&
+    rpcExtraction.transactionTime === undefined &&
+    poolCandidates.length === 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(rpcExtraction.contractAddress === undefined
+      ? {}
+      : { contractAddress: rpcExtraction.contractAddress }),
+    ...(rpcExtraction.poolAddress === undefined ? {} : { poolAddress: rpcExtraction.poolAddress }),
+    poolCandidates,
+    ...(rpcExtraction.program === undefined ? {} : { program: rpcExtraction.program }),
+    ...(rpcExtraction.signerAddress === undefined
+      ? {}
+      : { signerAddress: rpcExtraction.signerAddress }),
+    side: rpcExtraction.side ?? 'unknown',
+    solscanUrl: `https://solscan.io/tx/${txHash}`,
+    ...(rpcExtraction.transactionTime === undefined
+      ? {}
+      : { transactionTime: rpcExtraction.transactionTime }),
+  };
+}
+
 async function extractSolanaRpcTransaction(
   txHash: string,
   options: PlaywrightBrowserTxAnalysisDriverOptions,
 ): Promise<Partial<SolscanExtraction> | undefined> {
-  const fetchFn = options.fetch ?? globalThis.fetch;
-  if (typeof fetchFn !== 'function') {
+  const fetchFn = selectSolanaRpcFetch(options, { allowGlobalFetch: false });
+  if (fetchFn === undefined) {
     return undefined;
   }
 
@@ -666,13 +836,29 @@ function findSolanaRpcPumpAmmInstruction(result: Record<string, unknown>):
       programId: string;
     }
   | undefined {
-  return solanaRpcInstructions(result).find(
+  const candidates = solanaRpcInstructions(result).filter(
     (instruction) =>
       instruction.programId === PUMP_AMM_PROGRAM_ID &&
       instruction.accounts.length >= 5 &&
       SOLANA_ADDRESS_PATTERN.test(instruction.accounts[0] ?? '') &&
       SOLANA_ADDRESS_PATTERN.test(instruction.accounts[1] ?? '') &&
       SOLANA_ADDRESS_PATTERN.test(instruction.accounts[3] ?? ''),
+  );
+  return candidates.find(isSolanaRpcPumpAmmSwapInstruction) ?? candidates[0];
+}
+
+function isSolanaRpcPumpAmmSwapInstruction(instruction: {
+  accounts: string[];
+  programId: string;
+}): boolean {
+  const contractAddress = instruction.accounts[3];
+  const quoteMint = instruction.accounts[4];
+  return (
+    contractAddress !== undefined &&
+    quoteMint !== undefined &&
+    contractAddress !== SOLANA_SYSTEM_PROGRAM_ID &&
+    !STABLE_SOLANA_MINTS.has(contractAddress) &&
+    STABLE_SOLANA_MINTS.has(quoteMint)
   );
 }
 

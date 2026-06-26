@@ -1,3 +1,5 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -15,7 +17,12 @@ import {
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
 
-import { createDefaultApiEnv, createRequestHandler, type ApiRequestHandler } from './index.js';
+import {
+  createDefaultApiEnv,
+  createRequestHandler,
+  startServer,
+  type ApiRequestHandler,
+} from './index.js';
 import type { ApiLogEntry } from './index.js';
 
 interface CapturedResponse {
@@ -122,6 +129,96 @@ function createCapturingTxAnalysisProvider(calls: unknown[]): TxAnalysisProvider
     },
   };
 }
+
+function listen(server: Server, port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!server.listening) {
+      resolve();
+      return;
+    }
+    server.close((error) => {
+      if (error !== undefined) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+async function createBlockedPortWithFreeSuccessor(): Promise<{
+  blockedPort: number;
+  server: Server;
+}> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const blocker = createServer();
+    await listen(blocker, 0);
+    const blockedPort = (blocker.address() as AddressInfo).port;
+    const probe = createServer();
+    try {
+      await listen(probe, blockedPort + 1);
+      await closeServer(probe);
+      return { blockedPort, server: blocker };
+    } catch {
+      await closeServer(probe);
+      await closeServer(blocker);
+    }
+  }
+
+  throw new Error('Unable to reserve adjacent test ports.');
+}
+
+function waitForServerListening(server: Server): Promise<void> {
+  if (server.listening) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Timed out waiting for server to listen.'));
+    }, 1000);
+    server.once('listening', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+}
+
+describe('startServer', () => {
+  it('automatically retries the next port in local mode when the requested port is busy', async () => {
+    const blocker = await createBlockedPortWithFreeSuccessor();
+    let apiServer: Server | undefined;
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    try {
+      apiServer = startServer({
+        env: { NODE_ENV: 'development' },
+        port: blocker.blockedPort,
+      });
+      await waitForServerListening(apiServer);
+
+      expect((apiServer.address() as AddressInfo).port).toBe(blocker.blockedPort + 1);
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+      if (apiServer !== undefined) {
+        await closeServer(apiServer);
+      }
+      await closeServer(blocker.server);
+    }
+  });
+});
 
 describe('createRequestHandler', () => {
   it('loads workspace .env values for the default API environment', async () => {
@@ -947,6 +1044,31 @@ describe('createRequestHandler', () => {
     expect(reportResponse.statusCode).toBe(200);
     expect(reportResponse.headers['Content-Type']).toBe('application/json; charset=utf-8');
     expect(reportResponse.rawBody).toEqual(Buffer.from('{"version":1}'));
+  });
+
+  it('serves Vite web app assets separately from product media assets', async () => {
+    const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-api-web-assets-'));
+    const webAssetsDir = path.join(workspaceRoot, 'apps', 'web', 'dist', 'web-assets');
+    await mkdir(webAssetsDir, { recursive: true });
+    await writeFile(path.join(webAssetsDir, 'index.js'), 'console.log("xxyy web");');
+    await writeFile(path.join(webAssetsDir, 'index.css'), '.app-shell{display:grid}');
+    const handler = createRequestHandler({ cwd: workspaceRoot, webAssetsDir });
+
+    const script = await callHandler(handler, {
+      method: 'GET',
+      url: '/web-assets/index.js',
+    });
+    const styles = await callHandler(handler, {
+      method: 'GET',
+      url: '/web-assets/index.css',
+    });
+
+    expect(script.statusCode).toBe(200);
+    expect(script.body).toBe('console.log("xxyy web");');
+    expect(script.headers['Content-Type']).toBe('application/javascript; charset=utf-8');
+    expect(styles.statusCode).toBe(200);
+    expect(styles.body).toBe('.app-shell{display:grid}');
+    expect(styles.headers['Content-Type']).toBe('text/css; charset=utf-8');
   });
 
   it('serves transaction analysis assets from the configured screenshot directory', async () => {

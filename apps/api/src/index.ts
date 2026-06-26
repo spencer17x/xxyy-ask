@@ -49,6 +49,7 @@ type ApiEnv = RagEnv &
       | 'API_MAX_BODY_BYTES'
       | 'API_RATE_LIMIT_MAX'
       | 'API_RATE_LIMIT_WINDOW_MS'
+      | 'NODE_ENV'
       | 'PORT',
       string
     >
@@ -83,11 +84,15 @@ export interface CreateRequestHandlerOptions {
   renderHtml?: () => string;
   staticAssetsDir?: string;
   txAnalysisProvider?: TxAnalysisProvider;
+  webAssetsDir?: string;
 }
 
 export interface StartServerOptions extends CreateRequestHandlerOptions {
   port?: number;
+  portRetryLimit?: number;
 }
+
+const DEFAULT_LOCAL_PORT_RETRY_LIMIT = 20;
 
 interface ApiRuntimeConfig {
   corsOrigins: string[];
@@ -168,6 +173,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const logger = options.logger ?? noopLogger;
   const now = options.now ?? Date.now;
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
+  const webAssetsDir = options.webAssetsDir ?? createDefaultWebAssetsDir(options, env);
   const getTxAnalysisProvider =
     options.txAnalysisProvider === undefined
       ? createCachedTxAnalysisProviderLoader(config)
@@ -212,6 +218,11 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
 
       if (request.method === 'GET' && requestUrl.pathname.startsWith('/assets/')) {
         await sendStaticAsset(response, staticAssetsDir, requestUrl.pathname);
+        return;
+      }
+
+      if (request.method === 'GET' && requestUrl.pathname.startsWith('/web-assets/')) {
+        await sendStaticAsset(response, webAssetsDir, requestUrl.pathname);
         return;
       }
 
@@ -874,6 +885,8 @@ export function createDefaultApiEnv(
 export function startServer(options: StartServerOptions = {}): ReturnType<typeof createServer> {
   const env = options.env ?? createDefaultApiEnv(options);
   const port = Number(options.port ?? env.PORT ?? 3000);
+  const portRetryLimit =
+    options.portRetryLimit ?? (env.NODE_ENV === 'production' ? 0 : DEFAULT_LOCAL_PORT_RETRY_LIMIT);
   const handler = createRequestHandler({
     ...options,
     env,
@@ -883,11 +896,46 @@ export function startServer(options: StartServerOptions = {}): ReturnType<typeof
     void handler(request as ApiRequestLike, response);
   });
 
-  server.listen(port, () => {
-    process.stdout.write(`XXYY RAG API listening on http://localhost:${port}\n`);
-  });
+  listenWithPortRetry(server, port, portRetryLimit);
 
   return server;
+}
+
+function listenWithPortRetry(
+  server: ReturnType<typeof createServer>,
+  initialPort: number,
+  retryLimit: number,
+): void {
+  let currentPort = initialPort;
+  let remainingRetries = normalizePortRetryLimit(retryLimit);
+  const onError = (error: NodeJS.ErrnoException) => {
+    if (error.code !== 'EADDRINUSE' || remainingRetries <= 0 || currentPort >= 65535) {
+      if (server.listenerCount('error') <= 1) {
+        throw error;
+      }
+      return;
+    }
+
+    const nextPort = currentPort + 1;
+    remainingRetries -= 1;
+    process.stderr.write(`Port ${currentPort} is already in use; trying ${nextPort}.\n`);
+    currentPort = nextPort;
+    server.listen(currentPort);
+  };
+
+  server.on('error', onError);
+  server.listen(currentPort, () => {
+    server.off('error', onError);
+    process.stdout.write(`XXYY RAG API listening on http://localhost:${currentPort}\n`);
+  });
+}
+
+function normalizePortRetryLimit(retryLimit: number): number {
+  if (!Number.isFinite(retryLimit) || retryLimit <= 0) {
+    return 0;
+  }
+
+  return Math.floor(retryLimit);
 }
 
 function createCachedChatServiceLoader(
@@ -1155,12 +1203,20 @@ function createDefaultStaticAssetsDir(
   return path.join(workspaceCwd, 'docs', 'product-features', 'assets');
 }
 
+function createDefaultWebAssetsDir(
+  options: Pick<CreateRequestHandlerOptions, 'cwd'>,
+  env: ApiEnv,
+): string {
+  const workspaceCwd = resolveWorkspaceCwd(options.cwd ?? process.cwd(), env);
+  return path.join(workspaceCwd, 'apps', 'web', 'dist', 'web-assets');
+}
+
 async function sendStaticAsset(
   response: ApiResponseLike,
   assetsDir: string,
   pathname: string,
 ): Promise<void> {
-  const assetName = decodeURIComponent(pathname.replace(/^\/assets\//u, ''));
+  const assetName = decodeURIComponent(pathname.replace(/^\/(?:assets|web-assets)\//u, ''));
   if (!/^[A-Za-z0-9._-]+$/u.test(assetName)) {
     sendJson(response, 404, { error: 'not_found', message: 'Asset not found.' });
     return;
@@ -1200,6 +1256,12 @@ function contentTypeForAsset(assetName: string): string {
   }
   if (lower.endsWith('.json')) {
     return 'application/json; charset=utf-8';
+  }
+  if (lower.endsWith('.js')) {
+    return 'application/javascript; charset=utf-8';
+  }
+  if (lower.endsWith('.css')) {
+    return 'text/css; charset=utf-8';
   }
 
   return 'application/octet-stream';

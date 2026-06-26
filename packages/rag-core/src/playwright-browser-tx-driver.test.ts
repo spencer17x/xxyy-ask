@@ -48,6 +48,11 @@ import { TxAnalysisProviderUnavailableError } from './tx-analysis.js';
 const SOLANA_TX =
   '5uTPyzPctFriE2wPTpvvvduS451Dd32zDr6RrEheuYHYh1M4SptKd7jqcVoHBjPX3CkvHPxj7ecTNjVMYfQBZ4MH';
 
+function jsonRpcMethodFromBody(body: unknown): string | undefined {
+  const payload = JSON.parse(String(body)) as { method?: unknown };
+  return typeof payload.method === 'string' ? payload.method : undefined;
+}
+
 describe('buildXxyySolPoolUrl', () => {
   it('builds a direct XXYY Solana pool URL from the Solscan pool address', () => {
     const poolAddress = '9hXD8sti6UmCzAcYw1DjcyhsuHtry5MW8GPrx7rMMyJ7';
@@ -3936,6 +3941,17 @@ describe('extractSolanaTransaction', () => {
                     instructions: [
                       {
                         accounts: [
+                          signerAddress,
+                          signerAddress,
+                          'ADyA8hdefvWN2dbGGWFotbzWxrAvLW83WG6QCVXvJKqw',
+                          '11111111111111111111111111111111',
+                          'GS4CU59F31iL7aR2Q8zVS8DRrcRnXX1yjQ66TqNVQnaR',
+                          'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
+                        ],
+                        programId: 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
+                      },
+                      {
+                        accounts: [
                           poolAddress,
                           signerAddress,
                           'ADyA8hdefvWN2dbGGWFotbzWxrAvLW83WG6QCVXvJKqw',
@@ -4037,7 +4053,9 @@ describe('extractSolanaTransaction', () => {
       signerAddress,
       transactionTime: '2026-06-24T03:06:15.000Z',
     });
-    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls.map((call) => jsonRpcMethodFromBody((call as { body?: string }).body))).toEqual(
+      ['getSignatureStatuses', 'getTransaction'],
+    );
   });
 
   it('uses Solscan Fee Payer labels as the signer address', async () => {
@@ -10307,6 +10325,184 @@ describe('isBrowserVerificationPageText', () => {
 });
 
 describe('createSolanaPublicFallbackUnavailableError', () => {
+  it('preflights Solana RPC status before opening browser pages when fetch is provided', async () => {
+    const visitedUrls: string[] = [];
+    const fetch = vi.fn((_input: string, _init?: { body?: string }) =>
+      Promise.resolve({
+        ok: true,
+        json() {
+          return Promise.resolve({
+            id: 1,
+            jsonrpc: '2.0',
+            result: {
+              context: { slot: 428917615 },
+              value: [null],
+            },
+          });
+        },
+      }),
+    );
+    const fakePage = {
+      goto(url: string) {
+        visitedUrls.push(url);
+        return Promise.resolve();
+      },
+    };
+    const driverModule = (await import('./playwright-browser-tx-driver.js')) as unknown as {
+      extractSolanaTransaction?: (
+        page: typeof fakePage,
+        txHash: string,
+        options: { fetch?: typeof fetch; solanaRpcUrl?: string; timeoutMs?: number },
+      ) => Promise<unknown>;
+    };
+
+    await expect(
+      driverModule.extractSolanaTransaction?.(fakePage, SOLANA_TX, {
+        fetch,
+        solanaRpcUrl: 'https://rpc.example',
+        timeoutMs: 1000,
+      }),
+    ).rejects.toMatchObject({
+      reason: 'tx_not_found',
+    } satisfies Partial<TxAnalysisProviderUnavailableError>);
+    expect(visitedUrls).toEqual([]);
+    expect(jsonRpcMethodFromBody(fetch.mock.calls[0]?.[1]?.body)).toBe('getSignatureStatuses');
+  });
+
+  it('uses Solana RPC details when Solscan is blocked by browser verification', async () => {
+    const tokenMint = '66pQgfLHEfbHSBgYSZSrKEdJHHaGiYbgCtNbz48Apump';
+    const poolAddress = 'HZyqZRuAUCLdJaHqBfnoFHVBwXmuH3Sm1LyXnWu8Ee15';
+    const signerAddress = 'B1d1V7FosamHHNgXpL7ZHpiKW4cdNeejXaiGDHWFoJfG';
+    const visitedUrls: string[] = [];
+    const fetch = vi.fn((_input: string, init?: { body?: string }) => {
+      const method = jsonRpcMethodFromBody(init?.body);
+      if (method === 'getSignatureStatuses') {
+        return Promise.resolve({
+          ok: true,
+          json() {
+            return Promise.resolve({
+              id: 1,
+              jsonrpc: '2.0',
+              result: {
+                context: { slot: 428917615 },
+                value: [
+                  {
+                    confirmationStatus: 'finalized',
+                    confirmations: null,
+                    err: null,
+                    slot: 428917500,
+                  },
+                ],
+              },
+            });
+          },
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json() {
+          return Promise.resolve({
+            jsonrpc: '2.0',
+            result: {
+              blockTime: 1782270375,
+              meta: {
+                err: null,
+                innerInstructions: [
+                  {
+                    instructions: [
+                      {
+                        accounts: [
+                          poolAddress,
+                          signerAddress,
+                          'ADyA8hdefvWN2dbGGWFotbzWxrAvLW83WG6QCVXvJKqw',
+                          tokenMint,
+                          'So11111111111111111111111111111111111111112',
+                        ],
+                        programId: 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
+                      },
+                    ],
+                  },
+                ],
+                postTokenBalances: [
+                  {
+                    mint: tokenMint,
+                    owner: signerAddress,
+                    uiTokenAmount: { amount: '152290841622', decimals: 6 },
+                  },
+                ],
+                preTokenBalances: [
+                  {
+                    mint: tokenMint,
+                    owner: signerAddress,
+                    uiTokenAmount: { amount: '0', decimals: 6 },
+                  },
+                ],
+              },
+              transaction: {
+                message: {
+                  accountKeys: [{ pubkey: signerAddress, signer: true }],
+                  instructions: [],
+                },
+              },
+            },
+          });
+        },
+      });
+    });
+    const fakePage = {
+      goto(url: string) {
+        visitedUrls.push(url);
+        return Promise.resolve();
+      },
+      locator(selector: string) {
+        expect(selector).toBe('body');
+        return {
+          innerText() {
+            return Promise.resolve('Checking if the site connection is secure before proceeding');
+          },
+        };
+      },
+      waitForTimeout() {
+        return Promise.resolve();
+      },
+    };
+    const driverModule = (await import('./playwright-browser-tx-driver.js')) as unknown as {
+      extractSolanaTransaction?: (
+        page: typeof fakePage,
+        txHash: string,
+        options: { fetch?: typeof fetch; solanaRpcUrl?: string; timeoutMs?: number },
+      ) => Promise<{
+        contractAddress?: string;
+        poolAddress?: string;
+        poolCandidates?: Array<{ address: string }>;
+        side?: string;
+        signerAddress?: string;
+        transactionTime?: string;
+      }>;
+    };
+
+    const result = await driverModule.extractSolanaTransaction?.(fakePage, SOLANA_TX, {
+      fetch,
+      solanaRpcUrl: 'https://rpc.example',
+      timeoutMs: 1000,
+    });
+
+    expect(result).toMatchObject({
+      contractAddress: tokenMint,
+      poolAddress,
+      poolCandidates: [{ address: poolAddress }],
+      side: 'buy',
+      signerAddress,
+      transactionTime: '2026-06-24T03:06:15.000Z',
+    });
+    expect(visitedUrls).toEqual([`https://solscan.io/tx/${SOLANA_TX}`]);
+    expect(fetch.mock.calls.map((call) => jsonRpcMethodFromBody(call[1]?.body))).toEqual([
+      'getSignatureStatuses',
+      'getTransaction',
+    ]);
+  });
+
   it('falls back to public Solana explorers when Solscan navigation times out', async () => {
     const signerAddress = '11111111111111111111111111111111';
     const visitedUrls: string[] = [];

@@ -4,51 +4,21 @@ import { request } from 'node:http';
 import { renderChatPage, startStaticWebServer } from './index.js';
 
 describe('renderChatPage', () => {
-  it('renders a polished support workbench that streams chat and shows citations', () => {
+  it('renders the Vite React application shell', () => {
     const html = renderChatPage();
 
-    expect(html).toContain('class="app-shell"');
-    expect(html).toContain('class="sidebar"');
-    expect(html).toContain('class="quick-prompt"');
-    expect(html).toContain('id="messages"');
-    expect(html).toContain('<form id="chat-form"');
-    expect(html).toContain('<textarea id="message"');
-    expect(html).toContain('fetch("/api/chat/stream"');
-    expect(html).toContain('body.getReader()');
-    expect(html).toContain('appendMessage("assistant"');
-    expect(html).toContain('renderCitations(assistantMessage.citations');
-    expect(html).toContain('renderAttachments(assistantMessage.attachments');
-    expect(html).toContain('document.createElement("video")');
-    expect(html).toContain('document.createElement("img")');
-    expect(html).toContain('.attachment img');
-    expect(html).not.toContain('className = "feedback-actions"');
-    expect(html).not.toContain('fetch("/api/' + 'feedback"');
-  });
-
-  it('does not render citation payloads with innerHTML', () => {
-    const html = renderChatPage();
-
-    expect(html).not.toContain('citations.innerHTML = (payload.citations || [])');
-  });
-
-  it('renders streamed assistant markdown safely after metadata arrives', () => {
-    const html = renderChatPage();
-
-    expect(html).toContain('assistantMessage.rawAnswer += payload.delta || ""');
-    expect(html).toContain('renderMarkdown(assistantMessage.answer, assistantMessage.rawAnswer)');
-    expect(html).toContain('function renderMarkdown(target, markdown)');
-    expect(html).toContain('function appendInlineMarkdown(parent, text)');
-    expect(html).not.toContain('assistantMessage.answer.innerHTML');
+    expect(html).toContain('<div id="root"></div>');
+    expect(html).toContain('<link rel="stylesheet" href="/web-assets/index.css" />');
+    expect(html).toContain('<script type="module" src="/web-assets/index.js"></script>');
+    expect(html).not.toContain('fetch("/api/chat/stream"');
     expect(html).not.toContain('innerHTML =');
   });
 
-  it('starts a fresh backend session when the chat is cleared', () => {
+  it('keeps production app assets separate from transaction media assets', () => {
     const html = renderChatPage();
 
-    expect(html).toContain('let sessionId = getSessionId();');
-    expect(html).toContain('sessionId = resetSessionId();');
-    expect(html).toContain('function resetSessionId()');
-    expect(html).toContain('window.localStorage.setItem(key, next)');
+    expect(html).toContain('/web-assets/index.js');
+    expect(html).not.toContain('/assets/index.js');
   });
 
   it('does not pretend to handle API routes in standalone mode', async () => {
