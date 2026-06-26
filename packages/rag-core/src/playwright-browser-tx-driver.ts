@@ -398,7 +398,7 @@ async function launchBrowserContext(
 
   try {
     return await chromium.launchPersistentContext(userDataDir, {
-      headless: options.headless ?? false,
+      headless: options.headless ?? true,
       timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       viewport: { height: 1200, width: 1440 },
       ...(executablePath === undefined ? {} : { executablePath }),

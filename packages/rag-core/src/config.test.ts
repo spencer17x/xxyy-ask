@@ -9,7 +9,7 @@ describe('loadRagConfig', () => {
       answerProvider: 'openai',
       txAnalysisProvider: 'browser',
       txAnalysisReviewer: 'none',
-      txAnalysisBrowserHeadless: false,
+      txAnalysisBrowserHeadless: true,
       txAnalysisDiscoverUrl: undefined,
       txAnalysisBrowserMaxConcurrency: 1,
       txAnalysisBrowserMaxRetries: 1,

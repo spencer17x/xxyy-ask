@@ -63,6 +63,7 @@ const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_POSTGRES_HOST = 'localhost';
 const DEFAULT_POSTGRES_PORT = '5432';
 const DEFAULT_TX_ANALYSIS_PROVIDER = 'browser';
+const DEFAULT_TX_ANALYSIS_BROWSER_HEADLESS = true;
 const DEFAULT_TX_ANALYSIS_BROWSER_MAX_CONCURRENCY = 1;
 const DEFAULT_TX_ANALYSIS_BROWSER_MAX_RETRIES = 1;
 const DEFAULT_TX_ANALYSIS_BROWSER_TIMEOUT_MS = 60000;
@@ -77,7 +78,10 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
     answerProvider: env.RAG_ANSWER_PROVIDER ?? 'openai',
     txAnalysisProvider: parseOptionalText(env.TX_ANALYSIS_PROVIDER) ?? DEFAULT_TX_ANALYSIS_PROVIDER,
     txAnalysisReviewer: env.TX_ANALYSIS_REVIEWER ?? DEFAULT_TX_ANALYSIS_REVIEWER,
-    txAnalysisBrowserHeadless: parseBoolean(env.TX_ANALYSIS_BROWSER_HEADLESS, false),
+    txAnalysisBrowserHeadless: parseBoolean(
+      env.TX_ANALYSIS_BROWSER_HEADLESS,
+      DEFAULT_TX_ANALYSIS_BROWSER_HEADLESS,
+    ),
     txAnalysisDiscoverUrl: parseOptionalText(env.TX_ANALYSIS_DISCOVER_URL),
     txAnalysisBrowserMaxConcurrency: parsePositiveInteger(
       env.TX_ANALYSIS_BROWSER_MAX_CONCURRENCY,

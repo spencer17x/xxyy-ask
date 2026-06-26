@@ -71,7 +71,7 @@ API_RATE_LIMIT_WINDOW_MS=60000
 
 - 默认 `TX_ANALYSIS_PROVIDER=browser`：启动本机 Chrome 查询公开交易浏览器和 XXYY 原池子页，默认复用 `.tx-analysis-browser-profile` 保存安全验证状态。
 - 显式 `TX_ANALYSIS_PROVIDER=none`：关闭真实数据源，交易哈希问题返回暂未启用。
-- 遇到公开站点安全验证时，保持默认 `TX_ANALYSIS_BROWSER_HEADLESS=false`，在弹出的 Chrome 中完成验证后重试。
+- 默认 `TX_ANALYSIS_BROWSER_HEADLESS=true`；遇到公开站点安全验证时，临时设置为 `false`，在弹出的 Chrome 中完成验证后重试。
 
 交易分析相关环境变量只在需要覆盖默认行为时配置：特殊 Chrome 路径用 `TX_ANALYSIS_CHROME_EXECUTABLE_PATH`，staging/代理页面用 `TX_ANALYSIS_DISCOVER_URL`，自定义资产目录用 `TX_ANALYSIS_SCREENSHOT_DIR` / `TX_ANALYSIS_SCREENSHOT_BASE_URL`，模型复核用 `TX_ANALYSIS_REVIEWER=openai`。复核不可用、超时或返回不可解析内容时，系统保留规则化分析结果。
 

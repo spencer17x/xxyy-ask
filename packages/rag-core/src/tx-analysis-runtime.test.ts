@@ -282,7 +282,7 @@ describe('tx-analysis-runtime', () => {
         txAnalysisScreenshotDir: '   ',
       });
       expect(createDriver).toHaveBeenCalledWith({
-        headless: false,
+        headless: true,
         screenshotBaseUrl: '/assets',
         timeoutMs: 60000,
       });
@@ -343,7 +343,7 @@ describe('tx-analysis-runtime', () => {
 
       expect(createProvider({ txAnalysisProvider: 'browser' })).toBeDefined();
       expect(createDriver).toHaveBeenCalledWith({
-        headless: false,
+        headless: true,
         screenshotBaseUrl: '/assets',
         timeoutMs: 60000,
       });
