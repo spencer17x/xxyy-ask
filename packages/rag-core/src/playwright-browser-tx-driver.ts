@@ -5721,6 +5721,7 @@ async function screenshotXxyyOriginalTradeList(
   options: PlaywrightBrowserTxAnalysisDriverOptions,
 ): Promise<void> {
   await expandViewportForXxyyOriginalTradeListScreenshot(page);
+  await clearXxyyOriginalTraderFilter(page, options);
   await filterXxyyOriginalTradeListForTarget(page, tradeWindow, options);
   const position = await scrollXxyyOriginalTradeListToTarget(page, tradeWindow, options);
   if (position === undefined) {
@@ -5732,9 +5733,7 @@ async function screenshotXxyyOriginalTradeList(
     throw new Error('Unable to mark target transaction row in XXYY original trade list');
   }
 
-  await page.locator(createXxyyOriginalTradeListContainerSelector()).first().screenshot({
-    path: filePath,
-  });
+  await page.screenshot({ fullPage: true, path: filePath });
 }
 
 async function filterXxyyOriginalTradeListForTarget(
@@ -5750,14 +5749,6 @@ async function filterXxyyOriginalTradeListForTarget(
   if (targetTimestampMs !== undefined && Number.isFinite(targetTimestampMs)) {
     applied =
       (await applyXxyyOriginalTradeTimeFilter(page, targetTimestampMs, options).catch(
-        () => false,
-      )) || applied;
-  }
-
-  const targetTraderAddress = tradeWindow.targetTrade.traderAddress?.trim();
-  if (targetTraderAddress !== undefined && targetTraderAddress.length > 0) {
-    applied =
-      (await applyXxyyOriginalTraderFilter(page, targetTraderAddress, options).catch(
         () => false,
       )) || applied;
   }
@@ -5789,20 +5780,64 @@ async function applyXxyyOriginalTradeTimeFilter(
   return true;
 }
 
-async function applyXxyyOriginalTraderFilter(
+async function clearXxyyOriginalTraderFilter(
   page: Page,
-  targetTraderAddress: string,
+  options: PlaywrightBrowserTxAnalysisDriverOptions,
+): Promise<void> {
+  const cleared = await clearXxyyOriginalTraderPopupFilter(page, options).catch(() => false);
+  if (cleared) {
+    await page.waitForTimeout(800);
+  }
+}
+
+async function clearXxyyOriginalTraderPopupFilter(
+  page: Page,
   options: PlaywrightBrowserTxAnalysisDriverOptions,
 ): Promise<boolean> {
   await clickOptionalXxyyOriginalFilter(page, '#btn-filterTraderPopup', options);
-  await setXxyyOriginalInputValue(
+  const clearedInput = await setXxyyOriginalInputValue(
     page,
     '#popup-filterTraderPopup input[placeholder=钱包地址]',
-    targetTraderAddress,
+    '',
+  )
+    .then(() => true)
+    .catch(() => false);
+  const clickedReset = await clickOptionalXxyyOriginalPopupAction(
+    page,
+    '#popup-filterTraderPopup',
+    ['全部', '重置', '清空', 'Clear Filters', 'Reset', 'Clear', '取消筛选', 'Cancel Filter'],
+    options,
   );
-  await confirmXxyyOriginalFilterPopup(page, '#popup-filterTraderPopup', options);
+  const confirmed = await confirmXxyyOriginalFilterPopup(page, '#popup-filterTraderPopup', options)
+    .then(() => true)
+    .catch(() => false);
 
-  return true;
+  return clearedInput || clickedReset || confirmed;
+}
+
+async function clickOptionalXxyyOriginalPopupAction(
+  page: Page,
+  popupSelector: string,
+  labels: string[],
+  options: PlaywrightBrowserTxAnalysisDriverOptions,
+): Promise<boolean> {
+  for (const label of labels) {
+    const clicked = await page
+      .locator(popupSelector)
+      .getByText(label, { exact: true })
+      .click({
+        force: true,
+        timeout: Math.min(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, 1500),
+      })
+      .then(() => true)
+      .catch(() => false);
+    if (clicked) {
+      await page.waitForTimeout(300);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function clickOptionalXxyyOriginalFilter(

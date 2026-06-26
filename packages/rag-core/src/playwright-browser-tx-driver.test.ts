@@ -18229,7 +18229,7 @@ describe('markXxyyOriginalTargetTradeRow injected script', () => {
 });
 
 describe('screenshotXxyyOriginalTradeList source safeguards', () => {
-  it('applies XXYY original page time and trader filters before scrolling for the target row', async () => {
+  it('clears XXYY original page trader filters, applies the time filter, and captures the full page', async () => {
     const source = await readFile(
       new URL('./playwright-browser-tx-driver.ts', import.meta.url),
       'utf8',
@@ -18240,15 +18240,46 @@ describe('screenshotXxyyOriginalTradeList source safeguards', () => {
       screenshotStart,
     );
     const screenshotSource = source.slice(screenshotStart, screenshotEnd);
-
-    expect(screenshotSource).toContain(
+    const clearTraderFilterIndex = screenshotSource.indexOf(
+      'await clearXxyyOriginalTraderFilter(page, options);',
+    );
+    const timeFilterIndex = screenshotSource.indexOf(
       'await filterXxyyOriginalTradeListForTarget(page, tradeWindow, options);',
     );
+    const fullPageScreenshotIndex = screenshotSource.indexOf(
+      'await page.screenshot({ fullPage: true, path: filePath });',
+    );
+    const filterStart = source.indexOf('async function filterXxyyOriginalTradeListForTarget');
+    const filterEnd = source.indexOf(
+      'async function applyXxyyOriginalTradeTimeFilter',
+      filterStart,
+    );
+    const filterSource = source.slice(filterStart, filterEnd);
+    const clearTraderFilterStart = source.indexOf('async function clearXxyyOriginalTraderFilter');
+    const clearTraderFilterEnd = source.indexOf(
+      'async function clickOptionalXxyyOriginalPopupAction',
+      clearTraderFilterStart,
+    );
+    const clearTraderFilterSource = source.slice(clearTraderFilterStart, clearTraderFilterEnd);
+
+    expect(clearTraderFilterIndex).toBeGreaterThanOrEqual(0);
+    expect(timeFilterIndex).toBeGreaterThan(clearTraderFilterIndex);
+    expect(fullPageScreenshotIndex).toBeGreaterThan(timeFilterIndex);
+    expect(screenshotSource).not.toContain(
+      'locator(createXxyyOriginalTradeListContainerSelector()).first().screenshot',
+    );
+    expect(source).toContain('async function clearXxyyOriginalTraderFilter');
     expect(source).toContain('async function filterXxyyOriginalTradeListForTarget');
     expect(source).toContain('#btn-filterTradeTimePopup');
     expect(source).toContain('#popup-filterTradeTimePopup input[placeholder=开始时间]');
     expect(source).toContain('#btn-filterTraderPopup');
     expect(source).toContain('#popup-filterTraderPopup input[placeholder=钱包地址]');
+    expect(source).toContain("'取消筛选'");
+    expect(source).toContain("'全部'");
+    expect(clearTraderFilterSource.indexOf("'全部'")).toBeLessThan(
+      clearTraderFilterSource.indexOf("'取消筛选'"),
+    );
+    expect(filterSource).not.toContain('applyXxyyOriginalTraderFilter');
   });
 
   it('checks the filtered visible rows before waiting for more trade-list API responses', async () => {
