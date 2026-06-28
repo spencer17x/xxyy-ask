@@ -21,11 +21,11 @@ const COMMANDS = {
     command: 'docker',
     label: 'start local postgres',
   },
-  refreshXUpdates: {
-    args: ['x:scrape'],
+  refreshXUpdates: (full) => ({
+    args: full ? ['x:scrape', '--', '--full'] : ['x:scrape'],
     command: 'pnpm',
     label: 'refresh X updates',
-  },
+  }),
   startService: {
     args: ['--filter', '@xxyy/api', 'start'],
     command: 'pnpm',
@@ -37,6 +37,33 @@ const COMMANDS = {
     label: 'sync X knowledge',
   },
 };
+
+export function createAgentStartOptions(rawArgs, env) {
+  const args = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs;
+  const knowledgeOptions = args.filter((arg) =>
+    ['--sync', '--full-sync', '--ingest'].includes(arg),
+  );
+  if (knowledgeOptions.length > 1) {
+    throw new Error('Use only one of --sync, --full-sync, or --ingest.');
+  }
+
+  for (const arg of args) {
+    if (
+      arg !== '--local' &&
+      arg !== '--service' &&
+      arg !== '--sync' &&
+      arg !== '--full-sync' &&
+      arg !== '--ingest'
+    ) {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+  }
+
+  return {
+    knowledgeAction: knowledgeOptions[0]?.replace(/^--/u, '') ?? 'none',
+    mode: createAgentStartMode(args, env),
+  };
+}
 
 export function createAgentStartMode(rawArgs, env) {
   const args = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs;
@@ -83,9 +110,9 @@ export async function runAgentStart(options = {}) {
     options.hasFile ?? ((file) => existsSync(path.resolve(cwd, file.replace(/^\/+/, ''))));
   const log = options.log ?? ((message) => process.stdout.write(`${message}\n`));
   const runCommand = options.runCommand ?? runShellCommand;
-  const mode = createAgentStartMode(args, env);
+  const startOptions = createAgentStartOptions(args, env);
 
-  if (mode === 'local' && shouldStartLocalPostgres(env, hasFile)) {
+  if (startOptions.mode === 'local' && shouldStartLocalPostgres(env, hasFile)) {
     const postgresExitCode = await runLoggedCommand({
       command: COMMANDS.localPostgres,
       cwd,
@@ -98,7 +125,13 @@ export async function runAgentStart(options = {}) {
     }
   }
 
-  const prepareExitCode = await prepareKnowledgeBeforeServing({ cwd, env, log, runCommand });
+  const prepareExitCode = await prepareKnowledgeBeforeServing({
+    action: startOptions.knowledgeAction,
+    cwd,
+    env,
+    log,
+    runCommand,
+  });
   if (prepareExitCode !== 0) {
     return prepareExitCode;
   }
@@ -112,7 +145,42 @@ export async function runAgentStart(options = {}) {
   });
 }
 
-async function prepareKnowledgeBeforeServing({ cwd, env, log, runCommand }) {
+async function prepareKnowledgeBeforeServing({ action, cwd, env, log, runCommand }) {
+  if (action === 'none') {
+    return 0;
+  }
+
+  if (action === 'ingest') {
+    return runLoggedCommand({
+      command: COMMANDS.ingestKnowledge,
+      cwd,
+      env,
+      log,
+      runCommand,
+    });
+  }
+
+  if (action === 'full-sync') {
+    const refreshExitCode = await runLoggedCommand({
+      command: COMMANDS.refreshXUpdates(true),
+      cwd,
+      env,
+      log,
+      runCommand,
+    });
+    if (refreshExitCode !== 0) {
+      return refreshExitCode;
+    }
+
+    return runLoggedCommand({
+      command: COMMANDS.ingestKnowledge,
+      cwd,
+      env,
+      log,
+      runCommand,
+    });
+  }
+
   const statsResult = await runLoggedCommandWithOutput({
     command: COMMANDS.knowledgeStats,
     cwd,
@@ -134,7 +202,7 @@ async function prepareKnowledgeBeforeServing({ cwd, env, log, runCommand }) {
   }
 
   const refreshExitCode = await runLoggedCommand({
-    command: COMMANDS.refreshXUpdates,
+    command: COMMANDS.refreshXUpdates(false),
     cwd,
     env,
     log,

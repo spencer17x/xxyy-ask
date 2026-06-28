@@ -75,6 +75,55 @@ describe('createLangGraphCustomerRuntime', () => {
     );
   });
 
+  it('uses the original user message for planner-selected product question tools', async () => {
+    const registry = createToolRegistry();
+    const response: ChatResponse = {
+      answer: 'XXYY 支持跟单功能。',
+      citations: [],
+      confidence: 0.82,
+      intent: 'product_qa',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { question: 'Does XXYY support generic Copy Trading?' },
+          kind: 'tool',
+          reason: 'Use product docs.',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
+        },
+      ]),
+      registry,
+    });
+
+    await expect(
+      runtime.ask({
+        channel: 'telegram',
+        message: 'xxyy支持跟单么',
+      }),
+    ).resolves.toEqual({
+      ...response,
+      agentRoute: 'product_answer',
+    });
+    expect(execute).toHaveBeenCalledWith(
+      { question: 'xxyy支持跟单么' },
+      { channel: 'telegram', sessionId: undefined, userIdPresent: false },
+    );
+  });
+
   it('converts successful transaction tool output into a transaction analysis answer', async () => {
     const registry = createToolRegistry();
     const txHash = `0x${'a'.repeat(64)}`;
@@ -140,7 +189,7 @@ describe('createLangGraphCustomerRuntime', () => {
     );
   });
 
-  it('routes one clear transaction reference to the transaction tool without planner latency', async () => {
+  it('asks the planner to route clear transaction references to the transaction tool', async () => {
     const registry = createToolRegistry();
     const txHash = `0x${'c'.repeat(64)}`;
     const output: AnalyzeTransactionOutput = {
@@ -158,7 +207,15 @@ describe('createLangGraphCustomerRuntime', () => {
     };
     const execute = vi.fn(() => Promise.resolve(output));
     const planner = {
-      plan: vi.fn(() => Promise.reject(new PlannerModelRequestError('planner should not run'))),
+      plan: vi.fn(() =>
+        Promise.resolve({
+          input: { chain: 'base', txHash },
+          kind: 'tool' as const,
+          reason: 'Analyze the public Basescan transaction.',
+          route: 'transaction_analysis' as const,
+          toolName: 'analyze_transaction' as const,
+        }),
+      ),
     };
 
     registry.register({
@@ -184,14 +241,14 @@ describe('createLangGraphCustomerRuntime', () => {
       confidence: 0.86,
       intent: 'tx_sandwich_detection',
     });
-    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.plan).toHaveBeenCalledOnce();
     expect(execute).toHaveBeenCalledWith(
       { chain: 'base', txHash },
       { channel: 'web', sessionId: 'session-1', userIdPresent: false },
     );
   });
 
-  it('prefers deterministic transaction routing over malformed planner tool input', async () => {
+  it('does not rewrite planner-selected transaction input with deterministic extraction', async () => {
     const registry = createToolRegistry();
     const txHash =
       'UUhMpRZtCVFENshTwTGy1FSJvodiJ2DxpXqQ9KMF3aQ8KEjfcJVKMLnURRmG6VEEhFKYMTuCiU7N4SohiTuRRUF';
@@ -241,9 +298,9 @@ describe('createLangGraphCustomerRuntime', () => {
     });
     expect(response.answer).toContain('浏览器安全验证');
     expect(response.answer).toContain('报告：/assets/tx-analysis-failure-solana.json');
-    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.plan).toHaveBeenCalledOnce();
     expect(execute).toHaveBeenCalledWith(
-      { chain: 'solana', txHash },
+      { txHash: message },
       { channel: 'web', sessionId: undefined, userIdPresent: false },
     );
   });
@@ -409,23 +466,73 @@ describe('createLangGraphCustomerRuntime', () => {
   it.each([
     ['parse', new PlannerModelParseError('invalid planner json')],
     ['request', new PlannerModelRequestError('planner request failed')],
-  ])('returns clarification when planner has an expected %s failure', async (_name, error) => {
+  ])(
+    'returns clarification when planner has an expected %s failure twice',
+    async (_name, error) => {
+      const registry = createToolRegistry();
+      const planner = {
+        plan: vi.fn(() => Promise.reject(error)),
+      };
+
+      const response = await createLangGraphCustomerRuntime({ planner, registry }).ask({
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？',
+      });
+
+      expect(response).toMatchObject({
+        agentRoute: 'clarify',
+        citations: [],
+        intent: 'unknown',
+      });
+      expect(planner.plan).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('retries planner parsing failure and uses the repaired product tool plan', async () => {
     const registry = createToolRegistry();
+    const response: ChatResponse = {
+      answer: 'XXYY 支持跟单相关产品能力说明。',
+      citations: [],
+      confidence: 0.81,
+      intent: 'product_qa',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
     const planner = {
-      plan: vi.fn(() => Promise.reject(error)),
+      plan: vi
+        .fn()
+        .mockRejectedValueOnce(new PlannerModelParseError('invalid route'))
+        .mockResolvedValueOnce({
+          input: { question: 'XXYY支持跟单么' },
+          kind: 'tool' as const,
+          reason: 'Use product docs after retry.',
+          route: 'product_answer' as const,
+          toolName: 'answer_product_question' as const,
+        }),
     };
 
-    const response = await createLangGraphCustomerRuntime({ planner, registry }).ask({
-      channel: 'web',
-      message: 'XXYY Pro 有哪些权益？',
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({ question: z.string() }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
     });
 
-    expect(response).toMatchObject({
-      agentRoute: 'clarify',
-      citations: [],
-      intent: 'unknown',
+    await expect(
+      createLangGraphCustomerRuntime({ planner, registry }).ask({
+        channel: 'cli',
+        message: 'XXYY支持跟单么',
+      }),
+    ).resolves.toEqual({
+      ...response,
+      agentRoute: 'product_answer',
     });
-    expect(planner.plan).toHaveBeenCalledOnce();
+    expect(planner.plan).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledWith(
+      { question: 'XXYY支持跟单么' },
+      { channel: 'cli', sessionId: undefined, userIdPresent: false },
+    );
   });
 
   it('returns clarification when a tool throws', async () => {

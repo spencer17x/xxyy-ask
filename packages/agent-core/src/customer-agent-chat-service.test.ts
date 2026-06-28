@@ -199,7 +199,7 @@ describe('createCustomerAgentChatService', () => {
     ).rejects.toBeInstanceOf(LlmConfigurationError);
   });
 
-  it('routes clear transaction references without requiring LLM planner config', async () => {
+  it('requires LLM planner config instead of falling back to local transaction routing', async () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_BASE_URL;
     delete process.env.OPENAI_MODEL;
@@ -223,6 +223,54 @@ describe('createCustomerAgentChatService', () => {
           throw new Error('answer provider should not be called');
         },
       },
+      retriever: {
+        retrieve() {
+          throw new Error('retriever should not be called');
+        },
+      },
+      txAnalysisProvider: {
+        analyze,
+      },
+    });
+
+    await expect(
+      service.ask({
+        channel: 'web',
+        message: `帮我分析 ${txHash} 有没有被夹`,
+      }),
+    ).rejects.toBeInstanceOf(LlmConfigurationError);
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('routes planner-selected transaction references through the transaction provider', async () => {
+    const txHash = `0x${'a'.repeat(64)}`;
+    const analyze = vi.fn(() =>
+      Promise.resolve({
+        analyzedAt: '2026-06-25T00:00:00.000Z',
+        chain: 'unknown' as const,
+        confidence: 0.62,
+        evidence: [],
+        relatedTransactions: [],
+        summary: '未发现明确 sandwich 模式。',
+        txHash,
+        verdict: 'not_sandwiched' as const,
+      }),
+    );
+    const service = createCustomerAgentChatService({
+      answerProvider: {
+        answer() {
+          throw new Error('answer provider should not be called');
+        },
+      },
+      planner: createScriptedPlannerModel([
+        {
+          input: { chain: 'unknown', txHash },
+          kind: 'tool',
+          reason: 'Analyze the public transaction.',
+          route: 'transaction_analysis',
+          toolName: 'analyze_transaction',
+        },
+      ]),
       retriever: {
         retrieve() {
           throw new Error('retriever should not be called');

@@ -39,10 +39,29 @@ describe('shouldIngestFromStatsOutput', () => {
 });
 
 describe('runAgentStart', () => {
-  it('checks incremental updates before serving in service mode', async () => {
+  it('starts API and Web without refreshing knowledge by default', async () => {
     const commands = [];
     const exitCode = await runAgentStart({
       args: ['--service'],
+      env: {},
+      log: () => {},
+      runCommand(command) {
+        commands.push(command.label);
+        return Promise.resolve({
+          exitCode: 0,
+          stdout: '',
+        });
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(commands).toEqual(['start API and Web']);
+  });
+
+  it('checks incremental updates before serving when sync is requested', async () => {
+    const commands = [];
+    const exitCode = await runAgentStart({
+      args: ['--service', '--sync'],
       env: {},
       log: () => {},
       runCommand(command) {
@@ -63,10 +82,10 @@ describe('runAgentStart', () => {
     ]);
   });
 
-  it('bootstraps local postgres and ingests an empty knowledge base before serving', async () => {
+  it('bootstraps local postgres and ingests an empty knowledge base before sync serving', async () => {
     const commands = [];
     const exitCode = await runAgentStart({
-      args: ['--local'],
+      args: ['--local', '--sync'],
       env: {
         POSTGRES_DB: 'xxyy_ask',
         POSTGRES_PASSWORD: 'secret',
@@ -94,7 +113,7 @@ describe('runAgentStart', () => {
     ]);
   });
 
-  it('skips docker and ingestion when using an external populated database', async () => {
+  it('skips docker and knowledge refresh by default when using an external database', async () => {
     const commands = [];
     const exitCode = await runAgentStart({
       args: ['--local'],
@@ -111,18 +130,13 @@ describe('runAgentStart', () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(commands).toEqual([
-      'knowledge stats',
-      'refresh X updates',
-      'sync X knowledge',
-      'start API and Web',
-    ]);
+    expect(commands).toEqual(['start API and Web']);
   });
 
   it('ingests a missing production knowledge base before incremental sync', async () => {
     const commands = [];
     const exitCode = await runAgentStart({
-      args: ['--service'],
+      args: ['--service', '--sync'],
       env: { DATABASE_URL: 'postgres://xxyy:secret@example.com:5432/xxyy_ask' },
       log: () => {},
       runCommand(command) {
@@ -147,7 +161,7 @@ describe('runAgentStart', () => {
   it('does not start the service when incremental sync fails', async () => {
     const commands = [];
     const exitCode = await runAgentStart({
-      args: ['--service'],
+      args: ['--service', '--sync'],
       env: { DATABASE_URL: 'postgres://xxyy:secret@example.com:5432/xxyy_ask' },
       log: () => {},
       runCommand(command) {
@@ -167,7 +181,7 @@ describe('runAgentStart', () => {
     const commands = [];
     const logs = [];
     const exitCode = await runAgentStart({
-      args: ['--service'],
+      args: ['--service', '--sync'],
       env: { DATABASE_URL: 'postgres://xxyy:secret@example.com:5432/xxyy_ask' },
       log(message) {
         logs.push(message);
@@ -187,13 +201,60 @@ describe('runAgentStart', () => {
       'Warning: refresh X updates failed; starting with existing knowledge.',
     );
   });
+
+  it('runs full source refresh and ingestion before serving when full sync is requested', async () => {
+    const commands = [];
+    const exitCode = await runAgentStart({
+      args: ['--service', '--full-sync'],
+      env: { DATABASE_URL: 'postgres://xxyy:secret@example.com:5432/xxyy_ask' },
+      log: () => {},
+      runCommand(command) {
+        commands.push({ args: command.args, label: command.label });
+        return Promise.resolve({ exitCode: 0, stdout: '' });
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(commands).toEqual([
+      { args: ['x:scrape', '--', '--full'], label: 'refresh X updates' },
+      { args: ['rag:ingest'], label: 'ingest knowledge' },
+      { args: ['--filter', '@xxyy/api', 'start'], label: 'start API and Web' },
+    ]);
+  });
+
+  it('runs only ingestion before serving when ingestion is requested', async () => {
+    const commands = [];
+    const exitCode = await runAgentStart({
+      args: ['--service', '--ingest'],
+      env: { DATABASE_URL: 'postgres://xxyy:secret@example.com:5432/xxyy_ask' },
+      log: () => {},
+      runCommand(command) {
+        commands.push(command.label);
+        return Promise.resolve({ exitCode: 0, stdout: '' });
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(commands).toEqual(['ingest knowledge', 'start API and Web']);
+  });
 });
 
 describe('root package scripts', () => {
-  it('exposes concise start and sync entrypoints', async () => {
+  it('exposes dev entrypoints without legacy start aliases', async () => {
     const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
 
-    expect(packageJson.scripts.start).toBe('node scripts/start-agent.mjs');
-    expect(packageJson.scripts.sync).toBe('node scripts/rag-refresh.mjs');
+    expect(packageJson.scripts['app:dev']).toBe('node scripts/start-agent.mjs');
+    expect(packageJson.scripts['api:dev']).toBe('pnpm --filter @xxyy/api start');
+    expect(packageJson.scripts['web:dev']).toBe('pnpm --filter @xxyy/web dev');
+    expect(packageJson.scripts['telegram:dev']).toBe('pnpm --filter @xxyy/telegram-bot start');
+    expect(packageJson.scripts['product:mcp:dev']).toBe('pnpm --filter @xxyy/product-qa-mcp start');
+    expect(packageJson.scripts['tx:mcp:dev']).toBe('pnpm --filter @xxyy/tx-analysis-mcp start');
+    expect(packageJson.scripts.start).toBeUndefined();
+    expect(packageJson.scripts.dev).toBeUndefined();
+    expect(packageJson.scripts.sync).toBeUndefined();
+    expect(packageJson.scripts['start:service']).toBeUndefined();
+    expect(packageJson.scripts['telegram:start']).toBeUndefined();
+    expect(packageJson.scripts['product:mcp']).toBeUndefined();
+    expect(packageJson.scripts['tx:mcp']).toBeUndefined();
   });
 });

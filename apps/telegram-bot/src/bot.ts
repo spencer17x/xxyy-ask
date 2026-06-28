@@ -30,6 +30,7 @@ export interface TelegramMessage {
 
 export interface TelegramApi {
   getUpdates(input: TelegramGetUpdatesInput): Promise<TelegramUpdate[]>;
+  sendChatAction?(input: TelegramSendChatActionInput): Promise<void>;
   sendMessage(input: TelegramSendMessageInput): Promise<void>;
   sendMessageDraft?(input: TelegramSendMessageDraftInput): Promise<void>;
   sendPhoto(input: TelegramSendPhotoInput): Promise<void>;
@@ -43,7 +44,14 @@ export interface TelegramGetUpdatesInput {
 
 export interface TelegramSendMessageInput {
   chatId: number;
+  parseMode?: 'HTML';
+  replyToMessageId?: number;
   text: string;
+}
+
+export interface TelegramSendChatActionInput {
+  action: 'typing';
+  chatId: number;
 }
 
 export interface TelegramSendMessageDraftInput {
@@ -56,6 +64,7 @@ export interface TelegramSendPhotoInput {
   caption?: string;
   chatId: number;
   photo: string;
+  replyToMessageId?: number;
 }
 
 export interface TelegramBot {
@@ -103,6 +112,7 @@ const DEFAULT_POLL_TIMEOUT_SECONDS = 30;
 const DEFAULT_POLL_ERROR_RETRY_MS = 3000;
 const TELEGRAM_DRAFT_UPDATE_MIN_CHARS = 80;
 const TELEGRAM_MESSAGE_LIMIT = 4096;
+const TELEGRAM_TYPING_REFRESH_MS = 4000;
 const HELP_TEXT = [
   '我是 XXYY 客服 Bot，可以回答产品使用问题，也可以检查公开交易链接是否被夹。',
   '',
@@ -150,39 +160,54 @@ export function createTelegramBot(options: CreateTelegramBotOptions): TelegramBo
 
     const chatId = message.chat.id;
     if (!isAllowedMessage(message, options.config)) {
-      await options.api.sendMessage({ chatId, text: UNAUTHORIZED_TEXT });
+      await options.api.sendMessage({
+        chatId,
+        replyToMessageId: message.message_id,
+        text: UNAUTHORIZED_TEXT,
+      });
       return;
     }
 
     const text = message.text?.trim();
     if (text === undefined || text.length === 0) {
-      await options.api.sendMessage({ chatId, text: UNSUPPORTED_MESSAGE_TEXT });
+      await options.api.sendMessage({
+        chatId,
+        replyToMessageId: message.message_id,
+        text: UNSUPPORTED_MESSAGE_TEXT,
+      });
       return;
     }
 
     if (isHelpCommand(text)) {
-      await options.api.sendMessage({ chatId, text: HELP_TEXT });
+      await options.api.sendMessage({
+        chatId,
+        replyToMessageId: message.message_id,
+        text: HELP_TEXT,
+      });
       return;
     }
 
     const request = createTelegramChatRequest(message, text);
-    if (canStreamToDraft(message, options)) {
-      const streamed = await trySendStreamingChatResponse({
-        api: options.api,
-        chatId,
-        config: options.config,
-        draftId: createTelegramDraftId(update.update_id),
-        request,
-        stream: options.chatService.stream,
-      });
-      if (streamed) {
-        return;
+    await withTelegramTyping(options.api, chatId, async () => {
+      if (canStreamToDraft(message, options)) {
+        const streamed = await trySendStreamingChatResponse({
+          api: options.api,
+          chatId,
+          config: options.config,
+          draftId: createTelegramDraftId(update.update_id),
+          replyToMessageId: message.message_id,
+          request,
+          stream: options.chatService.stream,
+        });
+        if (streamed) {
+          return;
+        }
       }
-    }
 
-    const response = await options.chatService.ask(request);
+      const response = await options.chatService.ask(request);
 
-    await sendChatResponse(options.api, chatId, response, options.config);
+      await sendChatResponse(options.api, chatId, response, options.config, message.message_id);
+    });
   }
 
   return {
@@ -225,6 +250,7 @@ async function trySendStreamingChatResponse(options: {
   chatId: number;
   config: Pick<TelegramBotConfig, 'publicBaseUrl'>;
   draftId: number;
+  replyToMessageId?: number;
   request: ChatRequest;
   stream: ChatService['stream'] | undefined;
 }): Promise<boolean> {
@@ -279,8 +305,44 @@ async function trySendStreamingChatResponse(options: {
       ...(metadata.tokenUsage === undefined ? {} : { tokenUsage: metadata.tokenUsage }),
     },
     options.config,
+    options.replyToMessageId,
   );
   return true;
+}
+
+async function withTelegramTyping<T>(
+  api: Pick<TelegramApi, 'sendChatAction'>,
+  chatId: number,
+  task: () => Promise<T>,
+): Promise<T> {
+  if (api.sendChatAction === undefined) {
+    return task();
+  }
+
+  await sendTypingAction(api, chatId);
+  const timer = setInterval(() => {
+    void sendTypingAction(api, chatId);
+  }, TELEGRAM_TYPING_REFRESH_MS);
+  if (typeof timer === 'object' && 'unref' in timer) {
+    timer.unref();
+  }
+
+  try {
+    return await task();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+async function sendTypingAction(
+  api: Pick<TelegramApi, 'sendChatAction'>,
+  chatId: number,
+): Promise<void> {
+  try {
+    await api.sendChatAction?.({ action: 'typing', chatId });
+  } catch {
+    // Typing indicators are best-effort; never fail the support response because of them.
+  }
 }
 
 function shouldSendTelegramDraft(answer: string, lastDraftLength: number): boolean {
@@ -317,11 +379,17 @@ export async function sendChatResponse(
   chatId: number,
   response: ChatResponse,
   config: Pick<TelegramBotConfig, 'publicBaseUrl'>,
+  replyToMessageId?: number,
 ): Promise<void> {
   const attachmentLines = attachmentFallbackLines(response.attachments, config.publicBaseUrl);
-  const message = [response.answer, ...attachmentLines].join('\n').trim();
+  const message = formatTelegramChatResponse(response, attachmentLines);
   for (const chunk of splitTelegramMessage(message, TELEGRAM_MESSAGE_LIMIT)) {
-    await api.sendMessage({ chatId, text: chunk });
+    await api.sendMessage({
+      chatId,
+      parseMode: 'HTML',
+      ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
+      text: chunk,
+    });
   }
 
   for (const attachment of response.attachments ?? []) {
@@ -336,8 +404,56 @@ export async function sendChatResponse(
       caption: attachment.title,
       chatId,
       photo,
+      ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
     });
   }
+}
+
+function formatTelegramChatResponse(response: ChatResponse, attachmentLines: string[]): string {
+  const lines = [
+    markdownToTelegramHtml(response.answer),
+    ...attachmentLines.map(escapeHtml),
+    ...telegramCitationLines(response.citations),
+  ];
+  return lines.join('\n').trim();
+}
+
+function telegramCitationLines(citations: ChatResponse['citations']): string[] {
+  if (citations.length === 0) {
+    return [];
+  }
+
+  return [
+    '',
+    '<b>来源</b>',
+    ...citations.flatMap((citation, index) => [
+      `${index + 1}. ${telegramCitationTitle(citation)}`,
+      `<code>${escapeHtml(citation.file)}</code>`,
+      escapeHtml(citation.excerpt),
+    ]),
+  ];
+}
+
+function telegramCitationTitle(citation: ChatResponse['citations'][number]): string {
+  const title = escapeHtml(citation.title);
+  if (citation.sourceUrl === undefined) {
+    return `<b>${title}</b>`;
+  }
+  return `<a href="${escapeHtmlAttribute(citation.sourceUrl)}">${title}</a>`;
+}
+
+function markdownToTelegramHtml(text: string): string {
+  return escapeHtml(text)
+    .replace(/\*\*([^*\n][^*]*?)\*\*/gu, '<b>$1</b>')
+    .replace(/`([^`\n]+?)`/gu, '<code>$1</code>');
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/gu, '&amp;').replace(/</gu, '&lt;').replace(/>/gu, '&gt;');
+}
+
+function escapeHtmlAttribute(text: string): string {
+  return escapeHtml(text).replace(/"/gu, '&quot;');
 }
 
 export function resolveTelegramAttachmentUrl(

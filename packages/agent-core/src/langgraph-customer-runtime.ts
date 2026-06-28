@@ -5,7 +5,6 @@ import {
   createTxAnalysisAnswer,
   createTxAnalysisUnavailableAnswer,
   LlmConfigurationError,
-  parseTransactionReference,
   type AnalyzeTransactionOutput,
   VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
@@ -24,8 +23,6 @@ import {
 } from './langgraph-state.js';
 import {
   PlannerConfigurationError,
-  PlannerModelParseError,
-  PlannerModelRequestError,
   type PlannerModel,
   type PlannerToolDescriptor,
 } from './planner-model.js';
@@ -102,100 +99,45 @@ async function plannerNode(
     };
   }
 
-  const transactionReferencePlan = createTransactionReferenceToolPlan(
-    state.request.message,
-    options.registry,
-  );
-  if (transactionReferencePlan !== undefined) {
-    return {
-      currentStep: state.currentStep + 1,
-      plan: transactionReferencePlan,
-      route: 'transaction_analysis',
-    };
-  }
-
   let plan: AgentPlan;
+  const plannerInput = {
+    request: state.request,
+    stateSummary: summarizeState(state),
+    tools: listPlannerTools(options.registry),
+  };
+  const planningErrors: string[] = [];
   try {
-    plan = await options.planner.plan({
-      request: state.request,
-      stateSummary: summarizeState(state),
-      tools: listPlannerTools(options.registry),
-    });
+    plan = await options.planner.plan(plannerInput);
   } catch (error) {
     if (error instanceof PlannerConfigurationError || error instanceof LlmConfigurationError) {
       throw error;
     }
-    if (
-      error instanceof PlannerModelParseError ||
-      error instanceof PlannerModelRequestError ||
-      error instanceof Error
-    ) {
-      const fallbackPlan = createTransactionReferenceToolPlan(
-        state.request.message,
-        options.registry,
-      );
-      if (fallbackPlan !== undefined) {
-        return {
-          currentStep: state.currentStep + 1,
-          errors: [
-            `Planner failed: ${errorMessageFrom(error)}; using transaction analysis fallback.`,
-          ],
-          plan: fallbackPlan,
-          route: 'transaction_analysis',
-        };
-      }
 
+    planningErrors.push(`Planner failed: ${errorMessageFrom(error)}`);
+    try {
+      plan = await options.planner.plan(plannerInput);
+    } catch (retryError) {
+      if (
+        retryError instanceof PlannerConfigurationError ||
+        retryError instanceof LlmConfigurationError
+      ) {
+        throw retryError;
+      }
       return {
-        errors: [`Planner failed: ${errorMessageFrom(error)}`],
+        errors: [...planningErrors, `Planner retry failed: ${errorMessageFrom(retryError)}`],
         finalResponse: createClarificationResponse(
           '当前自动规划暂时不可用，无法可靠选择处理路径。请补充具体功能、配置步骤或单笔公开交易哈希后重试。',
         ),
         route: 'clarify',
       };
     }
-    return {
-      errors: ['Planner failed with an unknown error.'],
-      finalResponse: createClarificationResponse(
-        '当前自动规划暂时不可用，无法可靠选择处理路径。请补充具体功能、配置步骤或单笔公开交易哈希后重试。',
-      ),
-      route: 'clarify',
-    };
   }
 
   return {
     currentStep: state.currentStep + 1,
+    ...(planningErrors.length > 0 ? { errors: planningErrors } : {}),
     plan,
     route: normalizeAgentRoute(plan.route),
-  };
-}
-
-function createTransactionReferenceToolPlan(
-  message: string,
-  registry: ToolRegistry,
-): AgentPlan | undefined {
-  if (registry.get('analyze_transaction') === undefined) {
-    return undefined;
-  }
-
-  const reference = parseTransactionReference(message);
-  if (reference === undefined) {
-    return undefined;
-  }
-
-  const shouldPreserveOriginalMessage =
-    reference.unsupportedChainHint !== undefined || reference.unsupportedExplorerHost !== undefined;
-
-  return {
-    input: shouldPreserveOriginalMessage
-      ? { txHash: message }
-      : {
-          ...(reference.chain === 'unknown' ? {} : { chain: reference.chain }),
-          txHash: reference.txHash,
-        },
-    kind: 'tool',
-    reason: 'Planner failed, but the request contains one clear public transaction reference.',
-    route: 'transaction_analysis',
-    toolName: 'analyze_transaction',
   };
 }
 
@@ -227,10 +169,11 @@ async function toolExecutorNode(
   }
 
   let output: unknown;
+  const toolInput = inputForToolExecution(plan, state.request);
   try {
     output = await registry.execute(
       plan.toolName,
-      plan.input,
+      toolInput,
       toolContextFromRequest(state.request),
     );
   } catch (error) {
@@ -250,7 +193,7 @@ async function toolExecutorNode(
     route: routeForToolName(plan.toolName),
     toolCalls: [
       {
-        input: plan.input,
+        input: toolInput,
         step: state.currentStep,
         toolName: plan.toolName,
       },
@@ -263,6 +206,14 @@ async function toolExecutorNode(
       },
     ],
   };
+}
+
+function inputForToolExecution(plan: Extract<AgentPlan, { kind: 'tool' }>, request: ChatRequest) {
+  if (plan.toolName === 'answer_product_question') {
+    return { question: request.message };
+  }
+
+  return plan.input;
 }
 
 function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {

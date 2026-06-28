@@ -35,11 +35,11 @@
 ## 常用命令
 
 ```bash
-pnpm start           # 启动前检查/增量更新知识库，然后启动 API + Web
-pnpm sync            # 增量抓取 X 更新并同步知识库
-pnpm sync -- --full  # 全量重抓 X 更新并重建知识库
-pnpm check           # lint + format check + typecheck + tests
-pnpm agent:smoke     # 轻量验证已启动服务的 health 和核心 agentRoute
+pnpm run app:dev                 # 启动 API + Web，默认不刷新知识库
+pnpm run app:dev -- --sync       # 启动前增量抓取 X 更新并同步知识库
+pnpm run app:dev -- --full-sync  # 启动前全量重抓 X 更新并重建知识库
+pnpm check                       # lint + format check + typecheck + tests
+pnpm agent:smoke                 # 轻量验证已启动服务的 health 和核心 agentRoute
 ```
 
 聚焦命令：
@@ -49,11 +49,11 @@ pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 pnpm rag:ingest
 pnpm rag:sync:x
 pnpm rag:stats
-pnpm telegram:start
+pnpm run telegram:dev
 pnpm tx:mcp:smoke
 ```
 
-`pnpm sync` 默认执行增量 `x:scrape` 和 `rag:sync:x`；`--full` 会执行全量 scrape 和正式 ingest。
+`pnpm run app:dev -- --sync` 会执行增量 `x:scrape` 和 `rag:sync:x` 后启动服务；`--full-sync` 会执行全量 scrape 和正式 ingest 后启动服务。
 
 ## HTTP 交互
 
@@ -75,7 +75,7 @@ POST /api/tx-analysis
 ## Telegram Bot
 
 ```bash
-pnpm telegram:start
+pnpm run telegram:dev
 ```
 
 Bot 通过 Telegram Bot API long polling 接收文本消息，转成 `channel: "telegram"` 的客服请求。默认只需要配置 `TELEGRAM_BOT_TOKEN`。图片附件公网 URL、轮询超时和重试间隔都有默认处理，只有特殊部署才需要额外覆盖。
@@ -96,13 +96,13 @@ Bot 通过 Telegram Bot API long polling 接收文本消息，转成 `channel: "
 产品客服 MCP：
 
 ```bash
-pnpm product:mcp
+pnpm run product:mcp:dev
 ```
 
 交易分析 MCP：
 
 ```bash
-pnpm tx:mcp
+pnpm run tx:mcp:dev
 ```
 
 当前保留的本地 Skill 源文件：

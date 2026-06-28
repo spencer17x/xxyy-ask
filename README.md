@@ -39,7 +39,7 @@ pnpm install
 cp .env.example .env
 ```
 
-`pnpm start`、`pnpm sync` 和 `pnpm rag:*` 会读取项目根目录 `.env`。如果同名变量已经在 shell 里导出，则 shell 环境变量优先。
+`pnpm run app:dev`、`pnpm run *:dev` 和 `pnpm rag:*` 会读取项目根目录 `.env`。如果同名变量已经在 shell 里导出，则 shell 环境变量优先。
 
 核心配置示例：
 
@@ -83,18 +83,25 @@ TELEGRAM_BOT_TOKEN=
 本地启动完整问答服务：
 
 ```bash
-pnpm start
+pnpm run app:dev
 ```
 
-本地模式下，启动脚本会尝试启动本地 pgvector，检查知识库；空库或未迁移时会先执行 ingest，然后做增量 X / Twitter 抓取和 `rag:sync:x`，最后启动 API + Web。
+本地模式下，启动脚本会尝试启动本地 pgvector，然后启动 API + Web。默认不刷新知识库，避免每次开发启动都触发抓取或写库。
 
-线上常驻服务同样使用：
+需要在启动前更新知识库时显式传参：
 
 ```bash
-NODE_ENV=production pnpm start
+pnpm run app:dev -- --sync       # 增量抓取 X / Twitter 并同步知识库后启动
+pnpm run app:dev -- --full-sync  # 全量抓取 X / Twitter 并重建知识库后启动
+pnpm run app:dev -- --ingest     # 只重建知识库后启动
 ```
 
-生产模式不会启动本地 Docker，但仍会检查知识库并执行启动前增量同步。
+生产模式不会启动本地 Docker：
+
+```bash
+NODE_ENV=production pnpm run app:dev
+NODE_ENV=production pnpm run app:dev -- --sync
+```
 
 启动后访问：
 
@@ -107,10 +114,12 @@ http://localhost:3000
 常用入口：
 
 ```bash
-pnpm start           # 启动前检查/同步知识库，然后启动 API + Web
-pnpm sync            # 增量抓取官方 X / Twitter 更新并同步知识库
-pnpm sync -- --full  # 全量抓取 X / Twitter 并重建知识库
-pnpm check           # lint + format check + typecheck + tests
+pnpm run app:dev                 # 启动 API + Web，默认不刷新知识库
+pnpm run app:dev -- --sync       # 启动前增量更新知识库
+pnpm run app:dev -- --full-sync  # 启动前全量抓取并重建知识库
+pnpm run api:dev                 # 只启动 API + Web 服务入口
+pnpm run web:dev                 # 只启动 Vite Web
+pnpm check                       # lint + format check + typecheck + tests
 ```
 
 RAG 和数据库命令：
@@ -140,17 +149,17 @@ pnpm agent:smoke
 MCP：
 
 ```bash
-pnpm product:mcp
-pnpm tx:mcp
+pnpm run product:mcp:dev
+pnpm run tx:mcp:dev
 pnpm tx:mcp:smoke
 ```
 
-`product:mcp` 暴露 `search_product_docs` 和 `answer_product_question`。`tx:mcp` 暴露 `analyze_transaction`。`tx:mcp:smoke` 通过 stdio MCP client 用真实 browser provider 跑交易分析 MCP 样本，默认使用 `docs/tx-analysis-smoke-samples.example.json`，也可传 `-- --tx-samples <file>`。
+`product:mcp:dev` 暴露 `search_product_docs` 和 `answer_product_question`。`tx:mcp:dev` 暴露 `analyze_transaction`。`tx:mcp:smoke` 通过 stdio MCP client 用真实 browser provider 跑交易分析 MCP 样本，默认使用 `docs/tx-analysis-smoke-samples.example.json`，也可传 `-- --tx-samples <file>`。
 
 Telegram Bot：
 
 ```bash
-pnpm telegram:start
+pnpm run telegram:dev
 ```
 
 配置 `TELEGRAM_BOT_TOKEN` 后，Bot 会通过 long polling 接收文本消息，并以 `channel: "telegram"` 调用同一套 LangGraph 客服 Agent。
@@ -213,7 +222,7 @@ GET /assets/*
 
 用于返回产品文档中的视频附件、交易分析截图和本地报告文件等静态资源。
 
-通过 `pnpm start` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、agentRoute、引用数、耗时、状态码、错误码、消息长度和脱敏截断后的消息预览等字段。日志只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文，并会脱敏密钥、交易哈希、地址、邮箱和手机号等敏感片段。
+通过 `pnpm run app:dev` 或 `pnpm run api:dev` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、agentRoute、引用数、耗时、状态码、错误码、消息长度和脱敏截断后的消息预览等字段。日志只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文，并会脱敏密钥、交易哈希、地址、邮箱和手机号等敏感片段。
 
 API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat`、`/api/chat/stream` 和 `/api/tx-analysis` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 

@@ -53,11 +53,19 @@ describe('loadTelegramBotConfig', () => {
 
 describe('createTelegramBot', () => {
   it('passes text messages to chat with telegram channel and replies in the same chat', async () => {
-    const ask = vi.fn(() => Promise.resolve(createResponse()));
+    const ask = vi.fn(() =>
+      Promise.resolve(
+        createResponse({
+          answer: '**XXYY Pro** 支持更多监控额度。',
+        }),
+      ),
+    );
     const sendMessage = createSendMessageMock();
+    const sendChatAction = vi.fn(() => Promise.resolve());
     const bot = createTelegramBot({
       api: {
         getUpdates: vi.fn(),
+        sendChatAction,
         sendMessage,
         sendPhoto: vi.fn(),
       },
@@ -83,7 +91,13 @@ describe('createTelegramBot', () => {
     });
     expect(sendMessage).toHaveBeenCalledWith({
       chatId: 123,
-      text: 'XXYY Pro 支持更多监控额度。',
+      parseMode: 'HTML',
+      replyToMessageId: 1,
+      text: '<b>XXYY Pro</b> 支持更多监控额度。',
+    });
+    expect(sendChatAction).toHaveBeenCalledWith({
+      action: 'typing',
+      chatId: 123,
     });
   });
 
@@ -144,6 +158,8 @@ describe('createTelegramBot', () => {
     });
     expect(sendMessage).toHaveBeenCalledWith({
       chatId: 123,
+      parseMode: 'HTML',
+      replyToMessageId: 1,
       text: `${'A'.repeat(90)}${'B'.repeat(90)}`,
     });
   });
@@ -186,6 +202,8 @@ describe('createTelegramBot', () => {
     expect(ask).not.toHaveBeenCalled();
     expect(sendMessage).toHaveBeenCalledWith({
       chatId: 123,
+      parseMode: 'HTML',
+      replyToMessageId: 1,
       text: 'partial answer',
     });
   });
@@ -271,6 +289,59 @@ describe('createTelegramBot', () => {
       caption: '交易分析截图',
       chatId: 123,
       photo: 'https://ask.example.com/assets/tx-analysis/example.png',
+      replyToMessageId: 1,
+    });
+  });
+
+  it('formats citations for Telegram HTML messages', async () => {
+    const sendMessage = createSendMessageMock();
+    const bot = createTelegramBot({
+      api: {
+        getUpdates: vi.fn(),
+        sendMessage,
+        sendPhoto: vi.fn(),
+      },
+      chatService: {
+        ask: vi.fn(() =>
+          Promise.resolve(
+            createResponse({
+              answer: 'XXYY 支持跟单。',
+              citations: [
+                {
+                  excerpt: '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链。',
+                  file: 'docs/product-features/xxyy-x-updates.md',
+                  title: 'XXYY X 历史推文产品更新汇总',
+                },
+              ],
+            }),
+          ),
+        ),
+      },
+      config: loadTelegramBotConfig({ TELEGRAM_BOT_TOKEN: 'bot-token' }),
+    });
+
+    await bot.handleUpdate({
+      message: {
+        chat: { id: 123 },
+        from: { id: 456 },
+        message_id: 1,
+        text: 'xxyy支持跟单么',
+      },
+      update_id: 10,
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith({
+      chatId: 123,
+      parseMode: 'HTML',
+      replyToMessageId: 1,
+      text: [
+        'XXYY 支持跟单。',
+        '',
+        '<b>来源</b>',
+        '1. <b>XXYY X 历史推文产品更新汇总</b>',
+        '<code>docs/product-features/xxyy-x-updates.md</code>',
+        '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链。',
+      ].join('\n'),
     });
   });
 

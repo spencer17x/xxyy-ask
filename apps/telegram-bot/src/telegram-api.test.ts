@@ -41,7 +41,7 @@ describe('createTelegramApiClient', () => {
     });
   });
 
-  it('sends messages, drafts, and photos through Bot API methods', async () => {
+  it('sends messages, typing actions, and photos through Bot API methods', async () => {
     const fetch = vi.fn(() => Promise.resolve(createJsonResponse({ ok: true, result: true })));
     const api = createTelegramApiClient({
       apiBaseUrl: 'https://telegram.test/',
@@ -49,20 +49,36 @@ describe('createTelegramApiClient', () => {
       fetch,
     });
 
-    await api.sendMessage({ chatId: -100, text: 'hello' });
-    if (api.sendMessageDraft === undefined) {
-      throw new Error('Expected sendMessageDraft to be implemented.');
+    await api.sendMessage({
+      chatId: -100,
+      parseMode: 'HTML',
+      replyToMessageId: 11,
+      text: '<b>hello</b>',
+    });
+    if (api.sendChatAction === undefined) {
+      throw new Error('Expected sendChatAction to be implemented.');
     }
-    await api.sendMessageDraft({ chatId: -100, draftId: 7, text: 'partial' });
-    await api.sendPhoto({ caption: '截图', chatId: -100, photo: 'https://ask.example.com/a.png' });
+    await api.sendChatAction({ action: 'typing', chatId: -100 });
+    expect(api).not.toHaveProperty('sendMessageDraft');
+    await api.sendPhoto({
+      caption: '截图',
+      chatId: -100,
+      photo: 'https://ask.example.com/a.png',
+      replyToMessageId: 11,
+    });
 
     expect(fetch).toHaveBeenNthCalledWith(1, 'https://telegram.test/bot123:abc/sendMessage', {
-      body: JSON.stringify({ chat_id: -100, text: 'hello' }),
+      body: JSON.stringify({
+        chat_id: -100,
+        parse_mode: 'HTML',
+        reply_parameters: { message_id: 11 },
+        text: '<b>hello</b>',
+      }),
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     });
-    expect(fetch).toHaveBeenNthCalledWith(2, 'https://telegram.test/bot123:abc/sendMessageDraft', {
-      body: JSON.stringify({ chat_id: -100, draft_id: 7, text: 'partial' }),
+    expect(fetch).toHaveBeenNthCalledWith(2, 'https://telegram.test/bot123:abc/sendChatAction', {
+      body: JSON.stringify({ action: 'typing', chat_id: -100 }),
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     });
@@ -71,6 +87,7 @@ describe('createTelegramApiClient', () => {
         caption: '截图',
         chat_id: -100,
         photo: 'https://ask.example.com/a.png',
+        reply_parameters: { message_id: 11 },
       }),
       headers: { 'content-type': 'application/json' },
       method: 'POST',

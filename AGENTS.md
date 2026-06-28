@@ -61,14 +61,15 @@ API_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_WINDOW_MS=60000
 ```
 
-`pnpm start`、`pnpm sync` 和 `pnpm rag:*` 会读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
+`pnpm run app:dev`、`pnpm run *:dev` 和 `pnpm rag:*` 会读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
 
 主入口：
 
-- `pnpm start`：本地会尝试启动 pgvector，检查知识库，空库时 ingest，然后执行增量 X / Twitter 抓取和 `rag:sync:x`，最后启动 API + Web。
-- `NODE_ENV=production pnpm start`：生产模式跳过本地 Docker，但同样做知识库检查和启动前增量同步。
-- `pnpm sync`：线上定时增量更新官方 X / Twitter 和知识库。
-- `pnpm sync -- --full`：低频全量抓取 X / Twitter 并重建知识库。
+- `pnpm run app:dev`：本地会尝试启动 pgvector，然后启动 API + Web；默认不刷新知识库。
+- `pnpm run app:dev -- --sync`：启动前检查知识库，空库时 ingest，然后执行增量 X / Twitter 抓取和 `rag:sync:x`。
+- `pnpm run app:dev -- --full-sync`：启动前全量抓取 X / Twitter 并重建知识库。
+- `pnpm run app:dev -- --ingest`：启动前只执行知识库 ingest。
+- `NODE_ENV=production pnpm run app:dev`：生产模式跳过本地 Docker，默认不刷新知识库；可加 `--sync` 或 `--full-sync` 显式更新。
 - `pnpm check`：lint、format check、typecheck、tests。
 
 交易分析默认使用真实 browser provider 和规则化 SandwichAnalyzer，不配置 `TX_ANALYSIS_*` 也会用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页，并默认复用 `.tx-analysis-browser-profile` 保存安全验证状态；当前支持 Solana，并已接入 Base、Ethereum、BSC 浏览器取证初版。显式 `TX_ANALYSIS_PROVIDER=none` 时才返回暂未启用。只有覆盖默认行为时才配置 `TX_ANALYSIS_*`：例如特殊 Chrome 路径、staging/代理页面、自定义截图目录、Postgres 报告存储或 `TX_ANALYSIS_REVIEWER=openai` 模型复核；复核不可用时必须保留规则结果。
@@ -96,14 +97,14 @@ pnpm check
 更新产品文档、X / Twitter 数据或检索/回答逻辑后，优先跑：
 
 ```bash
-pnpm sync
+pnpm run app:dev -- --sync
 pnpm check
 ```
 
 如果改了正式文档结构、需要重建全部知识库，或要做发布前全量确认，再跑：
 
 ```bash
-pnpm sync -- --full
+pnpm run app:dev -- --full-sync
 ```
 
 命令说明：
@@ -114,8 +115,8 @@ pnpm sync -- --full
 - `pnpm rag:stats`：查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 - `pnpm rag:ask -- "问题"`：命令行临时调用客服 Agent。
 - `pnpm agent:smoke`：检查已启动服务的 health、产品问题路线和边界路线；可用 `API_SMOKE_TX_HASH` 额外检查交易分析路线。
-- `pnpm product:mcp`：启动产品问答 MCP stdio server。
-- `pnpm tx:mcp`：启动交易分析 MCP stdio server。
+- `pnpm run product:mcp:dev`：启动产品问答 MCP stdio server。
+- `pnpm run tx:mcp:dev`：启动交易分析 MCP stdio server。
 - `pnpm tx:mcp:smoke`：用默认真实 browser provider 跑交易分析 MCP 样本验收，可传 `-- --tx-samples <file>`。
 
 关键行为验证：
@@ -136,7 +137,7 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
 - 不要提交 `.rag/`、`.env`、数据库数据或密钥。
 - 不要在 `docker-compose.yml` 写死数据库密码；使用 `.env` 注入。
 - 不要把真实 API key 写入测试、README 或日志。
-- 生产 API 服务端不负责迁移；迁移和写库由 `pnpm sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成。本地 `pnpm start` 可以为空知识库做首次 bootstrap。
+- 生产 API 服务端不负责迁移；迁移和写库由 `pnpm run app:dev -- --sync`、`pnpm run app:dev -- --full-sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成。本地 `pnpm run app:dev -- --sync` 可以为空知识库做首次 bootstrap。
 - 新增行为需要加测试；风险较高的改动跑 `pnpm check`。
 - 对外错误信息应清晰区分：
   - LLM 配置缺失
