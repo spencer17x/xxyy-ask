@@ -456,7 +456,7 @@ describe('planner model', () => {
     ).rejects.toBeInstanceOf(PlannerModelParseError);
   });
 
-  it.each(['product_answer', 'transaction_analysis'] as const)(
+  it.each(['product_answer'] as const)(
     'rejects %s final routes from model output',
     async (route) => {
       const planner = createOpenAiCompatiblePlannerModel({

@@ -12,10 +12,14 @@ describe('chat contract', () => {
     expect(supportedChannels).toEqual(['cli', 'web', 'telegram']);
   });
 
-  it('defines stable product support intents', () => {
-    expect(supportedIntents).toContain('product_qa');
-    expect(supportedIntents).toContain('tx_sandwich_detection');
-    expect(supportedIntents).toContain('mev_or_chain_forensics');
+  it('defines stable product support and boundary intents', () => {
+    expect(supportedIntents).toEqual([
+      'product_qa',
+      'how_to',
+      'realtime_account_query',
+      'investment_advice',
+      'unknown',
+    ]);
   });
 
   it('allows channel-neutral chat responses with citations', () => {
@@ -57,20 +61,20 @@ describe('chat contract', () => {
     expect(response.tokenUsage?.totalTokens).toBe(156);
   });
 
-  it('allows image attachments for transaction analysis screenshots', () => {
+  it('allows image attachments for product knowledge responses', () => {
     const response: ChatResponse = {
-      answer: '交易哈希分析截图如下。',
+      answer: '产品功能截图如下。',
       attachments: [
         {
           kind: 'image',
           mediaType: 'image/svg+xml',
-          title: '交易分析截图',
-          url: '/assets/tx-analysis-browser-window.svg',
+          title: '产品功能截图',
+          url: '/assets/xxyy-feature-card.svg',
         },
       ],
       citations: [],
       confidence: 0.8,
-      intent: 'tx_sandwich_detection',
+      intent: 'product_qa',
     };
 
     expect(response.attachments?.[0]?.kind).toBe('image');

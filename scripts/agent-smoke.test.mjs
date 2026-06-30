@@ -23,10 +23,6 @@ describe('runAgentSmoke', () => {
       if (body.message === 'boundary question') {
         return jsonResponse({ agentRoute: 'boundary', answer: 'boundary answer' });
       }
-      if (body.message === 'tx-hash-1') {
-        return jsonResponse({ agentRoute: 'transaction_analysis', answer: 'tx answer' });
-      }
-
       throw new Error(`unexpected message: ${body.message}`);
     });
     const output = [];
@@ -36,7 +32,6 @@ describe('runAgentSmoke', () => {
         API_SMOKE_BASE_URL: 'https://ask.example.test/',
         API_SMOKE_BOUNDARY_QUESTION: 'boundary question',
         API_SMOKE_PRODUCT_QUESTION: 'product question',
-        API_SMOKE_TX_HASH: ' tx-hash-1 ',
       },
       fetch,
       log: (message) => output.push(message),
@@ -53,11 +48,6 @@ describe('runAgentSmoke', () => {
       },
       {
         body: JSON.stringify({ channel: 'web', message: 'boundary question' }),
-        method: 'POST',
-        url: 'https://ask.example.test/api/chat',
-      },
-      {
-        body: JSON.stringify({ channel: 'web', message: 'tx-hash-1' }),
         method: 'POST',
         url: 'https://ask.example.test/api/chat',
       },
@@ -125,29 +115,6 @@ describe('runAgentSmoke', () => {
     expect(result.exitCode).toBe(1);
     expect(result.errors).toEqual(['product question returned an empty answer']);
   });
-
-  it.each([undefined, '', '   '])(
-    'omits transaction analysis when tx hash is %s',
-    async (txHash) => {
-      const calls = [];
-      const result = await runSmokeWithResponses(
-        [
-          jsonResponse({ ok: true }),
-          jsonResponse({ agentRoute: 'product_answer', answer: 'product answer' }),
-          jsonResponse({ agentRoute: 'boundary', answer: 'boundary answer' }),
-        ],
-        {
-          calls,
-          env: {
-            API_SMOKE_TX_HASH: txHash,
-          },
-        },
-      );
-
-      expect(result.exitCode).toBe(0);
-      expect(calls).toHaveLength(3);
-    },
-  );
 });
 
 async function runSmokeWithResponses(responses, options = {}) {

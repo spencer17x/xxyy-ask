@@ -7,18 +7,6 @@ describe('loadRagConfig', () => {
     expect(loadRagConfig({})).toEqual({
       topK: 6,
       answerProvider: 'openai',
-      txAnalysisProvider: 'browser',
-      txAnalysisReviewer: 'none',
-      txAnalysisBrowserHeadless: true,
-      txAnalysisDiscoverUrl: undefined,
-      txAnalysisBrowserMaxConcurrency: 1,
-      txAnalysisBrowserMaxRetries: 1,
-      txAnalysisBrowserTimeoutMs: 60000,
-      txAnalysisBrowserUserDataDir: '.tx-analysis-browser-profile',
-      txAnalysisChromeExecutablePath: undefined,
-      txAnalysisReportStore: 'file',
-      txAnalysisScreenshotBaseUrl: '/assets',
-      txAnalysisScreenshotDir: undefined,
       databaseUrl: undefined,
       openAiApiKey: undefined,
       openAiBaseUrl: 'https://api.openai.com/v1',
@@ -50,36 +38,10 @@ describe('loadRagConfig', () => {
         OPENAI_MAX_RETRIES: '2',
         OPENAI_MODEL: 'gpt-test',
         OPENAI_REQUEST_TIMEOUT_MS: '12000',
-        TX_ANALYSIS_PROVIDER: 'browser',
-        TX_ANALYSIS_REVIEWER: 'openai',
-        TX_ANALYSIS_BROWSER_HEADLESS: 'true',
-        TX_ANALYSIS_BROWSER_MAX_CONCURRENCY: '2',
-        TX_ANALYSIS_BROWSER_MAX_RETRIES: '3',
-        TX_ANALYSIS_BROWSER_TIMEOUT_MS: '90000',
-        TX_ANALYSIS_BROWSER_USER_DATA_DIR: '.browser-profile',
-        TX_ANALYSIS_CHROME_EXECUTABLE_PATH:
-          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        TX_ANALYSIS_DISCOVER_URL: 'https://staging.xxyy.io/discover',
-        TX_ANALYSIS_REPORT_STORE: 'postgres',
-        TX_ANALYSIS_SCREENSHOT_BASE_URL: '/analysis-assets',
-        TX_ANALYSIS_SCREENSHOT_DIR: '/tmp/xxyy-analysis-assets',
       }),
     ).toEqual({
       topK: 3,
       answerProvider: 'future-provider',
-      txAnalysisProvider: 'browser',
-      txAnalysisReviewer: 'openai',
-      txAnalysisBrowserHeadless: true,
-      txAnalysisDiscoverUrl: 'https://staging.xxyy.io/discover',
-      txAnalysisBrowserMaxConcurrency: 2,
-      txAnalysisBrowserMaxRetries: 3,
-      txAnalysisBrowserTimeoutMs: 90000,
-      txAnalysisBrowserUserDataDir: '.browser-profile',
-      txAnalysisChromeExecutablePath:
-        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      txAnalysisReportStore: 'postgres',
-      txAnalysisScreenshotBaseUrl: '/analysis-assets',
-      txAnalysisScreenshotDir: '/tmp/xxyy-analysis-assets',
       databaseUrl: undefined,
       openAiApiKey: 'sk-future-only',
       openAiBaseUrl: 'https://llm.example/v1',
@@ -128,13 +90,5 @@ describe('loadRagConfig', () => {
 
     expect(config.openAiMaxRetries).toBe(1);
     expect(config.openAiRequestTimeoutMs).toBe(30000);
-  });
-
-  it('accepts the browser transaction analysis provider for local Solana checks', () => {
-    expect(loadRagConfig({ TX_ANALYSIS_PROVIDER: 'browser' }).txAnalysisProvider).toBe('browser');
-  });
-
-  it('keeps an explicit transaction analysis provider override for disabling browser checks', () => {
-    expect(loadRagConfig({ TX_ANALYSIS_PROVIDER: 'none' }).txAnalysisProvider).toBe('none');
   });
 });

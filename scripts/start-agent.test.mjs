@@ -247,8 +247,9 @@ describe('root package scripts', () => {
     expect(packageJson.scripts['api:dev']).toBe('pnpm --filter @xxyy/api start');
     expect(packageJson.scripts['web:dev']).toBe('pnpm --filter @xxyy/web dev');
     expect(packageJson.scripts['telegram:dev']).toBe('pnpm --filter @xxyy/telegram-bot start');
-    expect(packageJson.scripts['product:mcp:dev']).toBe('pnpm --filter @xxyy/product-qa-mcp start');
-    expect(packageJson.scripts['tx:mcp:dev']).toBe('pnpm --filter @xxyy/tx-analysis-mcp start');
+    expect(packageJson.scripts['product:mcp:dev']).toBeUndefined();
+    expect(packageJson.scripts['tx:mcp:dev']).toBeUndefined();
+    expect(packageJson.scripts['tx:mcp:smoke']).toBeUndefined();
     expect(packageJson.scripts.start).toBeUndefined();
     expect(packageJson.scripts.dev).toBeUndefined();
     expect(packageJson.scripts.sync).toBeUndefined();

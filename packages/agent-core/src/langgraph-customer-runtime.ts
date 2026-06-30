@@ -1,13 +1,7 @@
 import { END, START, StateGraph } from '@langchain/langgraph';
 
 import type { AgentRoute, ChatRequest, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
-import {
-  createTxAnalysisAnswer,
-  createTxAnalysisUnavailableAnswer,
-  LlmConfigurationError,
-  type AnalyzeTransactionOutput,
-  VectorStoreConfigurationError,
-} from '@xxyy/rag-core';
+import { LlmConfigurationError, VectorStoreConfigurationError } from '@xxyy/rag-core';
 
 import {
   AGENT_MAX_STEPS_DEFAULT,
@@ -27,6 +21,9 @@ import {
   type PlannerToolDescriptor,
 } from './planner-model.js';
 import type { ToolContext, ToolRegistry } from './tool-registry.js';
+
+const KNOWLEDGE_ONLY_CLARIFICATION =
+  '当前只支持基于 XXYY 知识库回答产品功能、配置步骤、权益说明和官方更新相关问题。请补充一个具体的 XXYY 产品问题。';
 
 export interface CustomerAgentRuntime {
   ask(request: ChatRequest): Promise<ChatResponse>;
@@ -125,9 +122,7 @@ async function plannerNode(
       }
       return {
         errors: [...planningErrors, `Planner retry failed: ${errorMessageFrom(retryError)}`],
-        finalResponse: createClarificationResponse(
-          '当前自动规划暂时不可用，无法可靠选择处理路径。请补充具体功能、配置步骤或单笔公开交易哈希后重试。',
-        ),
+        finalResponse: createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION),
         route: 'clarify',
       };
     }
@@ -161,9 +156,7 @@ async function toolExecutorNode(
   if (!isAllowedAgentToolName(plan.toolName)) {
     return {
       errors: [`Unauthorized tool requested: ${String(plan.toolName)}`],
-      finalResponse: createClarificationResponse(
-        '当前请求无法用已授权工具可靠处理，请补充 XXYY 产品功能、配置步骤或单笔公开交易哈希。',
-      ),
+      finalResponse: createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION),
       route: 'clarify',
     };
   }
@@ -232,9 +225,7 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
     if (!isFinalPlannerRoute(state.plan.route)) {
       return {
         errors: [`Invalid final planner route: ${String(state.plan.route)}`],
-        finalResponse: createClarificationResponse(
-          '当前自动规划返回了不安全的最终路线，无法可靠回答。请补充具体功能、配置步骤或单笔公开交易哈希后重试。',
-        ),
+        finalResponse: createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION),
         route: 'clarify',
       };
     }
@@ -245,9 +236,7 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
   }
 
   return {
-    finalResponse: createClarificationResponse(
-      '当前没有足够证据生成可靠回答。请补充具体功能、配置步骤或单笔公开交易哈希。',
-    ),
+    finalResponse: createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION),
   };
 }
 
@@ -271,14 +260,6 @@ function summarizeState(state: LangGraphAgentState): string {
 }
 
 function evidenceFromToolOutput(toolName: string, output: unknown): AgentEvidence {
-  if (toolName === 'analyze_transaction') {
-    return {
-      kind: 'tx_analysis',
-      output,
-      toolName,
-    };
-  }
-
   return {
     kind: 'chat_response',
     response: output as ChatResponse,
@@ -287,47 +268,16 @@ function evidenceFromToolOutput(toolName: string, output: unknown): AgentEvidenc
 }
 
 function responseFromEvidence(evidence: AgentEvidence): ChatResponse {
-  if (evidence.kind === 'chat_response') {
-    return withAgentRoute(evidence.response, routeForToolName(evidence.toolName));
-  }
-
-  const output = evidence.output as AnalyzeTransactionOutput;
-  const response =
-    output.status === 'success'
-      ? createTxAnalysisAnswer(output.result)
-      : createTxAnalysisUnavailableAnswer(output.failure.reason, {
-          ...(output.failure.metadata === undefined ? {} : { metadata: output.failure.metadata }),
-          ...(output.failure.reportUrl === undefined
-            ? {}
-            : { reportUrl: output.failure.reportUrl }),
-        });
-
-  return withAgentRoute(response, 'transaction_analysis');
+  return withAgentRoute(evidence.response, routeForToolName(evidence.toolName));
 }
 
-function routeForToolName(toolName: string): AgentRoute {
-  if (toolName === 'analyze_transaction') {
-    return 'transaction_analysis';
-  }
-  if (toolName === 'boundary_reply') {
-    return 'boundary';
-  }
-  if (toolName === 'clarify_request') {
-    return 'clarify';
-  }
+function routeForToolName(_toolName: string): AgentRoute {
   return 'product_answer';
 }
 
 function toolFailureResponse(toolName: string): ChatResponse {
-  if (toolName === 'analyze_transaction') {
-    return withAgentRoute(
-      createTxAnalysisUnavailableAnswer('provider_unavailable'),
-      'transaction_analysis',
-    );
-  }
-
   return createClarificationResponse(
-    '当前工具暂时不可用，无法可靠处理这个请求。请补充具体功能、配置步骤或单笔公开交易哈希后重试。',
+    `当前 ${toolName} 工具暂时不可用，无法可靠处理这个请求。请补充一个具体的 XXYY 产品问题后重试。`,
   );
 }
 

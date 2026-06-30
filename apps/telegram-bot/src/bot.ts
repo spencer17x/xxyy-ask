@@ -2,12 +2,10 @@ import type { ChatRequest, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import type { ChatService } from '@xxyy/rag-core';
 
 export interface TelegramBotConfig {
-  allowedChatIds?: Set<number>;
   botToken: string;
   pollErrorRetryMs: number;
   pollTimeoutSeconds: number;
   publicBaseUrl?: string;
-  supportUserIds?: Set<number>;
   updatesLimit: number;
 }
 
@@ -89,12 +87,10 @@ export interface TelegramBotLogger {
 export type TelegramBotEnv = Record<string, string | undefined> &
   Partial<
     Record<
-      | 'TELEGRAM_ALLOWED_CHAT_IDS'
       | 'TELEGRAM_BOT_TOKEN'
       | 'TELEGRAM_POLL_ERROR_RETRY_MS'
       | 'TELEGRAM_POLL_TIMEOUT_SECONDS'
       | 'TELEGRAM_PUBLIC_BASE_URL'
-      | 'TELEGRAM_SUPPORT_USER_IDS'
       | 'TELEGRAM_UPDATES_LIMIT',
       string
     >
@@ -114,12 +110,11 @@ const TELEGRAM_DRAFT_UPDATE_MIN_CHARS = 80;
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const TELEGRAM_TYPING_REFRESH_MS = 4000;
 const HELP_TEXT = [
-  '我是 XXYY 客服 Bot，可以回答产品使用问题，也可以检查公开交易链接是否被夹。',
+  '我是 XXYY 客服 Bot，可以回答产品功能、配置步骤、权益说明和官方更新相关问题。',
   '',
-  '直接发送问题或 Solscan / EVM explorer 交易链接即可。',
+  '直接发送具体的 XXYY 产品问题即可。',
 ].join('\n');
-const UNAUTHORIZED_TEXT = '当前 Telegram chat 未授权使用这个 XXYY 客服 Bot。';
-const UNSUPPORTED_MESSAGE_TEXT = '目前只支持文本消息，请直接发送问题或交易链接。';
+const UNSUPPORTED_MESSAGE_TEXT = '目前只支持文本消息，请直接发送具体的 XXYY 产品问题。';
 
 export function loadTelegramBotConfig(env: TelegramBotEnv): TelegramBotConfig {
   const botToken = env.TELEGRAM_BOT_TOKEN?.trim();
@@ -129,11 +124,7 @@ export function loadTelegramBotConfig(env: TelegramBotEnv): TelegramBotConfig {
 
   const publicBaseUrl = normalizeOptionalString(env.TELEGRAM_PUBLIC_BASE_URL);
 
-  const allowedChatIds = parseIntegerSet(env.TELEGRAM_ALLOWED_CHAT_IDS);
-  const supportUserIds = parseIntegerSet(env.TELEGRAM_SUPPORT_USER_IDS);
-
   return {
-    ...(allowedChatIds === undefined ? {} : { allowedChatIds }),
     botToken,
     pollErrorRetryMs: parsePositiveInteger(
       env.TELEGRAM_POLL_ERROR_RETRY_MS,
@@ -144,7 +135,6 @@ export function loadTelegramBotConfig(env: TelegramBotEnv): TelegramBotConfig {
       DEFAULT_POLL_TIMEOUT_SECONDS,
     ),
     ...(publicBaseUrl === undefined ? {} : { publicBaseUrl }),
-    ...(supportUserIds === undefined ? {} : { supportUserIds }),
     updatesLimit: parsePositiveInteger(env.TELEGRAM_UPDATES_LIMIT, DEFAULT_UPDATES_LIMIT),
   };
 }
@@ -159,15 +149,6 @@ export function createTelegramBot(options: CreateTelegramBotOptions): TelegramBo
     }
 
     const chatId = message.chat.id;
-    if (!isAllowedMessage(message, options.config)) {
-      await options.api.sendMessage({
-        chatId,
-        replyToMessageId: message.message_id,
-        text: UNAUTHORIZED_TEXT,
-      });
-      return;
-    }
-
     const text = message.text?.trim();
     if (text === undefined || text.length === 0) {
       await options.api.sendMessage({
@@ -491,16 +472,6 @@ export function splitTelegramMessage(text: string, limit = TELEGRAM_MESSAGE_LIMI
   return chunks;
 }
 
-function isAllowedMessage(message: TelegramMessage, config: TelegramBotConfig): boolean {
-  if (config.allowedChatIds === undefined || config.allowedChatIds.size === 0) {
-    return true;
-  }
-  if (config.allowedChatIds.has(message.chat.id)) {
-    return true;
-  }
-  return message.from?.id !== undefined && config.supportUserIds?.has(message.from.id) === true;
-}
-
 function isHelpCommand(text: string): boolean {
   const command = text.split(/\s+/u)[0]?.toLowerCase();
   return command === '/start' || command === '/help';
@@ -514,19 +485,6 @@ function attachmentFallbackLines(
     const url = resolveTelegramAttachmentUrl(attachment.url, publicBaseUrl);
     return url === undefined ? [`附件：${attachment.title} ${attachment.url}`] : [];
   });
-}
-
-function parseIntegerSet(value: string | undefined): Set<number> | undefined {
-  const normalized = normalizeOptionalString(value);
-  if (normalized === undefined) {
-    return undefined;
-  }
-
-  const items = normalized
-    .split(',')
-    .map((item) => Number.parseInt(item.trim(), 10))
-    .filter(Number.isFinite);
-  return new Set(items);
 }
 
 function parsePositiveInteger(value: string | undefined, fallback: number): number {

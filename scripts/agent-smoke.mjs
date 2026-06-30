@@ -33,18 +33,6 @@ export async function runAgentSmoke(options = {}) {
       requireAnswer: true,
     });
 
-    const txHash = env.API_SMOKE_TX_HASH?.trim();
-    if (txHash !== undefined && txHash.length > 0) {
-      await expectChatRoute({
-        baseUrl,
-        expectedAgentRoute: 'transaction_analysis',
-        fetchFn,
-        label: 'transaction analysis',
-        message: txHash,
-        requireAnswer: true,
-      });
-    }
-
     log('agent smoke passed');
     return 0;
   } catch (error) {

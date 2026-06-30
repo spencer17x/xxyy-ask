@@ -1,7 +1,6 @@
 import type { z } from 'zod';
 
 export interface ToolPolicy {
-  allowExternalMcp: boolean;
   requiresOpsAuth: boolean;
 }
 
@@ -28,10 +27,6 @@ export interface ToolDefinition<
   ) => z.input<OutputSchema> | Promise<z.input<OutputSchema>>;
 }
 
-export interface ListToolsOptions {
-  externalMcpOnly?: boolean;
-}
-
 type RegisteredToolDefinition = Omit<ToolDefinition, 'execute'> & {
   execute: (input: unknown, context: ToolContext) => unknown;
 };
@@ -53,7 +48,7 @@ export class ToolRegistryToolNotFoundError extends Error {
 export interface ToolRegistry {
   execute(name: string, input: unknown, context?: ToolContext): Promise<z.output<z.ZodType>>;
   get(name: string): ToolDefinition | undefined;
-  list(options?: ListToolsOptions): ToolDefinition[];
+  list(): ToolDefinition[];
   register<Name extends string, InputSchema extends z.ZodType, OutputSchema extends z.ZodType>(
     definition: ToolDefinition<Name, InputSchema, OutputSchema>,
   ): void;
@@ -78,13 +73,8 @@ export function createToolRegistry(): ToolRegistry {
       return tools.get(name);
     },
 
-    list(options) {
-      const definitions = Array.from(tools.values());
-      if (options?.externalMcpOnly !== true) {
-        return definitions;
-      }
-
-      return definitions.filter((definition) => definition.policy.allowExternalMcp);
+    list() {
+      return Array.from(tools.values());
     },
 
     register(definition) {

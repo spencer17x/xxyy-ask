@@ -12,7 +12,6 @@ import { EmbeddingConfigurationError } from '@xxyy/knowledge';
 import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import {
   LlmConfigurationError,
-  type TxAnalysisProvider,
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
@@ -99,34 +98,6 @@ function createRuntimeConfigForTest(): Record<string, unknown> {
     openAiModel: 'test-model',
     openAiRequestTimeoutMs: 30000,
     topK: 6,
-    txAnalysisBrowserHeadless: true,
-    txAnalysisBrowserMaxConcurrency: 1,
-    txAnalysisBrowserMaxRetries: 1,
-    txAnalysisBrowserTimeoutMs: 60000,
-    txAnalysisProvider: 'none',
-    txAnalysisReportStore: 'file',
-    txAnalysisReviewer: 'none',
-    txAnalysisScreenshotBaseUrl: '/assets',
-  };
-}
-
-function createCapturingTxAnalysisProvider(calls: unknown[]): TxAnalysisProvider {
-  return {
-    analyze(reference) {
-      calls.push(reference);
-      return Promise.resolve({
-        analyzedAt: '2026-06-24T00:00:00.000Z',
-        chain: reference.chain,
-        confidence: 0.82,
-        dataSource: 'browser',
-        evidence: [],
-        relatedTransactions: [],
-        screenshotUrl: '/assets/tx-analysis-base-window.png',
-        summary: '未发现明确被夹迹象。',
-        txHash: reference.txHash,
-        verdict: 'not_sandwiched',
-      });
-    },
   };
 }
 
@@ -329,23 +300,6 @@ describe('createRequestHandler', () => {
     );
   });
 
-  it('reports unsupported transaction analysis provider configuration', async () => {
-    const handler = createRequestHandler({ env: { TX_ANALYSIS_PROVIDER: 'future-provider' } });
-
-    const response = await callHandler(handler, { method: 'GET', url: '/health/deep' });
-    const payload = JSON.parse(response.body) as {
-      checks: {
-        config: { message: string; status: string };
-      };
-    };
-
-    expect(response.statusCode).toBe(503);
-    expect(payload.checks.config).toMatchObject({
-      message: 'Unsupported TX_ANALYSIS_PROVIDER: future-provider',
-      status: 'error',
-    });
-  });
-
   it('handles allowed CORS preflight requests for chat APIs', async () => {
     const handler = createRequestHandler({
       env: {
@@ -498,524 +452,13 @@ describe('createRequestHandler', () => {
     });
   });
 
-  it('handles direct transaction analysis requests with the chat response contract', async () => {
-    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be used for direct transaction analysis');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider(calls),
-    });
-
-    const response = await callHandler(handler, {
-      body: {
-        chain: 'base',
-        txHash,
-      },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(200);
-    const responseBody = JSON.parse(response.body) as ChatResponse;
-    expect(responseBody.answer).toContain('未发现明确被夹迹象');
-    expect(responseBody.attachments?.[0]).toMatchObject({
-      kind: 'image',
-      title: '交易分析截图',
-      url: '/assets/tx-analysis-base-window.png',
-    });
-    expect(responseBody.intent).toBe('tx_sandwich_detection');
-    expect(calls).toEqual([
-      {
-        chain: 'base',
-        txHash,
-      },
-    ]);
-  });
-
-  it('normalizes direct transaction analysis chain aliases before calling the provider', async () => {
-    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be used for direct transaction analysis');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider(calls),
-    });
-
-    for (const chain of [
-      'Base',
-      'Base Mainnet',
-      'ETH',
-      'Ethereum Mainnet',
-      '以太链',
-      'BNB Smart Chain',
-      'BNB Smart Chain Mainnet',
-      'BNB SmartChain',
-      'BNB SmartChain Mainnet',
-      'BNBChain',
-      'BNBSmartChain',
-      'Binance SmartChain',
-      'BinanceSmartChain',
-      '币安',
-    ]) {
-      const response = await callHandler(handler, {
-        body: { chain, txHash },
-        method: 'POST',
-        url: '/api/tx-analysis',
-      });
-
-      expect(response.statusCode).toBe(200);
-    }
-
-    expect(calls).toEqual([
-      { chain: 'base', txHash },
-      { chain: 'base', txHash },
-      { chain: 'ethereum', txHash },
-      { chain: 'ethereum', txHash },
-      { chain: 'ethereum', txHash },
-      { chain: 'bsc', txHash },
-      { chain: 'bsc', txHash },
-      { chain: 'bsc', txHash },
-      { chain: 'bsc', txHash },
-      { chain: 'bsc', txHash },
-      { chain: 'bsc', txHash },
-      { chain: 'bsc', txHash },
-      { chain: 'bsc', txHash },
-      { chain: 'bsc', txHash },
-    ]);
-  });
-
-  it('normalizes direct Solana transaction analysis chain aliases before calling the provider', async () => {
-    const txHash =
-      '5uTPyzPctFriE2wPTpvvvduS451Dd32zDr6RrEheuYHYh1M4SptKd7jqcVoHBjPX3CkvHPxj7ecTNjVMYfQBZ4MH';
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be used for direct transaction analysis');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider(calls),
-    });
-
-    for (const chain of ['SOL', 'SOL chain', 'SOL mainnet']) {
-      const response = await callHandler(handler, {
-        body: { chain, txHash },
-        method: 'POST',
-        url: '/api/tx-analysis',
-      });
-
-      expect(response.statusCode).toBe(200);
-    }
-
-    expect(calls).toEqual([
-      { chain: 'solana', txHash },
-      { chain: 'solana', txHash },
-      { chain: 'solana', txHash },
-    ]);
-  });
-
-  it('normalizes supported explorer links before calling the provider', async () => {
-    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be used for direct transaction analysis');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider(calls),
-    });
-
-    const response = await callHandler(handler, {
-      body: { txHash: `https://basescan.org/tx/${txHash.toUpperCase()}` },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(calls).toEqual([
-      {
-        chain: 'base',
-        txHash: txHash.toUpperCase(),
-      },
-    ]);
-  });
-
-  it('uses explorer links to infer the chain when direct transaction analysis chain is unknown', async () => {
-    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be used for direct transaction analysis');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider(calls),
-    });
-
-    const response = await callHandler(handler, {
-      body: { chain: 'unknown', txHash: `https://basescan.org/tx/${txHash}` },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(calls).toEqual([
-      {
-        chain: 'base',
-        txHash,
-      },
-    ]);
-  });
-
-  it('rejects direct transaction analysis requests without a transaction hash', async () => {
-    const handler = createRequestHandler({
-      getChatService: () =>
-        Promise.resolve({
-          ask() {
-            throw new Error('ask should not be called when txHash is missing');
-          },
-          stream() {
-            throw new Error('stream should not be called when txHash is missing');
-          },
-        }),
-    });
-
-    const response = await callHandler(handler, {
-      body: { chain: 'base' },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: 'bad_request',
-      message: 'txHash must be a non-empty string.',
-    });
-  });
-
-  it('keeps direct transaction analysis from treating Solana devnet explorer links as mainnet', async () => {
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be called for unsupported explorer input');
-      },
-    });
-
-    const txUrl =
-      'https://explorer.solana.com/tx/5uTPyzPctFriE2wPTpvvvduS451Dd32zDr6RrEheuYHYh1M4SptKd7jqcVoHBjPX3CkvHPxj7ecTNjVMYfQBZ4MH?cluster=devnet';
-    const response = await callHandler(handler, {
-      body: { chain: 'solana', txHash: txUrl },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    const responseBody = JSON.parse(response.body) as ChatResponse;
-
-    expect(response.statusCode).toBe(200);
-    expect(responseBody.intent).toBe('tx_sandwich_detection');
-    expect(responseBody.answer).toContain('其他链暂不支持');
-    expect(responseBody.answer).toContain('devnet');
-    expect(responseBody.answer).not.toContain('演示数据');
-  });
-
-  it('preserves unsupported explorer links when returning direct transaction analysis failures', async () => {
-    const txUrl =
-      'https://explorer.solana.com/tx/5uTPyzPctFriE2wPTpvvvduS451Dd32zDr6RrEheuYHYh1M4SptKd7jqcVoHBjPX3CkvHPxj7ecTNjVMYfQBZ4MH?cluster=devnet';
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be called for unsupported explorer input');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider(calls),
-    });
-
-    const response = await callHandler(handler, {
-      body: { chain: 'solana', txHash: txUrl },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(200);
-    const responseBody = JSON.parse(response.body) as ChatResponse;
-    expect(responseBody.answer).toContain('其他链暂不支持');
-    expect(responseBody.answer).toContain('devnet');
-    expect(calls).toEqual([]);
-  });
-
-  it('preserves unsupported EVM explorer links when a supported direct chain is also provided', async () => {
-    const txUrl =
-      'https://polygonscan.com/tx/0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be called for unsupported explorer input');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider(calls),
-    });
-
-    const response = await callHandler(handler, {
-      body: { chain: 'base', txHash: txUrl },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(200);
-    const responseBody = JSON.parse(response.body) as ChatResponse;
-    expect(responseBody.answer).toContain('其他链暂不支持');
-    expect(responseBody.answer).toContain('polygonscan.com');
-    expect(calls).toEqual([]);
-  });
-
-  it('preserves unsupported chain text when returning direct transaction analysis failures', async () => {
-    const txHash = 'Polygon 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be called for unsupported chain input');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider(calls),
-    });
-
-    const response = await callHandler(handler, {
-      body: { txHash },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(200);
-    const responseBody = JSON.parse(response.body) as ChatResponse;
-    expect(responseBody.answer).toContain('其他链暂不支持');
-    expect(responseBody.answer).toContain('polygon');
-    expect(calls).toEqual([]);
-  });
-
-  it('preserves unsupported chain text when a supported direct chain is also provided', async () => {
-    const txHash = 'Polygon 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be called for unsupported chain input');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider(calls),
-    });
-
-    const response = await callHandler(handler, {
-      body: { chain: 'base', txHash },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(200);
-    const responseBody = JSON.parse(response.body) as ChatResponse;
-    expect(responseBody.answer).toContain('其他链暂不支持');
-    expect(responseBody.answer).toContain('polygon');
-    expect(calls).toEqual([]);
-  });
-
-  it('returns unsupported_chain for direct transaction analysis chain fields that are not yet supported', async () => {
-    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be called for unsupported chain input');
-      },
-    });
-
-    for (const chain of [
-      'Arbitrum One',
-      'Avalanche C-Chain',
-      'AVAX C-Chain',
-      'Base Sepolia',
-      'BSC Testnet',
-      'ETH Goerli',
-      'Ethereum Sepolia',
-      'Optimistic Ethereum',
-      'Gnosis Chain',
-      'Fantom Opera',
-      'Polygon PoS',
-      'Polygon zkEVM',
-      'Sonic',
-      'Sonic Mainnet',
-      'Berachain',
-      'Berachain Mainnet',
-      'Abstract',
-      'Abstract Mainnet',
-      'Moonriver',
-      'Moonriver Mainnet',
-      'Mode',
-      'Mode Network',
-      'Taiko',
-      'Taiko Mainnet',
-      'World Chain',
-      'World Chain Mainnet',
-      'Zora',
-      'Zora Network',
-      'Manta',
-      'Manta Pacific',
-      'X-Layer',
-      'X Layer Mainnet',
-      'Plasma',
-      'Plasma Mainnet',
-      'Mantle',
-      'Mantle Mainnet',
-      'zkSync Era',
-      'ZK-Sync Era',
-      'zkSync Era Mainnet',
-    ]) {
-      const response = await callHandler(handler, {
-        body: { chain, txHash },
-        method: 'POST',
-        url: '/api/tx-analysis',
-      });
-      const responseBody = JSON.parse(response.body) as ChatResponse;
-
-      expect(response.statusCode).toBe(200);
-      expect(responseBody.intent).toBe('tx_sandwich_detection');
-      expect(responseBody.answer).toContain('其他链暂不支持');
-      expect(responseBody.answer).not.toContain('演示数据');
-    }
-  });
-
-  it('returns unsupported_chain for direct transaction analysis chain fields that are known but not supported', async () => {
-    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () =>
-        Promise.resolve({
-          ask(request) {
-            calls.push(request);
-            return Promise.resolve({
-              answer: 'should not be called',
-              citations: [],
-              confidence: 0,
-              intent: 'tx_sandwich_detection',
-            });
-          },
-          stream() {
-            throw new Error('stream should not be used for direct transaction analysis');
-          },
-        }),
-    });
-
-    const response = await callHandler(handler, {
-      body: { chain: 'Polygon', txHash },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(200);
-    const responseBody = JSON.parse(response.body) as ChatResponse;
-    expect(responseBody.answer).toContain('暂不支持');
-    expect(calls).toEqual([]);
-  });
-
-  it('returns unsupported_chain for unsupported direct transaction analysis chain fields with invalid hashes', async () => {
-    const calls: unknown[] = [];
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be called for unsupported chain input');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider(calls),
-    });
-
-    const response = await callHandler(handler, {
-      body: { chain: 'Polygon', txHash: 'not-a-transaction' },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(200);
-    const responseBody = JSON.parse(response.body) as ChatResponse;
-    expect(responseBody.answer).toContain('其他链暂不支持');
-    expect(responseBody.answer).toContain('Polygon');
-    expect(calls).toEqual([]);
-  });
-
-  it('rejects direct transaction analysis when the requested chain conflicts with the explorer link', async () => {
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be called for conflicting chain input');
-      },
-    });
-    const txUrl =
-      'https://etherscan.io/tx/0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-
-    const response = await callHandler(handler, {
-      body: { chain: 'base', txHash: txUrl },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: 'bad_request',
-      message: 'chain does not match the transaction explorer link.',
-    });
-  });
-
-  it('rejects direct transaction analysis when Solana is requested for an EVM hash', async () => {
-    const handler = createRequestHandler({
-      getChatService: () => {
-        throw new Error('chat service should not be called for conflicting hash shape input');
-      },
-    });
-    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-
-    const response = await callHandler(handler, {
-      body: { chain: 'solana', txHash },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: 'bad_request',
-      message: 'chain does not match the transaction hash.',
-    });
-  });
-
-  it('rate limits direct transaction analysis requests by client address', async () => {
-    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-    const handler = createRequestHandler({
-      env: {
-        API_RATE_LIMIT_MAX: '1',
-        API_RATE_LIMIT_WINDOW_MS: '1000',
-      },
-      now: () => 100,
-      getChatService: () => {
-        throw new Error('chat service should not be called for direct transaction analysis');
-      },
-      txAnalysisProvider: createCapturingTxAnalysisProvider([]),
-    });
-
-    const first = await callHandler(handler, {
-      body: { txHash },
-      headers: { 'x-forwarded-for': '203.0.113.2' },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-    const second = await callHandler(handler, {
-      body: { txHash },
-      headers: { 'x-forwarded-for': '203.0.113.2' },
-      method: 'POST',
-      url: '/api/tx-analysis',
-    });
-
-    expect(first.statusCode).toBe(200);
-    expect(second.statusCode).toBe(429);
-    expect(second.headers['Retry-After']).toBe('1');
-    expect(JSON.parse(second.body)).toEqual({
-      error: 'rate_limited',
-      message: 'Too many requests. Please try again later.',
-    });
-  });
-
   it('serves product media assets for chat attachments', async () => {
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-api-assets-'));
     const assetsDir = path.join(workspaceRoot, 'docs', 'product-features', 'assets');
     await mkdir(assetsDir, { recursive: true });
     await writeFile(path.join(assetsDir, 'xxyy-add-to-home.mp4'), Buffer.from('video-bytes'));
-    await writeFile(path.join(assetsDir, 'tx-analysis-browser-window.svg'), Buffer.from('<svg />'));
-    await writeFile(
-      path.join(assetsDir, 'tx-analysis-report-solana.json'),
-      Buffer.from('{"version":1}'),
-    );
+    await writeFile(path.join(assetsDir, 'xxyy-feature-card.svg'), Buffer.from('<svg />'));
+    await writeFile(path.join(assetsDir, 'xxyy-feature.json'), Buffer.from('{"version":1}'));
     const handler = createRequestHandler({ cwd: workspaceRoot, staticAssetsDir: assetsDir });
 
     const videoResponse = await callHandler(handler, {
@@ -1029,7 +472,7 @@ describe('createRequestHandler', () => {
 
     const imageResponse = await callHandler(handler, {
       method: 'GET',
-      url: '/assets/tx-analysis-browser-window.svg',
+      url: '/assets/xxyy-feature-card.svg',
     });
 
     expect(imageResponse.statusCode).toBe(200);
@@ -1038,7 +481,7 @@ describe('createRequestHandler', () => {
 
     const reportResponse = await callHandler(handler, {
       method: 'GET',
-      url: '/assets/tx-analysis-report-solana.json',
+      url: '/assets/xxyy-feature.json',
     });
 
     expect(reportResponse.statusCode).toBe(200);
@@ -1071,45 +514,19 @@ describe('createRequestHandler', () => {
     expect(styles.headers['Content-Type']).toBe('text/css; charset=utf-8');
   });
 
-  it('serves transaction analysis assets from the configured screenshot directory', async () => {
-    const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-api-tx-assets-'));
-    const screenshotDir = path.join(workspaceRoot, 'tx-assets');
-    await mkdir(screenshotDir, { recursive: true });
-    await writeFile(
-      path.join(screenshotDir, 'tx-analysis-report-solana.json'),
-      Buffer.from('{"status":"success"}'),
-    );
-
-    const handler = createRequestHandler({
-      cwd: workspaceRoot,
-      env: {
-        TX_ANALYSIS_SCREENSHOT_DIR: screenshotDir,
-      },
-    });
-
-    const response = await callHandler(handler, {
-      method: 'GET',
-      url: '/assets/tx-analysis-report-solana.json',
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.headers['Content-Type']).toBe('application/json; charset=utf-8');
-    expect(response.rawBody).toEqual(Buffer.from('{"status":"success"}'));
-  });
-
   it('passes chat requests through ChatService', async () => {
     const chatResponse: ChatResponse = {
-      answer: '交易哈希分析截图如下。',
+      answer: '产品功能截图如下。',
       attachments: [
         {
           kind: 'image',
           mediaType: 'image/svg+xml',
-          title: '交易分析截图',
-          url: '/assets/tx-analysis-browser-window.svg',
+          title: '产品功能截图',
+          url: '/assets/xxyy-feature-card.svg',
         },
       ],
       confidence: 0.8,
-      intent: 'tx_sandwich_detection',
+      intent: 'product_qa',
       citations: [],
     };
     const handler = createRequestHandler({
@@ -1174,9 +591,7 @@ describe('createRequestHandler', () => {
       stream: vi.fn(),
     }));
     const retriever = { retrieve: vi.fn() };
-    const txAnalysisProvider = { analyze: vi.fn() };
     const createLazyRetriever = vi.fn(() => retriever);
-    const createConfiguredTxAnalysisProvider = vi.fn(() => txAnalysisProvider);
 
     vi.doMock('@xxyy/agent-core', async (importOriginal) => {
       const actual = await importOriginal<Record<string, unknown>>();
@@ -1196,7 +611,6 @@ describe('createRequestHandler', () => {
       const actual = await importOriginal<Record<string, unknown>>();
       return {
         ...actual,
-        createConfiguredTxAnalysisProvider,
         createChatService: createLegacyChatService,
         createLazyRetriever,
         loadRagConfig: vi.fn(() => createRuntimeConfigForTest()),
@@ -1234,17 +648,10 @@ describe('createRequestHandler', () => {
       if (serviceOptions === undefined) {
         throw new Error('Expected Customer Agent service options to be captured.');
       }
-      expect(Object.keys(serviceOptions).sort()).toEqual([
-        'answerProvider',
-        'config',
-        'retriever',
-        'txAnalysisProvider',
-      ]);
+      expect(Object.keys(serviceOptions).sort()).toEqual(['answerProvider', 'config', 'retriever']);
       expect(serviceOptions.retriever).toBe(retriever);
-      expect(serviceOptions.txAnalysisProvider).toBe(txAnalysisProvider);
       expect(typeof serviceOptions.answerProvider.answer).toBe('function');
       expect(createLazyRetriever).toHaveBeenCalledTimes(1);
-      expect(createConfiguredTxAnalysisProvider).toHaveBeenCalledWith(serviceOptions.config);
       expect(agentAsk).toHaveBeenCalledWith({
         channel: 'web',
         message: 'XXYY Pro 有哪些权益？',

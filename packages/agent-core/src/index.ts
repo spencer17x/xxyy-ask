@@ -54,28 +54,8 @@ export type {
   ProductToolName,
 } from './tools/product-tools.js';
 export {
-  TX_ANALYSIS_TOOL_NAMES,
-  analyzeTransactionInputSchema,
-  analyzeTransactionOutputSchema,
-  createTxAnalysisTools,
-  toRagAnalyzeTransactionInput,
-} from './tools/tx-analysis-tools.js';
-export type {
-  AnalyzeTransactionToolInput,
-  AnalyzeTransactionToolOutput,
-  CreateTxAnalysisToolsOptions,
-  TxAnalysisToolChannel,
-  TxAnalysisToolName,
-} from './tools/tx-analysis-tools.js';
-export {
   ToolRegistryDuplicateNameError,
   ToolRegistryToolNotFoundError,
   createToolRegistry,
 } from './tool-registry.js';
-export type {
-  ListToolsOptions,
-  ToolContext,
-  ToolDefinition,
-  ToolPolicy,
-  ToolRegistry,
-} from './tool-registry.js';
+export type { ToolContext, ToolDefinition, ToolPolicy, ToolRegistry } from './tool-registry.js';

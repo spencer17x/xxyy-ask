@@ -6,7 +6,6 @@ import type { ChatChannel, ChunkMetadata, IndexEntry, Intent, SourceType } from 
 
 import type { RetrieveOptions, RetrievedChunk } from './retrieve.js';
 import type { Retriever } from './retriever.js';
-import { migratePgTxAnalysisReportStore } from './tx-analysis-report-store.js';
 
 export interface PgClientLike {
   query<T>(sql: string, values?: readonly unknown[]): Promise<{ rows: T[] }>;
@@ -387,7 +386,6 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
               'product_qa',
               'how_to',
               'realtime_account_query',
-              'mev_or_chain_forensics',
               'investment_advice',
               'unknown'
             )
@@ -420,7 +418,6 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           where session_id is not null
       `,
       );
-      await migratePgTxAnalysisReportStore(options.client);
     },
 
     async recordFeedback(input: RecordFeedbackInput): Promise<void> {

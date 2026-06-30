@@ -32,21 +32,17 @@ describe('loadTelegramBotConfig', () => {
     expect(() => loadTelegramBotConfig({})).toThrow(TelegramBotConfigurationError);
   });
 
-  it('parses comma-separated allow lists and polling settings', () => {
+  it('parses polling and public URL settings', () => {
     const config = loadTelegramBotConfig({
-      TELEGRAM_ALLOWED_CHAT_IDS: '123, -456',
       TELEGRAM_BOT_TOKEN: 'bot-token',
       TELEGRAM_POLL_TIMEOUT_SECONDS: '12',
       TELEGRAM_PUBLIC_BASE_URL: 'https://ask.example.com/base/',
-      TELEGRAM_SUPPORT_USER_IDS: '7,8',
       TELEGRAM_UPDATES_LIMIT: '25',
     });
 
-    expect(config.allowedChatIds).toEqual(new Set([123, -456]));
     expect(config.botToken).toBe('bot-token');
     expect(config.pollTimeoutSeconds).toBe(12);
     expect(config.publicBaseUrl).toBe('https://ask.example.com/base/');
-    expect(config.supportUserIds).toEqual(new Set([7, 8]));
     expect(config.updatesLimit).toBe(25);
   });
 });
@@ -208,56 +204,20 @@ describe('createTelegramBot', () => {
     });
   });
 
-  it('rejects chats outside the allow list without calling chat service', async () => {
-    const ask = vi.fn(() => Promise.resolve(createResponse()));
-    const sendMessage = createSendMessageMock();
-    const bot = createTelegramBot({
-      api: {
-        getUpdates: vi.fn(),
-        sendMessage,
-        sendPhoto: vi.fn(),
-      },
-      chatService: { ask },
-      config: loadTelegramBotConfig({
-        TELEGRAM_ALLOWED_CHAT_IDS: '999',
-        TELEGRAM_BOT_TOKEN: 'bot-token',
-      }),
-    });
-
-    await bot.handleUpdate({
-      message: {
-        chat: { id: 123 },
-        from: { id: 456 },
-        message_id: 1,
-        text: '查一下交易',
-      },
-      update_id: 10,
-    });
-
-    expect(ask).not.toHaveBeenCalled();
-    const payload = sendMessage.mock.calls[0]?.[0];
-    expect(payload).toBeDefined();
-    if (payload === undefined) {
-      return;
-    }
-    expect(payload.chatId).toBe(123);
-    expect(payload.text).toContain('未授权');
-  });
-
   it('sends image attachments as Telegram photos when a public URL is available', async () => {
     const ask = vi.fn(() =>
       Promise.resolve(
         createResponse({
-          answer: '这笔交易未发现明确被夹。',
+          answer: '这个产品功能截图如下。',
           attachments: [
             {
               kind: 'image',
               mediaType: 'image/png',
-              title: '交易分析截图',
-              url: '/assets/tx-analysis/example.png',
+              title: '产品功能截图',
+              url: '/assets/xxyy-feature/example.png',
             },
           ],
-          intent: 'tx_sandwich_detection',
+          intent: 'product_qa',
         }),
       ),
     );
@@ -286,9 +246,9 @@ describe('createTelegramBot', () => {
     });
 
     expect(sendPhoto).toHaveBeenCalledWith({
-      caption: '交易分析截图',
+      caption: '产品功能截图',
       chatId: 123,
-      photo: 'https://ask.example.com/assets/tx-analysis/example.png',
+      photo: 'https://ask.example.com/assets/xxyy-feature/example.png',
       replyToMessageId: 1,
     });
   });

@@ -7,21 +7,14 @@ export type ChatChannel = (typeof supportedChannels)[number];
 export const supportedIntents = [
   'product_qa',
   'how_to',
-  'tx_sandwich_detection',
   'realtime_account_query',
-  'mev_or_chain_forensics',
   'investment_advice',
   'unknown',
 ] as const;
 
 export type Intent = (typeof supportedIntents)[number];
 
-export const supportedAgentRoutes = [
-  'boundary',
-  'clarify',
-  'product_answer',
-  'transaction_analysis',
-] as const;
+export const supportedAgentRoutes = ['boundary', 'clarify', 'product_answer'] as const;
 
 export type AgentRoute = (typeof supportedAgentRoutes)[number];
 
@@ -39,54 +32,6 @@ export interface Citation {
   file: string;
   excerpt: string;
   sourceUrl?: string;
-}
-
-export type TxAnalysisVerdict = 'sandwiched' | 'not_sandwiched' | 'inconclusive';
-
-export type TxAnalysisChain = 'solana' | 'base' | 'ethereum' | 'bsc' | 'unknown';
-
-export type TxAnalysisDataSource = 'browser';
-
-export type TxAnalysisTradeSide = 'buy' | 'sell' | 'unknown';
-
-export interface TxAnalysisRelatedTransaction {
-  role: 'front_run' | 'user' | 'back_run' | 'related';
-  hash: string;
-  summary: string;
-  side?: TxAnalysisTradeSide;
-  timestamp?: string;
-  traderAddress?: string;
-  explorerUrl?: string;
-}
-
-export interface TxAnalysisEvidence {
-  label: string;
-  detail: string;
-  severity: 'info' | 'warning' | 'critical';
-}
-
-export interface TxAnalysisResult {
-  txHash: string;
-  chain: TxAnalysisChain;
-  dataSource?: TxAnalysisDataSource;
-  analysisRuleVersion?: string;
-  contractAddress?: string;
-  poolAddress?: string;
-  routerAddress?: string;
-  explorerUrl?: string;
-  xxyyPoolUrl?: string;
-  targetTradeSide?: TxAnalysisTradeSide;
-  targetTraderAddress?: string;
-  transactionTime?: string;
-  verdict: TxAnalysisVerdict;
-  confidence: number;
-  summary: string;
-  evidence: TxAnalysisEvidence[];
-  relatedTransactions: TxAnalysisRelatedTransaction[];
-  analyzedAt: string;
-  reportUrl?: string;
-  screenshotUrl?: string;
-  screenshotTargetRowMarked?: boolean;
 }
 
 export type ChatAttachment =

@@ -6,15 +6,6 @@ import { classifyQuestion } from './classify.js';
 import { loadRagConfig, type RagConfig } from './config.js';
 import { createOpenAiAnswerProvider } from './openai-answer-provider.js';
 import { createLocalRetriever, type Retriever } from './retriever.js';
-import { createConfiguredTxAnalysisProvider } from './tx-analysis-runtime.js';
-import {
-  createTxAnalysisAnswer,
-  createTxAnalysisUnavailableAnswer,
-  TxAnalysisProviderUnavailableError,
-  TxAnalysisUnsupportedChainError,
-  type TxAnalysisProvider,
-} from './tx-analysis.js';
-import { parseTransactionReference } from './tx-hash.js';
 
 export interface ChatService {
   ask(request: ChatRequest): Promise<ChatResponse>;
@@ -25,7 +16,6 @@ export interface CreateChatServiceOptions {
   index?: RagIndex;
   retriever?: Retriever;
   answerProvider?: AnswerProvider;
-  txAnalysisProvider?: TxAnalysisProvider;
   config?: Partial<RagConfig>;
 }
 
@@ -35,16 +25,10 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
     ...options.config,
   };
   const retriever = createRetriever(options);
-  const txAnalysisProvider =
-    options.txAnalysisProvider ?? createConfiguredTxAnalysisProvider(config);
 
   return {
     async ask(request: ChatRequest): Promise<ChatResponse> {
       const classification = classifyQuestion(request.message);
-      if (classification.intent === 'tx_sandwich_detection') {
-        return answerTxAnalysis(request.message, txAnalysisProvider);
-      }
-
       if (!shouldRetrieve(classification.intent)) {
         return createBoundaryAnswer(classification);
       }
@@ -61,11 +45,6 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 
     async *stream(request: ChatRequest): AsyncIterable<ChatStreamEvent> {
       const classification = classifyQuestion(request.message);
-      if (classification.intent === 'tx_sandwich_detection') {
-        yield* streamChatResponse(await answerTxAnalysis(request.message, txAnalysisProvider));
-        return;
-      }
-
       if (!shouldRetrieve(classification.intent)) {
         yield* streamChatResponse(createBoundaryAnswer(classification));
         return;
@@ -103,55 +82,6 @@ function createRetriever(options: CreateChatServiceOptions): Retriever {
 
 function shouldRetrieve(intent: ChatResponse['intent']): boolean {
   return intent === 'product_qa' || intent === 'how_to';
-}
-
-async function answerTxAnalysis(
-  question: string,
-  provider: TxAnalysisProvider | undefined,
-): Promise<ChatResponse> {
-  const reference = parseTransactionReference(question);
-  if (reference === undefined) {
-    return createTxAnalysisUnavailableAnswer('invalid_reference');
-  }
-
-  if (
-    reference.unsupportedExplorerHost !== undefined ||
-    reference.unsupportedChainHint !== undefined
-  ) {
-    return createTxAnalysisUnavailableAnswer('unsupported_chain', {
-      metadata: {
-        ...(reference.unsupportedExplorerHost === undefined
-          ? {}
-          : { unsupportedExplorerHost: reference.unsupportedExplorerHost }),
-        ...(reference.unsupportedChainHint === undefined
-          ? {}
-          : { unsupportedChainHint: reference.unsupportedChainHint }),
-      },
-    });
-  }
-
-  if (provider === undefined) {
-    return createTxAnalysisUnavailableAnswer('not_configured');
-  }
-
-  try {
-    return createTxAnalysisAnswer(await provider.analyze(reference));
-  } catch (error) {
-    if (error instanceof TxAnalysisProviderUnavailableError) {
-      return createTxAnalysisUnavailableAnswer(error.reason, {
-        ...(error.metadata === undefined ? {} : { metadata: error.metadata }),
-        ...(error.reportUrl === undefined ? {} : { reportUrl: error.reportUrl }),
-      });
-    }
-    if (error instanceof TxAnalysisUnsupportedChainError) {
-      return createTxAnalysisUnavailableAnswer('unsupported_chain', {
-        ...(error.metadata === undefined ? {} : { metadata: error.metadata }),
-        ...(error.reportUrl === undefined ? {} : { reportUrl: error.reportUrl }),
-      });
-    }
-
-    throw error;
-  }
 }
 
 function createConfiguredAnswerProvider(config: RagConfig): AnswerProvider {

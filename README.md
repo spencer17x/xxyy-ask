@@ -1,14 +1,12 @@
 # xxyy-ask
 
-XXYY 客服 Agentic RAG 项目。当前目标是做 LangGraph 驱动的产品客服 Agent：自动同步官方 X / Twitter 和产品文档知识库，自动回答 XXYY 产品问题，并在交易哈希、未来池子查询和链上分析等特定问题上自主规划调用工具。
+XXYY 客服 Agentic RAG 项目。当前阶段暂时收敛为知识库产品问答：使用 LangGraph JS 编排客服回答，从产品文档和官方 X / Twitter 更新中检索依据，并通过 OpenAI-compatible chat completion 生成带引用回答。
 
-当前第一片能力聚焦客服自动回答：
+当前运行面只保留知识库问答：
 
-- 使用 LangGraph JS 作为客服 Agent runtime，按策略保护、规划、工具执行和回答合成组织流程。
-- 产品问题调用 Product RAG，从 `docs/product-features` 和官方 X / Twitter 更新中检索并基于引用回答。
-- 交易哈希或受支持 explorer 链接会路由到交易分析工具；默认未配置真实数据源时返回暂未启用，`browser` 使用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页。
-- 支持 Solana，并已接入 Base、Ethereum、BSC 浏览器取证初版。
-- 未来会继续在同一 Agent 工具体系中增加池子查询和链上分析工具。
+- 产品功能、配置步骤、权益说明和官方更新相关问题会走 Product RAG。
+- 交易哈希、公开 explorer 链接、池子查询、链上取证和泛 MEV 问题暂不分析，统一返回边界/澄清回复。
+- 暂不暴露 MCP server，也不保留本地 project skills。
 - 不查询用户账户、订单、钱包余额或私有交易记录，不提供投资建议。
 
 完整功能状态见 [docs/feature-status.md](docs/feature-status.md)，后续规划见 [docs/roadmap.md](docs/roadmap.md)。
@@ -17,17 +15,15 @@ XXYY 客服 Agentic RAG 项目。当前目标是做 LangGraph 驱动的产品客
 
 ```text
 apps/
-  api/        HTTP API 和 Web UI 服务入口
-  cli/        RAG ingest、X sync、migrate、stats、ask 命令
+  api/          HTTP API 和 Web UI 服务入口
+  cli/          RAG ingest、X sync、migrate、stats、ask 命令
   telegram-bot/ Telegram Bot long polling 入口
-  web/        静态聊天页面
+  web/          静态聊天页面
 packages/
-  shared/     共享类型和聊天契约
-  knowledge/  产品文档加载、Markdown chunk、tokenize、embedding provider
-  rag-core/   意图分类、检索、pgvector store、LLM 回答和交易分析
-  agent-core/ LangGraph 客服 Agent runtime、planner、tool registry、产品/交易工具
-  product-qa-mcp/   产品问答 MCP stdio server
-  tx-analysis-mcp/  交易分析 MCP stdio server
+  shared/       共享类型和聊天契约
+  knowledge/    产品文档加载、Markdown chunk、tokenize、embedding provider
+  rag-core/     意图分类、检索、pgvector store、LLM 回答和边界回复
+  agent-core/   LangGraph 客服 Agent runtime、planner、tool registry、产品问答工具
 docs/
   product-features/ 产品知识库种子文档和静态资产
 ```
@@ -68,15 +64,7 @@ API_RATE_LIMIT_WINDOW_MS=60000
 TELEGRAM_BOT_TOKEN=
 ```
 
-数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。
-
-交易分析 provider 默认启用真实 browser 数据源，不配置 `TX_ANALYSIS_*` 也会查询公开交易浏览器和 XXYY 原池子页：
-
-- 默认 `TX_ANALYSIS_PROVIDER=browser`：启动本机 Chrome 查询公开交易浏览器和 XXYY 原池子页，默认复用 `.tx-analysis-browser-profile` 保存安全验证状态。
-- 显式 `TX_ANALYSIS_PROVIDER=none`：关闭真实数据源，交易哈希问题返回暂未启用。
-- 默认 `TX_ANALYSIS_BROWSER_HEADLESS=true`；遇到公开站点安全验证时，临时设置为 `false`，在弹出的 Chrome 中完成验证后重试。
-
-交易分析相关环境变量只在需要覆盖默认行为时配置：特殊 Chrome 路径用 `TX_ANALYSIS_CHROME_EXECUTABLE_PATH`，staging/代理页面用 `TX_ANALYSIS_DISCOVER_URL`，自定义资产目录用 `TX_ANALYSIS_SCREENSHOT_DIR` / `TX_ANALYSIS_SCREENSHOT_BASE_URL`，模型复核用 `TX_ANALYSIS_REVIEWER=openai`。复核不可用、超时或返回不可解析内容时，系统保留规则化分析结果。
+数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。`.env.example` 会列出当前代码支持的环境变量。
 
 ## 启动
 
@@ -119,6 +107,7 @@ pnpm run app:dev -- --sync       # 启动前增量更新知识库
 pnpm run app:dev -- --full-sync  # 启动前全量抓取并重建知识库
 pnpm run api:dev                 # 只启动 API + Web 服务入口
 pnpm run web:dev                 # 只启动 Vite Web
+pnpm run telegram:dev            # 启动 Telegram Bot
 pnpm check                       # lint + format check + typecheck + tests
 ```
 
@@ -144,27 +133,15 @@ pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 pnpm agent:smoke
 ```
 
-默认检查 `GET /health`、产品问题路由和边界问题路由。可用 `API_SMOKE_BASE_URL` 指向已启动服务，用 `API_SMOKE_TX_HASH` 额外检查交易分析路线。
+默认检查 `GET /health`、产品问题路由和边界问题路由。
 
-MCP：
-
-```bash
-pnpm run product:mcp:dev
-pnpm run tx:mcp:dev
-pnpm tx:mcp:smoke
-```
-
-`product:mcp:dev` 暴露 `search_product_docs` 和 `answer_product_question`。`tx:mcp:dev` 暴露 `analyze_transaction`。`tx:mcp:smoke` 通过 stdio MCP client 用真实 browser provider 跑交易分析 MCP 样本，默认使用 `docs/tx-analysis-smoke-samples.example.json`，也可传 `-- --tx-samples <file>`。
-
-Telegram Bot：
+## Telegram Bot
 
 ```bash
 pnpm run telegram:dev
 ```
 
-配置 `TELEGRAM_BOT_TOKEN` 后，Bot 会通过 long polling 接收文本消息，并以 `channel: "telegram"` 调用同一套 LangGraph 客服 Agent。
-
-不常用的 Telegram 配置不放进 `.env.example`：需要把交易分析截图等 `/assets/*` 相对路径作为 Telegram photo 发送时，再额外配置 `TELEGRAM_PUBLIC_BASE_URL`；轮询超时、失败重试间隔和 updates limit 都有内置默认值，通常不用配置。
+配置 `TELEGRAM_BOT_TOKEN` 后，Bot 会通过 long polling 接收文本消息，并以 `channel: "telegram"` 调用同一套 LangGraph 客服 Agent。图片附件公网 URL、轮询超时和重试间隔都有默认处理，只有特殊部署才需要额外覆盖。
 
 ## HTTP API
 
@@ -199,40 +176,25 @@ POST /api/chat/stream
 }
 ```
 
-交易分析：
-
-```http
-POST /api/tx-analysis
-```
-
-请求示例：
-
-```json
-{
-  "txHash": "0x...",
-  "chain": "base"
-}
-```
-
 静态资产：
 
 ```http
 GET /assets/*
 ```
 
-用于返回产品文档中的视频附件、交易分析截图和本地报告文件等静态资源。
+用于返回产品文档中的视频、图片等静态资源。
 
 通过 `pnpm run app:dev` 或 `pnpm run api:dev` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、agentRoute、引用数、耗时、状态码、错误码、消息长度和脱敏截断后的消息预览等字段。日志只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文，并会脱敏密钥、交易哈希、地址、邮箱和手机号等敏感片段。
 
-API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat`、`/api/chat/stream` 和 `/api/tx-analysis` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
+API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 
 ## 边界
 
-当前 Agent 只回答 XXYY 产品支持问题和公开交易哈希分析问题。以下请求必须走边界回复：
+当前 Agent 只回答 XXYY 产品支持知识库问题。以下请求必须走边界或澄清回复：
 
 - 用户账户、订单、钱包余额、私有交易记录等实时私有数据查询。
 - 代开通、代取消、代修改等账户或订单操作。
 - 投资建议、收益承诺、买卖建议。
-- 未支持链、测试网或多笔交易混在同一问题中的交易分析请求。
+- 交易哈希、交易链接、池子查询、链上取证和泛 MEV 分析请求。
 
 对边界问题不要编造实时数据；产品问题缺少数据库、embedding 或 chat LLM 配置时应明确失败原因。

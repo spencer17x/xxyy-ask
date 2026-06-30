@@ -1,18 +1,6 @@
 export interface RagConfig {
   topK: number;
   answerProvider: string;
-  txAnalysisProvider: string;
-  txAnalysisReviewer: string;
-  txAnalysisBrowserHeadless: boolean;
-  txAnalysisDiscoverUrl: string | undefined;
-  txAnalysisBrowserMaxConcurrency: number;
-  txAnalysisBrowserMaxRetries: number;
-  txAnalysisBrowserTimeoutMs: number;
-  txAnalysisScreenshotBaseUrl: string;
-  txAnalysisBrowserUserDataDir: string | undefined;
-  txAnalysisChromeExecutablePath: string | undefined;
-  txAnalysisReportStore: string;
-  txAnalysisScreenshotDir: string | undefined;
   databaseUrl: string | undefined;
   openAiApiKey: string | undefined;
   openAiApiKeyPresent: boolean;
@@ -38,19 +26,7 @@ export type RagEnv = Partial<
     | 'POSTGRES_PORT'
     | 'POSTGRES_USER'
     | 'RAG_ANSWER_PROVIDER'
-    | 'RAG_TOP_K'
-    | 'TX_ANALYSIS_BROWSER_HEADLESS'
-    | 'TX_ANALYSIS_BROWSER_MAX_CONCURRENCY'
-    | 'TX_ANALYSIS_BROWSER_MAX_RETRIES'
-    | 'TX_ANALYSIS_BROWSER_TIMEOUT_MS'
-    | 'TX_ANALYSIS_BROWSER_USER_DATA_DIR'
-    | 'TX_ANALYSIS_CHROME_EXECUTABLE_PATH'
-    | 'TX_ANALYSIS_DISCOVER_URL'
-    | 'TX_ANALYSIS_PROVIDER'
-    | 'TX_ANALYSIS_REVIEWER'
-    | 'TX_ANALYSIS_REPORT_STORE'
-    | 'TX_ANALYSIS_SCREENSHOT_BASE_URL'
-    | 'TX_ANALYSIS_SCREENSHOT_DIR',
+    | 'RAG_TOP_K',
     string
   >
 >;
@@ -62,47 +38,11 @@ const DEFAULT_OPENAI_MAX_RETRIES = 1;
 const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_POSTGRES_HOST = 'localhost';
 const DEFAULT_POSTGRES_PORT = '5432';
-const DEFAULT_TX_ANALYSIS_PROVIDER = 'browser';
-const DEFAULT_TX_ANALYSIS_BROWSER_HEADLESS = true;
-const DEFAULT_TX_ANALYSIS_BROWSER_MAX_CONCURRENCY = 1;
-const DEFAULT_TX_ANALYSIS_BROWSER_MAX_RETRIES = 1;
-const DEFAULT_TX_ANALYSIS_BROWSER_TIMEOUT_MS = 60000;
-const DEFAULT_TX_ANALYSIS_BROWSER_USER_DATA_DIR = '.tx-analysis-browser-profile';
-const DEFAULT_TX_ANALYSIS_REPORT_STORE = 'file';
-const DEFAULT_TX_ANALYSIS_REVIEWER = 'none';
-const DEFAULT_TX_ANALYSIS_SCREENSHOT_BASE_URL = '/assets';
 
 export function loadRagConfig(env: RagEnv = process.env): RagConfig {
   const config: RagConfig = {
     topK: parseTopK(env.RAG_TOP_K),
     answerProvider: env.RAG_ANSWER_PROVIDER ?? 'openai',
-    txAnalysisProvider: parseOptionalText(env.TX_ANALYSIS_PROVIDER) ?? DEFAULT_TX_ANALYSIS_PROVIDER,
-    txAnalysisReviewer: env.TX_ANALYSIS_REVIEWER ?? DEFAULT_TX_ANALYSIS_REVIEWER,
-    txAnalysisBrowserHeadless: parseBoolean(
-      env.TX_ANALYSIS_BROWSER_HEADLESS,
-      DEFAULT_TX_ANALYSIS_BROWSER_HEADLESS,
-    ),
-    txAnalysisDiscoverUrl: parseOptionalText(env.TX_ANALYSIS_DISCOVER_URL),
-    txAnalysisBrowserMaxConcurrency: parsePositiveInteger(
-      env.TX_ANALYSIS_BROWSER_MAX_CONCURRENCY,
-      DEFAULT_TX_ANALYSIS_BROWSER_MAX_CONCURRENCY,
-    ),
-    txAnalysisBrowserMaxRetries: parseNonNegativeInteger(
-      env.TX_ANALYSIS_BROWSER_MAX_RETRIES,
-      DEFAULT_TX_ANALYSIS_BROWSER_MAX_RETRIES,
-    ),
-    txAnalysisBrowserTimeoutMs: parsePositiveInteger(
-      env.TX_ANALYSIS_BROWSER_TIMEOUT_MS,
-      DEFAULT_TX_ANALYSIS_BROWSER_TIMEOUT_MS,
-    ),
-    txAnalysisBrowserUserDataDir:
-      parseOptionalText(env.TX_ANALYSIS_BROWSER_USER_DATA_DIR) ??
-      DEFAULT_TX_ANALYSIS_BROWSER_USER_DATA_DIR,
-    txAnalysisChromeExecutablePath: parseOptionalText(env.TX_ANALYSIS_CHROME_EXECUTABLE_PATH),
-    txAnalysisReportStore: env.TX_ANALYSIS_REPORT_STORE ?? DEFAULT_TX_ANALYSIS_REPORT_STORE,
-    txAnalysisScreenshotBaseUrl:
-      env.TX_ANALYSIS_SCREENSHOT_BASE_URL ?? DEFAULT_TX_ANALYSIS_SCREENSHOT_BASE_URL,
-    txAnalysisScreenshotDir: parseOptionalText(env.TX_ANALYSIS_SCREENSHOT_DIR),
     databaseUrl: env.DATABASE_URL ?? buildPostgresUrl(env),
     openAiApiKey: env.OPENAI_API_KEY,
     openAiApiKeyPresent: Boolean(env.OPENAI_API_KEY),
@@ -172,29 +112,4 @@ function parseNonNegativeInteger(value: string | undefined, fallback: number): n
   }
 
   return parsed;
-}
-
-function parseBoolean(value: string | undefined, fallback: boolean): boolean {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
-    return true;
-  }
-  if (normalized === 'false' || normalized === '0' || normalized === 'no') {
-    return false;
-  }
-
-  return fallback;
-}
-
-function parseOptionalText(value: string | undefined): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  const normalized = value.trim();
-  return normalized.length === 0 ? undefined : normalized;
 }

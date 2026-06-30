@@ -1,11 +1,5 @@
 import type { Classification, Intent } from '@xxyy/shared';
 
-import {
-  hasAmbiguousTransactionReferences,
-  hasTransactionReferenceCandidate,
-  parseTransactionReference,
-} from './tx-hash.js';
-
 type IntentRule = {
   intent: Intent;
   confidence: number;
@@ -53,11 +47,6 @@ const productOperationPatterns = [
   /操作.*(买入|卖出|交易|挂单|swap)/u,
 ];
 
-const transactionAnalysisPatterns = [
-  /\bmev\b|\bsandwich\b|\btx\s*hash\b|\btransaction hash\b|\btransaction\b|\btx\b/u,
-  /夹子|被夹|三明治|链上取证|交易哈希|交易|检测|分析|查一下/u,
-];
-
 const rules: IntentRule[] = [
   {
     intent: 'investment_advice',
@@ -73,15 +62,6 @@ const rules: IntentRule[] = [
       /\bwhich\b.*\b(token|coin|crypto|sol|eth|btc)\b.*\b(buy|sell)\b/u,
       /\b(should|can)\b.*\b(buy|sell)\b.*\b(token|coin|crypto|sol|eth|btc)\b/u,
       /\b(buy|sell|recommend)\b.*\b(token|coin|crypto|sol|eth|btc)\b/u,
-    ],
-  },
-  {
-    intent: 'mev_or_chain_forensics',
-    confidence: 0.88,
-    reason: 'asks for MEV, sandwich, clipping, or transaction forensics',
-    patterns: [
-      /\bmev\b|\bsandwich\b|\btx\s*hash\b|\btransaction hash\b/u,
-      /夹子|被夹|三明治|链上取证|交易哈希/u,
     ],
   },
   {
@@ -139,38 +119,6 @@ export function classifyQuestion(question: string): Classification {
     );
   }
 
-  const transactionReference = parseTransactionReference(question);
-  if (
-    transactionReference !== undefined &&
-    hasTransactionAnalysisSignal(normalized, transactionReference.txHash)
-  ) {
-    return createClassification(
-      'tx_sandwich_detection',
-      0.9,
-      'asks to analyze a concrete transaction hash for sandwich or MEV signals',
-    );
-  }
-
-  if (hasAmbiguousTransactionReferences(question)) {
-    return createClassification(
-      'tx_sandwich_detection',
-      0.86,
-      'asks to analyze multiple transaction hashes and needs a single hash clarification',
-    );
-  }
-
-  if (
-    transactionReference === undefined &&
-    hasTransactionReferenceCandidate(question) &&
-    transactionAnalysisPatterns.some((pattern) => pattern.test(normalized))
-  ) {
-    return createClassification(
-      'tx_sandwich_detection',
-      0.84,
-      'asks to analyze a transaction reference but the chain hints are unclear',
-    );
-  }
-
   const realtimeRule = rules.find((rule) => rule.intent === 'realtime_account_query');
   if (realtimeRule !== undefined && matchesRule(realtimeRule, normalized)) {
     const isUserSpecific = userSpecificLookupPatterns.some((pattern) => pattern.test(normalized));
@@ -206,19 +154,6 @@ export function classifyQuestion(question: string): Classification {
 
 function matchesRule(rule: IntentRule, normalizedQuestion: string): boolean {
   return rule.patterns.some((pattern) => pattern.test(normalizedQuestion));
-}
-
-function hasTransactionAnalysisSignal(normalizedQuestion: string, txHash: string): boolean {
-  if (transactionAnalysisPatterns.some((pattern) => pattern.test(normalizedQuestion))) {
-    return true;
-  }
-
-  const normalizedHash = txHash.toLowerCase();
-  const withoutHash = normalizedQuestion
-    .replace(normalizedHash, '')
-    .replace(/[^\p{L}\p{N}]+/gu, '');
-
-  return withoutHash.length === 0;
 }
 
 function createClassification(intent: Intent, confidence: number, reason: string): Classification {

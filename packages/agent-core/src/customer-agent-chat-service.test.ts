@@ -62,7 +62,6 @@ describe('createCustomerAgentChatService', () => {
         },
       ]),
       retriever,
-      txAnalysisProvider: undefined,
     });
 
     await expect(
@@ -106,7 +105,6 @@ describe('createCustomerAgentChatService', () => {
         },
       ]),
       retriever,
-      txAnalysisProvider: undefined,
     });
 
     await expect(
@@ -162,7 +160,6 @@ describe('createCustomerAgentChatService', () => {
       qualitySignals: {},
       retriever,
       sessionContext: {},
-      txAnalysisProvider: undefined,
     });
 
     await service.ask({ channel: 'web', message: 'XXYY Pro 有哪些权益？', sessionId: 's1' });
@@ -188,7 +185,6 @@ describe('createCustomerAgentChatService', () => {
           throw new Error('retriever should not be called');
         },
       },
-      txAnalysisProvider: undefined,
     });
 
     await expect(
@@ -197,102 +193,6 @@ describe('createCustomerAgentChatService', () => {
         message: 'XXYY Pro 有哪些权益？',
       }),
     ).rejects.toBeInstanceOf(LlmConfigurationError);
-  });
-
-  it('requires LLM planner config instead of falling back to local transaction routing', async () => {
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_BASE_URL;
-    delete process.env.OPENAI_MODEL;
-
-    const txHash = `0x${'a'.repeat(64)}`;
-    const analyze = vi.fn(() =>
-      Promise.resolve({
-        analyzedAt: '2026-06-25T00:00:00.000Z',
-        chain: 'unknown' as const,
-        confidence: 0.62,
-        evidence: [],
-        relatedTransactions: [],
-        summary: '未发现明确 sandwich 模式。',
-        txHash,
-        verdict: 'not_sandwiched' as const,
-      }),
-    );
-    const service = createCustomerAgentChatService({
-      answerProvider: {
-        answer() {
-          throw new Error('answer provider should not be called');
-        },
-      },
-      retriever: {
-        retrieve() {
-          throw new Error('retriever should not be called');
-        },
-      },
-      txAnalysisProvider: {
-        analyze,
-      },
-    });
-
-    await expect(
-      service.ask({
-        channel: 'web',
-        message: `帮我分析 ${txHash} 有没有被夹`,
-      }),
-    ).rejects.toBeInstanceOf(LlmConfigurationError);
-    expect(analyze).not.toHaveBeenCalled();
-  });
-
-  it('routes planner-selected transaction references through the transaction provider', async () => {
-    const txHash = `0x${'a'.repeat(64)}`;
-    const analyze = vi.fn(() =>
-      Promise.resolve({
-        analyzedAt: '2026-06-25T00:00:00.000Z',
-        chain: 'unknown' as const,
-        confidence: 0.62,
-        evidence: [],
-        relatedTransactions: [],
-        summary: '未发现明确 sandwich 模式。',
-        txHash,
-        verdict: 'not_sandwiched' as const,
-      }),
-    );
-    const service = createCustomerAgentChatService({
-      answerProvider: {
-        answer() {
-          throw new Error('answer provider should not be called');
-        },
-      },
-      planner: createScriptedPlannerModel([
-        {
-          input: { chain: 'unknown', txHash },
-          kind: 'tool',
-          reason: 'Analyze the public transaction.',
-          route: 'transaction_analysis',
-          toolName: 'analyze_transaction',
-        },
-      ]),
-      retriever: {
-        retrieve() {
-          throw new Error('retriever should not be called');
-        },
-      },
-      txAnalysisProvider: {
-        analyze,
-      },
-    });
-
-    const response = await service.ask({
-      channel: 'web',
-      message: `帮我分析 ${txHash} 有没有被夹`,
-    });
-
-    expect(response).toMatchObject({
-      agentRoute: 'transaction_analysis',
-      confidence: 0.62,
-      intent: 'tx_sandwich_detection',
-    });
-    expect(response.answer).toContain('结论：未发现明确被夹');
-    expect(analyze).toHaveBeenCalledWith({ chain: 'unknown', txHash });
   });
 
   it('uses passed config values when creating the default planner', async () => {
@@ -343,7 +243,6 @@ describe('createCustomerAgentChatService', () => {
           throw new Error('retriever should not be called');
         },
       },
-      txAnalysisProvider: undefined,
     });
 
     await expect(
@@ -412,7 +311,6 @@ describe('createCustomerAgentChatService', () => {
       answerProvider: { answer },
       config: { topK: 1 },
       retriever: { retrieve },
-      txAnalysisProvider: undefined,
     });
 
     await expect(

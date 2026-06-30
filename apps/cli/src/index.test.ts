@@ -152,29 +152,29 @@ describe('CLI output formatting', () => {
     );
   });
 
-  it('formats image attachments for transaction analysis responses', () => {
+  it('formats image attachments for product knowledge responses', () => {
     expect(
       formatChatResponse({
-        answer: '交易哈希分析截图如下。',
+        answer: '产品功能截图如下。',
         attachments: [
           {
             kind: 'image',
             mediaType: 'image/svg+xml',
-            title: '交易分析截图',
-            url: '/assets/tx-analysis-browser-window.svg',
+            title: '产品功能截图',
+            url: '/assets/xxyy-feature-card.svg',
           },
         ],
         citations: [],
-        confidence: 0.35,
-        intent: 'tx_sandwich_detection',
+        confidence: 0.82,
+        intent: 'product_qa',
       }),
     ).toContain(
       [
         'Citations: none',
         '',
         'Attachments:',
-        '[1] 交易分析截图',
-        '    /assets/tx-analysis-browser-window.svg',
+        '[1] 产品功能截图',
+        '    /assets/xxyy-feature-card.svg',
       ].join('\n'),
     );
   });
@@ -303,12 +303,7 @@ describe('runCli', () => {
     });
     const createCustomerAgentChatService = vi.fn(
       (options: CreateCustomerAgentChatServiceOptions) => {
-        expect(Object.keys(options).sort()).toEqual([
-          'answerProvider',
-          'config',
-          'retriever',
-          'txAnalysisProvider',
-        ]);
+        expect(Object.keys(options).sort()).toEqual(['answerProvider', 'config', 'retriever']);
         return {
           ask,
           stream: vi.fn(),
@@ -334,7 +329,6 @@ describe('runCli', () => {
       const actual = await importOriginal<Record<string, unknown>>();
       return {
         ...actual,
-        createConfiguredTxAnalysisProvider: vi.fn(() => undefined),
         createLazyRetriever: vi.fn(() => ({ retrieve: vi.fn() })),
         createPgPool: vi.fn(() => ({ end: vi.fn() })),
         createPgVectorStore: vi.fn(() => ({ retrieve: vi.fn() })),
@@ -349,9 +343,6 @@ describe('runCli', () => {
           openAiModel: 'gpt-test',
           openAiRequestTimeoutMs: 30000,
           topK: 6,
-          txAnalysisProvider: 'none',
-          txAnalysisReportStore: 'file',
-          txAnalysisReviewer: 'none',
         })),
       };
     });

@@ -23,10 +23,10 @@ describe('classifyQuestion', () => {
     ['持仓管理能隐藏小额代币吗？', 'product_qa'],
     ['收益统计展示哪些交易信息？', 'product_qa'],
     ['帮我查一下钱包余额和账户交易记录', 'realtime_account_query'],
-    ['这个 tx hash 是不是被夹了，有 MEV sandwich 吗？', 'mev_or_chain_forensics'],
+    ['这个 tx hash 是不是被夹了，有 MEV sandwich 吗？', 'unknown'],
     [
       '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 这个交易是不是被夹了？',
-      'tx_sandwich_detection',
+      'unknown',
     ],
     ['现在可以买 SOL 吗，推荐一个能保证盈利的 token', 'investment_advice'],
     ['嗯？', 'unknown'],
@@ -66,28 +66,28 @@ describe('classifyQuestion', () => {
     expect(classifyQuestion('如何开通 XXYY Pro？').intent).toBe('how_to');
   });
 
-  it('prefers concrete transaction hash analysis over realtime transaction lookup wording', () => {
+  it('keeps concrete transaction hash analysis outside the current knowledge-base route', () => {
     expect(
       classifyQuestion(
         '帮我查一下这笔交易 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 是否被夹',
       ).intent,
-    ).toBe('tx_sandwich_detection');
+    ).toBe('unknown');
     expect(
       classifyQuestion(
         'lookup this transaction 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef sandwich?',
       ).intent,
-    ).toBe('tx_sandwich_detection');
+    ).toBe('realtime_account_query');
   });
 
-  it('prefers MEV forensics over generic transaction lookup when sandwich wording is present', () => {
-    expect(classifyQuestion('我的交易是不是被夹子夹了？').intent).toBe('mev_or_chain_forensics');
+  it('keeps MEV and sandwich checks outside the current knowledge-base route', () => {
+    expect(classifyQuestion('我的交易是不是被夹子夹了？').intent).toBe('unknown');
   });
 
-  it('keeps generic MEV questions on the boundary intent without a transaction hash', () => {
-    expect(classifyQuestion('什么是 MEV sandwich？').intent).toBe('mev_or_chain_forensics');
+  it('keeps generic MEV questions unknown without a product knowledge signal', () => {
+    expect(classifyQuestion('什么是 MEV sandwich？').intent).toBe('unknown');
   });
 
-  it('routes ambiguous multi-hash sandwich checks to transaction analysis for a clear correction prompt', () => {
+  it('keeps ambiguous multi-hash sandwich checks outside the current knowledge-base route', () => {
     expect(
       classifyQuestion(
         [
@@ -96,7 +96,7 @@ describe('classifyQuestion', () => {
           '0x2234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
         ].join(' '),
       ).intent,
-    ).toBe('tx_sandwich_detection');
+    ).toBe('unknown');
     expect(
       classifyQuestion(
         [
@@ -104,10 +104,10 @@ describe('classifyQuestion', () => {
           '0x2234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
         ].join(' '),
       ).intent,
-    ).toBe('tx_sandwich_detection');
+    ).toBe('unknown');
   });
 
-  it('keeps investment advice higher priority than transaction analysis', () => {
+  it('keeps investment advice higher priority than transaction wording', () => {
     expect(
       classifyQuestion(
         '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef 可以买 SOL 保证盈利吗？',

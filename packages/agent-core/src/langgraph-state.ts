@@ -4,12 +4,7 @@ import type { AgentRoute, ChatRequest, ChatResponse } from '@xxyy/shared';
 
 export const AGENT_MAX_STEPS_DEFAULT = 4;
 
-export const ALLOWED_AGENT_TOOL_NAMES = [
-  'answer_product_question',
-  'analyze_transaction',
-  'boundary_reply',
-  'clarify_request',
-] as const;
+export const ALLOWED_AGENT_TOOL_NAMES = ['answer_product_question'] as const;
 
 export type AllowedAgentToolName = (typeof ALLOWED_AGENT_TOOL_NAMES)[number];
 
@@ -18,12 +13,7 @@ export type AgentMessage = {
   content: string;
 };
 
-export type PlannerRoute =
-  | 'boundary'
-  | 'clarify'
-  | 'product_answer'
-  | 'transaction_analysis'
-  | 'unsupported';
+export type PlannerRoute = 'boundary' | 'clarify' | 'product_answer' | 'unsupported';
 
 export type FinalPlannerRoute = 'boundary' | 'clarify' | 'unsupported';
 
@@ -54,17 +44,11 @@ export type AgentToolResultRecord = {
   toolName: string;
 };
 
-export type AgentEvidence =
-  | {
-      kind: 'chat_response';
-      response: ChatResponse;
-      toolName: string;
-    }
-  | {
-      kind: 'tx_analysis';
-      output: unknown;
-      toolName: string;
-    };
+export type AgentEvidence = {
+  kind: 'chat_response';
+  response: ChatResponse;
+  toolName: string;
+};
 
 export type AgentPolicyDecision =
   | {

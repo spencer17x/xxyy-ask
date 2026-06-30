@@ -31,18 +31,17 @@ describe('langgraph agent state helpers', () => {
     });
   });
 
-  it('allows only first-slice customer support tools', () => {
+  it('allows only knowledge-base customer support tools', () => {
     expect(isAllowedAgentToolName('answer_product_question')).toBe(true);
-    expect(isAllowedAgentToolName('analyze_transaction')).toBe(true);
-    expect(isAllowedAgentToolName('boundary_reply')).toBe(true);
-    expect(isAllowedAgentToolName('clarify_request')).toBe(true);
+    expect(isAllowedAgentToolName('unsupported_tool')).toBe(false);
+    expect(isAllowedAgentToolName('boundary_reply')).toBe(false);
+    expect(isAllowedAgentToolName('clarify_request')).toBe(false);
     expect(isAllowedAgentToolName('list_analysis_reports')).toBe(false);
     expect(isAllowedAgentToolName('sync_telegram_support')).toBe(false);
   });
 
   it('normalizes planner routes into shared agent routes', () => {
     expect(normalizeAgentRoute('product_answer')).toBe('product_answer');
-    expect(normalizeAgentRoute('transaction_analysis')).toBe('transaction_analysis');
     expect(normalizeAgentRoute('boundary')).toBe('boundary');
     expect(normalizeAgentRoute('clarify')).toBe('clarify');
     expect(normalizeAgentRoute('unsupported')).toBe('clarify');

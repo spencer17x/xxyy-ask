@@ -83,7 +83,6 @@ describe('createGroundedAnswer', () => {
 
   it.each([
     ['realtime_account_query', '我不能直接查询你的钱包余额、订单、账户或交易记录'],
-    ['mev_or_chain_forensics', '我不能仅凭当前问题判断某笔交易是否被夹或存在 MEV'],
     ['investment_advice', '我不能提供买卖建议、喊单或收益承诺'],
     ['unknown', '我还不确定你想咨询的具体问题'],
   ] as const)(

@@ -7,39 +7,20 @@ import path from 'node:path';
 import { createCustomerAgentChatService } from '@xxyy/agent-core';
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
-  analyzeTransaction,
-  createConfiguredTxAnalysisProvider,
   createOpenAiAnswerProvider,
-  createTxAnalysisAnswer,
-  createTxAnalysisUnavailableAnswer,
   createLazyRetriever,
   createPgPool,
   createPgVectorStore,
   LlmConfigurationError,
   loadRagConfig,
   loadWorkspaceEnv,
-  parseOptionalTxAnalysisChainInput,
-  parseTransactionReference,
   resolveWorkspaceCwd,
-  TX_ANALYSIS_CHAIN_ERROR,
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
-import type {
-  ChatRequest,
-  ChatChannel,
-  ChatResponse,
-  ChatStreamEvent,
-  TxAnalysisChain,
-} from '@xxyy/shared';
+import type { ChatRequest, ChatChannel, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import { supportedChannels } from '@xxyy/shared';
-import type {
-  AnalyzeTransactionOutput,
-  AnswerProvider,
-  ChatService,
-  RagEnv,
-  TxAnalysisProvider,
-} from '@xxyy/rag-core';
+import type { AnswerProvider, ChatService, RagEnv } from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
 
 type ApiEnv = RagEnv &
@@ -83,7 +64,6 @@ export interface CreateRequestHandlerOptions {
   now?: () => number;
   renderHtml?: () => string;
   staticAssetsDir?: string;
-  txAnalysisProvider?: TxAnalysisProvider;
   webAssetsDir?: string;
 }
 
@@ -106,20 +86,6 @@ interface ChatPayload {
   channel?: ChatChannel;
   sessionId?: string;
   userId?: string;
-}
-
-interface TxAnalysisPayload {
-  txHash: string;
-  chain?: TxAnalysisChain;
-  channel?: ChatChannel;
-  sessionId?: string;
-  unsupportedChainText?: string;
-  userId?: string;
-}
-
-interface ParsedTxAnalysisPayloadChain {
-  chain?: TxAnalysisChain;
-  unsupportedChainText?: string;
 }
 
 export interface ApiLogEntry {
@@ -174,10 +140,6 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const now = options.now ?? Date.now;
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
   const webAssetsDir = options.webAssetsDir ?? createDefaultWebAssetsDir(options, env);
-  const getTxAnalysisProvider =
-    options.txAnalysisProvider === undefined
-      ? createCachedTxAnalysisProviderLoader(config)
-      : () => options.txAnalysisProvider;
   const rateLimiter = createRateLimiter(apiConfig, Date.now);
 
   return async function handleRequest(request, response): Promise<void> {
@@ -252,16 +214,6 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
         return;
       }
 
-      if (request.method === 'POST' && requestUrl.pathname === '/api/tx-analysis') {
-        await handleTxAnalysisRequest({
-          maxBodyBytes: apiConfig.maxBodyBytes,
-          request,
-          response,
-          txAnalysisProvider: getTxAnalysisProvider(),
-        });
-        return;
-      }
-
       sendJson(response, 404, { error: 'not_found', message: 'Route not found.' });
     } catch (error) {
       const apiError = createApiErrorResponse(error);
@@ -325,45 +277,6 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
     );
     throw error;
   }
-}
-
-async function handleTxAnalysisRequest(options: {
-  maxBodyBytes: number;
-  request: ApiRequestLike;
-  response: ApiResponseLike;
-  txAnalysisProvider: TxAnalysisProvider | undefined;
-}): Promise<void> {
-  const payload = parseTxAnalysisPayload(await readJsonBody(options.request, options.maxBodyBytes));
-  if (payload.unsupportedChainText !== undefined) {
-    sendJson(
-      options.response,
-      200,
-      createTxAnalysisUnavailableAnswer('unsupported_chain', {
-        metadata: { unsupportedChainHint: payload.unsupportedChainText },
-      }),
-    );
-    return;
-  }
-
-  const output = await analyzeTransaction({
-    input: {
-      ...(payload.chain === undefined ? {} : { chain: payload.chain }),
-      txHash: payload.txHash,
-    },
-    provider: options.txAnalysisProvider,
-  });
-  sendJson(options.response, 200, chatResponseFromTxAnalysisOutput(output));
-}
-
-function chatResponseFromTxAnalysisOutput(output: AnalyzeTransactionOutput): ChatResponse {
-  if (output.status === 'success') {
-    return createTxAnalysisAnswer(output.result);
-  }
-
-  return createTxAnalysisUnavailableAnswer(output.failure.reason, {
-    ...(output.failure.metadata === undefined ? {} : { metadata: output.failure.metadata }),
-    ...(output.failure.reportUrl === undefined ? {} : { reportUrl: output.failure.reportUrl }),
-  });
 }
 
 function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
@@ -443,9 +356,7 @@ function isCorsOriginAllowed(origin: string, allowedOrigins: string[]): boolean 
 }
 
 function isApiRoute(pathname: string): boolean {
-  return (
-    pathname === '/api/chat' || pathname === '/api/chat/stream' || pathname === '/api/tx-analysis'
-  );
+  return pathname === '/api/chat' || pathname === '/api/chat/stream';
 }
 
 function isRateLimitedPostApiRoute(pathname: string): boolean {
@@ -667,21 +578,6 @@ function checkRequiredConfig(config: ReturnType<typeof loadRagConfig>): HealthCh
       status: 'error',
     };
   }
-  if (config.txAnalysisProvider !== 'none' && config.txAnalysisProvider !== 'browser') {
-    return {
-      message: `Unsupported TX_ANALYSIS_PROVIDER: ${config.txAnalysisProvider}`,
-      missing,
-      status: 'error',
-    };
-  }
-  if (config.txAnalysisReportStore !== 'file' && config.txAnalysisReportStore !== 'postgres') {
-    return {
-      message: `Unsupported TX_ANALYSIS_REPORT_STORE: ${config.txAnalysisReportStore}`,
-      missing,
-      status: 'error',
-    };
-  }
-
   if (missing.length > 0) {
     return { missing, status: 'error' };
   }
@@ -969,25 +865,8 @@ function createCachedChatServiceLoader(
       answerProvider: createLazyAnswerProvider(config),
       config,
       retriever,
-      txAnalysisProvider: createConfiguredTxAnalysisProvider(config),
     });
     return Promise.resolve(cachedService);
-  };
-}
-
-function createCachedTxAnalysisProviderLoader(
-  config: ReturnType<typeof loadRagConfig>,
-): () => TxAnalysisProvider | undefined {
-  let cachedProvider: TxAnalysisProvider | undefined;
-  let loaded = false;
-
-  return () => {
-    if (!loaded) {
-      cachedProvider = createConfiguredTxAnalysisProvider(config);
-      loaded = true;
-    }
-
-    return cachedProvider;
   };
 }
 
@@ -1056,85 +935,6 @@ function parseChatPayload(value: unknown): ChatPayload {
   );
 }
 
-function parseTxAnalysisPayload(value: unknown): TxAnalysisPayload {
-  if (typeof value !== 'object' || value === null) {
-    throw new BadRequestError('Request body must be a JSON object.');
-  }
-
-  const record = value as Record<string, unknown>;
-  if (typeof record.txHash !== 'string' || record.txHash.trim().length === 0) {
-    throw new BadRequestError('txHash must be a non-empty string.');
-  }
-
-  const txHash = record.txHash.trim();
-  const parsedChain = parseOptionalTxAnalysisPayloadChain(record.chain);
-  const chain = parsedChain.chain;
-  const reference = parseTransactionReference(txHash);
-  if (parsedChain.unsupportedChainText !== undefined) {
-    const channel = parseOptionalChannel(record.channel);
-    const sessionId = parseOptionalString(record.sessionId, 'sessionId');
-    const userId = parseOptionalString(record.userId, 'userId');
-
-    return {
-      txHash,
-      unsupportedChainText: parsedChain.unsupportedChainText,
-      ...(channel === undefined ? {} : { channel }),
-      ...(sessionId === undefined ? {} : { sessionId }),
-      ...(userId === undefined ? {} : { userId }),
-    };
-  }
-
-  if (chain !== undefined && chain !== 'unknown' && reference !== undefined) {
-    if (reference.chain !== 'unknown' && reference.chain !== chain) {
-      throw new BadRequestError(
-        isTransactionExplorerLink(txHash)
-          ? 'chain does not match the transaction explorer link.'
-          : 'chain does not match the transaction hash.',
-      );
-    }
-
-    if (parseTransactionReference(`${chain} ${txHash}`) === undefined) {
-      throw new BadRequestError('chain does not match the transaction hash.');
-    }
-  }
-  const channel = parseOptionalChannel(record.channel);
-  const sessionId = parseOptionalString(record.sessionId, 'sessionId');
-  const userId = parseOptionalString(record.userId, 'userId');
-  const preservesUnsupportedReference =
-    reference?.unsupportedChainHint !== undefined ||
-    (reference?.unsupportedExplorerHost !== undefined && reference.chain === 'unknown');
-  const normalizedReference =
-    reference === undefined ||
-    reference.unsupportedExplorerHost !== undefined ||
-    reference.unsupportedChainHint !== undefined
-      ? undefined
-      : reference;
-
-  return {
-    txHash: normalizedReference?.txHash ?? txHash,
-    ...(preservesUnsupportedReference || chain === undefined || chain === 'unknown'
-      ? normalizedReference?.chain === undefined || normalizedReference.chain === 'unknown'
-        ? {}
-        : { chain: normalizedReference.chain }
-      : { chain }),
-    ...(channel === undefined ? {} : { channel }),
-    ...(sessionId === undefined ? {} : { sessionId }),
-    ...(userId === undefined ? {} : { userId }),
-  };
-}
-
-function isTransactionExplorerLink(value: string): boolean {
-  return /\b(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?=[/:?#\s]|$)/iu.test(value);
-}
-
-function parseOptionalTxAnalysisPayloadChain(value: unknown): ParsedTxAnalysisPayloadChain {
-  try {
-    return parseOptionalTxAnalysisChainInput(value);
-  } catch (error) {
-    throw new BadRequestError(error instanceof Error ? error.message : TX_ANALYSIS_CHAIN_ERROR);
-  }
-}
-
 function withOptionalFields(
   payload: { message: string; channel?: ChatChannel },
   record: Record<string, unknown>,
@@ -1192,13 +992,6 @@ function createDefaultStaticAssetsDir(
   options: Pick<CreateRequestHandlerOptions, 'cwd'>,
   env: ApiEnv,
 ): string {
-  if (
-    env.TX_ANALYSIS_SCREENSHOT_DIR !== undefined &&
-    env.TX_ANALYSIS_SCREENSHOT_DIR.trim().length > 0
-  ) {
-    return path.resolve(env.TX_ANALYSIS_SCREENSHOT_DIR);
-  }
-
   const workspaceCwd = resolveWorkspaceCwd(options.cwd ?? process.cwd(), env);
   return path.join(workspaceCwd, 'docs', 'product-features', 'assets');
 }

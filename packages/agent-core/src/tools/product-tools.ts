@@ -25,7 +25,6 @@ export interface CreateProductToolsOptions {
 }
 
 const productToolPolicy = {
-  allowExternalMcp: true,
   requiresOpsAuth: false,
 };
 
@@ -90,9 +89,7 @@ export const answerProductQuestionOutputSchema = z.object({
   intent: z.enum([
     'product_qa',
     'how_to',
-    'tx_sandwich_detection',
     'realtime_account_query',
-    'mev_or_chain_forensics',
     'investment_advice',
     'unknown',
   ]),

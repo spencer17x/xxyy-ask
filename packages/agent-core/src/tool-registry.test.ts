@@ -16,7 +16,7 @@ describe('createToolRegistry', () => {
       description: 'Echo a count label.',
       inputSchema: z.object({ count: z.number().int().positive() }),
       outputSchema: z.object({ label: z.string() }),
-      policy: { allowExternalMcp: true, requiresOpsAuth: false },
+      policy: { requiresOpsAuth: false },
       execute: ({ count }) => ({ label: `count:${count}` }),
     });
 
@@ -34,7 +34,7 @@ describe('createToolRegistry', () => {
       description: 'Transforms string output into a number.',
       inputSchema: z.object({}),
       outputSchema: z.string().transform((value) => Number(value)),
-      policy: { allowExternalMcp: true, requiresOpsAuth: false },
+      policy: { requiresOpsAuth: false },
       execute: () => '42',
     });
 
@@ -50,7 +50,7 @@ describe('createToolRegistry', () => {
       description: 'Use context.',
       inputSchema: z.object({ value: z.string() }),
       outputSchema: z.object({ ok: z.literal(true) }),
-      policy: { allowExternalMcp: false, requiresOpsAuth: false },
+      policy: { requiresOpsAuth: false },
       execute(input, context) {
         calls.push({ context, input });
         return { ok: true as const };
@@ -76,39 +76,13 @@ describe('createToolRegistry', () => {
       description: 'A test tool.',
       inputSchema: z.object({}),
       outputSchema: z.object({ ok: z.boolean() }),
-      policy: { allowExternalMcp: false, requiresOpsAuth: false },
+      policy: { requiresOpsAuth: false },
       execute: () => ({ ok: true }),
     };
 
     registry.register(definition);
 
     expect(() => registry.register(definition)).toThrow(ToolRegistryDuplicateNameError);
-  });
-
-  it('filters externally callable tools with list({ externalMcpOnly: true })', () => {
-    const registry = createToolRegistry();
-
-    registry.register({
-      name: 'external_tool',
-      description: 'Externally callable.',
-      inputSchema: z.object({}),
-      outputSchema: z.object({ ok: z.boolean() }),
-      policy: { allowExternalMcp: true, requiresOpsAuth: false },
-      execute: () => ({ ok: true }),
-    });
-    registry.register({
-      name: 'internal_tool',
-      description: 'Internal only.',
-      inputSchema: z.object({}),
-      outputSchema: z.object({ ok: z.boolean() }),
-      policy: { allowExternalMcp: false, requiresOpsAuth: false },
-      execute: () => ({ ok: true }),
-    });
-
-    expect(registry.list({ externalMcpOnly: true }).map((tool) => tool.name)).toEqual([
-      'external_tool',
-    ]);
-    expect(registry.list().map((tool) => tool.name)).toEqual(['external_tool', 'internal_tool']);
   });
 
   it("throws stable ToolRegistryToolNotFoundError from execute('missing_tool', {})", async () => {

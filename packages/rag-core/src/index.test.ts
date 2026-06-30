@@ -1,61 +1,45 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  classifyQuestion,
-  createBrowserTxAnalysisProvider,
-  createChatService,
-  createEvmBrowserTxChainAdapter,
-  createFileTxAnalysisReportWriter,
-  createGroundedAnswer,
-  createLocalRetriever,
-  createOpenAiAnswerProvider,
-  createPlaywrightBrowserTxAnalysisDriver,
-  createPgPool,
-  createPgTxAnalysisReportStore,
-  createPgVectorStore,
-  createSolanaBrowserTxChainAdapter,
-  createTxAnalysisAnswer,
-  evaluateCases,
-  analyzeSandwichWindow,
-  findFileTxAnalysisReports,
-  LlmConfigurationError,
-  loadRagConfig,
-  parseTransactionReference,
-  retrieve,
-  SANDWICH_ANALYZER_VERSION,
-  toPgVectorLiteral,
-  TxAnalysisProviderUnavailableError,
-  VectorStoreConfigurationError,
-  workspacePackageName,
-} from './index.js';
+import * as ragCore from './index.js';
 
 describe('rag-core public exports', () => {
-  it('exports the deterministic RAG core API', () => {
-    expect(workspacePackageName).toBe('@xxyy/rag-core');
-    expect(loadRagConfig).toBeTypeOf('function');
-    expect(classifyQuestion).toBeTypeOf('function');
-    expect(retrieve).toBeTypeOf('function');
-    expect(createLocalRetriever).toBeTypeOf('function');
-    expect(createGroundedAnswer).toBeTypeOf('function');
-    expect(parseTransactionReference).toBeTypeOf('function');
-    expect(createBrowserTxAnalysisProvider).toBeTypeOf('function');
-    expect(createEvmBrowserTxChainAdapter).toBeTypeOf('function');
-    expect(createFileTxAnalysisReportWriter).toBeTypeOf('function');
-    expect(createPgTxAnalysisReportStore).toBeTypeOf('function');
-    expect(findFileTxAnalysisReports).toBeTypeOf('function');
-    expect(createSolanaBrowserTxChainAdapter).toBeTypeOf('function');
-    expect(createPlaywrightBrowserTxAnalysisDriver).toBeTypeOf('function');
-    expect(createTxAnalysisAnswer).toBeTypeOf('function');
-    expect(analyzeSandwichWindow).toBeTypeOf('function');
-    expect(SANDWICH_ANALYZER_VERSION).toBe('sandwich-window-rules-v1');
-    expect(TxAnalysisProviderUnavailableError).toBeTypeOf('function');
-    expect(createOpenAiAnswerProvider).toBeTypeOf('function');
-    expect(LlmConfigurationError).toBeTypeOf('function');
-    expect(createPgPool).toBeTypeOf('function');
-    expect(createPgVectorStore).toBeTypeOf('function');
-    expect(toPgVectorLiteral).toBeTypeOf('function');
-    expect(VectorStoreConfigurationError).toBeTypeOf('function');
-    expect(createChatService).toBeTypeOf('function');
-    expect(evaluateCases).toBeTypeOf('function');
+  it('exports only the knowledge-base RAG core API', () => {
+    expect(ragCore.workspacePackageName).toBe('@xxyy/rag-core');
+    expect(ragCore.loadRagConfig).toBeTypeOf('function');
+    expect(ragCore.classifyQuestion).toBeTypeOf('function');
+    expect(ragCore.retrieve).toBeTypeOf('function');
+    expect(ragCore.createLocalRetriever).toBeTypeOf('function');
+    expect(ragCore.createGroundedAnswer).toBeTypeOf('function');
+    expect(ragCore.createOpenAiAnswerProvider).toBeTypeOf('function');
+    expect(ragCore.LlmConfigurationError).toBeTypeOf('function');
+    expect(ragCore.createPgPool).toBeTypeOf('function');
+    expect(ragCore.createPgVectorStore).toBeTypeOf('function');
+    expect(ragCore.toPgVectorLiteral).toBeTypeOf('function');
+    expect(ragCore.VectorStoreConfigurationError).toBeTypeOf('function');
+    expect(ragCore.createChatService).toBeTypeOf('function');
+    expect(ragCore.evaluateCases).toBeTypeOf('function');
+
+    expect(Object.keys(ragCore).sort()).toEqual([
+      'LlmConfigurationError',
+      'VectorStoreConfigurationError',
+      'VectorStoreUnavailableError',
+      'classifyQuestion',
+      'createBoundaryAnswer',
+      'createChatService',
+      'createGroundedAnswer',
+      'createLazyRetriever',
+      'createLocalRetriever',
+      'createOpenAiAnswerProvider',
+      'createPgFeedbackStore',
+      'createPgPool',
+      'createPgVectorStore',
+      'evaluateCases',
+      'loadRagConfig',
+      'loadWorkspaceEnv',
+      'resolveWorkspaceCwd',
+      'retrieve',
+      'toPgVectorLiteral',
+      'workspacePackageName',
+    ]);
   });
 });

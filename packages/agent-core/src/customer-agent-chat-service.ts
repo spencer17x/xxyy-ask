@@ -5,7 +5,6 @@ import {
   type AnswerProvider,
   type RagConfig,
   type Retriever,
-  type TxAnalysisProvider,
 } from '@xxyy/rag-core';
 
 import {
@@ -14,7 +13,6 @@ import {
 } from './langgraph-customer-runtime.js';
 import { createOpenAiCompatiblePlannerModel, type PlannerModel } from './planner-model.js';
 import { createProductTools } from './tools/product-tools.js';
-import { createTxAnalysisTools } from './tools/tx-analysis-tools.js';
 import { createToolRegistry } from './tool-registry.js';
 
 export interface CreateCustomerAgentChatServiceOptions {
@@ -31,7 +29,6 @@ export interface CreateCustomerAgentChatServiceOptions {
   retriever?: Retriever;
   /** @deprecated Compatibility field retained during LangGraph migration. */
   sessionContext?: unknown;
-  txAnalysisProvider: TxAnalysisProvider | undefined;
 }
 
 export function createCustomerAgentChatService(
@@ -44,12 +41,6 @@ export function createCustomerAgentChatService(
     ...(options.config === undefined ? {} : { config: options.config }),
     ...(options.index === undefined ? {} : { index: options.index }),
     ...(options.retriever === undefined ? {} : { retriever: options.retriever }),
-  })) {
-    registry.register(tool);
-  }
-
-  for (const tool of createTxAnalysisTools({
-    provider: options.txAnalysisProvider,
   })) {
     registry.register(tool);
   }

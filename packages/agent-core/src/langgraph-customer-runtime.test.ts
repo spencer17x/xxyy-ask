@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
-import type { AnalyzeTransactionOutput } from '@xxyy/rag-core';
 
 import { createLangGraphCustomerRuntime } from './langgraph-customer-runtime.js';
 import {
@@ -13,7 +12,6 @@ import {
 import { createToolRegistry } from './tool-registry.js';
 
 const toolPolicy = {
-  allowExternalMcp: true,
   requiresOpsAuth: false,
 };
 
@@ -121,187 +119,6 @@ describe('createLangGraphCustomerRuntime', () => {
     expect(execute).toHaveBeenCalledWith(
       { question: 'xxyy支持跟单么' },
       { channel: 'telegram', sessionId: undefined, userIdPresent: false },
-    );
-  });
-
-  it('converts successful transaction tool output into a transaction analysis answer', async () => {
-    const registry = createToolRegistry();
-    const txHash = `0x${'a'.repeat(64)}`;
-    const output: AnalyzeTransactionOutput = {
-      result: {
-        analyzedAt: '2026-06-20T00:00:00.000Z',
-        chain: 'base',
-        confidence: 0.91,
-        evidence: [
-          {
-            detail: '前后交易围绕目标交易。',
-            label: 'sandwich pattern',
-            severity: 'critical',
-          },
-        ],
-        relatedTransactions: [],
-        summary: '规则命中疑似夹子交易。',
-        txHash,
-        verdict: 'sandwiched',
-      },
-      status: 'success',
-    };
-    const execute = vi.fn(() => Promise.resolve(output));
-
-    registry.register({
-      name: 'analyze_transaction',
-      description: 'Analyze transaction.',
-      inputSchema: z.object({ txHash: z.string() }),
-      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
-      policy: toolPolicy,
-      execute,
-    });
-
-    const runtime = createLangGraphCustomerRuntime({
-      planner: createScriptedPlannerModel([
-        {
-          input: { txHash },
-          kind: 'tool',
-          reason: 'Analyze the public transaction.',
-          route: 'transaction_analysis',
-          toolName: 'analyze_transaction',
-        },
-      ]),
-      registry,
-    });
-
-    const response = await runtime.ask({
-      channel: 'web',
-      message: `帮我看看 ${txHash} 是否被夹`,
-    });
-
-    expect(response).toMatchObject({
-      agentRoute: 'transaction_analysis',
-      citations: [],
-      confidence: 0.91,
-      intent: 'tx_sandwich_detection',
-    });
-    expect(response.answer).toContain(`交易哈希：${txHash}`);
-    expect(response.answer).toContain('结论：疑似被夹');
-    expect(execute).toHaveBeenCalledWith(
-      { txHash },
-      { channel: 'web', sessionId: undefined, userIdPresent: false },
-    );
-  });
-
-  it('asks the planner to route clear transaction references to the transaction tool', async () => {
-    const registry = createToolRegistry();
-    const txHash = `0x${'c'.repeat(64)}`;
-    const output: AnalyzeTransactionOutput = {
-      result: {
-        analyzedAt: '2026-06-24T00:00:00.000Z',
-        chain: 'base',
-        confidence: 0.86,
-        evidence: [],
-        relatedTransactions: [],
-        summary: '未发现明确 sandwich 模式。',
-        txHash,
-        verdict: 'not_sandwiched',
-      },
-      status: 'success',
-    };
-    const execute = vi.fn(() => Promise.resolve(output));
-    const planner = {
-      plan: vi.fn(() =>
-        Promise.resolve({
-          input: { chain: 'base', txHash },
-          kind: 'tool' as const,
-          reason: 'Analyze the public Basescan transaction.',
-          route: 'transaction_analysis' as const,
-          toolName: 'analyze_transaction' as const,
-        }),
-      ),
-    };
-
-    registry.register({
-      name: 'analyze_transaction',
-      description: 'Analyze transaction.',
-      inputSchema: z.object({
-        chain: z.string().optional(),
-        txHash: z.string(),
-      }),
-      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
-      policy: toolPolicy,
-      execute,
-    });
-
-    const response = await createLangGraphCustomerRuntime({ planner, registry }).ask({
-      channel: 'web',
-      message: `帮我看 https://basescan.org/tx/${txHash} 是否被夹`,
-      sessionId: 'session-1',
-    });
-
-    expect(response).toMatchObject({
-      agentRoute: 'transaction_analysis',
-      confidence: 0.86,
-      intent: 'tx_sandwich_detection',
-    });
-    expect(planner.plan).toHaveBeenCalledOnce();
-    expect(execute).toHaveBeenCalledWith(
-      { chain: 'base', txHash },
-      { channel: 'web', sessionId: 'session-1', userIdPresent: false },
-    );
-  });
-
-  it('does not rewrite planner-selected transaction input with deterministic extraction', async () => {
-    const registry = createToolRegistry();
-    const txHash =
-      'UUhMpRZtCVFENshTwTGy1FSJvodiJ2DxpXqQ9KMF3aQ8KEjfcJVKMLnURRmG6VEEhFKYMTuCiU7N4SohiTuRRUF';
-    const message = `查询下这笔交易是否被夹：https://solscan.io/tx/${txHash}`;
-    const output: AnalyzeTransactionOutput = {
-      failure: {
-        message: 'Browser verification required.',
-        reason: 'browser_verification_required',
-        reportUrl: '/assets/tx-analysis-failure-solana.json',
-      },
-      status: 'failure',
-    };
-    const execute = vi.fn(() => Promise.resolve(output));
-    const planner = {
-      plan: vi.fn(() =>
-        Promise.resolve({
-          input: { txHash: message },
-          kind: 'tool' as const,
-          reason: 'Planner kept the whole user message as txHash.',
-          route: 'transaction_analysis' as const,
-          toolName: 'analyze_transaction' as const,
-        }),
-      ),
-    };
-
-    registry.register({
-      name: 'analyze_transaction',
-      description: 'Analyze transaction.',
-      inputSchema: z.object({
-        chain: z.string().optional(),
-        txHash: z.string(),
-      }),
-      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
-      policy: toolPolicy,
-      execute,
-    });
-
-    const response = await createLangGraphCustomerRuntime({ planner, registry }).ask({
-      channel: 'web',
-      message,
-    });
-
-    expect(response).toMatchObject({
-      agentRoute: 'transaction_analysis',
-      confidence: 0.35,
-      intent: 'tx_sandwich_detection',
-    });
-    expect(response.answer).toContain('浏览器安全验证');
-    expect(response.answer).toContain('报告：/assets/tx-analysis-failure-solana.json');
-    expect(planner.plan).toHaveBeenCalledOnce();
-    expect(execute).toHaveBeenCalledWith(
-      { txHash: message },
-      { channel: 'web', sessionId: undefined, userIdPresent: false },
     );
   });
 
@@ -443,11 +260,11 @@ describe('createLangGraphCustomerRuntime', () => {
     const response = await createLangGraphCustomerRuntime({
       planner: createScriptedPlannerModel([
         {
-          input: { answer: 'not registered' },
+          input: { question: 'XXYY Pro 有哪些权益？' },
           kind: 'tool',
-          reason: 'Use a boundary tool.',
-          route: 'boundary',
-          toolName: 'boundary_reply',
+          reason: 'Use product knowledge.',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
         },
       ]),
       registry,
@@ -599,7 +416,7 @@ describe('createLangGraphCustomerRuntime', () => {
             input: { question: 'XXYY Pro 有哪些权益？' },
             kind: 'tool',
             reason: 'Mismatched route.',
-            route: 'transaction_analysis',
+            route: 'unsupported',
             toolName: 'answer_product_question',
           },
         ]),
@@ -614,7 +431,7 @@ describe('createLangGraphCustomerRuntime', () => {
     });
   });
 
-  it.each(['product_answer', 'transaction_analysis'] as const)(
+  it.each(['product_answer'] as const)(
     'normalizes unsafe final %s planner routes without tool evidence',
     async (route) => {
       const registry = createToolRegistry();
@@ -627,7 +444,7 @@ describe('createLangGraphCustomerRuntime', () => {
               answer: 'I claim a tool-backed route without evidence.',
               citations: [],
               confidence: 0.99,
-              intent: route === 'product_answer' ? 'product_qa' : 'tx_sandwich_detection',
+              intent: 'product_qa',
             },
             route,
           } as never),
@@ -648,52 +465,6 @@ describe('createLangGraphCustomerRuntime', () => {
       expect(planner.plan).toHaveBeenCalledOnce();
     },
   );
-
-  it('converts failed transaction tool output into a transaction unavailable answer', async () => {
-    const registry = createToolRegistry();
-    const txHash = `0x${'b'.repeat(64)}`;
-    const output: AnalyzeTransactionOutput = {
-      failure: {
-        message: 'Provider is unavailable.',
-        reason: 'provider_unavailable',
-        reportUrl: '/assets/tx-report.json',
-      },
-      status: 'failure',
-    };
-
-    registry.register({
-      name: 'analyze_transaction',
-      description: 'Analyze transaction.',
-      inputSchema: z.object({ txHash: z.string() }),
-      outputSchema: z.custom<AnalyzeTransactionOutput>(() => true),
-      policy: toolPolicy,
-      execute: () => Promise.resolve(output),
-    });
-
-    const response = await createLangGraphCustomerRuntime({
-      planner: createScriptedPlannerModel([
-        {
-          input: { txHash },
-          kind: 'tool',
-          reason: 'Analyze the public transaction.',
-          route: 'transaction_analysis',
-          toolName: 'analyze_transaction',
-        },
-      ]),
-      registry,
-    }).ask({
-      channel: 'web',
-      message: `帮我看看 ${txHash} 是否被夹`,
-    });
-
-    expect(response).toMatchObject({
-      agentRoute: 'transaction_analysis',
-      citations: [],
-      confidence: 0.35,
-      intent: 'tx_sandwich_detection',
-    });
-    expect(response.answer).toContain('报告：/assets/tx-report.json');
-  });
 
   it('streams metadata from the composed response', async () => {
     const registry = createToolRegistry();

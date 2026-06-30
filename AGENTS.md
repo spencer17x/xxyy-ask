@@ -4,12 +4,13 @@
 
 ## 项目目标
 
-这是 XXYY 客服 Agentic RAG 系统。当前阶段使用 LangGraph JS 作为 Agent Runtime：产品问题调用 Product RAG，交易哈希调用交易分析工具，未来扩展交易池子查询和链上分析工具。系统会自动根据官方 X / Twitter 和产品文档更新知识库。
+这是 XXYY 客服 Agentic RAG 系统。当前阶段使用 LangGraph JS 作为 Agent Runtime，但运行面暂时收敛为知识库产品问答：产品问题调用 Product RAG，系统会自动根据官方 X / Twitter 和产品文档更新知识库。
 
 当前边界：
 
 - 可以回答 XXYY 产品功能、配置步骤、权益说明和官方更新相关问题。
-- 可以把公开交易哈希或受支持 explorer 链接路由到交易分析工具。
+- 交易哈希、公开 explorer 链接、池子查询、链上取证和泛 MEV 问题暂不分析，必须返回边界或澄清回复。
+- 暂不暴露 MCP server，也不保留本地 project skills。
 - 不直接查询用户账户、订单、钱包余额或私有交易记录。
 - 不提供投资建议。
 - 对边界问题必须返回边界回复，不要编造实时数据。
@@ -28,12 +29,11 @@
 
 - `packages/shared`：共享类型和聊天契约。
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、本地索引、OpenAI embedding provider。
-- `packages/rag-core`：意图分类、检索接口、pgvector store、LLM answer provider、交易分析和配置错误类型。
-- `packages/agent-core`：LangGraph 客服 Agent runtime、planner、tool registry 和产品/交易工具定义。
-- `packages/product-qa-mcp`：产品问答 MCP stdio server。
-- `packages/tx-analysis-mcp`：交易分析 MCP stdio server。
+- `packages/rag-core`：意图分类、检索接口、pgvector store、LLM answer provider、边界回复和配置错误类型。
+- `packages/agent-core`：LangGraph 客服 Agent runtime、planner、tool registry 和产品问答工具定义。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:ask`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
+- `apps/telegram-bot`：Telegram Bot long polling 入口。
 - `apps/web`：静态聊天 UI。
 - `docs/product-features`：知识库种子文档和静态资产。
 
@@ -70,9 +70,8 @@ API_RATE_LIMIT_WINDOW_MS=60000
 - `pnpm run app:dev -- --full-sync`：启动前全量抓取 X / Twitter 并重建知识库。
 - `pnpm run app:dev -- --ingest`：启动前只执行知识库 ingest。
 - `NODE_ENV=production pnpm run app:dev`：生产模式跳过本地 Docker，默认不刷新知识库；可加 `--sync` 或 `--full-sync` 显式更新。
+- `pnpm run telegram:dev`：启动 Telegram Bot long polling。
 - `pnpm check`：lint、format check、typecheck、tests。
-
-交易分析默认使用真实 browser provider 和规则化 SandwichAnalyzer，不配置 `TX_ANALYSIS_*` 也会用本机 Chrome 查询公开交易浏览器和 XXYY 原池子页，并默认复用 `.tx-analysis-browser-profile` 保存安全验证状态；当前支持 Solana，并已接入 Base、Ethereum、BSC 浏览器取证初版。显式 `TX_ANALYSIS_PROVIDER=none` 时才返回暂未启用。只有覆盖默认行为时才配置 `TX_ANALYSIS_*`：例如特殊 Chrome 路径、staging/代理页面、自定义截图目录、Postgres 报告存储或 `TX_ANALYSIS_REVIEWER=openai` 模型复核；复核不可用时必须保留规则结果。
 
 API 保留的公开服务面：
 
@@ -81,10 +80,9 @@ API 保留的公开服务面：
 - `GET /health/deep`：生产依赖自检，检查必填配置、pgvector 知识库、embedding 模型和 chat LLM，失败时返回 `503` 和分项原因。
 - `POST /api/chat`：非流式客服问答。
 - `POST /api/chat/stream`：流式客服问答。
-- `POST /api/tx-analysis`：直接交易分析入口，返回与聊天入口一致的客服响应形态。
-- `GET /assets/*`：产品视频、交易分析截图和本地静态报告等资产。
+- `GET /assets/*`：产品视频、图片等静态资产。
 
-API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat`、`/api/chat/stream` 和 `/api/tx-analysis` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
+API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 
 ## 常用验证
 
@@ -114,10 +112,7 @@ pnpm run app:dev -- --full-sync
 - `pnpm rag:migrate`：只执行数据库迁移，不调用 embedding 或 LLM。
 - `pnpm rag:stats`：查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 - `pnpm rag:ask -- "问题"`：命令行临时调用客服 Agent。
-- `pnpm agent:smoke`：检查已启动服务的 health、产品问题路线和边界路线；可用 `API_SMOKE_TX_HASH` 额外检查交易分析路线。
-- `pnpm run product:mcp:dev`：启动产品问答 MCP stdio server。
-- `pnpm run tx:mcp:dev`：启动交易分析 MCP stdio server。
-- `pnpm tx:mcp:smoke`：用默认真实 browser provider 跑交易分析 MCP 样本验收，可传 `-- --tx-samples <file>`。
+- `pnpm agent:smoke`：检查已启动服务的 health、产品问题路线和边界路线。
 
 关键行为验证：
 
@@ -128,7 +123,7 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
 
 期望：
 
-- 边界问题不需要 DB/API key，应该返回 `realtime_account_query`。
+- 边界问题不需要 DB/API key，应该返回 `realtime_account_query` 或其它边界/澄清结果。
 - 产品问题缺 `DATABASE_URL` 或 `POSTGRES_*` 应明确失败。
 
 ## 开发约束

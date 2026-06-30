@@ -1,4 +1,0 @@
-interface:
-  display_name: 'XXYY Transaction Analysis'
-  short_description: 'Use XXYY MCP for sandwich checks'
-  default_prompt: 'Use $xxyy-transaction-analysis to check whether this XXYY transaction was sandwiched.'

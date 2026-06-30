@@ -13,7 +13,6 @@ import {
 import {
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
-  createConfiguredTxAnalysisProvider,
   createLazyRetriever,
   createOpenAiAnswerProvider,
   createPgPool,
@@ -493,7 +492,6 @@ function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChat
       answerProvider: createLazyAnswerProvider(config),
       config,
       retriever,
-      txAnalysisProvider: createConfiguredTxAnalysisProvider(config),
     }),
     close: async () => {
       const currentPool = pool;

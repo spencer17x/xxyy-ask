@@ -43,8 +43,8 @@ describe('createPgVectorStore', () => {
     expect(client.queries.map((query) => query.sql).join('\n')).toContain(
       'create table if not exists rag_ingestion_runs',
     );
-    expect(client.queries.map((query) => query.sql).join('\n')).toContain(
-      'create table if not exists tx_analysis_reports',
+    expect(client.queries.map((query) => query.sql).join('\n')).not.toContain(
+      'tx_analysis_reports',
     );
   });
 

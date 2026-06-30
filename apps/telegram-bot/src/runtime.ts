@@ -1,7 +1,6 @@
 import { createCustomerAgentChatService } from '@xxyy/agent-core';
 import { createOpenAiEmbeddingProvider } from '@xxyy/knowledge';
 import {
-  createConfiguredTxAnalysisProvider,
   createLazyRetriever,
   createOpenAiAnswerProvider,
   createPgPool,
@@ -48,7 +47,6 @@ export function createTelegramChatRuntime(config: RagConfig): TelegramChatRuntim
       answerProvider: createLazyAnswerProvider(config),
       config,
       retriever,
-      txAnalysisProvider: createConfiguredTxAnalysisProvider(config),
     }),
   };
 }
