@@ -5,7 +5,12 @@ import type { AnswerProvider } from './answer-provider.js';
 import { classifyQuestion } from './classify.js';
 import { loadRagConfig, type RagConfig } from './config.js';
 import { createOpenAiAnswerProvider } from './openai-answer-provider.js';
-import { createLocalRetriever, type Retriever } from './retriever.js';
+import {
+  createLocalRetriever,
+  createRerankingRetriever,
+  type Reranker,
+  type Retriever,
+} from './retriever.js';
 
 export interface ChatService {
   ask(request: ChatRequest): Promise<ChatResponse>;
@@ -17,6 +22,7 @@ export interface CreateChatServiceOptions {
   retriever?: Retriever;
   answerProvider?: AnswerProvider;
   config?: Partial<RagConfig>;
+  reranker?: Reranker;
 }
 
 export function createChatService(options: CreateChatServiceOptions): ChatService {
@@ -24,7 +30,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
     ...loadRagConfig(),
     ...options.config,
   };
-  const retriever = createRetriever(options);
+  const retriever = createRerankingRetriever(createRetriever(options), options.reranker);
 
   return {
     async ask(request: ChatRequest): Promise<ChatResponse> {

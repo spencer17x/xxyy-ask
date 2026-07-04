@@ -92,4 +92,57 @@ describe('createToolRegistry', () => {
       ToolRegistryToolNotFoundError,
     );
   });
+
+  it('validates every streamed chat event before yielding it', async () => {
+    const registry = createToolRegistry();
+
+    registry.register({
+      name: 'stream_answer',
+      description: 'Streams a valid answer.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      policy: { requiresOpsAuth: false },
+      execute: () => ({}),
+      async *stream() {
+        await Promise.resolve();
+        yield { type: 'answer_delta', delta: 'hello' };
+        yield { type: 'metadata', citations: [], confidence: 0.9, intent: 'product_qa' };
+      },
+    });
+
+    const events: unknown[] = [];
+    for await (const event of registry.stream('stream_answer', {}) ?? []) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: 'answer_delta', delta: 'hello' },
+      { type: 'metadata', citations: [], confidence: 0.9, intent: 'product_qa' },
+    ]);
+  });
+
+  it('fails fast when a streamed chat event has an invalid shape', async () => {
+    const registry = createToolRegistry();
+
+    registry.register({
+      name: 'bad_stream_answer',
+      description: 'Streams a malformed answer.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      policy: { requiresOpsAuth: false },
+      execute: () => ({}),
+      async *stream() {
+        await Promise.resolve();
+        yield { type: 'answer_delta' };
+      },
+    });
+
+    const stream = registry.stream('bad_stream_answer', {});
+
+    await expect(async () => {
+      for await (const _event of stream ?? []) {
+        // Iteration triggers stream event validation.
+      }
+    }).rejects.toThrow(z.ZodError);
+  });
 });

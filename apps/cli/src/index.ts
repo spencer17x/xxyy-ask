@@ -21,6 +21,7 @@ import {
   createPgVectorStore,
   createChatService,
   createGroundedAnswer,
+  createMetadataReranker,
   evaluateCases,
   LlmConfigurationError,
   loadRagConfig,
@@ -493,6 +494,7 @@ async function evaluate(io: CliIo, providerBacked: boolean): Promise<EvaluationR
     },
     config,
     index,
+    reranker: createMetadataReranker(),
   });
 
   return evaluateCases(cases, service);

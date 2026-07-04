@@ -35,7 +35,7 @@
 pnpm run app:dev                 # 启动 API + Web，默认不刷新知识库
 pnpm run app:dev -- --sync       # 启动前增量抓取 X 更新并同步知识库
 pnpm run app:dev -- --full-sync  # 启动前全量重抓 X 更新并重建知识库
-pnpm check                       # lint + format check + typecheck + tests
+pnpm check                       # lint + format check + typecheck + tests + deterministic golden QA
 pnpm agent:smoke                 # 轻量验证已启动服务的 health 和核心 agentRoute
 ```
 

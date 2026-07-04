@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  chatStreamEventSchema,
   supportedChannels,
   supportedIntents,
   type ChatRequest,
@@ -78,5 +79,37 @@ describe('chat contract', () => {
     };
 
     expect(response.attachments?.[0]?.kind).toBe('image');
+  });
+
+  it('validates chat stream events at runtime', () => {
+    expect(
+      chatStreamEventSchema.parse({
+        type: 'answer_delta',
+        delta: 'partial answer',
+      }),
+    ).toEqual({
+      type: 'answer_delta',
+      delta: 'partial answer',
+    });
+
+    expect(
+      chatStreamEventSchema.parse({
+        type: 'metadata',
+        citations: [],
+        confidence: 0.8,
+        intent: 'product_qa',
+      }),
+    ).toMatchObject({
+      type: 'metadata',
+      intent: 'product_qa',
+    });
+
+    expect(() =>
+      chatStreamEventSchema.parse({
+        type: 'metadata',
+        confidence: 0.8,
+        intent: 'unsupported_intent',
+      }),
+    ).toThrow();
   });
 });
