@@ -17,6 +17,7 @@ import {
 } from '@xxyy/rag-core';
 
 import {
+  createRateLimiter,
   createDefaultApiEnv,
   createRequestHandler,
   startServer,
@@ -38,11 +39,15 @@ async function callHandler(
     url: string;
     body?: unknown;
     headers?: Record<string, string>;
+    remoteAddress?: string;
   },
 ): Promise<CapturedResponse> {
   const chunks = input.body === undefined ? [] : [Buffer.from(JSON.stringify(input.body), 'utf8')];
   const request = {
     method: input.method,
+    ...(input.remoteAddress === undefined
+      ? {}
+      : { socket: { remoteAddress: input.remoteAddress } }),
     url: input.url,
     headers: input.headers ?? {},
     [Symbol.asyncIterator]() {
@@ -90,6 +95,7 @@ function createRuntimeConfigForTest(): Record<string, unknown> {
   return {
     answerProvider: 'openai',
     databaseUrl: 'postgres://xxyy:secret@example.test/xxyy_ask',
+    embeddingDimension: 1536,
     openAiApiKey: 'test-key',
     openAiApiKeyPresent: true,
     openAiBaseUrl: 'https://api.openai.test/v1',
@@ -269,6 +275,69 @@ describe('createRequestHandler', () => {
     });
   });
 
+  it('disables deep health in production unless an internal token is configured', async () => {
+    const getHealthStatus = vi.fn(() =>
+      Promise.resolve({
+        checks: {
+          config: { status: 'ok' as const },
+          embedding: { model: 'text-embedding-3-small', status: 'ok' as const },
+          llm: { model: 'gpt-test', status: 'ok' as const },
+          vectorStore: { chunkCount: 42, status: 'ok' as const, vectorExtension: true },
+        },
+        status: 'ok' as const,
+      }),
+    );
+    const handler = createRequestHandler({
+      env: { NODE_ENV: 'production' },
+      getHealthStatus,
+    });
+
+    const response = await callHandler(handler, { method: 'GET', url: '/health/deep' });
+
+    expect(response.statusCode).toBe(404);
+    expect(JSON.parse(response.body)).toEqual({
+      error: 'not_found',
+      message: 'Route not found.',
+    });
+    expect(getHealthStatus).not.toHaveBeenCalled();
+  });
+
+  it('requires the deep health token in production when configured', async () => {
+    const getHealthStatus = vi.fn(() =>
+      Promise.resolve({
+        checks: {
+          config: { status: 'ok' as const },
+          embedding: { model: 'text-embedding-3-small', status: 'ok' as const },
+          llm: { model: 'gpt-test', status: 'ok' as const },
+          vectorStore: { chunkCount: 42, status: 'ok' as const, vectorExtension: true },
+        },
+        status: 'ok' as const,
+      }),
+    );
+    const handler = createRequestHandler({
+      env: {
+        API_DEEP_HEALTH_TOKEN: 'deep-secret',
+        NODE_ENV: 'production',
+      },
+      getHealthStatus,
+    });
+
+    const unauthorized = await callHandler(handler, { method: 'GET', url: '/health/deep' });
+    const authorized = await callHandler(handler, {
+      headers: { authorization: 'Bearer deep-secret' },
+      method: 'GET',
+      url: '/health/deep',
+    });
+
+    expect(unauthorized.statusCode).toBe(401);
+    expect(JSON.parse(unauthorized.body)).toEqual({
+      error: 'unauthorized',
+      message: 'Missing or invalid authorization token.',
+    });
+    expect(authorized.statusCode).toBe(200);
+    expect(getHealthStatus).toHaveBeenCalledOnce();
+  });
+
   it('reports missing production configuration in deep health status', async () => {
     const handler = createRequestHandler({ env: {} });
 
@@ -407,7 +476,85 @@ describe('createRequestHandler', () => {
     });
   });
 
-  it('rate limits chat requests by client address', async () => {
+  it('requires chat authorization in production when a chat token is configured', async () => {
+    const getChatService = vi.fn(() =>
+      Promise.resolve({
+        ask() {
+          return Promise.resolve({
+            answer: '根据知识库，XXYY Pro 提供更多权益。',
+            citations: [],
+            confidence: 0.8,
+            intent: 'product_qa' as const,
+          });
+        },
+        stream() {
+          throw new Error('stream should not be used for non-stream requests');
+        },
+      }),
+    );
+    const handler = createRequestHandler({
+      env: {
+        API_CHAT_AUTH_TOKEN: 'chat-secret',
+        NODE_ENV: 'production',
+      },
+      getChatService,
+    });
+
+    const unauthorized = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      method: 'POST',
+      remoteAddress: '198.51.100.10',
+      url: '/api/chat',
+    });
+    const authorized = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      headers: { authorization: 'Bearer chat-secret' },
+      method: 'POST',
+      remoteAddress: '198.51.100.11',
+      url: '/api/chat',
+    });
+
+    expect(unauthorized.statusCode).toBe(401);
+    expect(JSON.parse(unauthorized.body)).toEqual({
+      error: 'unauthorized',
+      message: 'Missing or invalid authorization token.',
+    });
+    expect(authorized.statusCode).toBe(200);
+    expect(getChatService).toHaveBeenCalledOnce();
+  });
+
+  it('allows unauthenticated chat requests in development by default', async () => {
+    const handler = createRequestHandler({
+      env: {
+        NODE_ENV: 'development',
+      },
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.resolve({
+              answer: '根据知识库，XXYY Pro 提供更多权益。',
+              citations: [],
+              confidence: 0.8,
+              intent: 'product_qa' as const,
+            });
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      method: 'POST',
+      remoteAddress: '198.51.100.10',
+      url: '/api/chat',
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('rate limits chat requests by socket address unless proxy headers are trusted', async () => {
     const handler = createRequestHandler({
       env: {
         API_RATE_LIMIT_MAX: '1',
@@ -434,12 +581,14 @@ describe('createRequestHandler', () => {
       body: { message: 'XXYY Pro 有哪些权益？' },
       headers: { 'x-forwarded-for': '203.0.113.1' },
       method: 'POST',
+      remoteAddress: '198.51.100.10',
       url: '/api/chat',
     });
     const second = await callHandler(handler, {
       body: { message: 'XXYY Pro 有哪些权益？' },
-      headers: { 'x-forwarded-for': '203.0.113.1' },
+      headers: { 'x-forwarded-for': '203.0.113.2' },
       method: 'POST',
+      remoteAddress: '198.51.100.10',
       url: '/api/chat',
     });
 
@@ -450,6 +599,76 @@ describe('createRequestHandler', () => {
       error: 'rate_limited',
       message: 'Too many requests. Please try again later.',
     });
+  });
+
+  it('uses x-forwarded-for for rate limiting only when TRUST_PROXY is true', async () => {
+    const handler = createRequestHandler({
+      env: {
+        API_RATE_LIMIT_MAX: '1',
+        API_RATE_LIMIT_WINDOW_MS: '1000',
+        TRUST_PROXY: 'true',
+      },
+      now: () => 100,
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.resolve({
+              answer: '根据知识库，XXYY Pro 提供更多权益。',
+              citations: [],
+              confidence: 0.8,
+              intent: 'product_qa',
+            });
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
+        }),
+    });
+
+    const first = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      headers: { 'x-forwarded-for': '203.0.113.1' },
+      method: 'POST',
+      remoteAddress: '198.51.100.10',
+      url: '/api/chat',
+    });
+    const second = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      headers: { 'x-forwarded-for': '203.0.113.2' },
+      method: 'POST',
+      remoteAddress: '198.51.100.10',
+      url: '/api/chat',
+    });
+    const third = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      headers: { 'x-forwarded-for': '203.0.113.1' },
+      method: 'POST',
+      remoteAddress: '198.51.100.10',
+      url: '/api/chat',
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(third.statusCode).toBe(429);
+  });
+
+  it('cleans up expired rate limit buckets during checks', () => {
+    let currentTime = 100;
+    const limiter = createRateLimiter(
+      {
+        rateLimitMax: 1,
+        rateLimitWindowMs: 1000,
+      },
+      () => currentTime,
+    );
+
+    expect(limiter.check('198.51.100.1').allowed).toBe(true);
+    expect(limiter.check('198.51.100.2').allowed).toBe(true);
+    expect(limiter.size()).toBe(2);
+
+    currentTime = 1200;
+    expect(limiter.check('198.51.100.3').allowed).toBe(true);
+    expect(limiter.size()).toBe(1);
   });
 
   it('serves product media assets for chat attachments', async () => {
@@ -665,7 +884,7 @@ describe('createRequestHandler', () => {
 
   it('logs completed chat requests with RAG response metrics', async () => {
     const logs: ApiLogEntry[] = [];
-    const nowValues = [100, 145];
+    const nowValues = [100, 100, 145];
     const handler = createRequestHandler({
       logger: (entry) => {
         logs.push(entry);
@@ -816,7 +1035,7 @@ describe('createRequestHandler', () => {
 
   it('logs streamed chat requests when metadata is emitted', async () => {
     const logs: ApiLogEntry[] = [];
-    const nowValues = [200, 260];
+    const nowValues = [200, 200, 260];
     const streamEvents: ChatStreamEvent[] = [
       { type: 'answer_delta', delta: 'XXYY Pro' },
       {
@@ -907,7 +1126,7 @@ describe('createRequestHandler', () => {
 
   it('logs chat request errors with the public API error code', async () => {
     const logs: ApiLogEntry[] = [];
-    const nowValues = [300, 325];
+    const nowValues = [300, 300, 325];
     const handler = createRequestHandler({
       logger: (entry) => {
         logs.push(entry);
@@ -949,7 +1168,7 @@ describe('createRequestHandler', () => {
     ]);
   });
 
-  it('requires planner configuration for boundary-like questions in agentic mode', async () => {
+  it('returns boundary answers for obvious private lookups without planner configuration', async () => {
     const handler = createRequestHandler({ env: {} });
 
     const response = await callHandler(handler, {
@@ -958,10 +1177,11 @@ describe('createRequestHandler', () => {
       body: { message: '帮我查一下钱包余额' },
     });
 
-    expect(response.statusCode).toBe(503);
-    expect(JSON.parse(response.body)).toEqual({
-      error: 'llm_configuration_missing',
-      message: 'OPENAI_API_KEY is required for agent planning.',
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({
+      agentRoute: 'boundary',
+      citations: [],
+      intent: 'realtime_account_query',
     });
   });
 

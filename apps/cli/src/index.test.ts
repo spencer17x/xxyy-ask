@@ -12,6 +12,7 @@ import type { SourceDocument } from '@xxyy/shared';
 import {
   createDefaultCliIo,
   formatChatResponse,
+  formatEvaluationReport,
   formatIngestSummary,
   formatKnowledgeStats,
   formatMigrationSummary,
@@ -38,6 +39,11 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['migrate'])).toEqual({ command: 'migrate' });
     expect(parseCliArgs(['stats'])).toEqual({ command: 'stats' });
     expect(parseCliArgs(['sync:x'])).toEqual({ command: 'sync:x' });
+    expect(parseCliArgs(['evaluate'])).toEqual({ command: 'evaluate', providerBacked: false });
+    expect(parseCliArgs(['evaluate', '--provider'])).toEqual({
+      command: 'evaluate',
+      providerBacked: true,
+    });
   });
 
   it('rejects unknown commands', () => {
@@ -200,6 +206,43 @@ describe('CLI output formatting', () => {
     expect(formatMigrationSummary()).toBe('Database migrations applied.');
   });
 
+  it('formats evaluation reports with useful failure reasons', () => {
+    expect(
+      formatEvaluationReport({
+        passed: 1,
+        total: 2,
+        results: [
+          {
+            actualIntent: 'product_qa',
+            citationCount: 1,
+            expectedIntent: 'product_qa',
+            failureReasons: [],
+            minCitations: 1,
+            name: 'pro benefits',
+            passed: true,
+          },
+          {
+            actualIntent: 'unknown',
+            citationCount: 0,
+            expectedIntent: 'product_qa',
+            failureReasons: ['intent unknown != product_qa', 'citations 0/1'],
+            minCitations: 1,
+            name: 'bad answer',
+            passed: false,
+          },
+        ],
+      }),
+    ).toContain(
+      [
+        'Evaluation: 1/2 passed',
+        '[PASS] pro benefits',
+        '[FAIL] bad answer',
+        '  - intent unknown != product_qa',
+        '  - citations 0/1',
+      ].join('\n'),
+    );
+  });
+
   it('formats knowledge stats for retained stats command', () => {
     const stats: KnowledgeStats = {
       chunkCount: 64,
@@ -239,7 +282,7 @@ describe('CLI output formatting', () => {
 });
 
 describe('runCli', () => {
-  it('requires planner configuration for boundary-like questions in agentic mode', async () => {
+  it('returns boundary answers without planner configuration for obvious private lookups', async () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
     const exitCode = await runCli(['ask', '帮我查一下钱包余额'], {
@@ -259,9 +302,10 @@ describe('runCli', () => {
       },
     });
 
-    expect(exitCode).toBe(1);
-    expect(stdout.join('')).toBe('');
-    expect(stderr.join('')).toContain('OPENAI_API_KEY is required for agent planning');
+    expect(exitCode).toBe(0);
+    expect(stdout.join('')).toContain('我不能直接查询你的钱包余额');
+    expect(stdout.join('')).toContain('Intent: realtime_account_query');
+    expect(stderr.join('')).toBe('');
   });
 
   it('prints planner configuration errors from agentic mode', async () => {
@@ -335,6 +379,7 @@ describe('runCli', () => {
         loadRagConfig: vi.fn(() => ({
           answerProvider: 'openai',
           databaseUrl: 'postgres://example.test/db',
+          embeddingDimension: 1536,
           openAiApiKey: 'test-key',
           openAiApiKeyPresent: true,
           openAiBaseUrl: 'https://api.openai.test/v1',
@@ -450,6 +495,7 @@ describe('runCli', () => {
         loadRagConfig: vi.fn(() => ({
           answerProvider: 'openai',
           databaseUrl: 'postgres://example.test/db',
+          embeddingDimension: 1536,
           openAiApiKey: 'test-key',
           openAiApiKeyPresent: true,
           openAiBaseUrl: 'https://api.openai.test/v1',
@@ -584,6 +630,7 @@ describe('runCli', () => {
         loadRagConfig: vi.fn(() => ({
           answerProvider: 'openai',
           databaseUrl: 'postgres://example.test/db',
+          embeddingDimension: 1536,
           openAiApiKey: 'test-key',
           openAiApiKeyPresent: true,
           openAiBaseUrl: 'https://api.openai.test/v1',
@@ -675,6 +722,7 @@ describe('runCli', () => {
         loadRagConfig: vi.fn(() => ({
           answerProvider: 'openai',
           databaseUrl: 'postgres://example.test/db',
+          embeddingDimension: 1536,
           openAiApiKey: undefined,
           openAiApiKeyPresent: false,
           openAiBaseUrl: 'https://api.openai.test/v1',
@@ -755,6 +803,7 @@ describe('runCli', () => {
         loadRagConfig: vi.fn(() => ({
           answerProvider: 'openai',
           databaseUrl: 'postgres://example.test/db',
+          embeddingDimension: 1536,
           openAiApiKey: 'test-key',
           openAiApiKeyPresent: true,
           openAiBaseUrl: 'https://api.openai.test/v1',

@@ -27,11 +27,16 @@ type ApiEnv = RagEnv &
   Partial<
     Record<
       | 'API_CORS_ORIGIN'
+      | 'API_CHAT_AUTH_TOKEN'
+      | 'API_DEEP_HEALTH_TOKEN'
+      | 'API_ENABLE_DEEP_HEALTH'
       | 'API_MAX_BODY_BYTES'
       | 'API_RATE_LIMIT_MAX'
       | 'API_RATE_LIMIT_WINDOW_MS'
+      | 'API_REQUIRE_CHAT_AUTH'
       | 'NODE_ENV'
-      | 'PORT',
+      | 'PORT'
+      | 'TRUST_PROXY',
       string
     >
   >;
@@ -40,6 +45,9 @@ export interface ApiRequestLike {
   method?: string;
   url?: string;
   headers: IncomingHttpHeaders;
+  socket?: {
+    remoteAddress?: string;
+  };
   [Symbol.asyncIterator](): AsyncIterator<Buffer | string>;
 }
 
@@ -75,10 +83,15 @@ export interface StartServerOptions extends CreateRequestHandlerOptions {
 const DEFAULT_LOCAL_PORT_RETRY_LIMIT = 20;
 
 interface ApiRuntimeConfig {
+  chatAuthToken: string | undefined;
   corsOrigins: string[];
+  deepHealthToken: string | undefined;
+  enableDeepHealth: boolean;
   maxBodyBytes: number;
   rateLimitMax: number;
   rateLimitWindowMs: number;
+  requireChatAuth: boolean;
+  trustProxy: boolean;
 }
 
 interface ChatPayload {
@@ -140,7 +153,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const now = options.now ?? Date.now;
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
   const webAssetsDir = options.webAssetsDir ?? createDefaultWebAssetsDir(options, env);
-  const rateLimiter = createRateLimiter(apiConfig, Date.now);
+  const rateLimiter = createRateLimiter(apiConfig, now);
 
   return async function handleRequest(request, response): Promise<void> {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
@@ -149,8 +162,15 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       return;
     }
 
+    if (isApiRoute(requestUrl.pathname) && request.method === 'POST') {
+      const authResult = authorizeChatRequest(request, response, apiConfig);
+      if (authResult === 'handled') {
+        return;
+      }
+    }
+
     if (isRateLimitedPostApiRoute(requestUrl.pathname) && request.method === 'POST') {
-      const rateLimitResult = rateLimiter.check(clientAddress(request));
+      const rateLimitResult = rateLimiter.check(clientAddress(request, apiConfig));
       if (!rateLimitResult.allowed) {
         response.setHeader('Retry-After', String(Math.ceil(rateLimitResult.retryAfterMs / 1000)));
         sendJson(response, 429, {
@@ -168,6 +188,11 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       }
 
       if (request.method === 'GET' && requestUrl.pathname === '/health/deep') {
+        const accessResult = authorizeDeepHealthRequest(request, response, apiConfig);
+        if (accessResult === 'handled') {
+          return;
+        }
+
         const healthStatus = await getHealthStatus();
         sendJson(response, healthStatus.status === 'ok' ? 200 : 503, healthStatus);
         return;
@@ -280,12 +305,29 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
 }
 
 function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
+  const chatAuthToken = normalizeOptionalSecret(env.API_CHAT_AUTH_TOKEN);
+  const deepHealthToken = normalizeOptionalSecret(env.API_DEEP_HEALTH_TOKEN);
+  const isProduction = env.NODE_ENV === 'production';
+
   return {
+    chatAuthToken,
     corsOrigins: parseCsv(env.API_CORS_ORIGIN),
+    deepHealthToken,
+    enableDeepHealth: parseBoolean(
+      env.API_ENABLE_DEEP_HEALTH,
+      !isProduction || deepHealthToken !== undefined,
+    ),
     maxBodyBytes: parsePositiveInteger(env.API_MAX_BODY_BYTES, 64 * 1024),
     rateLimitMax: parsePositiveInteger(env.API_RATE_LIMIT_MAX, 60),
     rateLimitWindowMs: parsePositiveInteger(env.API_RATE_LIMIT_WINDOW_MS, 60_000),
+    requireChatAuth: parseBoolean(env.API_REQUIRE_CHAT_AUTH, isProduction),
+    trustProxy: parseBoolean(env.TRUST_PROXY, false),
   };
+}
+
+function normalizeOptionalSecret(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
 }
 
 function parseCsv(value: string | undefined): string[] {
@@ -306,6 +348,27 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  switch (value.trim().toLowerCase()) {
+    case '1':
+    case 'true':
+    case 'yes':
+    case 'on':
+      return true;
+    case '0':
+    case 'false':
+    case 'no':
+    case 'off':
+      return false;
+    default:
+      return fallback;
+  }
 }
 
 type CorsResult = 'continue' | 'handled';
@@ -370,20 +433,88 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return value;
 }
 
+type AccessResult = 'continue' | 'handled';
+
+function authorizeChatRequest(
+  request: ApiRequestLike,
+  response: ApiResponseLike,
+  config: ApiRuntimeConfig,
+): AccessResult {
+  if (!config.requireChatAuth) {
+    return 'continue';
+  }
+
+  if (config.chatAuthToken === undefined) {
+    sendJson(response, 503, {
+      error: 'chat_auth_not_configured',
+      message: 'API_CHAT_AUTH_TOKEN is required when chat authentication is enabled.',
+    });
+    return 'handled';
+  }
+
+  return authorizeTokenRequest(request, response, config.chatAuthToken);
+}
+
+function authorizeDeepHealthRequest(
+  request: ApiRequestLike,
+  response: ApiResponseLike,
+  config: ApiRuntimeConfig,
+): AccessResult {
+  if (!config.enableDeepHealth) {
+    sendJson(response, 404, { error: 'not_found', message: 'Route not found.' });
+    return 'handled';
+  }
+
+  if (config.deepHealthToken === undefined) {
+    return 'continue';
+  }
+
+  return authorizeTokenRequest(request, response, config.deepHealthToken);
+}
+
+function authorizeTokenRequest(
+  request: ApiRequestLike,
+  response: ApiResponseLike,
+  token: string,
+): AccessResult {
+  if (requestToken(request) === token) {
+    return 'continue';
+  }
+
+  sendJson(response, 401, {
+    error: 'unauthorized',
+    message: 'Missing or invalid authorization token.',
+  });
+  return 'handled';
+}
+
+function requestToken(request: ApiRequestLike): string | undefined {
+  const authorization = headerValue(request.headers.authorization)?.trim();
+  if (authorization !== undefined) {
+    const bearerMatch = /^bearer\s+(.+)$/iu.exec(authorization);
+    if (bearerMatch?.[1] !== undefined) {
+      return bearerMatch[1].trim();
+    }
+  }
+
+  return headerValue(request.headers['x-api-key'])?.trim();
+}
+
 interface RateLimitResult {
   allowed: boolean;
   retryAfterMs: number;
 }
 
-function createRateLimiter(
-  config: Pick<ApiRuntimeConfig, 'rateLimitMax' | 'rateLimitWindowMs'>,
+export function createRateLimiter(
+  config: { rateLimitMax: number; rateLimitWindowMs: number },
   now: () => number,
-): { check(key: string): RateLimitResult } {
+): { check(key: string): RateLimitResult; size(): number } {
   const buckets = new Map<string, { count: number; resetAt: number }>();
 
   return {
     check(key) {
       const currentTime = now();
+      removeExpiredBuckets(buckets, currentTime);
       const currentBucket = buckets.get(key);
       if (currentBucket === undefined || currentBucket.resetAt <= currentTime) {
         buckets.set(key, {
@@ -403,21 +534,40 @@ function createRateLimiter(
       currentBucket.count += 1;
       return { allowed: true, retryAfterMs: 0 };
     },
+    size() {
+      return buckets.size;
+    },
   };
 }
 
-function clientAddress(request: ApiRequestLike): string {
-  const forwardedFor = headerValue(request.headers['x-forwarded-for']);
-  if (forwardedFor !== undefined && forwardedFor.trim().length > 0) {
-    return forwardedFor.split(',')[0]?.trim() ?? 'unknown';
+function removeExpiredBuckets(
+  buckets: Map<string, { count: number; resetAt: number }>,
+  currentTime: number,
+): void {
+  for (const [key, bucket] of buckets.entries()) {
+    if (bucket.resetAt <= currentTime) {
+      buckets.delete(key);
+    }
+  }
+}
+
+function clientAddress(
+  request: ApiRequestLike,
+  config: Pick<ApiRuntimeConfig, 'trustProxy'>,
+): string {
+  if (config.trustProxy) {
+    const forwardedFor = headerValue(request.headers['x-forwarded-for']);
+    if (forwardedFor !== undefined && forwardedFor.trim().length > 0) {
+      return forwardedFor.split(',')[0]?.trim() ?? 'unknown';
+    }
+
+    const realIp = headerValue(request.headers['x-real-ip']);
+    if (realIp !== undefined && realIp.trim().length > 0) {
+      return realIp.trim();
+    }
   }
 
-  const realIp = headerValue(request.headers['x-real-ip']);
-  if (realIp !== undefined && realIp.trim().length > 0) {
-    return realIp.trim();
-  }
-
-  return 'unknown';
+  return request.socket?.remoteAddress?.trim() || 'unknown';
 }
 
 function createChatSuccessLogEntry(input: {
@@ -855,7 +1005,11 @@ function createCachedChatServiceLoader(
           model: config.openAiEmbeddingModel,
           requestTimeoutMs: config.openAiRequestTimeoutMs,
         });
-        return createPgVectorStore({ client: pool, embeddingProvider });
+        return createPgVectorStore({
+          client: pool,
+          embeddingDimension: config.embeddingDimension,
+          embeddingProvider,
+        });
       } catch (error) {
         await pool.end();
         throw error;

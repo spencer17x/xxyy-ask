@@ -1,10 +1,13 @@
 import { Pool } from 'pg';
 
 import type { BatchEmbeddingProvider, PreparedKnowledgeChunk } from '@xxyy/knowledge';
-import { tokenize } from '@xxyy/knowledge';
 import type { ChatChannel, ChunkMetadata, IndexEntry, Intent, SourceType } from '@xxyy/shared';
 
-import type { RetrieveOptions, RetrievedChunk } from './retrieve.js';
+import {
+  createRetrieveQueryTokens,
+  type RetrieveOptions,
+  type RetrievedChunk,
+} from './retrieve.js';
 import type { Retriever } from './retriever.js';
 
 export interface PgClientLike {
@@ -33,6 +36,7 @@ export interface PgVectorStore extends Retriever {
 
 export interface PgVectorStoreOptions {
   client: PgClientLike;
+  embeddingDimension?: number;
   embeddingProvider: BatchEmbeddingProvider;
 }
 
@@ -178,7 +182,7 @@ interface FeedbackRecordRow {
   session_id: string | null;
 }
 
-const PGVECTOR_EMBEDDING_DIMENSION = 1536;
+const DEFAULT_PGVECTOR_EMBEDDING_DIMENSION = 1536;
 const DEFAULT_TOP_K = 6;
 const LEXICAL_SCORE_WEIGHT = 0.5;
 const DIRECT_X_POST_SOURCE_BOOST = 6;
@@ -212,9 +216,10 @@ export function createPgFeedbackStore(options: PgFeedbackStoreOptions): PgFeedba
 }
 
 export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStore {
+  const embeddingDimension = normalizeEmbeddingDimension(options.embeddingDimension);
   const upsertChunks = async (chunks: EmbeddedKnowledgeChunk[]): Promise<void> => {
     for (const chunk of chunks) {
-      validateEmbedding(chunk.embedding);
+      validateEmbedding(chunk.embedding, embeddingDimension);
 
       await queryDatabase(
         options.client,
@@ -321,7 +326,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           retrieved_at timestamptz,
           content text not null,
           tokens text[] not null,
-          embedding vector(1536) not null,
+          embedding vector(${embeddingDimension}) not null,
           content_hash text not null,
           created_at timestamptz not null default now(),
           updated_at timestamptz not null default now()
@@ -461,10 +466,10 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         return [];
       }
 
-      validateEmbedding(queryEmbedding);
+      validateEmbedding(queryEmbedding, embeddingDimension);
 
       const topK = normalizeTopK(retrieveOptions.topK);
-      const queryTokens = tokenize(question);
+      const queryTokens = createRetrieveQueryTokens(question);
       const candidateLimit = Math.max(topK * 4, topK);
       const response = await queryDatabase<KnowledgeChunkRow>(
         options.client,
@@ -768,18 +773,28 @@ export function toPgVectorLiteral(vector: number[]): string {
   return `[${vector.join(',')}]`;
 }
 
-function validateEmbedding(embedding: number[]): void {
-  if (embedding.length !== PGVECTOR_EMBEDDING_DIMENSION) {
-    throw new Error(
-      `Expected embedding dimension ${PGVECTOR_EMBEDDING_DIMENSION}, got ${embedding.length}.`,
-    );
+function validateEmbedding(embedding: number[], embeddingDimension: number): void {
+  if (embedding.length !== embeddingDimension) {
+    throw new Error(`Expected embedding dimension ${embeddingDimension}, got ${embedding.length}.`);
   }
 
-  for (let index = 0; index < PGVECTOR_EMBEDDING_DIMENSION; index += 1) {
+  for (let index = 0; index < embeddingDimension; index += 1) {
     if (!Number.isFinite(embedding[index])) {
       throw new Error('Embedding contains a non-finite value.');
     }
   }
+}
+
+function normalizeEmbeddingDimension(embeddingDimension: number | undefined): number {
+  if (
+    embeddingDimension === undefined ||
+    !Number.isInteger(embeddingDimension) ||
+    embeddingDimension <= 0
+  ) {
+    return DEFAULT_PGVECTOR_EMBEDDING_DIMENSION;
+  }
+
+  return embeddingDimension;
 }
 
 function normalizeTopK(topK: number | undefined): number {
@@ -809,13 +824,9 @@ function normalizeFeedbackLimit(limit: number | undefined): number {
 function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[]): RetrievedChunk {
   const lexicalScore = queryTokens.filter((token) => row.tokens.includes(token)).length;
   const vectorScore = Math.max(0, 1 - row.embedding_distance);
+  const rowSourceBoost = sourceBoost(row.source_type) + directXPostSourceBoost(question, row);
   const score = Number(
-    (
-      vectorScore +
-      lexicalScore * LEXICAL_SCORE_WEIGHT +
-      sourceBoost(row.source_type) +
-      directXPostSourceBoost(question, row)
-    ).toFixed(8),
+    (vectorScore + lexicalScore * LEXICAL_SCORE_WEIGHT + rowSourceBoost).toFixed(8),
   );
   const entry: IndexEntry = {
     documentId: row.document_id,
@@ -840,6 +851,7 @@ function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[])
     lexicalScore,
     rank: 0,
     score,
+    sourceBoost: Number(rowSourceBoost.toFixed(8)),
     vectorScore,
   };
 }

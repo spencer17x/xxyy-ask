@@ -48,6 +48,19 @@ describe('createPgVectorStore', () => {
     );
   });
 
+  it('uses the configured embedding dimension in the knowledge chunk schema', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingDimension: 3,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await store.migrate();
+
+    expect(client.queries.map((query) => query.sql).join('\n')).toContain('embedding vector(3)');
+  });
+
   it('records ingestion runs for production knowledge versioning', async () => {
     const client = new FakePgClient();
     const store = createPgVectorStore({
@@ -388,6 +401,19 @@ describe('createPgVectorStore', () => {
     );
   });
 
+  it('accepts upsert chunk embeddings that match a configured dimension', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingDimension: 3,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await store.upsertChunks([createChunk({ embedding: [0.1, 0.2, 0.3] })]);
+
+    expect(client.queries[0]?.sql).toContain('insert into knowledge_chunks');
+  });
+
   it('rejects upsert chunk embeddings with non-finite values', async () => {
     const client = new FakePgClient();
     const store = createPgVectorStore({
@@ -437,6 +463,7 @@ describe('createPgVectorStore', () => {
     expect(results[0]).toMatchObject({
       id: 'official_docs:pro:chunk:0001',
       rank: 1,
+      sourceBoost: 0.05,
       metadata: {
         file: 'docs/pro.md',
         sourceType: 'official_docs',
@@ -479,6 +506,42 @@ describe('createPgVectorStore', () => {
     expect(lastQuery?.values[2]).toContain('跟单');
     expect(results[0]?.id).toBe('x_updates:xxyy-x-updates:chunk:0001');
     expect(results[0]?.lexicalScore).toBeGreaterThan(0);
+  });
+
+  it('expands product synonym query tokens before lexical candidate retrieval', async () => {
+    const client = new FakePgClient();
+    client.rows = [
+      {
+        content: 'XXYY Pro 可监控 2000 个钱包，并支持提醒频率。',
+        document_id: 'official_docs:pro-limits',
+        embedding_distance: 0.6,
+        file: 'docs/product-features/pro.md',
+        heading_path: ['XXYY Pro 权益'],
+        id: 'official_docs:pro-limits:chunk:0001',
+        module: 'XXYY Pro',
+        order_index: null,
+        retrieved_at: null,
+        source_type: 'official_docs',
+        source_url: null,
+        title: 'XXYY Pro 权益',
+        tokens: ['xxyy', 'pro', '监控', '钱包'],
+      },
+    ];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 })]),
+      },
+    });
+
+    const results = await store.retrieve('付费套餐能追踪多少地址？', { topK: 1 });
+
+    const queryTokens = client.queries.at(-1)?.values[2];
+    expect(queryTokens).toEqual(expect.arrayContaining(['pro', '监控', '钱包']));
+    expect(results[0]).toMatchObject({
+      id: 'official_docs:pro-limits:chunk:0001',
+      lexicalScore: 3,
+    });
   });
 
   it('prioritizes direct X post source rows for tweet-source questions', async () => {
@@ -530,6 +593,7 @@ describe('createPgVectorStore', () => {
     expect(results[0]?.metadata.sourceUrl).toBe(
       'https://x.com/useXXYYio/status/2030954722350575916',
     );
+    expect(results[0]?.sourceBoost).toBe(6);
   });
 
   it('wraps pgvector query failures as vector store unavailability', async () => {

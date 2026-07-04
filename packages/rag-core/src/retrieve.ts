@@ -9,6 +9,7 @@ export interface RetrievedChunk extends IndexEntry {
   rank: number;
   score: number;
   lexicalScore: number;
+  sourceBoost: number;
   vectorScore: number;
 }
 
@@ -17,6 +18,7 @@ const BM25_K1 = 1.2;
 const BM25_B = 0.75;
 const VECTOR_WEIGHT = 0.35;
 const LEXICAL_WEIGHT = 1;
+const VECTOR_ONLY_MATCH_THRESHOLD = 0.9;
 const TIE_EPSILON = 1e-12;
 
 export function retrieve(
@@ -24,7 +26,7 @@ export function retrieve(
   index: RagIndex,
   options: RetrieveOptions = {},
 ): RetrievedChunk[] {
-  const queryTokens = uniqueTokens(tokenize(question));
+  const queryTokens = createRetrieveQueryTokens(question);
   const topK = normalizeTopK(options.topK);
 
   if (queryTokens.length === 0 || index.entries.length === 0 || topK <= 0) {
@@ -46,18 +48,24 @@ export function retrieve(
       );
       const vectorScore = Math.max(0, cosineSimilarity(queryEmbedding, entry.embedding));
       const contextScore = calculateContextScore(question, entry);
+      const sourceBoost = calculateSourceBoost(entry.metadata.sourceType);
       const score = roundScore(
-        LEXICAL_WEIGHT * lexicalScore + VECTOR_WEIGHT * vectorScore + contextScore,
+        LEXICAL_WEIGHT * lexicalScore + VECTOR_WEIGHT * vectorScore + contextScore + sourceBoost,
       );
 
       return {
         ...entry,
         lexicalScore: roundScore(lexicalScore),
         vectorScore: roundScore(vectorScore),
+        sourceBoost: roundScore(sourceBoost),
         score,
       };
     })
-    .filter((entry) => entry.lexicalScore > 0)
+    .filter(
+      (entry) =>
+        entry.lexicalScore > 0 ||
+        (entry.lexicalScore === 0 && entry.vectorScore >= VECTOR_ONLY_MATCH_THRESHOLD),
+    )
     .sort(compareScoredEntries)
     .slice(0, topK);
 
@@ -65,6 +73,31 @@ export function retrieve(
     ...entry,
     rank: indexOfEntry + 1,
   }));
+}
+
+export function createRetrieveQueryTokens(question: string): string[] {
+  return expandQueryTokens(uniqueTokens(tokenize(question)), question);
+}
+
+function expandQueryTokens(tokens: string[], question: string): string[] {
+  const expanded = [...tokens];
+  const normalizedQuestion = question.normalize('NFKC').toLowerCase();
+
+  if (
+    /付费套餐|付费会员|高级会员|会员套餐|会员权益|高级版|专业版|\bpro\b/u.test(normalizedQuestion)
+  ) {
+    expanded.push(...tokenize('Pro 权益'));
+  }
+
+  if (/基础套餐|基础版|免费版|\bbasic\b/u.test(normalizedQuestion)) {
+    expanded.push(...tokenize('Basic 基础'));
+  }
+
+  if (/地址|追踪|跟踪/u.test(normalizedQuestion)) {
+    expanded.push(...tokenize('钱包 监控'));
+  }
+
+  return uniqueTokens(expanded);
 }
 
 function calculateBm25(
@@ -93,6 +126,10 @@ function calculateBm25(
   }
 
   return score;
+}
+
+function calculateSourceBoost(sourceType: SourceType): number {
+  return sourceType === 'official_docs' ? 0.05 : 0;
 }
 
 function calculateContextScore(question: string, entry: IndexEntry): number {

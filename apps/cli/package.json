@@ -14,6 +14,7 @@
   },
   "scripts": {
     "rag:ask": "tsx src/index.ts ask",
+    "rag:evaluate": "tsx src/index.ts evaluate",
     "rag:ingest": "tsx src/index.ts ingest",
     "rag:migrate": "tsx src/index.ts migrate",
     "rag:stats": "tsx src/index.ts stats",

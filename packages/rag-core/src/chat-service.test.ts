@@ -140,6 +140,7 @@ describe('createChatService', () => {
               lexicalScore: 1,
               rank: 1,
               score: 1,
+              sourceBoost: 0.05,
               vectorScore: 1,
             },
           ]);

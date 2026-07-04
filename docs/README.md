@@ -46,6 +46,7 @@ pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 pnpm rag:ingest
 pnpm rag:sync:x
 pnpm rag:stats
+pnpm rag:evaluate
 pnpm run telegram:dev
 ```
 
@@ -61,9 +62,9 @@ POST /api/chat
 POST /api/chat/stream
 ```
 
-`/health` 是轻量存活检查。`/health/deep` 会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM；全部可用返回 `200`，任一项不可用返回 `503` 和分项原因。
+`/health` 是轻量存活检查，不调用外部模型。`/health/deep` 会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM；开发模式默认开放，生产模式默认禁用，配置 `API_DEEP_HEALTH_TOKEN` 后需要 Bearer token 访问。
 
-`POST /api/chat` 和 `POST /api/chat/stream` 是客服入口。Agent 当前只在 `boundary`、`clarify` 和 `product_answer` 之间规划路线。
+`POST /api/chat` 和 `POST /api/chat/stream` 是客服入口。生产模式默认要求 `API_CHAT_AUTH_TOKEN`，本地开发默认不要求。Agent 当前只在 `boundary`、`clarify` 和 `product_answer` 之间规划路线。
 
 ## Telegram Bot
 

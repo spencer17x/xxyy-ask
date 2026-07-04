@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
+import { LlmConfigurationError } from '@xxyy/rag-core';
 
 import { createLangGraphCustomerRuntime } from './langgraph-customer-runtime.js';
 import {
@@ -122,7 +123,74 @@ describe('createLangGraphCustomerRuntime', () => {
     );
   });
 
-  it('lets the planner decide realtime account requests instead of pre-blocking', async () => {
+  it('returns boundary answers before planner execution for obvious private lookup requests', async () => {
+    const registry = createToolRegistry();
+    const planner = {
+      plan: vi.fn(() => Promise.reject(new LlmConfigurationError('planner unavailable'))),
+    };
+
+    const response = await createLangGraphCustomerRuntime({
+      planner,
+      registry,
+    }).ask({
+      channel: 'web',
+      message: '帮我查一下我的钱包余额',
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'boundary',
+      citations: [],
+      intent: 'realtime_account_query',
+    });
+    expect(response.answer).toContain('我不能直接查询你的钱包余额');
+    expect(planner.plan).not.toHaveBeenCalled();
+  });
+
+  it('does not block product capability questions that mention wallet balances', async () => {
+    const registry = createToolRegistry();
+    const response: ChatResponse = {
+      answer: 'XXYY 产品界面提供钱包相关入口说明。',
+      citations: [],
+      confidence: 0.82,
+      intent: 'product_qa',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    await expect(
+      createLangGraphCustomerRuntime({
+        planner: createScriptedPlannerModel([
+          {
+            input: { question: 'XXYY 支持查看钱包余额吗？' },
+            kind: 'tool',
+            reason: 'Use product docs.',
+            route: 'product_answer',
+            toolName: 'answer_product_question',
+          },
+        ]),
+        registry,
+      }).ask({
+        channel: 'web',
+        message: 'XXYY 支持查看钱包余额吗？',
+      }),
+    ).resolves.toMatchObject({
+      agentRoute: 'product_answer',
+      intent: 'product_qa',
+    });
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it('pre-blocks realtime account requests instead of asking the planner', async () => {
     const registry = createToolRegistry();
     const execute = vi.fn(() => {
       throw new Error('tool should not be called');
@@ -162,16 +230,16 @@ describe('createLangGraphCustomerRuntime', () => {
       citations: [],
       intent: 'realtime_account_query',
     });
-    expect(response.answer).toContain('无法直接查询你的私有钱包余额');
-    expect(planner.plan).toHaveBeenCalledOnce();
+    expect(response.answer).toContain('我不能直接查询你的钱包余额');
+    expect(planner.plan).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
   });
 
   it.each([
     ['unsafe attack request', 'How to hack XXYY account?', '不能帮助攻击'],
     ['business action request', '帮我取消订单并退款', '不能代你开通、取消、修改'],
-    ['private credential request', '我的私钥是 test-secret-key', '不要发送私钥'],
-  ])('lets the planner decide %s instead of pre-blocking', async (_name, message, expectedText) => {
+    ['private credential request', '我的私钥是 test-secret-key', '发送私钥'],
+  ])('pre-blocks %s instead of asking the planner', async (_name, message, expectedText) => {
     const registry = createToolRegistry();
     const execute = vi.fn(() => {
       throw new Error('tool should not be called');
@@ -212,7 +280,7 @@ describe('createLangGraphCustomerRuntime', () => {
       intent: 'unknown',
     });
     expect(response.answer).toContain(expectedText);
-    expect(planner.plan).toHaveBeenCalledOnce();
+    expect(planner.plan).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -531,6 +599,63 @@ describe('createLangGraphCustomerRuntime', () => {
         type: 'metadata',
       },
     ]);
+  });
+
+  it('streams planner-selected product tool events without using the non-streaming execute path', async () => {
+    const registry = createToolRegistry();
+    const execute = vi.fn(() => {
+      throw new Error('execute should not be used when the tool has a stream path');
+    });
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({ question: z.string() }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+      async *stream() {
+        await Promise.resolve();
+        yield { type: 'answer_delta' as const, delta: 'streamed ' };
+        yield {
+          type: 'metadata' as const,
+          citations: [],
+          confidence: 0.84,
+          intent: 'product_qa' as const,
+        };
+      },
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { question: 'XXYY Pro 有哪些权益？' },
+          kind: 'tool',
+          reason: 'Use product docs.',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
+        },
+      ]),
+      registry,
+    }).stream({
+      channel: 'web',
+      message: 'XXYY Pro 有哪些权益？',
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: 'answer_delta', delta: 'streamed ' },
+      {
+        agentRoute: 'product_answer',
+        citations: [],
+        confidence: 0.84,
+        intent: 'product_qa',
+        type: 'metadata',
+      },
+    ]);
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('returns clarification at the step limit without executing tools', async () => {

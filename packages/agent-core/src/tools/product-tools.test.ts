@@ -62,6 +62,7 @@ describe('createProductTools', () => {
 
     expect(result.chunks[0]).not.toHaveProperty('embedding');
     expect(result.chunks[0]).not.toHaveProperty('tokens');
+    expect(result.chunks[0]).toHaveProperty('sourceBoost');
   });
 
   it('rejects blank product tool inputs at the schema boundary', () => {
@@ -148,7 +149,7 @@ describe('createProductTools', () => {
     expect(answerInput?.question).toBe('支持跟单么');
   });
 
-  it('does not apply boundary logic inside answer_product_question after planner selection', async () => {
+  it('keeps realtime account lookups blocked even when planner selects answer_product_question', async () => {
     const registry = createToolRegistry();
     const retrieve = vi.fn<Retriever['retrieve']>(() => [createRetrievedChunk()]);
     const answer = vi.fn<AnswerProvider['answer']>((input) =>
@@ -167,21 +168,42 @@ describe('createProductTools', () => {
       registry.register(tool);
     }
 
-    await expect(
-      registry.execute('answer_product_question', {
-        question: '帮我查一下钱包余额',
-      }),
-    ).resolves.toMatchObject({
-      answer: 'planner routed product_qa',
+    const result = (await registry.execute('answer_product_question', {
+      question: '帮我查一下钱包余额',
+    })) as ChatResponse;
+
+    expect(result.answer).toContain('我不能直接查询你的钱包余额');
+    expect(result).toMatchObject({
       citations: [],
-      intent: 'product_qa',
+      intent: 'realtime_account_query',
     });
-    expect(retrieve).toHaveBeenCalledWith('帮我查一下钱包余额', { topK: 6 });
-    const answerInput = answer.mock.calls[0]?.[0];
-    expect(answerInput?.classification).toMatchObject({
-      intent: 'product_qa',
-      reason: 'planner selected product answer tool',
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(answer).not.toHaveBeenCalled();
+  });
+
+  it('keeps investment advice blocked even when planner selects answer_product_question', async () => {
+    const registry = createToolRegistry();
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [createRetrievedChunk()]);
+    const answer = vi.fn<AnswerProvider['answer']>();
+
+    for (const tool of createProductTools({
+      answerProvider: { answer },
+      retriever: { retrieve },
+    })) {
+      registry.register(tool);
+    }
+
+    const result = (await registry.execute('answer_product_question', {
+      question: '现在可以买 SOL 吗，推荐一个能保证盈利的 token',
+    })) as ChatResponse;
+
+    expect(result.answer).toContain('我不能提供买卖建议');
+    expect(result).toMatchObject({
+      citations: [],
+      intent: 'investment_advice',
     });
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(answer).not.toHaveBeenCalled();
   });
 
   it('normalizes citation file paths, truncates excerpts, and limits citations for search results', async () => {
@@ -243,6 +265,7 @@ function createRetrievedChunk(overrides: Partial<RetrievedChunk> = {}): Retrieve
     },
     rank: 1,
     score: 2,
+    sourceBoost: 0.05,
     text: 'XXYY Pro 产品说明',
     tokens: [],
     vectorScore: 1,

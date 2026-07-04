@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createCustomerAgentChatService } from '@xxyy/agent-core';
 import {
   EmbeddingConfigurationError,
+  createLocalHashEmbedding,
   createOpenAiEmbeddingProvider,
   loadProductDocuments,
   prepareKnowledgeChunks,
@@ -17,6 +19,9 @@ import {
   createOpenAiAnswerProvider,
   createPgPool,
   createPgVectorStore,
+  createChatService,
+  createGroundedAnswer,
+  evaluateCases,
   LlmConfigurationError,
   loadRagConfig,
   loadWorkspaceEnv,
@@ -26,10 +31,12 @@ import type {
   AnswerProvider,
   ChatService,
   EmbeddedKnowledgeChunk,
+  EvaluationCase,
+  EvaluationReport,
   KnowledgeStats,
   RagEnv,
 } from '@xxyy/rag-core';
-import type { ChatRequest, ChatResponse } from '@xxyy/shared';
+import type { ChatRequest, ChatResponse, RagIndex } from '@xxyy/shared';
 
 export { resolveWorkspaceCwd } from '@xxyy/rag-core';
 
@@ -37,6 +44,7 @@ type CliEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
 
 type CliCommand =
   | { command: 'ask'; question: string }
+  | { command: 'evaluate'; providerBacked: boolean }
   | { command: 'ingest' }
   | { command: 'migrate' }
   | { command: 'stats' }
@@ -84,6 +92,7 @@ const HELP_TEXT = [
   '  pnpm rag:sync:x',
   '  pnpm rag:migrate',
   '  pnpm rag:stats',
+  '  pnpm rag:evaluate [--provider]',
   '  pnpm rag:ask -- "question"',
 ].join('\n');
 
@@ -97,11 +106,15 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
   }
 
   if (
+    command === 'evaluate' ||
     command === 'ingest' ||
     command === 'migrate' ||
     command === 'stats' ||
     command === 'sync:x'
   ) {
+    if (command === 'evaluate') {
+      return { command, providerBacked: rawRest.includes('--provider') };
+    }
     return { command };
   }
 
@@ -232,6 +245,19 @@ export function formatKnowledgeStats(stats: KnowledgeStats): string {
   return lines.join('\n');
 }
 
+export function formatEvaluationReport(report: EvaluationReport): string {
+  const lines = [`Evaluation: ${report.passed}/${report.total} passed`];
+
+  for (const result of report.results) {
+    lines.push(`[${result.passed ? 'PASS' : 'FAIL'}] ${result.name}`);
+    for (const reason of result.failureReasons) {
+      lines.push(`  - ${reason}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 export function createDefaultCliIo(options: DefaultCliIoOptions = {}): CliIo {
   const cwd = options.cwd ?? process.cwd();
   const shellEnv = options.env ?? process.env;
@@ -275,6 +301,19 @@ export async function runCli(
       const summary = await syncXUpdates({ ...io, cwd: workspaceCwd });
       writeLine(io.stdout, formatSyncXUpdatesSummary(summary));
       return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'evaluate') {
+    try {
+      const report = await evaluate({ ...io, cwd: workspaceCwd }, parsed.providerBacked);
+      writeLine(io.stdout, formatEvaluationReport(report));
+      return report.passed === report.total ? 0 : 1;
     } catch (error) {
       if (writeConfigurationError(io, error)) {
         return 1;
@@ -346,7 +385,11 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
       model: config.openAiEmbeddingModel,
       requestTimeoutMs: config.openAiRequestTimeoutMs,
     });
-    const store = createPgVectorStore({ client: pool, embeddingProvider });
+    const store = createPgVectorStore({
+      client: pool,
+      embeddingDimension: config.embeddingDimension,
+      embeddingProvider,
+    });
     await store.migrate();
     const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
     const ingestionRun = createIngestionRun({
@@ -381,7 +424,11 @@ async function syncXUpdates(io: CliIo): Promise<SyncXUpdatesSummary> {
       model: config.openAiEmbeddingModel,
       requestTimeoutMs: config.openAiRequestTimeoutMs,
     });
-    const store = createPgVectorStore({ client: pool, embeddingProvider });
+    const store = createPgVectorStore({
+      client: pool,
+      embeddingDimension: config.embeddingDimension,
+      embeddingProvider,
+    });
     await store.migrate();
     const existingHashes = await store.getChunkContentHashes(chunks.map((chunk) => chunk.id));
     const changedChunks = chunks.filter(
@@ -413,11 +460,89 @@ async function syncXUpdates(io: CliIo): Promise<SyncXUpdatesSummary> {
   }
 }
 
+async function evaluate(io: CliIo, providerBacked: boolean): Promise<EvaluationReport> {
+  const config = loadRagConfig(io.env);
+  const cases = await loadEvaluationCases(io.cwd);
+
+  if (providerBacked) {
+    const runtime = createCliChatRuntime(config);
+    try {
+      return await evaluateCases(cases, runtime.service);
+    } finally {
+      await runtime.close();
+    }
+  }
+
+  const documents = await loadProductDocuments({ cwd: io.cwd });
+  const chunks = prepareKnowledgeChunks(documents);
+  const index: RagIndex = {
+    builtAt: new Date(0).toISOString(),
+    entries: chunks.map((chunk) => ({
+      ...chunk,
+      embedding: createLocalHashEmbedding(chunk.searchableText),
+    })),
+    version: 1,
+  };
+  const service = createChatService({
+    answerProvider: {
+      answer(input) {
+        return Promise.resolve(
+          createGroundedAnswer(input.question, input.classification, input.retrievedChunks),
+        );
+      },
+    },
+    config,
+    index,
+  });
+
+  return evaluateCases(cases, service);
+}
+
+interface GoldenQaRecord {
+  boundaryExpected?: boolean;
+  expectedCitationFiles?: string[];
+  expectedIntent: EvaluationCase['expectedIntent'];
+  mustContain?: string[];
+  mustNotContain?: string[];
+  name?: string;
+  question: string;
+}
+
+async function loadEvaluationCases(cwd: string): Promise<EvaluationCase[]> {
+  const filePath = path.join(cwd, 'docs', 'eval', 'golden-qa.jsonl');
+  const content = await readFile(filePath, 'utf8');
+  return content
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line, index) => toEvaluationCase(JSON.parse(line) as GoldenQaRecord, index));
+}
+
+function toEvaluationCase(record: GoldenQaRecord, index: number): EvaluationCase {
+  return {
+    expectedIntent: record.expectedIntent,
+    ...(record.mustNotContain === undefined
+      ? {}
+      : { forbiddenAnswerIncludes: record.mustNotContain }),
+    ...(record.boundaryExpected === true ? { minCitations: 0 } : {}),
+    name: record.name ?? `golden-${index + 1}`,
+    request: {
+      channel: 'cli',
+      message: record.question,
+    },
+    ...(record.mustContain === undefined ? {} : { requiredAnswerIncludes: record.mustContain }),
+    ...(record.expectedCitationFiles === undefined
+      ? {}
+      : { requiredCitationFiles: record.expectedCitationFiles }),
+  };
+}
+
 async function migrateDatabase(config: ReturnType<typeof loadRagConfig>): Promise<void> {
   const pool = createPgPool(config.databaseUrl);
   try {
     const store = createPgVectorStore({
       client: pool,
+      embeddingDimension: config.embeddingDimension,
       embeddingProvider: {
         embedTexts: () => Promise.reject(new Error('rag:migrate does not generate embeddings.')),
       },
@@ -433,6 +558,7 @@ async function stats(config: ReturnType<typeof loadRagConfig>): Promise<Knowledg
   try {
     const store = createPgVectorStore({
       client: pool,
+      embeddingDimension: config.embeddingDimension,
       embeddingProvider: {
         embedTexts: () => Promise.reject(new Error('rag:stats does not generate embeddings.')),
       },
@@ -480,7 +606,11 @@ function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChat
         requestTimeoutMs: config.openAiRequestTimeoutMs,
       });
       pool = nextPool;
-      return createPgVectorStore({ client: nextPool, embeddingProvider });
+      return createPgVectorStore({
+        client: nextPool,
+        embeddingDimension: config.embeddingDimension,
+        embeddingProvider,
+      });
     } catch (error) {
       await nextPool.end();
       throw error;

@@ -1,8 +1,15 @@
 import { z } from 'zod';
 
-import type { ChatResponse, Citation, Classification, RagIndex } from '@xxyy/shared';
+import type {
+  ChatResponse,
+  ChatStreamEvent,
+  Citation,
+  Classification,
+  RagIndex,
+} from '@xxyy/shared';
 import {
   classifyQuestion,
+  createBoundaryAnswer,
   createLocalRetriever,
   loadRagConfig,
   type AnswerProvider,
@@ -61,6 +68,7 @@ const retrievedChunkSchema = z.object({
     .passthrough(),
   rank: z.number(),
   score: z.number(),
+  sourceBoost: z.number(),
   text: z.string(),
   vectorScore: z.number(),
 });
@@ -138,6 +146,9 @@ export function createProductTools(
     policy: productToolPolicy,
     async execute(input) {
       const classification = classificationForPlannerSelectedProductQuestion(input.question);
+      if (!shouldRetrieveForPlannerSelectedProductQuestion(classification)) {
+        return createBoundaryAnswer(classification);
+      }
       if (options.answerProvider === undefined) {
         throw new Error('answer_product_question requires an answerProvider.');
       }
@@ -151,6 +162,31 @@ export function createProductTools(
         retrievedChunks,
       });
     },
+    async *stream(input) {
+      const classification = classificationForPlannerSelectedProductQuestion(input.question);
+      if (!shouldRetrieveForPlannerSelectedProductQuestion(classification)) {
+        yield* streamChatResponse(createBoundaryAnswer(classification));
+        return;
+      }
+      if (options.answerProvider === undefined) {
+        throw new Error('answer_product_question requires an answerProvider.');
+      }
+
+      const retrievedChunks = await retriever.retrieve(input.question, {
+        topK: normalizeTopK(config.topK),
+      });
+      const answerInput = {
+        classification,
+        question: input.question,
+        retrievedChunks,
+      };
+      if (options.answerProvider.stream !== undefined) {
+        yield* options.answerProvider.stream(answerInput);
+        return;
+      }
+
+      yield* streamChatResponse(await options.answerProvider.answer(answerInput));
+    },
   };
 
   return [searchProductDocsTool, answerProductQuestionTool];
@@ -162,11 +198,26 @@ function classificationForPlannerSelectedProductQuestion(question: string): Clas
     return classification;
   }
 
+  if (!canPlannerSafelyOverrideProductClassification(classification)) {
+    return classification;
+  }
+
   return {
     confidence: 0.7,
     intent: 'product_qa',
     reason: 'planner selected product answer tool',
   };
+}
+
+function shouldRetrieveForPlannerSelectedProductQuestion(classification: Classification): boolean {
+  return classification.intent === 'product_qa' || classification.intent === 'how_to';
+}
+
+function canPlannerSafelyOverrideProductClassification(classification: Classification): boolean {
+  return (
+    classification.intent === 'unknown' &&
+    classification.reason === 'no deterministic product support intent matched'
+  );
 }
 
 function createConfiguredRetriever(options: CreateProductToolsOptions): Retriever {
@@ -201,6 +252,7 @@ function toOutputChunk(chunk: RetrievedChunk): z.input<typeof retrievedChunkSche
     },
     rank: chunk.rank,
     score: chunk.score,
+    sourceBoost: chunk.sourceBoost,
     text: chunk.text,
     vectorScore: chunk.vectorScore,
   };
@@ -240,6 +292,29 @@ function createExcerpt(text: string): string {
   }
 
   return `${compact.slice(0, MAX_EXCERPT_LENGTH - 1)}…`;
+}
+
+function streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
+  return toAsyncIterable([
+    ...(response.answer.length > 0
+      ? [{ type: 'answer_delta' as const, delta: response.answer }]
+      : []),
+    {
+      type: 'metadata',
+      ...(response.attachments === undefined ? {} : { attachments: response.attachments }),
+      citations: response.citations,
+      confidence: response.confidence,
+      intent: response.intent,
+      ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
+    },
+  ]);
+}
+
+async function* toAsyncIterable<T>(items: Iterable<T>): AsyncIterable<T> {
+  for (const item of items) {
+    await Promise.resolve();
+    yield item;
+  }
 }
 
 export type AnswerProductQuestionToolOutput = ChatResponse;

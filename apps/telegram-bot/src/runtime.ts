@@ -30,7 +30,11 @@ export function createTelegramChatRuntime(config: RagConfig): TelegramChatRuntim
         requestTimeoutMs: config.openAiRequestTimeoutMs,
       });
       vectorPool = nextPool;
-      return createPgVectorStore({ client: nextPool, embeddingProvider });
+      return createPgVectorStore({
+        client: nextPool,
+        embeddingDimension: config.embeddingDimension,
+        embeddingProvider,
+      });
     } catch (error) {
       await nextPool.end();
       throw error;

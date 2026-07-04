@@ -181,21 +181,37 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
         throw new Error('LLM streaming response did not include a body.');
       }
 
-      const deltas: string[] = [];
+      let pendingSafetyPrefix = '';
+      let streamedAnswer = '';
+      let yieldedAnswerDelta = false;
       for await (const delta of parseChatCompletionStream(response.body)) {
-        deltas.push(delta);
+        streamedAnswer += delta;
+        if (pendingSafetyPrefix.length > 0 || isPotentialSafetyLabelPrefix(delta)) {
+          pendingSafetyPrefix += delta;
+          if (isPotentialSafetyLabelPrefix(pendingSafetyPrefix)) {
+            continue;
+          }
+
+          yield { type: 'answer_delta', delta: pendingSafetyPrefix };
+          yieldedAnswerDelta = true;
+          pendingSafetyPrefix = '';
+          continue;
+        }
+
+        yield { type: 'answer_delta', delta };
+        yieldedAnswerDelta = true;
       }
 
-      const streamedAnswer = deltas.join('');
-      if (isUnusableModelAnswer(streamedAnswer)) {
+      if (pendingSafetyPrefix.length > 0 && !isUnusableModelAnswer(pendingSafetyPrefix)) {
+        yield { type: 'answer_delta', delta: pendingSafetyPrefix };
+        yieldedAnswerDelta = true;
+      }
+
+      if (!yieldedAnswerDelta && isUnusableModelAnswer(streamedAnswer)) {
         yield* streamStaticAnswer(
           createGroundedAnswer(input.question, input.classification, input.retrievedChunks),
         );
         return;
-      }
-
-      for (const delta of deltas) {
-        yield { type: 'answer_delta', delta };
       }
 
       yield withOptionalMetadataAttachments(
@@ -316,6 +332,14 @@ function createChatCompletionBody(
 function isUnusableModelAnswer(answer: string): boolean {
   const normalized = answer.replace(/\s+/gu, ' ').trim();
   return normalized.length === 0 || /^user safety:\s*[a-z_-]+$/iu.test(normalized);
+}
+
+function isPotentialSafetyLabelPrefix(answer: string): boolean {
+  const normalized = answer.replace(/\s+/gu, ' ').trim().toLowerCase();
+  return (
+    normalized.length > 0 &&
+    ('user safety:'.startsWith(normalized) || /^user safety:\s*[a-z_-]*$/u.test(normalized))
+  );
 }
 
 function withOptionalAttachments(
