@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export const supportedChannels = ['cli', 'web', 'telegram'] as const;
 
 export const workspacePackageName = '@xxyy/shared';
@@ -63,6 +65,50 @@ export interface ChatTokenUsage {
   promptTokens?: number;
   totalTokens: number;
 }
+
+export const citationSchema = z.object({
+  excerpt: z.string(),
+  file: z.string(),
+  sourceUrl: z.string().optional(),
+  title: z.string(),
+});
+
+export const chatAttachmentSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('video'),
+    mediaType: z.literal('video/mp4'),
+    title: z.string(),
+    url: z.string(),
+  }),
+  z.object({
+    kind: z.literal('image'),
+    mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']),
+    title: z.string(),
+    url: z.string(),
+  }),
+]);
+
+export const chatTokenUsageSchema = z.object({
+  completionTokens: z.number().int().nonnegative().optional(),
+  promptTokens: z.number().int().nonnegative().optional(),
+  totalTokens: z.number().int().nonnegative(),
+});
+
+export const chatStreamEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('answer_delta'),
+    delta: z.string(),
+  }),
+  z.object({
+    type: z.literal('metadata'),
+    agentRoute: z.enum(supportedAgentRoutes).optional(),
+    attachments: z.array(chatAttachmentSchema).optional(),
+    citations: z.array(citationSchema),
+    confidence: z.number(),
+    intent: z.enum(supportedIntents),
+    tokenUsage: chatTokenUsageSchema.optional(),
+  }),
+]);
 
 export type ChatStreamEvent =
   | {

@@ -1,5 +1,7 @@
 import type { z } from 'zod';
 
+import { chatStreamEventSchema } from '@xxyy/shared';
+
 export interface ToolPolicy {
   requiresOpsAuth: boolean;
 }
@@ -95,7 +97,14 @@ export function createToolRegistry(): ToolRegistry {
       }
 
       const parsedInput = definition.inputSchema.parse(input);
-      return definition.stream?.(parsedInput, context);
+      const stream = definition.stream?.(parsedInput, context);
+      return stream === undefined ? undefined : validateChatStreamEvents(stream);
     },
   };
+}
+
+async function* validateChatStreamEvents(stream: AsyncIterable<unknown>): AsyncIterable<unknown> {
+  for await (const event of stream) {
+    yield chatStreamEventSchema.parse(event);
+  }
 }

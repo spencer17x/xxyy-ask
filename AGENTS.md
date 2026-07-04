@@ -77,7 +77,7 @@ TRUST_PROXY=false
 - `pnpm run app:dev -- --ingest`：启动前只执行知识库 ingest。
 - `NODE_ENV=production pnpm run app:dev`：生产模式跳过本地 Docker，默认不刷新知识库；可加 `--sync` 或 `--full-sync` 显式更新。
 - `pnpm run telegram:dev`：启动 Telegram Bot long polling。
-- `pnpm check`：lint、format check、typecheck、tests。
+- `pnpm check`：lint、format check、typecheck、tests 和 deterministic golden QA。
 
 API 保留的公开服务面：
 

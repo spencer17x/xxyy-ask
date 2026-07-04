@@ -114,7 +114,7 @@ pnpm run app:dev -- --full-sync  # 启动前全量抓取并重建知识库
 pnpm run api:dev                 # 只启动 API + Web 服务入口
 pnpm run web:dev                 # 只启动 Vite Web
 pnpm run telegram:dev            # 启动 Telegram Bot
-pnpm check                       # lint + format check + typecheck + tests
+pnpm check                       # lint + format check + typecheck + tests + deterministic golden QA
 ```
 
 RAG 和数据库命令：
@@ -134,6 +134,12 @@ pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 - `pnpm rag:stats` 查看文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 - `pnpm rag:evaluate` 运行便宜的 deterministic golden QA 子集；`pnpm rag:evaluate -- --provider` 使用正式 Agent/pgvector/OpenAI-compatible provider 做人工全链路评估。
 - `pnpm rag:ask` 从命令行调用客服 Agent。
+
+检索质量：
+
+- 默认产品问答仍使用 hybrid recall 和 source/debug scores。`rag-core` 另外提供可选 `Reranker` 扩展点，可在 retrieval 后对候选证据做二阶段排序。
+- 内置 `createMetadataReranker()` 是本地 deterministic reranker，基于标题、模块和 heading 与问题的 token 匹配做轻量重排，不调用外部模型。它适合 golden eval 或需要更稳定证据选择的本地路径。
+- LLM relevance judge 或外部 reranker provider 可以按同一接口接入，但应默认关闭，并在有评估用例证明收益后再启用，以避免额外成本和延迟。
 
 服务验收：
 

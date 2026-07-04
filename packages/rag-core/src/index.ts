@@ -15,7 +15,12 @@ export {
   VectorStoreUnavailableError,
 } from './pgvector-store.js';
 export { retrieve } from './retrieve.js';
-export { createLazyRetriever, createLocalRetriever } from './retriever.js';
+export {
+  createLazyRetriever,
+  createLocalRetriever,
+  createMetadataReranker,
+  createRerankingRetriever,
+} from './retriever.js';
 export { createChatService } from './chat-service.js';
 
 export type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
@@ -47,4 +52,4 @@ export type {
   RecordIngestionRunInput,
 } from './pgvector-store.js';
 export type { RetrieveOptions, RetrievedChunk } from './retrieve.js';
-export type { Retriever } from './retriever.js';
+export type { Reranker, RerankingRetrieverOptions, Retriever } from './retriever.js';

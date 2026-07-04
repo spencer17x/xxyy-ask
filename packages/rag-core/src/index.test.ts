@@ -18,6 +18,8 @@ describe('rag-core public exports', () => {
     expect(ragCore.VectorStoreConfigurationError).toBeTypeOf('function');
     expect(ragCore.createChatService).toBeTypeOf('function');
     expect(ragCore.evaluateCases).toBeTypeOf('function');
+    expect(ragCore.createMetadataReranker).toBeTypeOf('function');
+    expect(ragCore.createRerankingRetriever).toBeTypeOf('function');
 
     expect(Object.keys(ragCore).sort()).toEqual([
       'LlmConfigurationError',
@@ -29,10 +31,12 @@ describe('rag-core public exports', () => {
       'createGroundedAnswer',
       'createLazyRetriever',
       'createLocalRetriever',
+      'createMetadataReranker',
       'createOpenAiAnswerProvider',
       'createPgFeedbackStore',
       'createPgPool',
       'createPgVectorStore',
+      'createRerankingRetriever',
       'evaluateCases',
       'loadRagConfig',
       'loadWorkspaceEnv',
