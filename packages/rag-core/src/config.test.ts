@@ -13,6 +13,7 @@ describe('loadRagConfig', () => {
       openAiApiKeyPresent: false,
       openAiModel: undefined,
       openAiEmbeddingModel: 'text-embedding-3-small',
+      embeddingDimension: 1536,
       openAiMaxRetries: 1,
       openAiRequestTimeoutMs: 30000,
     });
@@ -35,6 +36,7 @@ describe('loadRagConfig', () => {
         RAG_ANSWER_PROVIDER: 'future-provider',
         RAG_TOP_K: '3',
         OPENAI_BASE_URL: 'https://llm.example/v1',
+        EMBEDDING_DIMENSION: '768',
         OPENAI_MAX_RETRIES: '2',
         OPENAI_MODEL: 'gpt-test',
         OPENAI_REQUEST_TIMEOUT_MS: '12000',
@@ -48,6 +50,7 @@ describe('loadRagConfig', () => {
       openAiApiKeyPresent: true,
       openAiModel: 'gpt-test',
       openAiEmbeddingModel: 'text-embedding-3-small',
+      embeddingDimension: 768,
       openAiMaxRetries: 2,
       openAiRequestTimeoutMs: 12000,
     });
@@ -80,6 +83,11 @@ describe('loadRagConfig', () => {
   it('keeps a safe topK default for invalid numeric overrides', () => {
     expect(loadRagConfig({ RAG_TOP_K: 'not-a-number' }).topK).toBe(6);
     expect(loadRagConfig({ RAG_TOP_K: '0' }).topK).toBe(6);
+  });
+
+  it('keeps a safe embedding dimension default for invalid numeric overrides', () => {
+    expect(loadRagConfig({ EMBEDDING_DIMENSION: 'not-a-number' }).embeddingDimension).toBe(1536);
+    expect(loadRagConfig({ EMBEDDING_DIMENSION: '0' }).embeddingDimension).toBe(1536);
   });
 
   it('keeps safe OpenAI request defaults for invalid numeric overrides', () => {

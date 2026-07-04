@@ -97,7 +97,11 @@ export function createBoundaryAnswer(classification: Classification): ChatRespon
     answer:
       classification.reason === 'business action execution request'
         ? businessActionBoundaryText()
-        : boundaryText(classification.intent),
+        : classification.reason === 'private credential or seed phrase disclosure'
+          ? privateCredentialBoundaryText()
+          : classification.reason === 'unsafe or unsupported operation request'
+            ? unsafeOperationBoundaryText()
+            : boundaryText(classification.intent),
     intent: classification.intent,
     citations: [],
     confidence: Math.min(classification.confidence, 0.7),
@@ -120,6 +124,14 @@ function boundaryText(intent: Intent): string {
 
 function businessActionBoundaryText(): string {
   return '我不能代你开通、取消、修改、退款、赔偿或执行账户内操作，也不会在客服对话里完成这类处理。可以继续问我开通或升级的操作步骤、权益说明、配置路径，我会基于 XXYY 知识库回答。';
+}
+
+function privateCredentialBoundaryText(): string {
+  return '不要在客服对话里发送私钥、助记词、密码、API key 或任何敏感凭据。为了你的资产和账户安全，我不会处理这类内容；如果你想了解 XXYY 相关安全设置入口，可以改问产品操作步骤。';
+}
+
+function unsafeOperationBoundaryText(): string {
+  return '我不能帮助攻击、盗号、钓鱼、破解或利用系统漏洞。可以继续咨询 XXYY 产品功能、配置步骤、权益说明或官方更新相关问题。';
 }
 
 export function createCitationsFromChunks(retrievedChunks: RetrievedChunk[]): Citation[] {

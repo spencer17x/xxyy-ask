@@ -517,6 +517,71 @@ describe('createOpenAiAnswerProvider', () => {
     expect(metadata.intent).toBe('how_to');
   });
 
+  it('yields streaming deltas before the provider response finishes', async () => {
+    const encoder = new TextEncoder();
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              streamController = controller;
+            },
+          }),
+          {
+            headers: { 'Content-Type': 'text/event-stream' },
+            status: 200,
+          },
+        ),
+      );
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'gpt-test',
+    });
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:swap:chunk:0001',
+        title: 'Swap 交易',
+        sourceType: 'official_docs',
+        file: '/docs/swap.md',
+        text: 'XXYY 支持一键买卖代币。',
+      },
+    ]);
+    const retrieved = retrieve('如何在 XXYY 买入代币？', index);
+
+    if (provider.stream === undefined) {
+      throw new Error('Expected provider to support streaming');
+    }
+
+    const iterator = provider
+      .stream({
+        classification,
+        question: '如何在 XXYY 买入代币？',
+        retrievedChunks: retrieved,
+      })
+      [Symbol.asyncIterator]();
+
+    const firstPromise = iterator.next();
+    await Promise.resolve();
+    if (streamController === undefined) {
+      throw new Error('Expected streaming response body to be initialized');
+    }
+    streamController.enqueue(
+      encoder.encode('data: {"choices":[{"delta":{"content":"可以在"}}]}\n\n'),
+    );
+    const first = await Promise.race([firstPromise, delay(25).then(() => ({ timeout: true }))]);
+
+    expect(first).toEqual({
+      done: false,
+      value: { type: 'answer_delta', delta: '可以在' },
+    });
+
+    streamController?.close();
+    await iterator.return?.();
+  });
+
   it('falls back to grounded stream events when the streaming LLM returns only a safety label', async () => {
     const fetchImpl: typeof fetch = () =>
       Promise.resolve(
@@ -744,4 +809,10 @@ function streamResponse(chunks: string[]): Response {
       status: 200,
     },
   );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

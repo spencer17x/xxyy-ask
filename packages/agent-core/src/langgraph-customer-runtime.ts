@@ -1,7 +1,18 @@
 import { END, START, StateGraph } from '@langchain/langgraph';
 
-import type { AgentRoute, ChatRequest, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
-import { LlmConfigurationError, VectorStoreConfigurationError } from '@xxyy/rag-core';
+import type {
+  AgentRoute,
+  ChatRequest,
+  ChatResponse,
+  ChatStreamEvent,
+  Classification,
+} from '@xxyy/shared';
+import {
+  classifyQuestion,
+  createBoundaryAnswer,
+  LlmConfigurationError,
+  VectorStoreConfigurationError,
+} from '@xxyy/rag-core';
 
 import {
   AGENT_MAX_STEPS_DEFAULT,
@@ -55,6 +66,11 @@ export function createLangGraphCustomerRuntime(
   const graph = createCustomerGraph(options);
 
   async function ask(request: ChatRequest): Promise<ChatResponse> {
+    const guardedResponse = deterministicPreGuard(request);
+    if (guardedResponse !== undefined) {
+      return guardedResponse;
+    }
+
     const finalState = (await graph.invoke(
       createInitialAgentState(request, { maxSteps }),
     )) as LangGraphAgentState;
@@ -66,9 +82,98 @@ export function createLangGraphCustomerRuntime(
     ask,
 
     async *stream(request) {
-      yield* streamChatResponse(await ask(request));
+      const guardedResponse = deterministicPreGuard(request);
+      if (guardedResponse !== undefined) {
+        yield* streamChatResponse(guardedResponse);
+        return;
+      }
+
+      yield* streamRuntimeRequest(request, options, maxSteps);
     },
   };
+}
+
+async function* streamRuntimeRequest(
+  request: ChatRequest,
+  options: CreateLangGraphCustomerRuntimeOptions,
+  maxSteps: number,
+): AsyncIterable<ChatStreamEvent> {
+  const initialState = createInitialAgentState(request, { maxSteps }) as LangGraphAgentState;
+  const plannerPatch = await plannerNode(initialState, options);
+
+  if (plannerPatch.finalResponse !== undefined) {
+    yield* streamChatResponse(plannerPatch.finalResponse);
+    return;
+  }
+
+  const plan = plannerPatch.plan;
+  if (plan === undefined) {
+    yield* streamChatResponse(createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION));
+    return;
+  }
+
+  if (plan.kind === 'final') {
+    if (!isFinalPlannerRoute(plan.route)) {
+      yield* streamChatResponse(createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION));
+      return;
+    }
+
+    yield* streamChatResponse(withAgentRoute(plan.response, normalizeAgentRoute(plan.route)));
+    return;
+  }
+
+  if (!isAllowedAgentToolName(plan.toolName)) {
+    yield* streamChatResponse(createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION));
+    return;
+  }
+
+  const toolInput = inputForToolExecution(plan, request);
+  const context = toolContextFromRequest(request);
+  try {
+    const toolStream = options.registry.stream(plan.toolName, toolInput, context);
+    if (toolStream !== undefined) {
+      for await (const event of toolStream) {
+        yield withStreamAgentRoute(event as ChatStreamEvent, routeForToolName(plan.toolName));
+      }
+      return;
+    }
+
+    const output = await options.registry.execute(plan.toolName, toolInput, context);
+    yield* streamChatResponse(responseFromEvidence(evidenceFromToolOutput(plan.toolName, output)));
+  } catch (error) {
+    if (isProductConfigurationError(error)) {
+      throw error;
+    }
+    yield* streamChatResponse(withAgentRoute(toolFailureResponse(plan.toolName), 'clarify'));
+  }
+}
+
+function deterministicPreGuard(request: ChatRequest): ChatResponse | undefined {
+  const classification = classifyQuestion(request.message);
+  if (!shouldReturnDeterministicBoundary(classification)) {
+    return undefined;
+  }
+
+  return withAgentRoute(createBoundaryAnswer(classification), 'boundary');
+}
+
+function shouldReturnDeterministicBoundary(classification: Classification): boolean {
+  if (
+    classification.intent === 'realtime_account_query' ||
+    classification.intent === 'investment_advice'
+  ) {
+    return true;
+  }
+
+  return classification.intent === 'unknown' && isBoundaryUnknownReason(classification.reason);
+}
+
+function isBoundaryUnknownReason(reason: string): boolean {
+  return (
+    reason === 'unsafe or unsupported operation request' ||
+    reason === 'business action execution request' ||
+    reason === 'private credential or seed phrase disclosure'
+  );
 }
 
 function createCustomerGraph(options: CreateLangGraphCustomerRuntimeOptions) {
@@ -269,6 +374,17 @@ function evidenceFromToolOutput(toolName: string, output: unknown): AgentEvidenc
 
 function responseFromEvidence(evidence: AgentEvidence): ChatResponse {
   return withAgentRoute(evidence.response, routeForToolName(evidence.toolName));
+}
+
+function withStreamAgentRoute(event: ChatStreamEvent, route: AgentRoute): ChatStreamEvent {
+  if (event.type !== 'metadata') {
+    return event;
+  }
+
+  return {
+    ...event,
+    agentRoute: route,
+  };
 }
 
 function routeForToolName(_toolName: string): AgentRoute {

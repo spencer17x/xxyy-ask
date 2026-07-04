@@ -29,3 +29,6 @@ jobs:
 
       - name: Run check
         run: pnpm check
+
+      - name: Run golden QA evaluation
+        run: pnpm rag:evaluate

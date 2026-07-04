@@ -9,6 +9,7 @@ export interface EvaluationCase {
   minCitations?: number;
   requiredAnswerIncludes?: string[];
   forbiddenAnswerIncludes?: string[];
+  requiredCitationFiles?: string[];
   requiredCitationTitles?: string[];
   requiredSourceUrls?: string[];
 }
@@ -48,6 +49,7 @@ export async function evaluateCases(
       actualIntent: response.intent,
       answer: response.answer,
       citationCount,
+      citationFiles: response.citations.map((citation) => citation.file),
       citationTitles: response.citations.map((citation) => citation.title),
       minCitations,
       sourceUrls: response.citations.flatMap((citation) =>
@@ -80,6 +82,7 @@ function collectFailureReasons(input: {
   actualIntent: Intent;
   answer: string;
   citationCount: number;
+  citationFiles: string[];
   citationTitles: string[];
   minCitations: number;
   sourceUrls: string[];
@@ -104,6 +107,12 @@ function collectFailureReasons(input: {
   for (const forbiddenText of input.testCase.forbiddenAnswerIncludes ?? []) {
     if (input.answer.includes(forbiddenText)) {
       failures.push(`answer contains forbidden text: ${forbiddenText}`);
+    }
+  }
+
+  for (const requiredFile of input.testCase.requiredCitationFiles ?? []) {
+    if (!input.citationFiles.includes(requiredFile)) {
+      failures.push(`missing citation file: ${requiredFile}`);
     }
   }
 

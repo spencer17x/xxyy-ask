@@ -31,7 +31,7 @@
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、本地索引、OpenAI embedding provider。
 - `packages/rag-core`：意图分类、检索接口、pgvector store、LLM answer provider、边界回复和配置错误类型。
 - `packages/agent-core`：LangGraph 客服 Agent runtime、planner、tool registry 和产品问答工具定义。
-- `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:ask`。
+- `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:evaluate`、`rag:ask`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/telegram-bot`：Telegram Bot long polling 入口。
 - `apps/web`：静态聊天 UI。
@@ -51,14 +51,20 @@ OPENAI_API_KEY=...
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=...
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DIMENSION=1536
 OPENAI_REQUEST_TIMEOUT_MS=30000
 OPENAI_MAX_RETRIES=1
 RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
 API_CORS_ORIGIN=
+API_CHAT_AUTH_TOKEN=
+API_REQUIRE_CHAT_AUTH=
+API_DEEP_HEALTH_TOKEN=
+API_ENABLE_DEEP_HEALTH=
 API_MAX_BODY_BYTES=65536
 API_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_WINDOW_MS=60000
+TRUST_PROXY=false
 ```
 
 `pnpm run app:dev`、`pnpm run *:dev` 和 `pnpm rag:*` 会读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
@@ -77,12 +83,12 @@ API 保留的公开服务面：
 
 - `GET /`：Web UI。
 - `GET /health`：轻量存活检查。
-- `GET /health/deep`：生产依赖自检，检查必填配置、pgvector 知识库、embedding 模型和 chat LLM，失败时返回 `503` 和分项原因。
+- `GET /health/deep`：生产依赖自检，检查必填配置、pgvector 知识库、embedding 模型和 chat LLM；开发模式默认开放，生产模式默认禁用，配置 `API_DEEP_HEALTH_TOKEN` 后需要 Bearer token。
 - `POST /api/chat`：非流式客服问答。
 - `POST /api/chat/stream`：流式客服问答。
 - `GET /assets/*`：产品视频、图片等静态资产。
 
-API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
+API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。默认不信任 `x-forwarded-for` / `x-real-ip`；仅在可信反向代理后设置 `TRUST_PROXY=true`。生产模式默认要求 chat 鉴权，配置 `API_CHAT_AUTH_TOKEN` 后使用 Bearer token 或 `x-api-key`。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 
 ## 常用验证
 
@@ -111,6 +117,7 @@ pnpm run app:dev -- --full-sync
 - `pnpm rag:sync:x`：同步官方 X / Twitter 更新，只 embedding 新增或变更的 X chunks，不会 prune 旧 chunk。
 - `pnpm rag:migrate`：只执行数据库迁移，不调用 embedding 或 LLM。
 - `pnpm rag:stats`：查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
+- `pnpm rag:evaluate`：运行便宜的 deterministic golden QA 子集；`pnpm rag:evaluate -- --provider` 使用正式 Agent/pgvector/OpenAI-compatible provider 做人工全链路评估。
 - `pnpm rag:ask -- "问题"`：命令行临时调用客服 Agent。
 - `pnpm agent:smoke`：检查已启动服务的 health、产品问题路线和边界路线。
 

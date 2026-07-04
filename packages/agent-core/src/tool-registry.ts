@@ -25,10 +25,12 @@ export interface ToolDefinition<
     input: z.output<InputSchema>,
     context: ToolContext,
   ) => z.input<OutputSchema> | Promise<z.input<OutputSchema>>;
+  stream?: (input: z.output<InputSchema>, context: ToolContext) => AsyncIterable<unknown>;
 }
 
-type RegisteredToolDefinition = Omit<ToolDefinition, 'execute'> & {
+type RegisteredToolDefinition = Omit<ToolDefinition, 'execute' | 'stream'> & {
   execute: (input: unknown, context: ToolContext) => unknown;
+  stream?: (input: unknown, context: ToolContext) => AsyncIterable<unknown>;
 };
 
 export class ToolRegistryDuplicateNameError extends Error {
@@ -52,6 +54,7 @@ export interface ToolRegistry {
   register<Name extends string, InputSchema extends z.ZodType, OutputSchema extends z.ZodType>(
     definition: ToolDefinition<Name, InputSchema, OutputSchema>,
   ): void;
+  stream(name: string, input: unknown, context?: ToolContext): AsyncIterable<unknown> | undefined;
 }
 
 export function createToolRegistry(): ToolRegistry {
@@ -83,6 +86,16 @@ export function createToolRegistry(): ToolRegistry {
       }
 
       tools.set(definition.name, definition as RegisteredToolDefinition);
+    },
+
+    stream(name, input, context = {}) {
+      const definition = tools.get(name);
+      if (!definition) {
+        throw new ToolRegistryToolNotFoundError(name);
+      }
+
+      const parsedInput = definition.inputSchema.parse(input);
+      return definition.stream?.(parsedInput, context);
     },
   };
 }

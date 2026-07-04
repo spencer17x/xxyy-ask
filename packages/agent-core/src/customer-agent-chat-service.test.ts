@@ -77,7 +77,7 @@ describe('createCustomerAgentChatService', () => {
     expect(retrieveCalls).toEqual([{ question: 'XXYY Pro 有哪些权益？', topK: 1 }]);
   });
 
-  it('lets the planner answer boundary-like questions without touching product retrieval', async () => {
+  it('pre-blocks boundary-like questions without touching planner or product retrieval', async () => {
     const retriever: Retriever = {
       retrieve() {
         throw new Error('retriever should not be called');
@@ -107,17 +107,17 @@ describe('createCustomerAgentChatService', () => {
       retriever,
     });
 
-    await expect(
-      service.ask({
-        channel: 'cli',
-        message: '帮我查一下钱包余额',
-      }),
-    ).resolves.toMatchObject({
+    const response = await service.ask({
+      channel: 'cli',
+      message: '帮我查一下钱包余额',
+    });
+
+    expect(response).toMatchObject({
       agentRoute: 'boundary',
-      answer: '我无法直接查询你的钱包余额，但可以说明 XXYY 产品里的相关入口。',
       citations: [],
       intent: 'realtime_account_query',
     });
+    expect(response.answer).toContain('我不能直接查询你的钱包余额');
   });
 
   it('keeps deprecated session context from affecting single-run planning', async () => {
@@ -350,6 +350,7 @@ function createRetrievedChunk(overrides: Partial<RetrievedChunk> = {}): Retrieve
     },
     rank: 1,
     score: 1,
+    sourceBoost: 0.05,
     text: 'XXYY Pro 提供更多权益。',
     tokens: [],
     vectorScore: 0,
