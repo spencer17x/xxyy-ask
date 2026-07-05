@@ -183,6 +183,13 @@ describe('evaluateCases', () => {
           requiredCitationTitles: ['XXYY Pro 权益'],
           requiredSourceUrls: ['https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi'],
         },
+        {
+          name: 'stale citation precision',
+          request: { channel: 'web', message: 'XXYY Pro 权益有哪些？' },
+          expectedIntent: 'product_qa',
+          forbiddenCitationFiles: ['/docs/pro.md'],
+          forbiddenSourceUrls: ['https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi'],
+        },
       ],
       service,
     );
@@ -203,6 +210,14 @@ describe('evaluateCases', () => {
         'missing citation file: /docs/pro.md',
         'missing citation title: XXYY Pro 权益',
         'missing source URL: https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi',
+      ],
+    });
+    expect(report.results[2]).toMatchObject({
+      name: 'stale citation precision',
+      passed: false,
+      failureReasons: [
+        'forbidden citation file: /docs/pro.md',
+        'forbidden source URL: https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi',
       ],
     });
   });

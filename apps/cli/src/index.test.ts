@@ -381,6 +381,10 @@ describe('CLI output formatting', () => {
         name: 'tweet-source',
         question: '钱包备注支持最多 1 万条是哪条推文？',
         expectedIntent: 'product_qa',
+        forbiddenCitationFiles: [
+          'docs/product-features/pages/59-getting-started__xxyy-pro-quan-yi.md',
+        ],
+        forbiddenSourceUrls: ['https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi'],
         expectedSourceUrls: ['https://x.com/useXXYYio/status/2030954722350575916'],
         requireCitationSupport: true,
       })}\n`,
@@ -436,6 +440,10 @@ describe('CLI output formatting', () => {
         [
           expect.objectContaining({
             name: 'tweet-source',
+            forbiddenCitationFiles: [
+              'docs/product-features/pages/59-getting-started__xxyy-pro-quan-yi.md',
+            ],
+            forbiddenSourceUrls: ['https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi'],
             requireCitationSupport: true,
             requiredSourceUrls: ['https://x.com/useXXYYio/status/2030954722350575916'],
           }),

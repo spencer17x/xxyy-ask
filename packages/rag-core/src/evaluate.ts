@@ -12,6 +12,8 @@ export interface EvaluationCase {
   requiredCitationFiles?: string[];
   requiredCitationTitles?: string[];
   requiredSourceUrls?: string[];
+  forbiddenCitationFiles?: string[];
+  forbiddenSourceUrls?: string[];
   requireCitationSupport?: boolean;
 }
 
@@ -128,6 +130,18 @@ function collectFailureReasons(input: {
   for (const requiredSourceUrl of input.testCase.requiredSourceUrls ?? []) {
     if (!input.sourceUrls.includes(requiredSourceUrl)) {
       failures.push(`missing source URL: ${requiredSourceUrl}`);
+    }
+  }
+
+  for (const forbiddenFile of input.testCase.forbiddenCitationFiles ?? []) {
+    if (input.citationFiles.includes(forbiddenFile)) {
+      failures.push(`forbidden citation file: ${forbiddenFile}`);
+    }
+  }
+
+  for (const forbiddenSourceUrl of input.testCase.forbiddenSourceUrls ?? []) {
+    if (input.sourceUrls.includes(forbiddenSourceUrl)) {
+      failures.push(`forbidden source URL: ${forbiddenSourceUrl}`);
     }
   }
 

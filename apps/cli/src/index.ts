@@ -595,6 +595,8 @@ interface GoldenQaRecord {
   expectedCitationTitles?: string[];
   expectedSourceUrls?: string[];
   expectedIntent: EvaluationCase['expectedIntent'];
+  forbiddenCitationFiles?: string[];
+  forbiddenSourceUrls?: string[];
   mustContain?: string[];
   mustNotContain?: string[];
   name?: string;
@@ -634,6 +636,12 @@ function toEvaluationCase(record: GoldenQaRecord, index: number): EvaluationCase
     ...(record.expectedSourceUrls === undefined
       ? {}
       : { requiredSourceUrls: record.expectedSourceUrls }),
+    ...(record.forbiddenCitationFiles === undefined
+      ? {}
+      : { forbiddenCitationFiles: record.forbiddenCitationFiles }),
+    ...(record.forbiddenSourceUrls === undefined
+      ? {}
+      : { forbiddenSourceUrls: record.forbiddenSourceUrls }),
     ...(record.requireCitationSupport === undefined
       ? {}
       : { requireCitationSupport: record.requireCitationSupport }),

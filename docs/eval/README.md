@@ -17,6 +17,7 @@ Each line is one JSON object:
   "expectedCitationFiles": ["docs/product-features/sources/usexxyyio-x-posts.jsonl"],
   "expectedCitationTitles": ["X Post 2031333475010355227"],
   "expectedSourceUrls": ["https://x.com/useXXYYio/status/2031333475010355227"],
+  "forbiddenCitationFiles": ["docs/product-features/pages/59-getting-started__xxyy-pro-quan-yi.md"],
   "requireCitationSupport": true,
   "boundaryExpected": false
 }
@@ -30,6 +31,8 @@ Supported checks:
 - `expectedCitationFiles`: exact citation file paths expected in the response.
 - `expectedCitationTitles`: exact citation titles expected in the response.
 - `expectedSourceUrls`: exact source URLs expected in the response.
+- `forbiddenCitationFiles`: exact citation file paths that must not appear; use this for stale or conflicting sources.
+- `forbiddenSourceUrls`: exact source URLs that must not appear.
 - `requireCitationSupport`: when true, each `mustContain` phrase that appears in the answer must also appear in citation excerpts, ignoring whitespace.
 - `boundaryExpected`: marks boundary cases that should not require citations.
 
