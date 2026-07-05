@@ -17,6 +17,7 @@ import {
   VectorStoreUnavailableError,
   createLazyRetriever,
   createOpenAiAnswerProvider,
+  createPgFeedbackStore,
   createPgPool,
   createPgVectorStore,
   createChatService,
@@ -34,6 +35,7 @@ import type {
   EmbeddedKnowledgeChunk,
   EvaluationCase,
   EvaluationReport,
+  FeedbackRecord,
   KnowledgeStats,
   RagEnv,
 } from '@xxyy/rag-core';
@@ -46,6 +48,7 @@ type CliEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
 type CliCommand =
   | { command: 'ask'; question: string }
   | { command: 'evaluate'; providerBacked: boolean }
+  | { command: 'feedback:backlog' }
   | { command: 'ingest' }
   | { command: 'migrate' }
   | { command: 'stats' }
@@ -94,6 +97,7 @@ const HELP_TEXT = [
   '  pnpm rag:migrate',
   '  pnpm rag:stats',
   '  pnpm rag:evaluate [--provider]',
+  '  pnpm rag:feedback:backlog',
   '  pnpm rag:ask -- "question"',
 ].join('\n');
 
@@ -108,6 +112,7 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
 
   if (
     command === 'evaluate' ||
+    command === 'feedback:backlog' ||
     command === 'ingest' ||
     command === 'migrate' ||
     command === 'stats' ||
@@ -273,6 +278,60 @@ export function formatEvaluationReport(
   return lines.join('\n');
 }
 
+export function formatFeedbackEvalBacklog(feedbackRecords: FeedbackRecord[]): string {
+  const records = uniqueFeedbackRecords(feedbackRecords).filter(shouldCreateEvalBacklogCandidate);
+  if (records.length === 0) {
+    return 'No feedback eval backlog candidates.';
+  }
+
+  return records.map((record) => JSON.stringify(toFeedbackEvalBacklogRecord(record))).join('\n');
+}
+
+function uniqueFeedbackRecords(feedbackRecords: FeedbackRecord[]): FeedbackRecord[] {
+  const byKey = new Map<string, FeedbackRecord>();
+  for (const record of feedbackRecords) {
+    byKey.set(
+      [record.createdAt, record.sessionId ?? '', record.question, record.rating].join('\0'),
+      record,
+    );
+  }
+  return [...byKey.values()];
+}
+
+function shouldCreateEvalBacklogCandidate(record: FeedbackRecord): boolean {
+  return record.rating === 'negative' || record.citationCount === 0;
+}
+
+function toFeedbackEvalBacklogRecord(record: FeedbackRecord): Record<string, unknown> {
+  return {
+    _review: {
+      channel: record.channel,
+      citationCount: record.citationCount,
+      ...(record.comment === undefined ? {} : { comment: record.comment }),
+      createdAt: record.createdAt,
+      observedAnswer: record.answer,
+      rating: record.rating,
+      reason: record.rating === 'negative' ? 'negative_feedback' : 'no_citation_feedback',
+      reviewRequired: true,
+      ...(record.sessionId === undefined ? {} : { sessionId: record.sessionId }),
+      source: 'rag_feedback',
+    },
+    boundaryExpected: record.intent !== 'product_qa' && record.intent !== 'how_to',
+    expectedIntent: record.intent,
+    name: createFeedbackEvalCaseName(record),
+    question: record.question,
+  };
+}
+
+function createFeedbackEvalCaseName(record: FeedbackRecord): string {
+  const date = record.createdAt.slice(0, 10).replaceAll('-', '') || 'undated';
+  const hash = createHash('sha256')
+    .update([record.createdAt, record.sessionId ?? '', record.question].join('\n'))
+    .digest('hex')
+    .slice(0, 8);
+  return `feedback-${date}-${hash}`;
+}
+
 export function createDefaultCliIo(options: DefaultCliIoOptions = {}): CliIo {
   const cwd = options.cwd ?? process.cwd();
   const shellEnv = options.env ?? process.env;
@@ -359,6 +418,19 @@ export async function runCli(
     try {
       const statsSummary = await stats(config);
       writeLine(io.stdout, formatKnowledgeStats(statsSummary));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'feedback:backlog') {
+    try {
+      const backlog = await feedbackBacklog(config);
+      writeLine(io.stdout, backlog);
       return 0;
     } catch (error) {
       if (writeConfigurationError(io, error)) {
@@ -595,6 +667,20 @@ async function stats(config: ReturnType<typeof loadRagConfig>): Promise<Knowledg
       },
     });
     return await store.getStats();
+  } finally {
+    await pool.end();
+  }
+}
+
+async function feedbackBacklog(config: ReturnType<typeof loadRagConfig>): Promise<string> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgFeedbackStore({ client: pool });
+    const [negativeFeedback, recentFeedback] = await Promise.all([
+      store.getFeedbackStats({ limit: 50, rating: 'negative' }),
+      store.getFeedbackStats({ limit: 50 }),
+    ]);
+    return formatFeedbackEvalBacklog([...negativeFeedback.latest, ...recentFeedback.latest]);
   } finally {
     await pool.end();
   }

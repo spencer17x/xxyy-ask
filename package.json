@@ -16,6 +16,7 @@
     "lint:fix": "eslint . --fix",
     "rag:ask": "pnpm --filter @xxyy/cli rag:ask",
     "rag:evaluate": "pnpm --filter @xxyy/cli rag:evaluate",
+    "rag:feedback:backlog": "pnpm --filter @xxyy/cli rag:feedback:backlog",
     "rag:ingest": "pnpm --filter @xxyy/cli rag:ingest",
     "rag:migrate": "pnpm --filter @xxyy/cli rag:migrate",
     "rag:stats": "pnpm --filter @xxyy/cli rag:stats",

@@ -13,6 +13,7 @@ import {
   createDefaultCliIo,
   formatChatResponse,
   formatEvaluationReport,
+  formatFeedbackEvalBacklog,
   formatIngestSummary,
   formatKnowledgeStats,
   formatMigrationSummary,
@@ -39,6 +40,7 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['migrate'])).toEqual({ command: 'migrate' });
     expect(parseCliArgs(['stats'])).toEqual({ command: 'stats' });
     expect(parseCliArgs(['sync:x'])).toEqual({ command: 'sync:x' });
+    expect(parseCliArgs(['feedback:backlog'])).toEqual({ command: 'feedback:backlog' });
     expect(parseCliArgs(['evaluate'])).toEqual({ command: 'evaluate', providerBacked: false });
     expect(parseCliArgs(['evaluate', '--provider'])).toEqual({
       command: 'evaluate',
@@ -281,6 +283,54 @@ describe('CLI output formatting', () => {
         '  - citations 0/1',
       ].join('\n'),
     );
+  });
+
+  it('formats feedback records as review-only eval backlog JSONL', () => {
+    const output = formatFeedbackEvalBacklog([
+      {
+        answer: '根据知识库，XXYY Pro 提供更多权益。',
+        channel: 'web',
+        citationCount: 2,
+        comment: '没有讲清楚监控数量上限',
+        createdAt: '2026-07-05T03:04:05.000Z',
+        intent: 'product_qa',
+        question: 'XXYY Pro 有哪些权益？',
+        rating: 'negative',
+        sessionId: 'session-1',
+      },
+      {
+        answer: '暂时没有找到可引用的知识库内容。',
+        channel: 'telegram',
+        citationCount: 0,
+        createdAt: '2026-07-05T03:05:06.000Z',
+        intent: 'product_qa',
+        question: '雷达扫链从哪里进入？',
+        rating: 'positive',
+      },
+    ]);
+
+    const records = output.split('\n').map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({
+      boundaryExpected: false,
+      expectedIntent: 'product_qa',
+      question: 'XXYY Pro 有哪些权益？',
+    });
+    expect(records[0]?.name).toMatch(/^feedback-20260705-/u);
+    expect(records[0]?._review).toMatchObject({
+      citationCount: 2,
+      comment: '没有讲清楚监控数量上限',
+      reason: 'negative_feedback',
+      rating: 'negative',
+      sessionId: 'session-1',
+      source: 'rag_feedback',
+    });
+    expect(records[1]?._review).toMatchObject({
+      citationCount: 0,
+      reason: 'no_citation_feedback',
+      rating: 'positive',
+      source: 'rag_feedback',
+    });
   });
 
   it('formats knowledge stats for retained stats command', () => {

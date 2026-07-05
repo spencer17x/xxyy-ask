@@ -62,3 +62,13 @@ Evaluation (provider-backed): 35/36 passed
 [FAIL] bad-answer (expected product_qa, actual unknown, citations 0/1)
   - intent unknown != product_qa
 ```
+
+## Feedback Backlog
+
+Use feedback backlog export to turn stored negative feedback and no-citation feedback into review-only eval drafts:
+
+```bash
+pnpm rag:feedback:backlog
+```
+
+The command reads `rag_feedback` and prints JSONL records with `_review` metadata. Treat these as a triage queue: a reviewer must fill in precise `mustContain`, `mustNotContain`, expected citations, and source URLs before moving a draft into `golden-qa.jsonl`.
