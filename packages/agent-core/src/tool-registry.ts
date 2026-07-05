@@ -8,6 +8,7 @@ export interface ToolPolicy {
 
 export interface ToolContext {
   channel?: string | undefined;
+  opsAuthPresent?: boolean | undefined;
   requestId?: string | undefined;
   sessionId?: string | undefined;
   userIdPresent?: boolean | undefined;
@@ -49,6 +50,13 @@ export class ToolRegistryToolNotFoundError extends Error {
   }
 }
 
+export class ToolRegistryOpsAuthRequiredError extends Error {
+  constructor(name: string) {
+    super(`Tool requires ops authorization: ${name}`);
+    this.name = 'ToolRegistryOpsAuthRequiredError';
+  }
+}
+
 export interface ToolRegistry {
   execute(name: string, input: unknown, context?: ToolContext): Promise<z.output<z.ZodType>>;
   get(name: string): ToolDefinition | undefined;
@@ -69,6 +77,7 @@ export function createToolRegistry(): ToolRegistry {
         throw new ToolRegistryToolNotFoundError(name);
       }
 
+      assertToolPolicyAllowsExecution(definition, context);
       const parsedInput = definition.inputSchema.parse(input);
       const output = await definition.execute(parsedInput, context);
       return definition.outputSchema.parse(output);
@@ -96,11 +105,21 @@ export function createToolRegistry(): ToolRegistry {
         throw new ToolRegistryToolNotFoundError(name);
       }
 
+      assertToolPolicyAllowsExecution(definition, context);
       const parsedInput = definition.inputSchema.parse(input);
       const stream = definition.stream?.(parsedInput, context);
       return stream === undefined ? undefined : validateChatStreamEvents(stream);
     },
   };
+}
+
+function assertToolPolicyAllowsExecution(
+  definition: RegisteredToolDefinition,
+  context: ToolContext,
+): void {
+  if (definition.policy.requiresOpsAuth && context.opsAuthPresent !== true) {
+    throw new ToolRegistryOpsAuthRequiredError(definition.name);
+  }
 }
 
 async function* validateChatStreamEvents(stream: AsyncIterable<unknown>): AsyncIterable<unknown> {

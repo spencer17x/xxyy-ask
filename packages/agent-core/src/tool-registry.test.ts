@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import {
   ToolRegistryDuplicateNameError,
+  ToolRegistryOpsAuthRequiredError,
   ToolRegistryToolNotFoundError,
   createToolRegistry,
 } from './tool-registry.js';
@@ -69,6 +70,26 @@ describe('createToolRegistry', () => {
     ]);
   });
 
+  it('requires explicit ops auth context for protected execute tools', async () => {
+    const registry = createToolRegistry();
+
+    registry.register({
+      name: 'ops_tool',
+      description: 'Protected tool.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({ ok: z.literal(true) }),
+      policy: { requiresOpsAuth: true },
+      execute: () => ({ ok: true as const }),
+    });
+
+    await expect(registry.execute('ops_tool', {})).rejects.toThrow(
+      ToolRegistryOpsAuthRequiredError,
+    );
+    await expect(registry.execute('ops_tool', {}, { opsAuthPresent: true })).resolves.toEqual({
+      ok: true,
+    });
+  });
+
   it('rejects duplicate tool names with ToolRegistryDuplicateNameError', () => {
     const registry = createToolRegistry();
     const definition = {
@@ -119,6 +140,30 @@ describe('createToolRegistry', () => {
       { type: 'answer_delta', delta: 'hello' },
       { type: 'metadata', citations: [], confidence: 0.9, intent: 'product_qa' },
     ]);
+  });
+
+  it('requires explicit ops auth context for protected stream tools', async () => {
+    const registry = createToolRegistry();
+
+    registry.register({
+      name: 'ops_stream',
+      description: 'Protected stream.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      policy: { requiresOpsAuth: true },
+      execute: () => ({}),
+      async *stream() {
+        await Promise.resolve();
+        yield { type: 'answer_delta', delta: 'ok' };
+      },
+    });
+
+    expect(() => registry.stream('ops_stream', {})).toThrow(ToolRegistryOpsAuthRequiredError);
+    const events: unknown[] = [];
+    for await (const event of registry.stream('ops_stream', {}, { opsAuthPresent: true }) ?? []) {
+      events.push(event);
+    }
+    expect(events).toEqual([{ type: 'answer_delta', delta: 'ok' }]);
   });
 
   it('fails fast when a streamed chat event has an invalid shape', async () => {
