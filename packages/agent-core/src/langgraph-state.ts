@@ -1,10 +1,10 @@
 import { Annotation } from '@langchain/langgraph';
 
-import type { AgentRoute, ChatRequest, ChatResponse } from '@xxyy/shared';
+import type { AgentRoute, ChatRequest, ChatResponse, Citation } from '@xxyy/shared';
 
 export const AGENT_MAX_STEPS_DEFAULT = 4;
 
-export const ALLOWED_AGENT_TOOL_NAMES = ['answer_product_question'] as const;
+export const ALLOWED_AGENT_TOOL_NAMES = ['answer_product_question', 'search_product_docs'] as const;
 
 export type AllowedAgentToolName = (typeof ALLOWED_AGENT_TOOL_NAMES)[number];
 
@@ -44,11 +44,21 @@ export type AgentToolResultRecord = {
   toolName: string;
 };
 
-export type AgentEvidence = {
-  kind: 'chat_response';
-  response: ChatResponse;
-  toolName: string;
-};
+export type AgentEvidence =
+  | {
+      kind: 'chat_response';
+      response: ChatResponse;
+      toolName: string;
+    }
+  | {
+      kind: 'search_results';
+      output: {
+        chunks: unknown[];
+        citations: Citation[];
+        confidence: number;
+      };
+      toolName: string;
+    };
 
 export type AgentPolicyDecision =
   | {

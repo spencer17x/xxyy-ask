@@ -47,7 +47,7 @@ export interface CreateLangGraphCustomerRuntimeOptions {
   registry: ToolRegistry;
 }
 
-type CustomerRuntimeNode = 'answer_composer' | 'planner' | 'tool_executor';
+type CustomerRuntimeNode = 'answer_composer' | 'observe' | 'planner' | 'tool_executor';
 
 type LangGraphAgentState = Omit<
   AgentState,
@@ -180,10 +180,12 @@ function createCustomerGraph(options: CreateLangGraphCustomerRuntimeOptions) {
   return new StateGraph(AgentStateAnnotation)
     .addNode('planner', (state) => plannerNode(state, options))
     .addNode('tool_executor', (state) => toolExecutorNode(state, options.registry))
+    .addNode('observe', observeNode)
     .addNode('answer_composer', answerComposerNode)
     .addEdge(START, 'planner')
     .addConditionalEdges('planner', routeAfterPlanner)
-    .addEdge('tool_executor', 'answer_composer')
+    .addEdge('tool_executor', 'observe')
+    .addConditionalEdges('observe', routeAfterObserve)
     .addEdge('answer_composer', END)
     .compile();
 }
@@ -233,6 +235,17 @@ async function plannerNode(
     }
   }
 
+  if (plan.kind === 'tool' && isRepeatedToolInput(plan, state)) {
+    return {
+      currentStep: state.currentStep + 1,
+      errors: [...planningErrors, `Repeated tool input: ${plan.toolName}`],
+      finalResponse: createClarificationResponse(
+        '已停止重复检索同一组工具输入。请补充更具体的产品功能、模块或时间范围。',
+      ),
+      route: 'clarify',
+    };
+  }
+
   return {
     currentStep: state.currentStep + 1,
     ...(planningErrors.length > 0 ? { errors: planningErrors } : {}),
@@ -247,6 +260,14 @@ function routeAfterPlanner(state: LangGraphAgentState): CustomerRuntimeNode {
   }
 
   return state.plan?.kind === 'tool' ? 'tool_executor' : 'answer_composer';
+}
+
+function routeAfterObserve(state: LangGraphAgentState): CustomerRuntimeNode {
+  if (state.finalResponse !== undefined) {
+    return 'answer_composer';
+  }
+
+  return 'planner';
 }
 
 async function toolExecutorNode(
@@ -306,6 +327,27 @@ async function toolExecutorNode(
   };
 }
 
+function observeNode(state: LangGraphAgentState): Partial<AgentState> {
+  const evidence = state.evidence.at(-1);
+  if (evidence === undefined) {
+    return {};
+  }
+
+  if (evidence.kind === 'chat_response') {
+    return {
+      finalResponse: responseFromEvidence(evidence),
+    };
+  }
+
+  if (evidence.output.citations.length > 0) {
+    return {
+      finalResponse: responseFromEvidence(evidence),
+    };
+  }
+
+  return {};
+}
+
 function inputForToolExecution(plan: Extract<AgentPlan, { kind: 'tool' }>, request: ChatRequest) {
   if (plan.toolName === 'answer_product_question') {
     return { question: request.message };
@@ -319,13 +361,6 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
     return {};
   }
 
-  const evidence = state.evidence.at(-1);
-  if (evidence !== undefined) {
-    return {
-      finalResponse: responseFromEvidence(evidence),
-    };
-  }
-
   if (state.plan?.kind === 'final') {
     if (!isFinalPlannerRoute(state.plan.route)) {
       return {
@@ -337,6 +372,13 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
 
     return {
       finalResponse: withAgentRoute(state.plan.response, normalizeAgentRoute(state.plan.route)),
+    };
+  }
+
+  const evidence = state.evidence.at(-1);
+  if (evidence !== undefined) {
+    return {
+      finalResponse: responseFromEvidence(evidence),
     };
   }
 
@@ -365,6 +407,14 @@ function summarizeState(state: LangGraphAgentState): string {
 }
 
 function evidenceFromToolOutput(toolName: string, output: unknown): AgentEvidence {
+  if (toolName === 'search_product_docs') {
+    return {
+      kind: 'search_results',
+      output: output as AgentEvidenceForSearch,
+      toolName,
+    };
+  }
+
   return {
     kind: 'chat_response',
     response: output as ChatResponse,
@@ -373,6 +423,13 @@ function evidenceFromToolOutput(toolName: string, output: unknown): AgentEvidenc
 }
 
 function responseFromEvidence(evidence: AgentEvidence): ChatResponse {
+  if (evidence.kind === 'search_results') {
+    return withAgentRoute(
+      responseFromSearchEvidence(evidence.output),
+      routeForToolName(evidence.toolName),
+    );
+  }
+
   return withAgentRoute(evidence.response, routeForToolName(evidence.toolName));
 }
 
@@ -389,6 +446,54 @@ function withStreamAgentRoute(event: ChatStreamEvent, route: AgentRoute): ChatSt
 
 function routeForToolName(_toolName: string): AgentRoute {
   return 'product_answer';
+}
+
+type AgentEvidenceForSearch = Extract<AgentEvidence, { kind: 'search_results' }>['output'];
+
+function responseFromSearchEvidence(output: AgentEvidenceForSearch): ChatResponse {
+  const excerpts = output.citations.map((citation) => citation.excerpt);
+  return {
+    answer:
+      excerpts.length === 0
+        ? '当前知识库没有找到直接相关的产品资料。'
+        : `根据知识库，${excerpts.join(' ')}`,
+    citations: output.citations,
+    confidence: Number(Math.min(0.9, Math.max(0.55, output.confidence / 10)).toFixed(2)),
+    intent: 'product_qa',
+  };
+}
+
+function isRepeatedToolInput(plan: AgentPlan, state: LangGraphAgentState): boolean {
+  if (plan.kind !== 'tool') {
+    return false;
+  }
+
+  const nextInput = inputForToolExecution(plan, state.request);
+  const nextInputKey = stableJson(nextInput);
+  return state.toolCalls.some(
+    (toolCall) =>
+      toolCall.toolName === plan.toolName && stableJson(toolCall.input) === nextInputKey,
+  );
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonValue);
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entryValue]) => [key, sortJsonValue(entryValue)]),
+    );
+  }
+
+  return value;
 }
 
 function toolFailureResponse(toolName: string): ChatResponse {

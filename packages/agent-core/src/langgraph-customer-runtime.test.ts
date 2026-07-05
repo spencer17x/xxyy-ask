@@ -354,6 +354,135 @@ describe('createLangGraphCustomerRuntime', () => {
     });
   });
 
+  it('composes a product answer from planner-selected search evidence', async () => {
+    const registry = createToolRegistry();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        chunks: [
+          {
+            id: 'chunk-1',
+            text: 'XXYY 跟单支持 SOL 和 BSC。',
+          },
+        ],
+        citations: [
+          {
+            excerpt: 'XXYY 跟单支持 SOL 和 BSC。',
+            file: 'docs/product-features/xxyy-x-updates.md',
+            title: '跟单支持链',
+          },
+        ],
+        confidence: 12,
+      }),
+    );
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        chunks: z.array(z.object({ id: z.string(), text: z.string() })),
+        citations: z.array(
+          z.object({
+            excerpt: z.string(),
+            file: z.string(),
+            title: z.string(),
+          }),
+        ),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { query: 'XXYY 跟单 支持 哪些链' },
+          kind: 'tool',
+          reason: 'Search product docs first.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).ask({
+      channel: 'web',
+      message: 'XXYY 跟单支持哪些链？',
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'product_answer',
+      citations: [
+        {
+          excerpt: 'XXYY 跟单支持 SOL 和 BSC。',
+          file: 'docs/product-features/xxyy-x-updates.md',
+          title: '跟单支持链',
+        },
+      ],
+      intent: 'product_qa',
+    });
+    expect(response.answer).toContain('XXYY 跟单支持 SOL 和 BSC');
+    expect(execute).toHaveBeenCalledWith(
+      { query: 'XXYY 跟单 支持 哪些链' },
+      { channel: 'web', userIdPresent: false },
+    );
+  });
+
+  it('stops before executing a repeated planner tool input', async () => {
+    const registry = createToolRegistry();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        chunks: [],
+        citations: [],
+        confidence: 0,
+      }),
+    );
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        chunks: z.array(z.unknown()),
+        citations: z.array(z.unknown()),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { query: '不存在的功能' },
+          kind: 'tool',
+          reason: 'Search product docs.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+        {
+          input: { query: '不存在的功能' },
+          kind: 'tool',
+          reason: 'Repeat the same search.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).ask({
+      channel: 'web',
+      message: '这个不存在的功能怎么用？',
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'clarify',
+      citations: [],
+      intent: 'unknown',
+    });
+    expect(response.answer).toContain('重复检索');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ['parse', new PlannerModelParseError('invalid planner json')],
     ['request', new PlannerModelRequestError('planner request failed')],
