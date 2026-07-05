@@ -246,11 +246,25 @@ export function formatKnowledgeStats(stats: KnowledgeStats): string {
   return lines.join('\n');
 }
 
-export function formatEvaluationReport(report: EvaluationReport): string {
-  const lines = [`Evaluation: ${report.passed}/${report.total} passed`];
+export interface FormatEvaluationReportOptions {
+  providerBacked?: boolean;
+}
+
+export function formatEvaluationReport(
+  report: EvaluationReport,
+  options: FormatEvaluationReportOptions = {},
+): string {
+  const lines = [
+    `Evaluation${options.providerBacked === true ? ' (provider-backed)' : ''}: ${report.passed}/${report.total} passed`,
+  ];
 
   for (const result of report.results) {
-    lines.push(`[${result.passed ? 'PASS' : 'FAIL'}] ${result.name}`);
+    const status = `[${result.passed ? 'PASS' : 'FAIL'}] ${result.name}`;
+    lines.push(
+      options.providerBacked === true
+        ? `${status} (expected ${result.expectedIntent}, actual ${result.actualIntent}, citations ${result.citationCount}/${result.minCitations})`
+        : status,
+    );
     for (const reason of result.failureReasons) {
       lines.push(`  - ${reason}`);
     }
@@ -313,7 +327,10 @@ export async function runCli(
   if (parsed.command === 'evaluate') {
     try {
       const report = await evaluate({ ...io, cwd: workspaceCwd }, parsed.providerBacked);
-      writeLine(io.stdout, formatEvaluationReport(report));
+      writeLine(
+        io.stdout,
+        formatEvaluationReport(report, { providerBacked: parsed.providerBacked }),
+      );
       return report.passed === report.total ? 0 : 1;
     } catch (error) {
       if (writeConfigurationError(io, error)) {

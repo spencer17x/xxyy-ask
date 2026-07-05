@@ -243,6 +243,46 @@ describe('CLI output formatting', () => {
     );
   });
 
+  it('formats provider-backed evaluation reports with per-case review details', () => {
+    expect(
+      formatEvaluationReport(
+        {
+          passed: 1,
+          total: 2,
+          results: [
+            {
+              actualIntent: 'product_qa',
+              citationCount: 2,
+              expectedIntent: 'product_qa',
+              failureReasons: [],
+              minCitations: 1,
+              name: 'pro benefits',
+              passed: true,
+            },
+            {
+              actualIntent: 'unknown',
+              citationCount: 0,
+              expectedIntent: 'product_qa',
+              failureReasons: ['intent unknown != product_qa', 'citations 0/1'],
+              minCitations: 1,
+              name: 'bad answer',
+              passed: false,
+            },
+          ],
+        },
+        { providerBacked: true },
+      ),
+    ).toContain(
+      [
+        'Evaluation (provider-backed): 1/2 passed',
+        '[PASS] pro benefits (expected product_qa, actual product_qa, citations 2/1)',
+        '[FAIL] bad answer (expected product_qa, actual unknown, citations 0/1)',
+        '  - intent unknown != product_qa',
+        '  - citations 0/1',
+      ].join('\n'),
+    );
+  });
+
   it('formats knowledge stats for retained stats command', () => {
     const stats: KnowledgeStats = {
       chunkCount: 64,

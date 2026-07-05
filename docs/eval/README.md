@@ -54,3 +54,11 @@ pnpm check
 ```
 
 Use `pnpm rag:evaluate -- --provider` only for human review before releases or model/retriever changes; it may call configured external providers.
+Provider-backed reports include per-case expected intent, actual intent, and citation counts so reviewers can quickly inspect weak answers:
+
+```text
+Evaluation (provider-backed): 35/36 passed
+[PASS] pro-benefits (expected product_qa, actual product_qa, citations 3/0)
+[FAIL] bad-answer (expected product_qa, actual unknown, citations 0/1)
+  - intent unknown != product_qa
+```
