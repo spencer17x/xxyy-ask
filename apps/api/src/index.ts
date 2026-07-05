@@ -29,6 +29,7 @@ type ApiEnv = RagEnv &
     Record<
       | 'API_CORS_ORIGIN'
       | 'API_CHAT_AUTH_TOKEN'
+      | 'API_CHAT_AUTH_TOKENS'
       | 'API_DEEP_HEALTH_TOKEN'
       | 'API_ENABLE_DEEP_HEALTH'
       | 'API_MAX_BODY_BYTES'
@@ -85,7 +86,7 @@ export interface StartServerOptions extends CreateRequestHandlerOptions {
 const DEFAULT_LOCAL_PORT_RETRY_LIMIT = 20;
 
 interface ApiRuntimeConfig {
-  chatAuthToken: string | undefined;
+  chatAuthTokens: string[];
   corsOrigins: string[];
   deepHealthToken: string | undefined;
   enableDeepHealth: boolean;
@@ -317,12 +318,12 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
 }
 
 function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
-  const chatAuthToken = normalizeOptionalSecret(env.API_CHAT_AUTH_TOKEN);
+  const chatAuthTokens = parseChatAuthTokens(env);
   const deepHealthToken = normalizeOptionalSecret(env.API_DEEP_HEALTH_TOKEN);
   const isProduction = env.NODE_ENV === 'production';
 
   return {
-    chatAuthToken,
+    chatAuthTokens,
     corsOrigins: parseCsv(env.API_CORS_ORIGIN),
     deepHealthToken,
     enableDeepHealth: parseBoolean(
@@ -335,6 +336,16 @@ function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
     requireChatAuth: parseBoolean(env.API_REQUIRE_CHAT_AUTH, isProduction),
     trustProxy: parseBoolean(env.TRUST_PROXY, false),
   };
+}
+
+function parseChatAuthTokens(env: ApiEnv): string[] {
+  const legacyToken = normalizeOptionalSecret(env.API_CHAT_AUTH_TOKEN);
+  const tokens = [
+    ...(legacyToken === undefined ? [] : [legacyToken]),
+    ...parseCsv(env.API_CHAT_AUTH_TOKENS),
+  ];
+
+  return [...new Set(tokens)];
 }
 
 function normalizeOptionalSecret(value: string | undefined): string | undefined {
@@ -456,15 +467,16 @@ function authorizeChatRequest(
     return 'continue';
   }
 
-  if (config.chatAuthToken === undefined) {
+  if (config.chatAuthTokens.length === 0) {
     sendJson(response, 503, {
       error: 'chat_auth_not_configured',
-      message: 'API_CHAT_AUTH_TOKEN is required when chat authentication is enabled.',
+      message:
+        'API_CHAT_AUTH_TOKEN or API_CHAT_AUTH_TOKENS is required when chat authentication is enabled.',
     });
     return 'handled';
   }
 
-  return authorizeTokenRequest(request, response, config.chatAuthToken);
+  return authorizeTokenRequest(request, response, config.chatAuthTokens);
 }
 
 function authorizeDeepHealthRequest(
@@ -481,15 +493,16 @@ function authorizeDeepHealthRequest(
     return 'continue';
   }
 
-  return authorizeTokenRequest(request, response, config.deepHealthToken);
+  return authorizeTokenRequest(request, response, [config.deepHealthToken]);
 }
 
 function authorizeTokenRequest(
   request: ApiRequestLike,
   response: ApiResponseLike,
-  token: string,
+  tokens: readonly string[],
 ): AccessResult {
-  if (requestToken(request) === token) {
+  const token = requestToken(request);
+  if (token !== undefined && tokens.includes(token)) {
     return 'continue';
   }
 

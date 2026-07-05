@@ -4,6 +4,7 @@
 
 - [业务架构](architecture.md)
 - [功能状态](feature-status.md)
+- [生产运行、安全与观测](production-readiness.md)
 - [Roadmap](roadmap.md)
 
 ## 产品功能知识库
@@ -64,7 +65,7 @@ POST /api/chat/stream
 
 `/health` 是轻量存活检查，不调用外部模型。`/health/deep` 会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM；开发模式默认开放，生产模式默认禁用，配置 `API_DEEP_HEALTH_TOKEN` 后需要 Bearer token 访问。
 
-`POST /api/chat` 和 `POST /api/chat/stream` 是客服入口。生产模式默认要求 `API_CHAT_AUTH_TOKEN`，本地开发默认不要求。Agent 当前只在 `boundary`、`clarify` 和 `product_answer` 之间规划路线。
+`POST /api/chat` 和 `POST /api/chat/stream` 是客服入口。生产模式默认要求 `API_CHAT_AUTH_TOKEN` 或逗号分隔的 `API_CHAT_AUTH_TOKENS`，本地开发默认不要求。Agent 当前只在 `boundary`、`clarify` 和 `product_answer` 之间规划路线。
 
 ## Telegram Bot
 

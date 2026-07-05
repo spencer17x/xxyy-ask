@@ -523,6 +523,61 @@ describe('createRequestHandler', () => {
     expect(getChatService).toHaveBeenCalledOnce();
   });
 
+  it('accepts multiple chat auth tokens for key rotation', async () => {
+    const getChatService = vi.fn(() =>
+      Promise.resolve({
+        ask() {
+          return Promise.resolve({
+            answer: '根据知识库，XXYY Pro 提供更多权益。',
+            citations: [],
+            confidence: 0.8,
+            intent: 'product_qa' as const,
+          });
+        },
+        stream() {
+          throw new Error('stream should not be used for non-stream requests');
+        },
+      }),
+    );
+    const env = {
+      API_CHAT_AUTH_TOKEN: 'legacy-token',
+      API_CHAT_AUTH_TOKENS: 'current-token, next-token',
+      NODE_ENV: 'production',
+    };
+    const handler = createRequestHandler({ env, getChatService });
+
+    const legacyToken = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      headers: { 'x-api-key': 'legacy-token' },
+      method: 'POST',
+      remoteAddress: '198.51.100.12',
+      url: '/api/chat',
+    });
+    const nextToken = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      headers: { authorization: 'Bearer next-token' },
+      method: 'POST',
+      remoteAddress: '198.51.100.13',
+      url: '/api/chat',
+    });
+    const invalidToken = await callHandler(handler, {
+      body: { message: 'XXYY Pro 有哪些权益？' },
+      headers: { authorization: 'Bearer revoked-token' },
+      method: 'POST',
+      remoteAddress: '198.51.100.14',
+      url: '/api/chat',
+    });
+
+    expect(legacyToken.statusCode).toBe(200);
+    expect(nextToken.statusCode).toBe(200);
+    expect(invalidToken.statusCode).toBe(401);
+    expect(JSON.parse(invalidToken.body)).toEqual({
+      error: 'unauthorized',
+      message: 'Missing or invalid authorization token.',
+    });
+    expect(getChatService).toHaveBeenCalledTimes(2);
+  });
+
   it('allows unauthenticated chat requests in development by default', async () => {
     const handler = createRequestHandler({
       env: {

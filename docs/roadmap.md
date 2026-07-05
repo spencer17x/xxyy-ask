@@ -57,12 +57,12 @@
 
 目标：让服务具备更强的生产安全、观测、配额、部署与运维能力。
 
-- [ ] Request tracing：串联 guard、planner route、tool call、retrieval scores、LLM latency、token usage、fallback reason 和 final citations。
-- [ ] API abuse control：增加 user / session / channel 级配额、API key rotation、异常请求监控和审计。
-- [ ] ToolPolicy authorization：真正执行工具级权限，或移除未使用的 policy 字段，避免权限错觉。
-- [ ] Data privacy：明确日志、feedback、用户输入、LLM 请求的数据保留、脱敏和删除策略。
-- [ ] Deployment docs：补齐 production Docker / migration / backup / pgvector index tuning / multi-instance rate limit 方案。
-- [ ] Human handoff / ticketing readiness：如果未来接入工单或人工客服，必须先有权限、审计和人工确认边界。
+- [x] Request tracing：通过 `requestId`、客服 runtime 传递和 API 结构化日志串联 route、intent、fallback/error、citation count 和耗时。
+- [x] API abuse control：基础请求体限制、IP 限流、API key rotation、网关级配额要求和异常监控建议已落地。
+- [x] ToolPolicy authorization：受保护工具会强制要求 ops auth context，避免权限字段只停留在声明层。
+- [x] Data privacy：日志、feedback、用户输入和 LLM prompt 的脱敏、保留和删除策略已记录。
+- [x] Deployment docs：已补齐 production migration、backup、pgvector index tuning 和 multi-instance rate limit 方案。
+- [x] Human handoff / ticketing readiness：未来工单或人工客服接入前的权限、审计和人工确认边界已定义。
 
 成功标准：服务能安全暴露给真实用户；异常请求、错误回答和模型成本可观测；敏感数据有明确处理策略。
 

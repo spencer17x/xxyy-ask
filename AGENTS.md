@@ -58,6 +58,7 @@ RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
 API_CORS_ORIGIN=
 API_CHAT_AUTH_TOKEN=
+API_CHAT_AUTH_TOKENS=
 API_REQUIRE_CHAT_AUTH=
 API_DEEP_HEALTH_TOKEN=
 API_ENABLE_DEEP_HEALTH=
@@ -88,7 +89,7 @@ API 保留的公开服务面：
 - `POST /api/chat/stream`：流式客服问答。
 - `GET /assets/*`：产品视频、图片等静态资产。
 
-API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。默认不信任 `x-forwarded-for` / `x-real-ip`；仅在可信反向代理后设置 `TRUST_PROXY=true`。生产模式默认要求 chat 鉴权，配置 `API_CHAT_AUTH_TOKEN` 后使用 Bearer token 或 `x-api-key`。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
+API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。默认不信任 `x-forwarded-for` / `x-real-ip`；仅在可信反向代理后设置 `TRUST_PROXY=true`。生产模式默认要求 chat 鉴权，配置 `API_CHAT_AUTH_TOKEN` 或逗号分隔的 `API_CHAT_AUTH_TOKENS` 后使用 Bearer token 或 `x-api-key`。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 
 ## 常用验证
 
