@@ -213,6 +213,7 @@ function createTelegramChatRequest(message: TelegramMessage, text: string): Chat
   return {
     channel: 'telegram',
     message: text,
+    requestId: `telegram:${message.chat.id}:${message.message_id}`,
     sessionId: `telegram:${message.chat.id}`,
     ...(message.from?.id === undefined ? {} : { userId: `telegram:${message.from.id}` }),
   };

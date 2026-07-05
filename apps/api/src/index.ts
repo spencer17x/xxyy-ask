@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingHttpHeaders } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -64,6 +65,7 @@ export type ApiRequestHandler = (
 ) => Promise<void>;
 
 export interface CreateRequestHandlerOptions {
+  createRequestId?: () => string;
   cwd?: string;
   env?: ApiEnv;
   getChatService?: () => Promise<ChatService>;
@@ -97,6 +99,7 @@ interface ApiRuntimeConfig {
 interface ChatPayload {
   message: string;
   channel?: ChatChannel;
+  requestId?: string;
   sessionId?: string;
   userId?: string;
 }
@@ -109,6 +112,7 @@ export interface ApiLogEntry {
   messageLength: number;
   messagePreview: string;
   outcome: 'success' | 'error';
+  requestId: string;
   sessionIdPresent: boolean;
   statusCode: number;
   userIdPresent: boolean;
@@ -151,6 +155,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
   const logger = options.logger ?? noopLogger;
   const now = options.now ?? Date.now;
+  const createRequestId = options.createRequestId ?? randomUUID;
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
   const webAssetsDir = options.webAssetsDir ?? createDefaultWebAssetsDir(options, env);
   const rateLimiter = createRateLimiter(apiConfig, now);
@@ -217,6 +222,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
         await handleChatRequest({
           getChatService,
           logger,
+          createRequestId,
           maxBodyBytes: apiConfig.maxBodyBytes,
           now,
           request,
@@ -230,6 +236,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
         await handleChatRequest({
           getChatService,
           logger,
+          createRequestId,
           maxBodyBytes: apiConfig.maxBodyBytes,
           now,
           request,
@@ -248,6 +255,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
 }
 
 interface HandleChatRequestOptions {
+  createRequestId: () => string;
   getChatService: () => Promise<ChatService>;
   logger: ApiLogger;
   maxBodyBytes: number;
@@ -259,8 +267,12 @@ interface HandleChatRequestOptions {
 
 async function handleChatRequest(options: HandleChatRequestOptions): Promise<void> {
   const payload = parseChatPayload(await readJsonBody(options.request, options.maxBodyBytes));
+  const requestPayload = {
+    ...payload,
+    requestId: payload.requestId ?? options.createRequestId(),
+  };
   const startedAt = options.now();
-  const chatRequest = toChatRequest(payload);
+  const chatRequest = toChatRequest(requestPayload);
 
   try {
     const service = await options.getChatService();
@@ -271,7 +283,7 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
       options.logger(
         createChatSuccessLogEntry({
           durationMs: options.now() - startedAt,
-          payload,
+          payload: requestPayload,
           response: chatResponse,
           route: options.route,
           statusCode: 200,
@@ -284,7 +296,7 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
     options.logger(
       createChatStreamLogEntry({
         durationMs: options.now() - startedAt,
-        payload,
+        payload: requestPayload,
         route: options.route,
         summary,
       }),
@@ -295,7 +307,7 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
       createChatErrorLogEntry({
         durationMs: options.now() - startedAt,
         error: apiError.body.error,
-        payload,
+        payload: requestPayload,
         route: options.route,
         statusCode: apiError.statusCode,
       }),
@@ -646,6 +658,7 @@ function createChatLogBase(
     event: 'chat_request',
     messageLength: payload.message.length,
     messagePreview: createMessagePreview(payload.message),
+    requestId: payload.requestId ?? 'unknown',
     route,
     sessionIdPresent: payload.sessionId !== undefined,
     statusCode,
@@ -1095,9 +1108,11 @@ function withOptionalFields(
 ): ChatPayload {
   const sessionId = parseOptionalString(record.sessionId, 'sessionId');
   const userId = parseOptionalString(record.userId, 'userId');
+  const requestId = parseOptionalString(record.requestId, 'requestId');
 
   return {
     ...payload,
+    ...(requestId === undefined ? {} : { requestId }),
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(userId === undefined ? {} : { userId }),
   };
@@ -1131,6 +1146,7 @@ function toChatRequest(payload: ChatPayload): ChatRequest {
   return {
     channel: payload.channel ?? 'web',
     message: payload.message,
+    ...(payload.requestId === undefined ? {} : { requestId: payload.requestId }),
     ...(payload.sessionId === undefined ? {} : { sessionId: payload.sessionId }),
     ...(payload.userId === undefined ? {} : { userId: payload.userId }),
   };

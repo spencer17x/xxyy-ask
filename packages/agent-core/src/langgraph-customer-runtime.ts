@@ -404,6 +404,7 @@ function isFinalPlannerRoute(route: unknown): route is FinalPlannerRoute {
 function toolContextFromRequest(request: ChatRequest): ToolContext {
   return {
     channel: request.channel,
+    ...(request.requestId === undefined ? {} : { requestId: request.requestId }),
     sessionId: request.sessionId,
     userIdPresent: request.userId !== undefined,
   };

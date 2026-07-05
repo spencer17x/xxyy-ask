@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { CreateCustomerAgentChatServiceOptions } from '@xxyy/agent-core';
 import { EmbeddingConfigurationError } from '@xxyy/knowledge';
-import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
+import type { ChatRequest, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import {
   LlmConfigurationError,
   VectorStoreConfigurationError,
@@ -749,12 +749,14 @@ describe('createRequestHandler', () => {
       citations: [],
     };
     const handler = createRequestHandler({
+      createRequestId: () => 'req-pass-1',
       getChatService: () =>
         Promise.resolve({
           ask(request) {
             expect(request).toEqual({
               channel: 'web',
               message: 'XXYY Pro 有哪些权益？',
+              requestId: 'req-pass-1',
               sessionId: 'session-1',
               userId: 'user-1',
             });
@@ -839,6 +841,7 @@ describe('createRequestHandler', () => {
     try {
       const { createRequestHandler: createRequestHandlerWithMocks } = await import('./index.js');
       const handler = createRequestHandlerWithMocks({
+        createRequestId: () => 'req-agent-1',
         env: {
           DATABASE_URL: 'postgres://xxyy:secret@example.test/xxyy_ask',
           OPENAI_API_KEY: 'test-key',
@@ -874,6 +877,7 @@ describe('createRequestHandler', () => {
       expect(agentAsk).toHaveBeenCalledWith({
         channel: 'web',
         message: 'XXYY Pro 有哪些权益？',
+        requestId: 'req-agent-1',
       });
     } finally {
       vi.doUnmock('@xxyy/agent-core');
@@ -886,6 +890,7 @@ describe('createRequestHandler', () => {
     const logs: ApiLogEntry[] = [];
     const nowValues = [100, 100, 145];
     const handler = createRequestHandler({
+      createRequestId: () => 'req-log-1',
       logger: (entry) => {
         logs.push(entry);
       },
@@ -937,6 +942,7 @@ describe('createRequestHandler', () => {
         messageLength: 15,
         messagePreview: 'XXYY Pro 有哪些权益？',
         outcome: 'success',
+        requestId: 'req-log-1',
         route: '/api/chat',
         sessionIdPresent: true,
         statusCode: 200,
@@ -945,9 +951,51 @@ describe('createRequestHandler', () => {
     ]);
   });
 
+  it('passes a generated requestId to the chat service and request log', async () => {
+    const logs: ApiLogEntry[] = [];
+    const requests: ChatRequest[] = [];
+    const handler = createRequestHandler({
+      createRequestId: () => 'req-test-1',
+      logger: (entry) => {
+        logs.push(entry);
+      },
+      getChatService: () =>
+        Promise.resolve({
+          ask(request) {
+            requests.push(request);
+            return Promise.resolve({
+              answer: '根据知识库，XXYY Pro 提供更多权益。',
+              citations: [],
+              confidence: 0.8,
+              intent: 'product_qa',
+            });
+          },
+          stream() {
+            throw new Error('stream should not be used for non-stream requests');
+          },
+        }),
+    });
+
+    await callHandler(handler, {
+      method: 'POST',
+      url: '/api/chat',
+      body: { message: 'XXYY Pro 有哪些权益？' },
+    });
+
+    expect(requests[0]).toMatchObject({
+      channel: 'web',
+      message: 'XXYY Pro 有哪些权益？',
+      requestId: 'req-test-1',
+    });
+    expect(logs[0]).toMatchObject({
+      requestId: 'req-test-1',
+    });
+  });
+
   it('redacts pasted secrets from chat request log previews', async () => {
     const logs: ApiLogEntry[] = [];
     const handler = createRequestHandler({
+      createRequestId: () => 'req-stream-log-1',
       logger: (entry) => {
         logs.push(entry);
       },
@@ -998,6 +1046,7 @@ describe('createRequestHandler', () => {
       },
     ];
     const handler = createRequestHandler({
+      createRequestId: () => 'req-stream-1',
       getChatService: () =>
         Promise.resolve({
           ask() {
@@ -1008,6 +1057,7 @@ describe('createRequestHandler', () => {
             expect(request).toEqual({
               channel: 'web',
               message: 'XXYY Pro 有哪些权益？',
+              requestId: 'req-stream-1',
             });
             yield* streamEvents;
           },
@@ -1053,6 +1103,7 @@ describe('createRequestHandler', () => {
       },
     ];
     const handler = createRequestHandler({
+      createRequestId: () => 'req-stream-log-1',
       logger: (entry) => {
         logs.push(entry);
       },
@@ -1088,6 +1139,7 @@ describe('createRequestHandler', () => {
         messageLength: 15,
         messagePreview: 'XXYY Pro 有哪些权益？',
         outcome: 'success',
+        requestId: 'req-stream-log-1',
         route: '/api/chat/stream',
         sessionIdPresent: false,
         statusCode: 200,
@@ -1128,6 +1180,7 @@ describe('createRequestHandler', () => {
     const logs: ApiLogEntry[] = [];
     const nowValues = [300, 300, 325];
     const handler = createRequestHandler({
+      createRequestId: () => 'req-error-log-1',
       logger: (entry) => {
         logs.push(entry);
       },
@@ -1160,6 +1213,7 @@ describe('createRequestHandler', () => {
         messageLength: 15,
         messagePreview: 'XXYY Pro 有哪些权益？',
         outcome: 'error',
+        requestId: 'req-error-log-1',
         route: '/api/chat',
         sessionIdPresent: false,
         statusCode: 503,

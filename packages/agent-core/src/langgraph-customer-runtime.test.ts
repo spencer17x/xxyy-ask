@@ -61,6 +61,7 @@ describe('createLangGraphCustomerRuntime', () => {
       runtime.ask({
         channel: 'web',
         message: 'XXYY Pro 有哪些权益？',
+        requestId: 'req-runtime-1',
         sessionId: 'session-1',
         userId: 'user-1',
       }),
@@ -70,7 +71,12 @@ describe('createLangGraphCustomerRuntime', () => {
     });
     expect(execute).toHaveBeenCalledWith(
       { question: 'XXYY Pro 有哪些权益？' },
-      { channel: 'web', sessionId: 'session-1', userIdPresent: true },
+      {
+        channel: 'web',
+        requestId: 'req-runtime-1',
+        sessionId: 'session-1',
+        userIdPresent: true,
+      },
     );
   });
 

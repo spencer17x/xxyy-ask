@@ -26,6 +26,7 @@ export type KnowledgeStatus = 'current' | 'historical' | 'deprecated';
 export interface ChatRequest {
   message: string;
   channel: ChatChannel;
+  requestId?: string;
   sessionId?: string;
   userId?: string;
 }

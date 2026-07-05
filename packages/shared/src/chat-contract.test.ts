@@ -27,6 +27,7 @@ describe('chat contract', () => {
     const request: ChatRequest = {
       channel: 'web',
       message: 'XXYY Pro 有什么权益？',
+      requestId: 'req-contract-1',
       sessionId: 'session-1',
     };
 
@@ -57,6 +58,7 @@ describe('chat contract', () => {
     };
 
     expect(request.channel).toBe('web');
+    expect(request.requestId).toBe('req-contract-1');
     expect(response.citations[0]?.title).toBe('Pro');
     expect(response.attachments?.[0]?.kind).toBe('video');
     expect(response.tokenUsage?.totalTokens).toBe(156);

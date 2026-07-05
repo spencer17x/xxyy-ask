@@ -82,6 +82,7 @@ describe('createTelegramBot', () => {
     expect(ask).toHaveBeenCalledWith({
       channel: 'telegram',
       message: 'XXYY Pro 有哪些权益？',
+      requestId: 'telegram:123:1',
       sessionId: 'telegram:123',
       userId: 'telegram:456',
     });
@@ -139,6 +140,7 @@ describe('createTelegramBot', () => {
     expect(stream).toHaveBeenCalledWith({
       channel: 'telegram',
       message: 'XXYY Pro 有哪些权益？',
+      requestId: 'telegram:123:1',
       sessionId: 'telegram:123',
       userId: 'telegram:456',
     });
