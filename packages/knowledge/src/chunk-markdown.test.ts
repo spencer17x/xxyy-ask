@@ -12,6 +12,10 @@ const document: SourceDocument = {
   file: '/docs/product-features/pages/telegram.md',
   sourceUrl: 'https://docs.xxyy.io/telegram',
   order: 51,
+  effectiveAt: '2025-10-24T09:17:54.613Z',
+  retrievedAt: '2026-05-24T06:41:04.265Z',
+  status: 'current',
+  supersedes: ['x_updates:telegram-old'],
   content: [
     '# 设置 TG通知',
     '',
@@ -55,6 +59,10 @@ describe('chunkMarkdownDocuments', () => {
       file: '/docs/product-features/pages/telegram.md',
       sourceUrl: 'https://docs.xxyy.io/telegram',
       order: 51,
+      effectiveAt: '2025-10-24T09:17:54.613Z',
+      retrievedAt: '2026-05-24T06:41:04.265Z',
+      status: 'current',
+      supersedes: ['x_updates:telegram-old'],
       headingPath: ['设置 TG通知'],
     });
     expect(chunks[1]?.metadata.headingPath).toEqual(['设置 TG通知', '第一步：创建 Telegram Group']);

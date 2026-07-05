@@ -11,6 +11,7 @@ export interface RetrievedChunk extends IndexEntry {
   lexicalScore: number;
   sourceBoost: number;
   vectorScore: number;
+  freshnessBoost?: number;
 }
 
 const DEFAULT_TOP_K = 6;
@@ -20,6 +21,13 @@ const VECTOR_WEIGHT = 0.35;
 const LEXICAL_WEIGHT = 1;
 const VECTOR_ONLY_MATCH_THRESHOLD = 0.9;
 const TIE_EPSILON = 1e-12;
+const CURRENT_STATUS_BOOST = 0.2;
+const CURRENT_X_UPDATE_BOOST = 0.25;
+const HISTORICAL_STATUS_PENALTY = -0.45;
+const DEPRECATED_STATUS_PENALTY = -8;
+const EFFECTIVE_AT_EPOCH = Date.UTC(2024, 0, 1);
+const FRESHNESS_BOOST_PER_YEAR = 0.08;
+const MAX_FRESHNESS_BOOST = 0.4;
 
 export function retrieve(
   question: string,
@@ -49,12 +57,18 @@ export function retrieve(
       const vectorScore = Math.max(0, cosineSimilarity(queryEmbedding, entry.embedding));
       const contextScore = calculateContextScore(question, entry);
       const sourceBoost = calculateSourceBoost(entry.metadata.sourceType);
+      const freshnessBoost = calculateFreshnessBoost(question, entry);
       const score = roundScore(
-        LEXICAL_WEIGHT * lexicalScore + VECTOR_WEIGHT * vectorScore + contextScore + sourceBoost,
+        LEXICAL_WEIGHT * lexicalScore +
+          VECTOR_WEIGHT * vectorScore +
+          contextScore +
+          sourceBoost +
+          freshnessBoost,
       );
 
       return {
         ...entry,
+        freshnessBoost: roundScore(freshnessBoost),
         lexicalScore: roundScore(lexicalScore),
         vectorScore: roundScore(vectorScore),
         sourceBoost: roundScore(sourceBoost),
@@ -130,6 +144,49 @@ function calculateBm25(
 
 function calculateSourceBoost(sourceType: SourceType): number {
   return sourceType === 'official_docs' ? 0.05 : 0;
+}
+
+function calculateFreshnessBoost(question: string, entry: IndexEntry): number {
+  const status = entry.metadata.status;
+  const isHistoryQuestion = isHistoricalOrTweetQuestion(question);
+  let boost = 0;
+
+  if (status === 'deprecated') {
+    boost += DEPRECATED_STATUS_PENALTY;
+  } else if (status === 'historical') {
+    boost += isHistoryQuestion ? 0 : HISTORICAL_STATUS_PENALTY;
+  } else if (status === 'current') {
+    boost += isHistoryQuestion ? 0 : CURRENT_STATUS_BOOST;
+    if (!isHistoryQuestion && entry.metadata.sourceType === 'x_updates') {
+      boost += CURRENT_X_UPDATE_BOOST;
+    }
+  }
+
+  if (!isHistoryQuestion && status === 'current') {
+    boost += effectiveAtFreshnessBoost(entry.metadata.effectiveAt);
+  }
+
+  return boost;
+}
+
+function effectiveAtFreshnessBoost(effectiveAt: string | undefined): number {
+  if (effectiveAt === undefined) {
+    return 0;
+  }
+
+  const timestamp = Date.parse(effectiveAt);
+  if (!Number.isFinite(timestamp) || timestamp <= EFFECTIVE_AT_EPOCH) {
+    return 0;
+  }
+
+  const yearsSinceEpoch = (timestamp - EFFECTIVE_AT_EPOCH) / (365 * 24 * 60 * 60 * 1000);
+  return Math.min(MAX_FRESHNESS_BOOST, yearsSinceEpoch * FRESHNESS_BOOST_PER_YEAR);
+}
+
+function isHistoricalOrTweetQuestion(question: string): boolean {
+  return /历史|以前|之前|过去|曾经|更新日志|变更|changelog|哪条推文|哪条推特|推文|推特|tweet|x\s*post/iu.test(
+    question.normalize('NFKC').toLowerCase(),
+  );
 }
 
 function calculateContextScore(question: string, entry: IndexEntry): number {
@@ -227,6 +284,17 @@ function compareScoredEntries(
     return right.score - left.score;
   }
 
+  const statusPreference = statusRank(left.metadata.status) - statusRank(right.metadata.status);
+  if (statusPreference !== 0) {
+    return statusPreference;
+  }
+
+  const effectiveAtPreference =
+    effectiveAtRank(right.metadata.effectiveAt) - effectiveAtRank(left.metadata.effectiveAt);
+  if (effectiveAtPreference !== 0) {
+    return effectiveAtPreference;
+  }
+
   const sourcePreference =
     sourceRank(left.metadata.sourceType) - sourceRank(right.metadata.sourceType);
   if (sourcePreference !== 0) {
@@ -238,6 +306,28 @@ function compareScoredEntries(
 
 function sourceRank(sourceType: SourceType): number {
   return sourceType === 'official_docs' ? 0 : 1;
+}
+
+function statusRank(status: IndexEntry['metadata']['status']): number {
+  switch (status) {
+    case 'current':
+      return 0;
+    case 'historical':
+      return 1;
+    case 'deprecated':
+      return 2;
+    case undefined:
+      return 1;
+  }
+}
+
+function effectiveAtRank(effectiveAt: string | undefined): number {
+  if (effectiveAt === undefined) {
+    return 0;
+  }
+
+  const timestamp = Date.parse(effectiveAt);
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function uniqueTokens(tokens: string[]): string[] {

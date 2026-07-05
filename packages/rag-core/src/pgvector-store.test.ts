@@ -299,7 +299,12 @@ describe('createPgVectorStore', () => {
     await store.upsertChunks([
       createChunk({
         embedding: embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 }),
-        metadata: { retrievedAt: '2026-05-24T06:41:04.265Z' },
+        metadata: {
+          effectiveAt: '2026-03-16T11:12:30.350Z',
+          retrievedAt: '2026-05-24T06:41:04.265Z',
+          status: 'current',
+          supersedes: ['x_updates:old-pro'],
+        },
       }),
       createChunk({
         contentHash: 'hash-2',
@@ -322,6 +327,9 @@ describe('createPgVectorStore', () => {
       toPgVectorLiteral(embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 })),
     );
     expect(client.queries[0]?.values[9]).toBe('2026-05-24T06:41:04.265Z');
+    expect(client.queries[0]?.values).toContain('2026-03-16T11:12:30.350Z');
+    expect(client.queries[0]?.values).toContain('current');
+    expect(client.queries[0]?.values).toContain(JSON.stringify(['x_updates:old-pro']));
     expect(client.queries[1]?.values[9]).toBeNull();
   });
 
@@ -439,6 +447,9 @@ describe('createPgVectorStore', () => {
         module: 'XXYY Pro',
         order_index: null,
         retrieved_at: null,
+        effective_at: '2026-03-16T11:12:30.350Z',
+        status: 'current',
+        supersedes: ['x_updates:old-pro'],
         source_type: 'official_docs',
         source_url: null,
         title: 'XXYY Pro 权益',
@@ -466,7 +477,10 @@ describe('createPgVectorStore', () => {
       sourceBoost: 0.05,
       metadata: {
         file: 'docs/pro.md',
+        effectiveAt: '2026-03-16T11:12:30.350Z',
         sourceType: 'official_docs',
+        status: 'current',
+        supersedes: ['x_updates:old-pro'],
         title: 'XXYY Pro 权益',
       },
       text: 'XXYY Pro 支持 Telegram 钱包监控。',
@@ -669,7 +683,12 @@ describe('createPgVectorStore', () => {
 });
 
 type TestChunk = EmbeddedKnowledgeChunk & {
-  metadata: EmbeddedKnowledgeChunk['metadata'] & { retrievedAt?: string };
+  metadata: EmbeddedKnowledgeChunk['metadata'] & {
+    effectiveAt?: string;
+    retrievedAt?: string;
+    status?: 'current' | 'historical' | 'deprecated';
+    supersedes?: string[];
+  };
 };
 
 type TestChunkOverrides = Partial<Omit<TestChunk, 'metadata'>> & {

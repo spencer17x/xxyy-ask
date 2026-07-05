@@ -1,7 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { SourceDocument, SourceType } from '@xxyy/shared';
+import type { KnowledgeStatus, SourceDocument, SourceType } from '@xxyy/shared';
 
 const PRODUCT_FUNCTIONS_FILE = 'xxyy-product-functions.md';
 const X_UPDATES_FILE = 'xxyy-x-updates.md';
@@ -17,8 +17,12 @@ interface MarkdownMetadata {
   title?: string;
   section?: string;
   category?: string;
+  effectiveAt?: string;
+  lastmod?: string;
   sourceUrl?: string;
   retrievedAt?: string;
+  status?: KnowledgeStatus;
+  supersedes?: string[];
 }
 
 interface ManifestEntry {
@@ -28,7 +32,11 @@ interface ManifestEntry {
   source_url?: string;
   section?: string;
   category?: string;
+  effective_at?: string;
+  lastmod?: string | null;
   retrieved_at?: string;
+  status?: KnowledgeStatus;
+  supersedes?: string[];
 }
 
 interface XPostEntry {
@@ -160,13 +168,25 @@ function createXPostDocument(post: XPostEntry, file: string): SourceDocument {
       '',
     ].join('\n'),
     sourceUrl: post.url,
+    status: inferXPostStatus(post.text),
   };
 
+  if (post.createdAtIso !== undefined) {
+    document.effectiveAt = post.createdAtIso;
+  }
   if (post.fetchedAt !== undefined) {
     document.retrievedAt = post.fetchedAt;
   }
 
   return document;
+}
+
+function inferXPostStatus(text: string): KnowledgeStatus {
+  return /上线|新增|更新|升级|优化|支持|现已|全面支持|已支持|发布|launch|live|now supports|available|released/iu.test(
+    text,
+  )
+    ? 'current'
+    : 'historical';
 }
 
 async function listPageFiles(productFeaturesDir: string): Promise<string[]> {
@@ -204,6 +224,14 @@ async function readDocument(args: {
     args.fallbackModule;
   const sourceUrl = manifestEntry?.source_url ?? metadata.sourceUrl;
   const retrievedAt = manifestEntry?.retrieved_at ?? metadata.retrievedAt;
+  const effectiveAt =
+    manifestEntry?.effective_at ??
+    metadata.effectiveAt ??
+    manifestEntry?.lastmod ??
+    metadata.lastmod ??
+    retrievedAt;
+  const status = manifestEntry?.status ?? metadata.status ?? defaultStatus(args.sourceType);
+  const supersedes = manifestEntry?.supersedes ?? metadata.supersedes;
   const id = `${args.sourceType}:${withoutMarkdownExtension(args.relativeFile)}`;
   const document: SourceDocument = {
     id,
@@ -212,6 +240,7 @@ async function readDocument(args: {
     sourceType: args.sourceType,
     file,
     content,
+    status,
   };
 
   if (typeof manifestEntry?.order === 'number') {
@@ -220,11 +249,21 @@ async function readDocument(args: {
   if (sourceUrl !== undefined) {
     document.sourceUrl = sourceUrl;
   }
+  if (effectiveAt !== undefined) {
+    document.effectiveAt = effectiveAt;
+  }
   if (retrievedAt !== undefined) {
     document.retrievedAt = retrievedAt;
   }
+  if (supersedes !== undefined && supersedes.length > 0) {
+    document.supersedes = supersedes;
+  }
 
   return document;
+}
+
+function defaultStatus(sourceType: SourceType): KnowledgeStatus {
+  return sourceType === 'official_docs' ? 'current' : 'historical';
 }
 
 async function readManifest(manifestPath: string): Promise<Map<string, ManifestEntry>> {
@@ -306,8 +345,16 @@ function parseMarkdownMetadata(rawContent: string): {
       metadata.category = value;
     } else if (key === 'source_url') {
       metadata.sourceUrl = value;
+    } else if (key === 'effective_at' || key === 'effectiveAt') {
+      metadata.effectiveAt = value;
+    } else if (key === 'lastmod') {
+      metadata.lastmod = value;
     } else if (key === 'retrieved_at') {
       metadata.retrievedAt = value;
+    } else if (key === 'status' && isKnowledgeStatus(value)) {
+      metadata.status = value;
+    } else if (key === 'supersedes') {
+      metadata.supersedes = parseSupersedes(value);
     }
   }
 
@@ -389,12 +436,54 @@ function isManifestEntry(value: unknown): value is ManifestEntry {
     isOptionalString(record.source_url) &&
     isOptionalString(record.section) &&
     isOptionalString(record.category) &&
-    isOptionalString(record.retrieved_at)
+    isOptionalString(record.effective_at) &&
+    isOptionalNullableString(record.lastmod) &&
+    isOptionalString(record.retrieved_at) &&
+    isOptionalKnowledgeStatus(record.status) &&
+    isOptionalStringArray(record.supersedes)
+  );
+}
+
+function parseSupersedes(value: string): string[] {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed
+      .slice(1, -1)
+      .split(',')
+      .map((item) => unquote(item.trim()))
+      .filter((item) => item.length > 0);
+  }
+
+  return trimmed
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function isKnowledgeStatus(value: string): value is KnowledgeStatus {
+  return value === 'current' || value === 'historical' || value === 'deprecated';
+}
+
+function isOptionalKnowledgeStatus(value: unknown): boolean {
+  return value === undefined || (typeof value === 'string' && isKnowledgeStatus(value));
+}
+
+function isOptionalStringArray(value: unknown): boolean {
+  return (
+    value === undefined || (Array.isArray(value) && value.every((item) => typeof item === 'string'))
   );
 }
 
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string';
+}
+
+function isOptionalNullableString(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === 'string';
 }
 
 function isOptionalNumber(value: unknown): boolean {

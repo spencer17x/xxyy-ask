@@ -130,6 +130,77 @@ describe('createOpenAiAnswerProvider', () => {
     expect(prompt).toContain('不要遗漏与用户问题直接相关的配置项、限制、数量、条件或步骤');
   });
 
+  it('includes freshness metadata and conflict-resolution rules in the prompt context', async () => {
+    interface CapturedRequest {
+      messages?: Array<{ content?: string; role?: string }>;
+    }
+
+    const requests: CapturedRequest[] = [];
+    const fetchImpl: typeof fetch = (_input, init) => {
+      if (typeof init?.body !== 'string') {
+        throw new Error('Expected JSON string request body');
+      }
+      requests.push(JSON.parse(init.body) as CapturedRequest);
+      return Promise.resolve(
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                content: '当前每条链最多支持 5000 个钱包监控地址。',
+              },
+            },
+          ],
+        }),
+      );
+    };
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'gpt-test',
+    });
+    const retrieved = [
+      {
+        documentId: 'x_updates:wallet-limit',
+        embedding: [],
+        id: 'x_updates:wallet-limit:chunk:0001',
+        lexicalScore: 4,
+        metadata: {
+          effectiveAt: '2026-07-01T00:00:00.000Z',
+          file: '/docs/product-features/xxyy-x-updates.md',
+          headingPath: ['钱包监控上限更新'],
+          module: 'X Updates',
+          sourceType: 'x_updates' as const,
+          status: 'current' as const,
+          title: '钱包监控上限更新',
+        },
+        rank: 1,
+        score: 10,
+        sourceBoost: 0,
+        text: '钱包监控每条链最多支持 5000 个地址。',
+        tokens: [],
+        vectorScore: 1,
+      },
+    ];
+
+    await provider.answer({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: '现在钱包监控每条链最多支持多少地址？',
+      retrievedChunks: retrieved,
+    });
+
+    const prompt = requests[0]?.messages?.map((message) => message.content).join('\n') ?? '';
+    expect(prompt).toContain('默认回答当前有效规则');
+    expect(prompt).toContain('不要混合冲突的新旧事实');
+    expect(prompt).toContain('来源类型：x_updates');
+    expect(prompt).toContain('状态：current');
+    expect(prompt).toContain('生效时间：2026-07-01T00:00:00.000Z');
+  });
+
   it('returns video attachments discovered in retrieved context', async () => {
     const fetchImpl: typeof fetch = () =>
       Promise.resolve(

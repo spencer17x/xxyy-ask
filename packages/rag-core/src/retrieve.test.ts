@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createLocalHashEmbedding } from '@xxyy/knowledge';
-import type { RagIndex } from '@xxyy/shared';
+import { createLocalHashEmbedding, tokenize } from '@xxyy/knowledge';
+import type { IndexEntry, RagIndex } from '@xxyy/shared';
 
 import { retrieve } from './retrieve.js';
 import { createFixtureIndex } from './test-fixtures.js';
@@ -211,4 +211,99 @@ describe('retrieve', () => {
 
     expect(results[0]?.id).toBe('x_updates:copy-trading:chunk:0001');
   });
+
+  it('prefers a newer current X update over older official docs for current-rule questions', () => {
+    const currentXUpdate = createScoredEntry({
+      effectiveAt: '2026-07-01T00:00:00.000Z',
+      id: 'x_updates:wallet-limit-5000:chunk:0001',
+      sourceType: 'x_updates',
+      status: 'current',
+      text: '钱包监控每条链最多支持 5000 个地址。',
+      title: '钱包监控上限更新',
+    });
+    const olderOfficialDoc = createScoredEntry({
+      effectiveAt: '2025-02-13T00:00:00.000Z',
+      id: 'official_docs:wallet-limit-2000:chunk:0001',
+      sourceType: 'official_docs',
+      status: 'current',
+      text: '钱包监控每条链最多支持 2000 个地址。',
+      title: '钱包监控上限',
+    });
+    const index: RagIndex = {
+      builtAt: '2026-07-01T00:00:00.000Z',
+      entries: [olderOfficialDoc, currentXUpdate],
+      version: 1,
+    };
+
+    const results = retrieve('现在钱包监控每条链最多支持多少地址？', index, { topK: 2 });
+
+    expect(results[0]).toMatchObject({
+      id: 'x_updates:wallet-limit-5000:chunk:0001',
+      metadata: {
+        effectiveAt: '2026-07-01T00:00:00.000Z',
+        sourceType: 'x_updates',
+        status: 'current',
+      },
+    });
+    expect(results[1]?.id).toBe('official_docs:wallet-limit-2000:chunk:0001');
+  });
+
+  it('keeps deprecated chunks below current chunks for default product questions', () => {
+    const currentDoc = createScoredEntry({
+      effectiveAt: '2026-01-01T00:00:00.000Z',
+      id: 'official_docs:wallet-limit-current:chunk:0001',
+      sourceType: 'official_docs',
+      status: 'current',
+      text: '钱包监控每条链最多支持 5000 个地址。',
+      title: '钱包监控当前上限',
+    });
+    const deprecatedUpdate = createScoredEntry({
+      effectiveAt: '2025-01-01T00:00:00.000Z',
+      id: 'x_updates:wallet-limit-old:chunk:0001',
+      sourceType: 'x_updates',
+      status: 'deprecated',
+      text: '钱包监控每条链最多支持 1000 个地址。',
+      title: '钱包监控旧上限',
+    });
+    const index: RagIndex = {
+      builtAt: '2026-07-01T00:00:00.000Z',
+      entries: [deprecatedUpdate, currentDoc],
+      version: 1,
+    };
+
+    const results = retrieve('钱包监控每条链最多支持多少地址？', index, { topK: 2 });
+
+    expect(results.map((chunk) => chunk.id)).toEqual([
+      'official_docs:wallet-limit-current:chunk:0001',
+      'x_updates:wallet-limit-old:chunk:0001',
+    ]);
+  });
 });
+
+function createScoredEntry(input: {
+  effectiveAt: string;
+  id: string;
+  sourceType: 'official_docs' | 'x_updates';
+  status: 'current' | 'historical' | 'deprecated';
+  text: string;
+  title: string;
+}): IndexEntry {
+  const headingPath = [input.title];
+  const searchableText = [input.title, 'XXYY', ...headingPath, input.text].join('\n');
+  return {
+    documentId: input.id.replace(/:chunk:\d+$/u, ''),
+    embedding: createLocalHashEmbedding(searchableText),
+    id: input.id,
+    metadata: {
+      effectiveAt: input.effectiveAt,
+      file: `/fixtures/${input.id}.md`,
+      headingPath,
+      module: 'XXYY',
+      sourceType: input.sourceType,
+      status: input.status,
+      title: input.title,
+    },
+    text: input.text,
+    tokens: tokenize(searchableText),
+  };
+}

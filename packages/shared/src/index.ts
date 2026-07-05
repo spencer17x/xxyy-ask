@@ -21,6 +21,7 @@ export const supportedAgentRoutes = ['boundary', 'clarify', 'product_answer'] as
 export type AgentRoute = (typeof supportedAgentRoutes)[number];
 
 export type SourceType = 'official_docs' | 'x_updates';
+export type KnowledgeStatus = 'current' | 'historical' | 'deprecated';
 
 export interface ChatRequest {
   message: string;
@@ -132,9 +133,12 @@ export interface SourceDocument {
   sourceType: SourceType;
   file: string;
   content: string;
+  effectiveAt?: string;
   sourceUrl?: string;
   order?: number;
   retrievedAt?: string;
+  status?: KnowledgeStatus;
+  supersedes?: string[];
 }
 
 export interface ChunkMetadata {
@@ -145,7 +149,10 @@ export interface ChunkMetadata {
   headingPath: string[];
   sourceUrl?: string;
   order?: number;
+  effectiveAt?: string;
   retrievedAt?: string;
+  status?: KnowledgeStatus;
+  supersedes?: string[];
 }
 
 export interface RagChunk {

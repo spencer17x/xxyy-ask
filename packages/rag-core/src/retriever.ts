@@ -22,6 +22,10 @@ export interface RerankingRetrieverOptions {
   candidateMultiplier?: number;
 }
 
+const METADATA_RERANK_WEIGHT = 0.2;
+const CHAIN_COVERAGE_BONUS_PER_CHAIN = 1.2;
+const BROAD_CHAIN_COVERAGE_BONUS = 5;
+
 export function createLazyRetriever(
   createRetriever: () => Promise<Retriever> | Retriever,
 ): Retriever {
@@ -85,8 +89,8 @@ export function createMetadataReranker(): Reranker {
     rerank({ chunks, question }) {
       const queryTokens = new Set(tokenize(question));
       return [...chunks].sort((left, right) => {
-        const rightScore = metadataMatchScore(right, queryTokens);
-        const leftScore = metadataMatchScore(left, queryTokens);
+        const rightScore = rerankScore(right, queryTokens, question);
+        const leftScore = rerankScore(left, queryTokens, question);
 
         if (rightScore !== leftScore) {
           return rightScore - leftScore;
@@ -125,6 +129,68 @@ function metadataMatchScore(chunk: RetrievedChunk, queryTokens: Set<string>): nu
   }
 
   return score;
+}
+
+function rerankScore(chunk: RetrievedChunk, queryTokens: Set<string>, question: string): number {
+  return (
+    chunk.score +
+    metadataMatchScore(chunk, queryTokens) * METADATA_RERANK_WEIGHT +
+    contentShapeScore(chunk, question)
+  );
+}
+
+function contentShapeScore(chunk: RetrievedChunk, question: string): number {
+  const normalizedQuestion = question.normalize('NFKC').toLowerCase();
+  if (!isSupportedChainCoverageQuestion(normalizedQuestion)) {
+    return 0;
+  }
+
+  const normalizedEvidence = [
+    chunk.metadata.title,
+    chunk.metadata.module,
+    ...chunk.metadata.headingPath,
+    chunk.text,
+  ]
+    .join(' ')
+    .normalize('NFKC')
+    .toLowerCase();
+  const chainCount = countChainMentions(normalizedEvidence);
+  let score = chainCount * CHAIN_COVERAGE_BONUS_PER_CHAIN;
+
+  if (
+    chainCount >= 3 ||
+    /支持\s*(?:\d+|[一二三四五六七八九十]+)\s*大?公链/u.test(normalizedEvidence)
+  ) {
+    score += BROAD_CHAIN_COVERAGE_BONUS;
+  }
+
+  if (normalizedQuestion.includes('跟单') && normalizedEvidence.includes('跟单')) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function isSupportedChainCoverageQuestion(normalizedQuestion: string): boolean {
+  return /(?:支持|哪些|哪几条|哪几种).*(?:链|公链)|(?:链|公链).*(?:支持|哪些|哪几条|哪几种)/u.test(
+    normalizedQuestion,
+  );
+}
+
+function countChainMentions(normalizedEvidence: string): number {
+  const chainPatterns = [
+    /(?:^|[^a-z0-9])sol(?:$|[^a-z0-9])/u,
+    /solana/u,
+    /(?:^|[^a-z0-9])bsc(?:$|[^a-z0-9])/u,
+    /bnb\s*chain/u,
+    /(?:^|[^a-z0-9])base(?:$|[^a-z0-9])/u,
+    /(?:^|[^a-z0-9])eth(?:$|[^a-z0-9])/u,
+    /ethereum/u,
+    /x\s*layer|xlayer/u,
+    /plasma/u,
+  ];
+
+  return chainPatterns.filter((pattern) => pattern.test(normalizedEvidence)).length;
 }
 
 function normalizeTopK(topK: number | undefined): number {

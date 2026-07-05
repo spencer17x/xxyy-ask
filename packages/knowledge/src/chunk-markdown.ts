@@ -143,8 +143,17 @@ function createChunkMetadata(document: SourceDocument, headingPath: string[]): C
   if (document.order !== undefined) {
     metadata.order = document.order;
   }
+  if (document.effectiveAt !== undefined) {
+    metadata.effectiveAt = document.effectiveAt;
+  }
   if (document.retrievedAt !== undefined) {
     metadata.retrievedAt = document.retrievedAt;
+  }
+  if (document.status !== undefined) {
+    metadata.status = document.status;
+  }
+  if (document.supersedes !== undefined && document.supersedes.length > 0) {
+    metadata.supersedes = document.supersedes;
   }
 
   return metadata;

@@ -1,7 +1,14 @@
 import { Pool } from 'pg';
 
 import type { BatchEmbeddingProvider, PreparedKnowledgeChunk } from '@xxyy/knowledge';
-import type { ChatChannel, ChunkMetadata, IndexEntry, Intent, SourceType } from '@xxyy/shared';
+import type {
+  ChatChannel,
+  ChunkMetadata,
+  IndexEntry,
+  Intent,
+  KnowledgeStatus,
+  SourceType,
+} from '@xxyy/shared';
 
 import {
   createRetrieveQueryTokens,
@@ -60,6 +67,9 @@ interface KnowledgeChunkRow {
   heading_path: string[];
   order_index: number | null;
   retrieved_at: string | null;
+  effective_at: string | null;
+  status: KnowledgeStatus;
+  supersedes: string[] | null;
   content: string;
   tokens: string[];
   embedding_distance: number;
@@ -186,6 +196,13 @@ const DEFAULT_PGVECTOR_EMBEDDING_DIMENSION = 1536;
 const DEFAULT_TOP_K = 6;
 const LEXICAL_SCORE_WEIGHT = 0.5;
 const DIRECT_X_POST_SOURCE_BOOST = 6;
+const CURRENT_STATUS_BOOST = 0.2;
+const CURRENT_X_UPDATE_BOOST = 0.25;
+const HISTORICAL_STATUS_PENALTY = -0.45;
+const DEPRECATED_STATUS_PENALTY = -8;
+const EFFECTIVE_AT_EPOCH = Date.UTC(2024, 0, 1);
+const FRESHNESS_BOOST_PER_YEAR = 0.08;
+const MAX_FRESHNESS_BOOST = 0.4;
 
 export class VectorStoreConfigurationError extends Error {}
 
@@ -226,10 +243,13 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         `
         insert into knowledge_chunks (
           id, document_id, title, module, source_type, source_url, file,
-          heading_path, order_index, retrieved_at, content, tokens, embedding, content_hash,
-          updated_at
+          heading_path, order_index, retrieved_at, effective_at, status, supersedes,
+          content, tokens, embedding, content_hash, updated_at
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13::vector, $14, now())
+        values (
+          $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12,
+          $13::jsonb, $14, $15, $16::vector, $17, now()
+        )
         on conflict (id) do update set
           document_id = excluded.document_id,
           title = excluded.title,
@@ -240,6 +260,9 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           heading_path = excluded.heading_path,
           order_index = excluded.order_index,
           retrieved_at = coalesce(excluded.retrieved_at, knowledge_chunks.retrieved_at),
+          effective_at = coalesce(excluded.effective_at, knowledge_chunks.effective_at),
+          status = excluded.status,
+          supersedes = excluded.supersedes,
           content = excluded.content,
           tokens = excluded.tokens,
           embedding = excluded.embedding,
@@ -257,6 +280,9 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           JSON.stringify(chunk.metadata.headingPath),
           chunk.metadata.order,
           chunk.metadata.retrievedAt ?? null,
+          chunk.metadata.effectiveAt ?? null,
+          chunk.metadata.status ?? defaultKnowledgeStatus(chunk.metadata.sourceType),
+          JSON.stringify(chunk.metadata.supersedes ?? []),
           chunk.text,
           chunk.tokens,
           toPgVectorLiteral(chunk.embedding),
@@ -324,6 +350,10 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           heading_path jsonb not null,
           order_index integer,
           retrieved_at timestamptz,
+          effective_at timestamptz,
+          status text not null default 'current'
+            check (status in ('current', 'historical', 'deprecated')),
+          supersedes jsonb not null default '[]'::jsonb,
           content text not null,
           tokens text[] not null,
           embedding vector(${embeddingDimension}) not null,
@@ -332,6 +362,28 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           updated_at timestamptz not null default now()
         )
       `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        alter table knowledge_chunks
+          add column if not exists effective_at timestamptz
+        `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        alter table knowledge_chunks
+          add column if not exists status text not null default 'current'
+            check (status in ('current', 'historical', 'deprecated'))
+        `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        alter table knowledge_chunks
+          add column if not exists supersedes jsonb not null default '[]'::jsonb
+        `,
       );
       await queryDatabase(
         options.client,
@@ -477,7 +529,8 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         with vector_candidates as (
           select
             id, document_id, title, module, source_type, source_url, file,
-            heading_path, order_index, retrieved_at, content, tokens,
+            heading_path, order_index, retrieved_at::text as retrieved_at,
+            effective_at::text as effective_at, status, supersedes, content, tokens,
             embedding <=> $1::vector as embedding_distance,
             0::integer as token_overlap
           from knowledge_chunks
@@ -487,7 +540,8 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         lexical_candidates as (
           select
             id, document_id, title, module, source_type, source_url, file,
-            heading_path, order_index, retrieved_at, content, tokens,
+            heading_path, order_index, retrieved_at::text as retrieved_at,
+            effective_at::text as effective_at, status, supersedes, content, tokens,
             embedding <=> $1::vector as embedding_distance,
             (
               select count(*)::integer
@@ -506,7 +560,8 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         )
         select distinct on (id)
           id, document_id, title, module, source_type, source_url, file,
-          heading_path, order_index, retrieved_at, content, tokens,
+          heading_path, order_index, retrieved_at, effective_at, status, supersedes,
+          content, tokens,
           embedding_distance
         from combined_candidates
         order by id, token_overlap desc, embedding_distance asc
@@ -825,8 +880,17 @@ function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[])
   const lexicalScore = queryTokens.filter((token) => row.tokens.includes(token)).length;
   const vectorScore = Math.max(0, 1 - row.embedding_distance);
   const rowSourceBoost = sourceBoost(row.source_type) + directXPostSourceBoost(question, row);
+  const status = row.status ?? defaultKnowledgeStatus(row.source_type);
+  const freshnessBoost = freshnessScore(
+    question,
+    row.source_type,
+    status,
+    row.effective_at ?? undefined,
+  );
   const score = Number(
-    (vectorScore + lexicalScore * LEXICAL_SCORE_WEIGHT + rowSourceBoost).toFixed(8),
+    (vectorScore + lexicalScore * LEXICAL_SCORE_WEIGHT + rowSourceBoost + freshnessBoost).toFixed(
+      8,
+    ),
   );
   const entry: IndexEntry = {
     documentId: row.document_id,
@@ -841,6 +905,13 @@ function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[])
       ...(row.source_url === null ? {} : { sourceUrl: row.source_url }),
       ...(row.order_index === null ? {} : { order: row.order_index }),
       ...(row.retrieved_at === null ? {} : { retrievedAt: row.retrieved_at }),
+      ...(row.effective_at === null || row.effective_at === undefined
+        ? {}
+        : { effectiveAt: row.effective_at }),
+      status,
+      ...(row.supersedes === null || row.supersedes === undefined || row.supersedes.length === 0
+        ? {}
+        : { supersedes: row.supersedes }),
     },
     text: row.content,
     tokens: row.tokens,
@@ -849,6 +920,7 @@ function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[])
   return {
     ...entry,
     lexicalScore,
+    freshnessBoost: Number(freshnessBoost.toFixed(8)),
     rank: 0,
     score,
     sourceBoost: Number(rowSourceBoost.toFixed(8)),
@@ -858,6 +930,57 @@ function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[])
 
 function sourceBoost(sourceType: SourceType): number {
   return sourceType === 'official_docs' ? 0.05 : 0;
+}
+
+function defaultKnowledgeStatus(sourceType: SourceType): KnowledgeStatus {
+  return sourceType === 'official_docs' ? 'current' : 'historical';
+}
+
+function freshnessScore(
+  question: string,
+  sourceType: SourceType,
+  status: KnowledgeStatus,
+  effectiveAt: string | undefined,
+): number {
+  const isHistoryQuestion = isHistoricalOrTweetQuestion(question);
+  let score = 0;
+
+  if (status === 'deprecated') {
+    score += DEPRECATED_STATUS_PENALTY;
+  } else if (status === 'historical') {
+    score += isHistoryQuestion ? 0 : HISTORICAL_STATUS_PENALTY;
+  } else {
+    score += isHistoryQuestion ? 0 : CURRENT_STATUS_BOOST;
+    if (!isHistoryQuestion && sourceType === 'x_updates') {
+      score += CURRENT_X_UPDATE_BOOST;
+    }
+  }
+
+  if (!isHistoryQuestion && status === 'current') {
+    score += effectiveAtFreshnessBoost(effectiveAt);
+  }
+
+  return score;
+}
+
+function effectiveAtFreshnessBoost(effectiveAt: string | undefined): number {
+  if (effectiveAt === undefined) {
+    return 0;
+  }
+
+  const timestamp = Date.parse(effectiveAt);
+  if (!Number.isFinite(timestamp) || timestamp <= EFFECTIVE_AT_EPOCH) {
+    return 0;
+  }
+
+  const yearsSinceEpoch = (timestamp - EFFECTIVE_AT_EPOCH) / (365 * 24 * 60 * 60 * 1000);
+  return Math.min(MAX_FRESHNESS_BOOST, yearsSinceEpoch * FRESHNESS_BOOST_PER_YEAR);
+}
+
+function isHistoricalOrTweetQuestion(question: string): boolean {
+  return /历史|以前|之前|过去|曾经|更新日志|变更|changelog|哪条推文|哪条推特|推文|推特|tweet|x\s*post/iu.test(
+    question.normalize('NFKC').toLowerCase(),
+  );
 }
 
 function directXPostSourceBoost(question: string, row: KnowledgeChunkRow): number {

@@ -279,6 +279,82 @@ describe('CLI output formatting', () => {
     expect(formatKnowledgeStats(stats)).toContain('official_docs: 48 chunks, 10 documents');
     expect(formatKnowledgeStats(stats)).toContain('Content hash: content-hash-1');
   });
+
+  it('maps golden QA expected source URLs into evaluation cases', async () => {
+    vi.resetModules();
+
+    const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-cli-eval-'));
+    await mkdir(path.join(workspaceRoot, 'docs', 'eval'), { recursive: true });
+    await writeFile(
+      path.join(workspaceRoot, 'docs', 'eval', 'golden-qa.jsonl'),
+      `${JSON.stringify({
+        name: 'tweet-source',
+        question: '钱包备注支持最多 1 万条是哪条推文？',
+        expectedIntent: 'product_qa',
+        expectedSourceUrls: ['https://x.com/useXXYYio/status/2030954722350575916'],
+      })}\n`,
+    );
+    const evaluateCases = vi.fn(() =>
+      Promise.resolve({
+        total: 1,
+        passed: 1,
+        results: [
+          {
+            actualIntent: 'product_qa' as const,
+            citationCount: 1,
+            expectedIntent: 'product_qa' as const,
+            failureReasons: [],
+            minCitations: 0,
+            name: 'tweet-source',
+            passed: true,
+          },
+        ],
+      }),
+    );
+
+    vi.doMock('@xxyy/knowledge', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        loadProductDocuments: vi.fn(() => Promise.resolve([])),
+        prepareKnowledgeChunks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('@xxyy/rag-core', async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>();
+      return {
+        ...actual,
+        createChatService: vi.fn(() => ({ ask: vi.fn(), stream: vi.fn() })),
+        createMetadataReranker: vi.fn(() => ({ rerank: vi.fn() })),
+        evaluateCases,
+      };
+    });
+
+    try {
+      const { runCli: runCliWithMocks } = await import('./index.js');
+
+      const exitCode = await runCliWithMocks(['evaluate'], {
+        cwd: workspaceRoot,
+        env: {},
+        stderr: { write: () => true },
+        stdout: { write: () => true },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(evaluateCases).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            name: 'tweet-source',
+            requiredSourceUrls: ['https://x.com/useXXYYio/status/2030954722350575916'],
+          }),
+        ],
+        expect.anything(),
+      );
+    } finally {
+      vi.doUnmock('@xxyy/knowledge');
+      vi.doUnmock('@xxyy/rag-core');
+    }
+  });
 });
 
 describe('runCli', () => {

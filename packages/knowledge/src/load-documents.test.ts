@@ -55,6 +55,7 @@ async function createProductDocsFixture(): Promise<string> {
         title: '新手必看',
         source_url: 'https://docs.xxyy.io/readme/quickstart',
         section: '新手入门',
+        lastmod: '2026-03-16T11:12:30.350Z',
         retrieved_at: '2026-05-24T06:41:04.265Z',
         file: '02-readme__quickstart.md',
       }),
@@ -127,7 +128,9 @@ describe('loadProductDocuments', () => {
       module: 'X / @useXXYYio / 2026-03',
       sourceType: 'x_updates',
       sourceUrl: 'https://x.com/useXXYYio/status/2030954722350575916',
+      effectiveAt: '2026-03-09T10:31:53.000Z',
       retrievedAt: '2026-06-06T04:40:24.279Z',
+      status: 'current',
     });
     expect(documents[2]?.content).toContain('钱包备注支持最多 1 万条');
     expect(documents[3]).toMatchObject({
@@ -136,7 +139,9 @@ describe('loadProductDocuments', () => {
       sourceType: 'official_docs',
       order: 2,
       sourceUrl: 'https://docs.xxyy.io/readme/quickstart',
+      effectiveAt: '2026-03-16T11:12:30.350Z',
       retrievedAt: '2026-05-24T06:41:04.265Z',
+      status: 'current',
     });
     expect(documents[3]?.file).toBe(path.join(fixtureDir, 'pages', '02-readme__quickstart.md'));
     expect(documents[3]?.content).toContain('生成交易钱包后即可开始交易。');

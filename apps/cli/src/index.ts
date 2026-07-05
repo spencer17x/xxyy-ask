@@ -503,6 +503,8 @@ async function evaluate(io: CliIo, providerBacked: boolean): Promise<EvaluationR
 interface GoldenQaRecord {
   boundaryExpected?: boolean;
   expectedCitationFiles?: string[];
+  expectedCitationTitles?: string[];
+  expectedSourceUrls?: string[];
   expectedIntent: EvaluationCase['expectedIntent'];
   mustContain?: string[];
   mustNotContain?: string[];
@@ -536,6 +538,12 @@ function toEvaluationCase(record: GoldenQaRecord, index: number): EvaluationCase
     ...(record.expectedCitationFiles === undefined
       ? {}
       : { requiredCitationFiles: record.expectedCitationFiles }),
+    ...(record.expectedCitationTitles === undefined
+      ? {}
+      : { requiredCitationTitles: record.expectedCitationTitles }),
+    ...(record.expectedSourceUrls === undefined
+      ? {}
+      : { requiredSourceUrls: record.expectedSourceUrls }),
   };
 }
 
