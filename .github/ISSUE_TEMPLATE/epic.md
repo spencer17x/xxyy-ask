@@ -1,7 +1,7 @@
 ---
 name: Epic
 description: Track a large roadmap area across multiple implementation issues
-title: "[Epic] "
+title: '[Epic] '
 labels: []
 assignees: []
 ---
