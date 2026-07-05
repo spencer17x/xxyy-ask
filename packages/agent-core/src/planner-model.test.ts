@@ -377,6 +377,75 @@ describe('planner model', () => {
     expect(systemMessage?.content).toEqual(expect.stringContaining('return a final response'));
   });
 
+  it('redacts sensitive request text and sends presence flags instead of private ids', async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const planner = createOpenAiCompatiblePlannerModel({
+      apiKey: 'test-key',
+      baseUrl: 'https://example.test/v1/',
+      fetchImpl: (_input, init) => {
+        if (typeof init?.body !== 'string') {
+          throw new Error('Expected JSON request body.');
+        }
+        requestBody = JSON.parse(init.body) as Record<string, unknown>;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      input: { question: 'XXYY Pro 有哪些权益？' },
+                      kind: 'tool',
+                      reason: 'product question',
+                      route: 'product_answer',
+                      toolName: 'answer_product_question',
+                    }),
+                  },
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        );
+      },
+      model: 'test-model',
+    });
+
+    await planner.plan({
+      request: {
+        channel: 'web',
+        message: 'XXYY Pro 有哪些权益？ 我的密码是 hunter2 api key: sk-test-123',
+        requestId: 'req-sensitive-1',
+        sessionId: 'session-secret',
+        userId: 'user-secret',
+      },
+      stateSummary: 'no tools called',
+      tools: [],
+    });
+
+    const serialized = JSON.stringify(requestBody);
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).not.toContain('sk-test-123');
+    expect(serialized).not.toContain('session-secret');
+    expect(serialized).not.toContain('user-secret');
+
+    const messages = requestBody?.messages as Array<{ content?: string }>;
+    const userContent = messages[1]?.content;
+    if (userContent === undefined) {
+      throw new Error('Expected planner user content.');
+    }
+    expect(JSON.parse(userContent)).toMatchObject({
+      request: {
+        channel: 'web',
+        message:
+          'XXYY Pro 有哪些权益？ 我的密码是 [sensitive_credential] api key: [sensitive_credential]',
+        requestId: 'req-sensitive-1',
+        sessionIdPresent: true,
+        userIdPresent: true,
+      },
+    });
+  });
+
   it('rejects unauthorized tool names from model output', async () => {
     const planner = createOpenAiCompatiblePlannerModel({
       apiKey: 'test-key',

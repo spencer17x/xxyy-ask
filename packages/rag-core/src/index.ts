@@ -15,6 +15,7 @@ export {
   VectorStoreUnavailableError,
 } from './pgvector-store.js';
 export { retrieve } from './retrieve.js';
+export { redactSensitiveSupportText } from './redaction.js';
 export {
   createLazyRetriever,
   createLocalRetriever,

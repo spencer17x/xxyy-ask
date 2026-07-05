@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { ChatRequest } from '@xxyy/shared';
+import { redactSensitiveSupportText } from '@xxyy/rag-core';
 
 import {
   ALLOWED_AGENT_TOOL_NAMES,
@@ -224,7 +225,7 @@ function createPlannerRequestBody(
       {
         role: 'user',
         content: JSON.stringify({
-          request: input.request,
+          request: requestForPlanner(input.request),
           stateSummary: input.stateSummary,
           tools: input.tools,
         }),
@@ -233,6 +234,16 @@ function createPlannerRequestBody(
     model,
     response_format: { type: 'json_object' },
     temperature: 0,
+  };
+}
+
+function requestForPlanner(request: ChatRequest): Record<string, unknown> {
+  return {
+    channel: request.channel,
+    message: redactSensitiveSupportText(request.message),
+    ...(request.requestId === undefined ? {} : { requestId: request.requestId }),
+    sessionIdPresent: request.sessionId !== undefined,
+    userIdPresent: request.userId !== undefined,
   };
 }
 

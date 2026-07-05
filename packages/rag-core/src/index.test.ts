@@ -20,6 +20,7 @@ describe('rag-core public exports', () => {
     expect(ragCore.evaluateCases).toBeTypeOf('function');
     expect(ragCore.createMetadataReranker).toBeTypeOf('function');
     expect(ragCore.createRerankingRetriever).toBeTypeOf('function');
+    expect(ragCore.redactSensitiveSupportText).toBeTypeOf('function');
 
     expect(Object.keys(ragCore).sort()).toEqual([
       'LlmConfigurationError',
@@ -40,6 +41,7 @@ describe('rag-core public exports', () => {
       'evaluateCases',
       'loadRagConfig',
       'loadWorkspaceEnv',
+      'redactSensitiveSupportText',
       'resolveWorkspaceCwd',
       'retrieve',
       'toPgVectorLiteral',

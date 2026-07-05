@@ -7,6 +7,7 @@ import {
   createGroundedAnswer,
 } from './answer.js';
 import type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
+import { redactSensitiveSupportText } from './redaction.js';
 
 export interface OpenAiAnswerProviderOptions {
   apiKey: string | undefined;
@@ -495,7 +496,7 @@ function systemPrompt(): string {
 
 function userPrompt(input: AnswerProviderInput, citationCount: number): string {
   return [
-    `用户问题：${input.question}`,
+    `用户问题：${redactSensitiveSupportText(input.question)}`,
     `分类：${input.classification.intent}`,
     `可用来源数量：${citationCount}`,
     '',
@@ -531,11 +532,12 @@ function formatContextChunk(chunk: AnswerProviderInput['retrievedChunks'][number
 }
 
 function truncateChunkContent(chunk: AnswerProviderInput['retrievedChunks'][number]): string {
-  if (chunk.text.length <= MAX_CONTEXT_CHUNK_CONTENT_CHARS) {
-    return chunk.text;
+  const text = redactSensitiveSupportText(chunk.text);
+  if (text.length <= MAX_CONTEXT_CHUNK_CONTENT_CHARS) {
+    return text;
   }
 
-  return `${chunk.text.slice(0, MAX_CONTEXT_CHUNK_CONTENT_CHARS)}\n[${chunk.rank}] 内容已截断`;
+  return `${text.slice(0, MAX_CONTEXT_CHUNK_CONTENT_CHARS)}\n[${chunk.rank}] 内容已截断`;
 }
 
 function packContextChunks(chunks: string[]): string {
