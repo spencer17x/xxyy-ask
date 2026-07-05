@@ -206,4 +206,53 @@ describe('evaluateCases', () => {
       ],
     });
   });
+
+  it('checks required answer text is supported by citation excerpts when requested', async () => {
+    const answerProvider: AnswerProvider = {
+      answer({ classification }) {
+        return Promise.resolve({
+          answer: 'XXYY Pro 权益包括独享服务器和节点、监控2000个钱包。',
+          citations: [
+            {
+              excerpt: 'XXYY Pro 权益包括独享服务器和节点。',
+              file: '/docs/pro.md',
+              title: 'XXYY Pro 权益',
+            },
+          ],
+          confidence: classification.confidence,
+          intent: classification.intent,
+        });
+      },
+    };
+    const service = createChatService({
+      answerProvider,
+      index: createFixtureIndex([
+        {
+          id: 'official_docs:pro:chunk:0001',
+          title: 'XXYY Pro 权益',
+          sourceType: 'official_docs',
+          file: '/docs/pro.md',
+          text: 'XXYY Pro 权益包括独享服务器和节点。',
+        },
+      ]),
+    });
+
+    const report = await evaluateCases(
+      [
+        {
+          name: 'grounding',
+          request: { channel: 'web', message: 'XXYY Pro 权益有哪些？' },
+          expectedIntent: 'product_qa',
+          requiredAnswerIncludes: ['独享服务器和节点', '监控2000个钱包'],
+          requireCitationSupport: true,
+        },
+      ],
+      service,
+    );
+
+    expect(report.results[0]).toMatchObject({
+      passed: false,
+      failureReasons: ['answer text is not supported by citations: 监控2000个钱包'],
+    });
+  });
 });

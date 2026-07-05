@@ -12,6 +12,7 @@ export interface EvaluationCase {
   requiredCitationFiles?: string[];
   requiredCitationTitles?: string[];
   requiredSourceUrls?: string[];
+  requireCitationSupport?: boolean;
 }
 
 export interface EvaluationResult {
@@ -49,6 +50,7 @@ export async function evaluateCases(
       actualIntent: response.intent,
       answer: response.answer,
       citationCount,
+      citationExcerpts: response.citations.map((citation) => citation.excerpt),
       citationFiles: response.citations.map((citation) => citation.file),
       citationTitles: response.citations.map((citation) => citation.title),
       minCitations,
@@ -82,6 +84,7 @@ function collectFailureReasons(input: {
   actualIntent: Intent;
   answer: string;
   citationCount: number;
+  citationExcerpts: string[];
   citationFiles: string[];
   citationTitles: string[];
   minCitations: number;
@@ -128,5 +131,21 @@ function collectFailureReasons(input: {
     }
   }
 
+  if (input.testCase.requireCitationSupport === true) {
+    const normalizedCitationText = normalizeGroundingText(input.citationExcerpts.join('\n'));
+    for (const requiredText of input.testCase.requiredAnswerIncludes ?? []) {
+      if (
+        input.answer.includes(requiredText) &&
+        !normalizedCitationText.includes(normalizeGroundingText(requiredText))
+      ) {
+        failures.push(`answer text is not supported by citations: ${requiredText}`);
+      }
+    }
+  }
+
   return failures;
+}
+
+function normalizeGroundingText(text: string): string {
+  return text.replace(/\s+/gu, '');
 }

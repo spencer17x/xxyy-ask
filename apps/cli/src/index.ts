@@ -510,6 +510,7 @@ interface GoldenQaRecord {
   mustNotContain?: string[];
   name?: string;
   question: string;
+  requireCitationSupport?: boolean;
 }
 
 async function loadEvaluationCases(cwd: string): Promise<EvaluationCase[]> {
@@ -544,6 +545,9 @@ function toEvaluationCase(record: GoldenQaRecord, index: number): EvaluationCase
     ...(record.expectedSourceUrls === undefined
       ? {}
       : { requiredSourceUrls: record.expectedSourceUrls }),
+    ...(record.requireCitationSupport === undefined
+      ? {}
+      : { requireCitationSupport: record.requireCitationSupport }),
   };
 }
 
