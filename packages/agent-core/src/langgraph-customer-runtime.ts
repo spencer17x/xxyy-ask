@@ -339,9 +339,12 @@ function observeNode(state: LangGraphAgentState): Partial<AgentState> {
     };
   }
 
-  if (evidence.output.citations.length > 0) {
+  if (evidence.output.citations.length > 0 && hasSufficientSearchEvidence(state)) {
     return {
-      finalResponse: responseFromEvidence(evidence),
+      finalResponse: withAgentRoute(
+        responseFromSearchEvidenceList(searchEvidenceList(state.evidence)),
+        'product_answer',
+      ),
     };
   }
 
@@ -386,6 +389,16 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
 
   const evidence = state.evidence.at(-1);
   if (evidence !== undefined) {
+    const searchEvidence = searchEvidenceList(state.evidence);
+    if (searchEvidence.length > 0) {
+      return {
+        finalResponse: withAgentRoute(
+          responseFromSearchEvidenceList(searchEvidence),
+          'product_answer',
+        ),
+      };
+    }
+
     return {
       finalResponse: responseFromEvidence(evidence),
     };
@@ -407,9 +420,12 @@ function listPlannerTools(registry: ToolRegistry): PlannerToolDescriptor[] {
 }
 
 function summarizeState(state: LangGraphAgentState): string {
+  const searchEvidence = searchEvidenceList(state.evidence);
   return JSON.stringify({
     currentStep: state.currentStep,
     evidenceCount: state.evidence.length,
+    searchCitationSourceCount: distinctSearchCitationKeys(searchEvidence).size,
+    searchEvidenceSufficient: hasSufficientSearchEvidence(state),
     route: state.route,
     toolCallCount: state.toolCalls.length,
   });
@@ -460,16 +476,89 @@ function routeForToolName(_toolName: string): AgentRoute {
 type AgentEvidenceForSearch = Extract<AgentEvidence, { kind: 'search_results' }>['output'];
 
 function responseFromSearchEvidence(output: AgentEvidenceForSearch): ChatResponse {
-  const excerpts = output.citations.map((citation) => citation.excerpt);
+  return responseFromSearchEvidenceList([
+    { kind: 'search_results', output, toolName: 'search_product_docs' },
+  ]);
+}
+
+function responseFromSearchEvidenceList(evidenceList: AgentEvidence[]): ChatResponse {
+  const outputs = evidenceList
+    .filter((evidence): evidence is Extract<AgentEvidence, { kind: 'search_results' }> => {
+      return evidence.kind === 'search_results';
+    })
+    .map((evidence) => evidence.output);
+  const citations = uniqueCitations(outputs.flatMap((output) => output.citations));
+  const excerpts = citations.map((citation) => citation.excerpt);
+  const confidence = outputs.reduce((max, output) => Math.max(max, output.confidence), 0);
+
   return {
     answer:
       excerpts.length === 0
         ? '当前知识库没有找到直接相关的产品资料。'
         : `根据知识库，${excerpts.join(' ')}`,
-    citations: output.citations,
-    confidence: Number(Math.min(0.9, Math.max(0.55, output.confidence / 10)).toFixed(2)),
+    citations,
+    confidence: Number(Math.min(0.9, Math.max(0.55, confidence / 10)).toFixed(2)),
     intent: 'product_qa',
   };
+}
+
+function hasSufficientSearchEvidence(state: LangGraphAgentState): boolean {
+  const searchEvidence = searchEvidenceList(state.evidence);
+  if (!hasSearchCitations(searchEvidence)) {
+    return false;
+  }
+
+  if (!requiresMultiSourceEvidence(state.request.message)) {
+    return true;
+  }
+
+  if (distinctSearchCitationKeys(searchEvidence).size >= 2) {
+    return true;
+  }
+
+  return state.currentStep >= state.maxSteps;
+}
+
+function searchEvidenceList(evidenceList: AgentEvidence[]): AgentEvidence[] {
+  return evidenceList.filter((evidence) => evidence.kind === 'search_results');
+}
+
+function hasSearchCitations(evidenceList: AgentEvidence[]): boolean {
+  return evidenceList.some((evidence) => {
+    return evidence.kind === 'search_results' && evidence.output.citations.length > 0;
+  });
+}
+
+function requiresMultiSourceEvidence(question: string): boolean {
+  return (
+    /比较|对比|区别|分别|同时|以及|与|\bcompare\b|\bversus\b|\bvs\b/iu.test(question) ||
+    /(?:权益|功能|设置|上限|限制|管理).+和.+(?:权益|功能|设置|上限|限制|管理)/u.test(question)
+  );
+}
+
+function distinctSearchCitationKeys(evidenceList: AgentEvidence[]): Set<string> {
+  return new Set(
+    evidenceList.flatMap((evidence) => {
+      if (evidence.kind !== 'search_results') {
+        return [];
+      }
+      return evidence.output.citations.map((citation) => citationKey(citation));
+    }),
+  );
+}
+
+function uniqueCitations(
+  citations: AgentEvidenceForSearch['citations'],
+): AgentEvidenceForSearch['citations'] {
+  const byKey = new Map<string, AgentEvidenceForSearch['citations'][number]>();
+  for (const citation of citations) {
+    byKey.set(citationKey(citation), citation);
+  }
+  return [...byKey.values()];
+}
+
+function citationKey(citation: AgentEvidenceForSearch['citations'][number]): string {
+  return [citation.file, citation.title, citation.sourceUrl ?? '', citation.excerpt].join('\0');
 }
 
 function consecutiveEmptySearchEvidenceCount(evidenceList: AgentEvidence[]): number {

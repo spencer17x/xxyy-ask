@@ -428,6 +428,104 @@ describe('createLangGraphCustomerRuntime', () => {
     );
   });
 
+  it('accumulates multi-module search evidence before composing an answer', async () => {
+    const registry = createToolRegistry();
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce({
+        chunks: [
+          {
+            id: 'pro-chunk',
+            text: 'XXYY Pro 支持独享服务器和节点、监控2000个钱包。',
+          },
+        ],
+        citations: [
+          {
+            excerpt: 'XXYY Pro 支持独享服务器和节点、监控2000个钱包。',
+            file: 'docs/product-features/pages/59-getting-started__xxyy-pro-quan-yi.md',
+            title: 'XXYY Pro 权益',
+          },
+        ],
+        confidence: 11,
+      })
+      .mockResolvedValueOnce({
+        chunks: [
+          {
+            id: 'wallet-chunk',
+            text: 'XXYY 每个用户每条链最多创建100个交易钱包，Pro 用户最多创建500个交易钱包。',
+          },
+        ],
+        citations: [
+          {
+            excerpt: 'XXYY 每个用户每条链最多创建100个交易钱包，Pro 用户最多创建500个交易钱包。',
+            file: 'docs/product-features/pages/58-getting-started__qian-bao-guan-li.md',
+            title: '钱包管理',
+          },
+        ],
+        confidence: 10,
+      });
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        chunks: z.array(z.object({ id: z.string(), text: z.string() })),
+        citations: z.array(
+          z.object({
+            excerpt: z.string(),
+            file: z.string(),
+            title: z.string(),
+          }),
+        ),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { query: 'XXYY Pro 权益' },
+          kind: 'tool',
+          reason: 'Search the Pro benefits evidence first.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+        {
+          input: { query: '钱包管理 创建 交易钱包 上限' },
+          kind: 'tool',
+          reason: 'Search wallet management limits before answering the comparison.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).ask({
+      channel: 'web',
+      message: '请比较 XXYY Pro 权益和钱包管理上限',
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'product_answer',
+      citations: [
+        {
+          file: 'docs/product-features/pages/59-getting-started__xxyy-pro-quan-yi.md',
+          title: 'XXYY Pro 权益',
+        },
+        {
+          file: 'docs/product-features/pages/58-getting-started__qian-bao-guan-li.md',
+          title: '钱包管理',
+        },
+      ],
+      intent: 'product_qa',
+    });
+    expect(response.answer).toContain('独享服务器和节点');
+    expect(response.answer).toContain('每条链最多创建100个交易钱包');
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
   it('stops before executing a repeated planner tool input', async () => {
     const registry = createToolRegistry();
     const execute = vi.fn(() =>
