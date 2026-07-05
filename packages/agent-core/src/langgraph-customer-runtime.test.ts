@@ -483,6 +483,61 @@ describe('createLangGraphCustomerRuntime', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it('stops after consecutive searches produce no new evidence', async () => {
+    const registry = createToolRegistry();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        chunks: [],
+        citations: [],
+        confidence: 0,
+      }),
+    );
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        chunks: z.array(z.unknown()),
+        citations: z.array(z.unknown()),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { query: '不存在的功能' },
+          kind: 'tool',
+          reason: 'Search product docs.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+        {
+          input: { query: '不存在的功能 配置步骤' },
+          kind: 'tool',
+          reason: 'Try a rewritten query.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).ask({
+      channel: 'web',
+      message: '这个不存在的功能怎么配置？',
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'clarify',
+      citations: [],
+      intent: 'unknown',
+    });
+    expect(response.answer).toContain('没有找到新的知识库证据');
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     ['parse', new PlannerModelParseError('invalid planner json')],
     ['request', new PlannerModelRequestError('planner request failed')],

@@ -345,6 +345,15 @@ function observeNode(state: LangGraphAgentState): Partial<AgentState> {
     };
   }
 
+  if (consecutiveEmptySearchEvidenceCount(state.evidence) >= 2) {
+    return {
+      finalResponse: createClarificationResponse(
+        '连续检索后没有找到新的知识库证据。请补充更具体的产品功能、模块、时间范围或官方更新线索。',
+      ),
+      route: 'clarify',
+    };
+  }
+
   return {};
 }
 
@@ -461,6 +470,21 @@ function responseFromSearchEvidence(output: AgentEvidenceForSearch): ChatRespons
     confidence: Number(Math.min(0.9, Math.max(0.55, output.confidence / 10)).toFixed(2)),
     intent: 'product_qa',
   };
+}
+
+function consecutiveEmptySearchEvidenceCount(evidenceList: AgentEvidence[]): number {
+  let count = 0;
+  for (let index = evidenceList.length - 1; index >= 0; index -= 1) {
+    const evidence = evidenceList[index];
+    if (evidence === undefined || evidence.kind !== 'search_results') {
+      break;
+    }
+    if (evidence.output.chunks.length > 0 || evidence.output.citations.length > 0) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
 }
 
 function isRepeatedToolInput(plan: AgentPlan, state: LangGraphAgentState): boolean {
