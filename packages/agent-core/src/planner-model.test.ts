@@ -375,6 +375,9 @@ describe('planner model', () => {
     expect(systemMessage?.content).toEqual(expect.stringContaining('XXYY support context'));
     expect(systemMessage?.content).toEqual(expect.stringContaining('private account'));
     expect(systemMessage?.content).toEqual(expect.stringContaining('return a final response'));
+    expect(systemMessage?.content).toEqual(expect.stringContaining('Query rewrite policy'));
+    expect(systemMessage?.content).toEqual(expect.stringContaining('Do not repeat the same tool'));
+    expect(systemMessage?.content).toEqual(expect.stringContaining('search_product_docs'));
   });
 
   it('redacts sensitive request text and sends presence flags instead of private ids', async () => {
