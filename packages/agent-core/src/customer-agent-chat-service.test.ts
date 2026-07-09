@@ -74,7 +74,7 @@ describe('createCustomerAgentChatService', () => {
       confidence: 0.82,
       intent: 'product_qa',
     });
-    expect(retrieveCalls).toEqual([{ question: 'XXYY Pro 有哪些权益？', topK: 1 }]);
+    expect(retrieveCalls).toEqual([{ question: 'XXYY Pro 有哪些权益？', topK: 4 }]);
   });
 
   it('pre-blocks boundary-like questions without touching planner or product retrieval', async () => {
@@ -325,7 +325,7 @@ describe('createCustomerAgentChatService', () => {
       intent: 'product_qa',
     });
     expect(fetchImpl).toHaveBeenCalledOnce();
-    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 1 });
+    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 4 });
     const answerInput = answer.mock.calls[0]?.[0];
     expect(answerInput).toBeDefined();
     expect(answerInput?.classification).toMatchObject({

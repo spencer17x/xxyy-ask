@@ -2,6 +2,7 @@ import { END, START, StateGraph } from '@langchain/langgraph';
 
 import type {
   AgentRoute,
+  ChatAttachment,
   ChatRequest,
   ChatResponse,
   ChatStreamEvent,
@@ -227,12 +228,36 @@ async function plannerNode(
       ) {
         throw retryError;
       }
+
+      const fallbackPlan = fallbackProductAnswerPlan(state.request, options.registry);
+      if (fallbackPlan !== undefined) {
+        return {
+          currentStep: state.currentStep + 1,
+          errors: [...planningErrors, `Planner retry failed: ${errorMessageFrom(retryError)}`],
+          plan: fallbackPlan,
+          route: 'product_answer',
+        };
+      }
+
       return {
         errors: [...planningErrors, `Planner retry failed: ${errorMessageFrom(retryError)}`],
         finalResponse: createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION),
         route: 'clarify',
       };
     }
+  }
+
+  const productFallbackPlan = fallbackProductAnswerPlan(state.request, options.registry);
+  if (
+    productFallbackPlan !== undefined &&
+    shouldOverridePlannerFinalWithProductTool(plan, state.request)
+  ) {
+    return {
+      currentStep: state.currentStep + 1,
+      ...(planningErrors.length > 0 ? { errors: planningErrors } : {}),
+      plan: productFallbackPlan,
+      route: 'product_answer',
+    };
   }
 
   if (plan.kind === 'tool' && isRepeatedToolInput(plan, state)) {
@@ -251,6 +276,48 @@ async function plannerNode(
     ...(planningErrors.length > 0 ? { errors: planningErrors } : {}),
     plan,
     route: normalizeAgentRoute(plan.route),
+  };
+}
+
+function shouldOverridePlannerFinalWithProductTool(plan: AgentPlan, request: ChatRequest): boolean {
+  if (plan.kind !== 'final') {
+    return false;
+  }
+
+  const classification = classifyQuestion(request.message);
+  if (classification.intent !== 'product_qa' && classification.intent !== 'how_to') {
+    return false;
+  }
+
+  return (
+    plan.response.citations.length === 0 ||
+    plan.response.intent === 'unknown' ||
+    normalizeAgentRoute(plan.route) === 'clarify'
+  );
+}
+
+function fallbackProductAnswerPlan(
+  request: ChatRequest,
+  registry: ToolRegistry,
+): Extract<AgentPlan, { kind: 'tool' }> | undefined {
+  const classification = classifyQuestion(request.message);
+  if (classification.intent !== 'product_qa' && classification.intent !== 'how_to') {
+    return undefined;
+  }
+
+  const hasProductAnswerTool = registry
+    .list()
+    .some((tool) => tool.name === 'answer_product_question');
+  if (!hasProductAnswerTool) {
+    return undefined;
+  }
+
+  return {
+    input: { question: request.message },
+    kind: 'tool',
+    reason: 'deterministic product classification fallback after planner failure',
+    route: 'product_answer',
+    toolName: 'answer_product_question',
   };
 }
 
@@ -365,7 +432,34 @@ function inputForToolExecution(plan: Extract<AgentPlan, { kind: 'tool' }>, reque
     return { question: request.message };
   }
 
+  if (plan.toolName === 'search_product_docs') {
+    return inputForSearchProductDocs(plan.input, request.message);
+  }
+
   return plan.input;
+}
+
+function inputForSearchProductDocs(input: unknown, fallbackQuery: string) {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return { query: fallbackQuery };
+  }
+
+  const record = input as Record<string, unknown>;
+  const query = nonEmptyString(record.query) ?? nonEmptyString(record.question) ?? fallbackQuery;
+
+  return {
+    question: fallbackQuery,
+    query,
+    ...(typeof record.topK === 'number' ? { topK: record.topK } : {}),
+  };
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  return value.trim().length === 0 ? undefined : value;
 }
 
 function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
@@ -488,6 +582,7 @@ function responseFromSearchEvidenceList(evidenceList: AgentEvidence[]): ChatResp
     })
     .map((evidence) => evidence.output);
   const citations = uniqueCitations(outputs.flatMap((output) => output.citations));
+  const attachments = uniqueAttachments(outputs.flatMap((output) => output.attachments ?? []));
   const excerpts = citations.map((citation) => citation.excerpt);
   const confidence = outputs.reduce((max, output) => Math.max(max, output.confidence), 0);
 
@@ -499,6 +594,7 @@ function responseFromSearchEvidenceList(evidenceList: AgentEvidence[]): ChatResp
     citations,
     confidence: Number(Math.min(0.9, Math.max(0.55, confidence / 10)).toFixed(2)),
     intent: 'product_qa',
+    ...(attachments.length === 0 ? {} : { attachments }),
   };
 }
 
@@ -557,6 +653,17 @@ function uniqueCitations(
   return [...byKey.values()];
 }
 
+function uniqueAttachments(attachments: ChatAttachment[]): ChatAttachment[] {
+  const byKey = new Map<string, ChatAttachment>();
+  for (const attachment of attachments) {
+    byKey.set(
+      [attachment.kind, attachment.mediaType, attachment.url, attachment.title].join('\0'),
+      attachment,
+    );
+  }
+  return [...byKey.values()];
+}
+
 function citationKey(citation: AgentEvidenceForSearch['citations'][number]): string {
   return [citation.file, citation.title, citation.sourceUrl ?? '', citation.excerpt].join('\0');
 }
@@ -611,7 +718,7 @@ function sortJsonValue(value: unknown): unknown {
 
 function toolFailureResponse(toolName: string): ChatResponse {
   return createClarificationResponse(
-    `当前 ${toolName} 工具暂时不可用，无法可靠处理这个请求。请补充一个具体的 XXYY 产品问题后重试。`,
+    `当前知识库检索或 AI 服务暂时不可用，${toolName} 无法可靠处理这个请求。请稍后重试，或检查 AI/embedding 服务和向量库健康状态。`,
   );
 }
 

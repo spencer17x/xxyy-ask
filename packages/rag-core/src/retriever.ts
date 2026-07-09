@@ -25,6 +25,9 @@ export interface RerankingRetrieverOptions {
 const METADATA_RERANK_WEIGHT = 0.2;
 const CHAIN_COVERAGE_BONUS_PER_CHAIN = 1.2;
 const BROAD_CHAIN_COVERAGE_BONUS = 5;
+const COPY_TRADING_DIRECT_EVIDENCE_BONUS = 6;
+const TRADE_SETTING_PRESET_DIRECT_EVIDENCE_BONUS = 8;
+const SHORT_ENTITY_DIRECT_EVIDENCE_BONUS = 8;
 
 export function createLazyRetriever(
   createRetriever: () => Promise<Retriever> | Retriever,
@@ -141,10 +144,6 @@ function rerankScore(chunk: RetrievedChunk, queryTokens: Set<string>, question: 
 
 function contentShapeScore(chunk: RetrievedChunk, question: string): number {
   const normalizedQuestion = question.normalize('NFKC').toLowerCase();
-  if (!isSupportedChainCoverageQuestion(normalizedQuestion)) {
-    return 0;
-  }
-
   const normalizedEvidence = [
     chunk.metadata.title,
     chunk.metadata.module,
@@ -154,6 +153,23 @@ function contentShapeScore(chunk: RetrievedChunk, question: string): number {
     .join(' ')
     .normalize('NFKC')
     .toLowerCase();
+
+  if (isCopyTradingSupportQuestion(normalizedQuestion)) {
+    return copyTradingSupportEvidenceScore(normalizedEvidence);
+  }
+
+  if (isTradeSettingPresetQuestion(normalizedQuestion)) {
+    return tradeSettingPresetEvidenceScore(normalizedEvidence);
+  }
+
+  if (isBaseB20SupportQuestion(normalizedQuestion)) {
+    return baseB20SupportEvidenceScore(normalizedEvidence);
+  }
+
+  if (!isSupportedChainCoverageQuestion(normalizedQuestion)) {
+    return 0;
+  }
+
   const chainCount = countChainMentions(normalizedEvidence);
   let score = chainCount * CHAIN_COVERAGE_BONUS_PER_CHAIN;
 
@@ -166,6 +182,76 @@ function contentShapeScore(chunk: RetrievedChunk, question: string): number {
 
   if (normalizedQuestion.includes('跟单') && normalizedEvidence.includes('跟单')) {
     score += 1;
+  }
+
+  return score;
+}
+
+function isCopyTradingSupportQuestion(normalizedQuestion: string): boolean {
+  return /跟单|copy\s*trading|copy\s*trade|copytrade/u.test(normalizedQuestion);
+}
+
+function isTradeSettingPresetQuestion(normalizedQuestion: string): boolean {
+  return /p\s*1\s*[/｜|]?\s*p\s*2\s*[/｜|]?\s*p\s*3|p1\/p2\/p3/u.test(normalizedQuestion);
+}
+
+function tradeSettingPresetEvidenceScore(normalizedEvidence: string): number {
+  if (!isTradeSettingPresetQuestion(normalizedEvidence)) {
+    return 0;
+  }
+
+  let score = TRADE_SETTING_PRESET_DIRECT_EVIDENCE_BONUS;
+  if (/交易设置|多档位|档位/u.test(normalizedEvidence)) {
+    score += 4;
+  }
+  if (/gas|滑点|买卖|挂单/u.test(normalizedEvidence)) {
+    score += 3;
+  }
+
+  return score;
+}
+
+function isBaseB20SupportQuestion(normalizedQuestion: string): boolean {
+  return /\bb20\b/u.test(normalizedQuestion);
+}
+
+function baseB20SupportEvidenceScore(normalizedEvidence: string): number {
+  if (!/\bb20\b/u.test(normalizedEvidence)) {
+    return 0;
+  }
+
+  let score = SHORT_ENTITY_DIRECT_EVIDENCE_BONUS;
+  if (/全面支持|支持.*交易|代币交易|专属标识/u.test(normalizedEvidence)) {
+    score += 4;
+  }
+  if (/(?:^|[^a-z0-9])base(?:$|[^a-z0-9])|base链/u.test(normalizedEvidence)) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function copyTradingSupportEvidenceScore(normalizedEvidence: string): number {
+  if (!isCopyTradingSupportQuestion(normalizedEvidence)) {
+    return 0;
+  }
+
+  let score = 1;
+  if (/跟单功能上线|跟单.*上线|copy\s*trading.*(?:launch|上线)/u.test(normalizedEvidence)) {
+    score += COPY_TRADING_DIRECT_EVIDENCE_BONUS;
+  }
+
+  const chainCount = countChainMentions(normalizedEvidence);
+  score += chainCount * CHAIN_COVERAGE_BONUS_PER_CHAIN;
+  if (
+    chainCount >= 3 ||
+    /支持\s*(?:\d+|[一二三四五六七八九十]+)\s*大?公链/u.test(normalizedEvidence)
+  ) {
+    score += BROAD_CHAIN_COVERAGE_BONUS;
+  }
+
+  if (/利润|胜率|金额|卖出比例|gas|滑点|过滤条件/u.test(normalizedEvidence)) {
+    score += 2;
   }
 
   return score;

@@ -5,6 +5,7 @@ import {
   createBoundaryAnswer,
   createCitationsFromChunks,
   createGroundedAnswer,
+  selectGroundingChunks,
 } from './answer.js';
 import type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
 import { redactSensitiveSupportText } from './redaction.js';
@@ -98,13 +99,15 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
         };
       }
 
-      const citations = createCitationsFromChunks(input.retrievedChunks);
-      const attachments = createAttachmentsFromChunks(input.retrievedChunks);
+      const groundingChunks = selectGroundingChunks(input.question, input.retrievedChunks);
+      const groundedInput = { ...input, retrievedChunks: groundingChunks };
+      const citations = createCitationsFromChunks(groundingChunks);
+      const attachments = createAttachmentsFromChunks(groundingChunks);
       let response: Response;
       try {
         response = await fetchChatCompletion(fetchImpl, endpoint, {
           apiKey,
-          body: createChatCompletionBody(input, citations.length, model, false),
+          body: createChatCompletionBody(groundedInput, citations.length, model, false),
           maxRetries,
           requestTimeoutMs,
         });
@@ -114,7 +117,7 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
           error instanceof LlmRetryableRequestError ||
           error instanceof LlmRequestStatusError
         ) {
-          return createGroundedAnswer(input.question, input.classification, input.retrievedChunks);
+          return createGroundedAnswer(input.question, input.classification, groundingChunks);
         }
         throw error;
       }
@@ -122,7 +125,7 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
       const payload = (await response.json()) as ChatCompletionResponse;
       const answer = payload.choices?.[0]?.message?.content?.trim();
       if (answer === undefined || isUnusableModelAnswer(answer)) {
-        return createGroundedAnswer(input.question, input.classification, input.retrievedChunks);
+        return createGroundedAnswer(input.question, input.classification, groundingChunks);
       }
 
       return withOptionalAttachments(
@@ -155,13 +158,15 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
         return;
       }
 
-      const citations = createCitationsFromChunks(input.retrievedChunks);
-      const attachments = createAttachmentsFromChunks(input.retrievedChunks);
+      const groundingChunks = selectGroundingChunks(input.question, input.retrievedChunks);
+      const groundedInput = { ...input, retrievedChunks: groundingChunks };
+      const citations = createCitationsFromChunks(groundingChunks);
+      const attachments = createAttachmentsFromChunks(groundingChunks);
       let response: Response;
       try {
         response = await fetchChatCompletion(fetchImpl, endpoint, {
           apiKey,
-          body: createChatCompletionBody(input, citations.length, model, true),
+          body: createChatCompletionBody(groundedInput, citations.length, model, true),
           maxRetries,
           requestTimeoutMs,
         });
@@ -172,7 +177,7 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
           error instanceof LlmRequestStatusError
         ) {
           yield* streamStaticAnswer(
-            createGroundedAnswer(input.question, input.classification, input.retrievedChunks),
+            createGroundedAnswer(input.question, input.classification, groundingChunks),
           );
           return;
         }
@@ -211,7 +216,7 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
 
       if (!yieldedAnswerDelta && isUnusableModelAnswer(streamedAnswer)) {
         yield* streamStaticAnswer(
-          createGroundedAnswer(input.question, input.classification, input.retrievedChunks),
+          createGroundedAnswer(input.question, input.classification, groundingChunks),
         );
         return;
       }

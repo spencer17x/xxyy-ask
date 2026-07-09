@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement, RefObject } from 'react';
 
+import { checkAiService } from './ai-service-check.js';
 import { readChatStream } from './chat-stream.js';
 import { Markdown } from './Markdown.js';
 import type { Attachment, ChatMessage, Citation } from './types.js';
@@ -14,10 +15,14 @@ const QUICK_PROMPTS = [
 ];
 
 const SESSION_STORAGE_KEY = 'xxyy.ask.sessionId';
+const AI_CHECK_IDLE_STATUS = 'AI 未测试';
 
 export function App(): ReactElement {
   const [messages, setMessages] = useState<ChatMessage[]>([createWelcomeMessage()]);
   const [input, setInput] = useState('');
+  const [aiCheckBusy, setAiCheckBusy] = useState(false);
+  const [aiCheckOk, setAiCheckOk] = useState<boolean | undefined>(undefined);
+  const [aiCheckStatus, setAiCheckStatus] = useState(AI_CHECK_IDLE_STATUS);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('Ready');
   const [intent, setIntent] = useState('intent pending');
@@ -121,6 +126,27 @@ export function App(): ReactElement {
     }
   };
 
+  const testAiService = async (): Promise<void> => {
+    if (aiCheckBusy) {
+      return;
+    }
+
+    setAiCheckBusy(true);
+    setAiCheckOk(undefined);
+    setAiCheckStatus('AI 检测中');
+    try {
+      const result = await checkAiService(fetch, sessionId);
+      setAiCheckOk(result.ok);
+      setAiCheckStatus(result.statusText);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAiCheckOk(false);
+      setAiCheckStatus(`AI 服务不可用：${message}`);
+    } finally {
+      setAiCheckBusy(false);
+    }
+  };
+
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     void submitPrompt(input);
@@ -140,13 +166,23 @@ export function App(): ReactElement {
     setInput('');
     setIntent('intent pending');
     setStatus('Ready');
+    setAiCheckOk(undefined);
+    setAiCheckStatus(AI_CHECK_IDLE_STATUS);
   };
 
   return (
     <main className="app-shell">
       <Sidebar busy={busy} onPrompt={submitPrompt} />
       <section aria-label="chat" className="chat-workbench">
-        <ChatHeader intent={intent} onClear={clearChat} status={status} />
+        <ChatHeader
+          aiCheckBusy={aiCheckBusy}
+          aiCheckOk={aiCheckOk}
+          aiCheckStatus={aiCheckStatus}
+          intent={intent}
+          onAiCheck={testAiService}
+          onClear={clearChat}
+          status={status}
+        />
         <MessageList messages={messages} messagesRef={messagesRef} />
         <form className="composer-wrap" id="chat-form" onSubmit={onSubmit}>
           <div className="composer">
@@ -235,14 +271,31 @@ function Sidebar({
 }
 
 function ChatHeader({
+  aiCheckBusy,
+  aiCheckOk,
+  aiCheckStatus,
   intent,
+  onAiCheck,
   onClear,
   status,
 }: {
+  aiCheckBusy: boolean;
+  aiCheckOk: boolean | undefined;
+  aiCheckStatus: string;
   intent: string;
+  onAiCheck: () => Promise<void>;
   onClear: () => void;
   status: string;
 }): ReactElement {
+  const aiCheckClassName = [
+    'status-pill',
+    'ai-check-status',
+    aiCheckOk === true ? 'is-ok' : '',
+    aiCheckOk === false ? 'is-error' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <header className="chat-header">
       <div>
@@ -250,9 +303,22 @@ function ChatHeader({
         <div className="header-subtitle">基于 XXYY 文档和更新日志回答</div>
       </div>
       <div className="status-group">
+        <button
+          className="ai-check-button"
+          disabled={aiCheckBusy}
+          onClick={() => {
+            void onAiCheck();
+          }}
+          type="button"
+        >
+          {aiCheckBusy ? '检测中' : '测试 AI'}
+        </button>
         <button className="clear-button" onClick={onClear} type="button">
           New chat
         </button>
+        <div aria-live="polite" className={aiCheckClassName} role="status">
+          {aiCheckStatus}
+        </div>
         <div className="status-pill">{intent}</div>
         <div aria-live="polite" className="status-pill strong" role="status">
           {status}
@@ -283,7 +349,10 @@ function MessageBubble({ message }: { message: ChatMessage }): ReactElement {
     .filter(Boolean)
     .join(' ');
   return (
-    <article className={messageClassName} data-welcome-message={message.id === 'welcome' || undefined}>
+    <article
+      className={messageClassName}
+      data-welcome-message={message.id === 'welcome' || undefined}
+    >
       <div aria-hidden="true" className="avatar">
         {message.role === 'user' ? 'You' : 'AI'}
       </div>

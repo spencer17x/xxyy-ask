@@ -1,16 +1,15 @@
 import { z } from 'zod';
 
-import type {
-  ChatResponse,
-  ChatStreamEvent,
-  Citation,
-  Classification,
-  RagIndex,
-} from '@xxyy/shared';
+import type { ChatResponse, ChatStreamEvent, Classification, RagIndex } from '@xxyy/shared';
 import {
   classifyQuestion,
+  createAttachmentsFromChunks,
   createBoundaryAnswer,
+  createCitationsFromChunks,
   createLocalRetriever,
+  createMetadataReranker,
+  createRerankingRetriever,
+  selectGroundingChunks,
   loadRagConfig,
   type AnswerProvider,
   type RagConfig,
@@ -37,8 +36,7 @@ const productToolPolicy = {
 
 const MAX_TOP_K = 20;
 const DEFAULT_TOP_K = 6;
-const MAX_CITATIONS = 3;
-const MAX_EXCERPT_LENGTH = 220;
+const RERANK_CANDIDATE_MULTIPLIER = 4;
 
 const nonEmptyStringSchema = z.string().trim().min(1);
 const productChannelSchema = z.enum(['cli', 'web', 'telegram', 'agent']);
@@ -74,11 +72,13 @@ const retrievedChunkSchema = z.object({
 });
 
 export const searchProductDocsInputSchema = z.object({
+  question: nonEmptyStringSchema.optional(),
   query: nonEmptyStringSchema,
   topK: z.number().int().positive().optional(),
 });
 
 export const searchProductDocsOutputSchema = z.object({
+  attachments: z.array(z.unknown()).optional(),
   chunks: z.array(retrievedChunkSchema),
   citations: z.array(citationSchema),
   confidence: z.number(),
@@ -134,7 +134,7 @@ export function createProductTools(
       const chunks = await retriever.retrieve(input.query, {
         topK: normalizeTopK(input.topK ?? config.topK),
       });
-      return toSearchProductDocsOutput(chunks);
+      return toSearchProductDocsOutput(input.question ?? input.query, chunks);
     },
   };
 
@@ -221,24 +221,31 @@ function canPlannerSafelyOverrideProductClassification(classification: Classific
 }
 
 function createConfiguredRetriever(options: CreateProductToolsOptions): Retriever {
+  let retriever: Retriever;
   if (options.retriever !== undefined) {
-    return options.retriever;
+    retriever = options.retriever;
+  } else if (options.index !== undefined) {
+    retriever = createLocalRetriever(options.index);
+  } else {
+    throw new Error('createProductTools requires either index or retriever.');
   }
 
-  if (options.index !== undefined) {
-    return createLocalRetriever(options.index);
-  }
-
-  throw new Error('createProductTools requires either index or retriever.');
+  return createRerankingRetriever(retriever, createMetadataReranker(), {
+    candidateMultiplier: RERANK_CANDIDATE_MULTIPLIER,
+  });
 }
 
 function toSearchProductDocsOutput(
+  query: string,
   chunks: RetrievedChunk[],
 ): z.input<typeof searchProductDocsOutputSchema> {
+  const citationChunks = selectGroundingChunks(query, chunks);
+  const attachments = createAttachmentsFromChunks(citationChunks);
   return {
+    ...(attachments.length === 0 ? {} : { attachments }),
     chunks: chunks.map(toOutputChunk),
-    citations: chunks.slice(0, MAX_CITATIONS).map(toCitation),
-    confidence: chunks[0]?.score ?? 0,
+    citations: createCitationsFromChunks(citationChunks),
+    confidence: citationChunks[0]?.score ?? chunks[0]?.score ?? 0,
   };
 }
 
@@ -258,40 +265,12 @@ function toOutputChunk(chunk: RetrievedChunk): z.input<typeof retrievedChunkSche
   };
 }
 
-function toCitation(chunk: RetrievedChunk): Citation {
-  return {
-    excerpt: createExcerpt(chunk.text),
-    file: normalizeCitationFile(chunk.metadata.file),
-    ...(chunk.metadata.sourceUrl === undefined ? {} : { sourceUrl: chunk.metadata.sourceUrl }),
-    title: chunk.metadata.title,
-  };
-}
-
 function normalizeTopK(topK: number): number {
   if (!Number.isInteger(topK) || topK <= 0) {
     return DEFAULT_TOP_K;
   }
 
   return Math.min(topK, MAX_TOP_K);
-}
-
-function normalizeCitationFile(file: string): string {
-  const normalized = file.replaceAll('\\', '/');
-  const docsIndex = normalized.indexOf('/docs/');
-  if (docsIndex >= 0) {
-    return normalized.slice(docsIndex + 1);
-  }
-
-  return normalized.replace(/^\/+/u, '');
-}
-
-function createExcerpt(text: string): string {
-  const compact = text.replace(/\s+/gu, ' ').trim();
-  if (compact.length <= MAX_EXCERPT_LENGTH) {
-    return compact;
-  }
-
-  return `${compact.slice(0, MAX_EXCERPT_LENGTH - 1)}…`;
 }
 
 function streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEvent> {

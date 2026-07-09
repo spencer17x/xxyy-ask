@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatStreamEvent, Classification } from '@xxyy/shared';
 
 import { createOpenAiAnswerProvider } from './openai-answer-provider.js';
-import { retrieve } from './retrieve.js';
+import { retrieve, type RetrievedChunk } from './retrieve.js';
 import { createFixtureIndex } from './test-fixtures.js';
 
 const classification: Classification = {
@@ -452,6 +452,133 @@ describe('createOpenAiAnswerProvider', () => {
         url: '/assets/xxyy-add-to-home.mp4',
       },
     ]);
+  });
+
+  it('filters weak context before sending standard answers to the LLM', async () => {
+    interface CapturedRequest {
+      messages?: Array<{ content?: string }>;
+    }
+
+    const requests: CapturedRequest[] = [];
+    const fetchImpl: typeof fetch = (_input, init) => {
+      if (typeof init?.body !== 'string') {
+        throw new Error('Expected JSON string request body');
+      }
+      requests.push(JSON.parse(init.body) as CapturedRequest);
+      return Promise.resolve(
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                content: '可以添加到桌面，和 App 体验差不多。',
+              },
+            },
+          ],
+        }),
+      );
+    };
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'gpt-test',
+    });
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'mobile-app',
+        text: '标准客服回答：可以添加到桌面，和 App 体验差不多。演示视频：[添加到桌面演示](/assets/xxyy-add-to-home.mp4)',
+        title: '移动端桌面入口',
+      }),
+      createRetrievedChunk({
+        id: 'token-info',
+        text: '代币基本信息：合约地址、价格、流动性、市值、安全性数据。',
+        title: '代币信息区',
+      }),
+    ];
+
+    const response = await provider.answer({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: 'XXYY 有 APP 吗？',
+      retrievedChunks: retrieved,
+    });
+
+    const prompt = requests[0]?.messages?.map((message) => message.content).join('\n') ?? '';
+    expect(prompt).toContain('标准客服回答');
+    expect(prompt).not.toContain('代币基本信息');
+    expect(response.citations).toHaveLength(1);
+    expect(response.citations[0]?.title).toBe('移动端桌面入口');
+  });
+
+  it('filters weak context before sending trade-setting preset evidence to the LLM', async () => {
+    interface CapturedRequest {
+      messages?: Array<{ content?: string }>;
+    }
+
+    const requests: CapturedRequest[] = [];
+    const fetchImpl: typeof fetch = (_input, init) => {
+      if (typeof init?.body !== 'string') {
+        throw new Error('Expected JSON string request body');
+      }
+      requests.push(JSON.parse(init.body) as CapturedRequest);
+      return Promise.resolve(
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                content: 'P1/P2/P3 是交易设置档位，可为买卖/挂单使用不同 gas 与滑点。',
+              },
+            },
+          ],
+        }),
+      );
+    };
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'gpt-test',
+    });
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'p123-summary',
+        sourceType: 'x_updates',
+        text: '支持 P1/P2/P3 交易设置档位，不同买卖和挂单场景可使用不同 gas 与滑点。',
+        title: 'XXYY X 历史推文产品更新汇总',
+      }),
+      createRetrievedChunk({
+        id: 'p123-post',
+        sourceType: 'x_updates',
+        sourceUrl: 'https://x.com/useXXYYio/status/2026285686907883612',
+        text: '交易设置多档位切换 P1 P2 P3，买卖/挂单支持不同gas与滑点。',
+        title: 'X Post 2026285686907883612',
+      }),
+      createRetrievedChunk({
+        id: 'speed-summary',
+        sourceType: 'x_updates',
+        text: '全面提速：扫链新盘秒出，K 线 0 延迟，图片实时推送。',
+        title: 'XXYY X 历史推文产品更新汇总',
+      }),
+    ];
+
+    const response = await provider.answer({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: 'P1/P2/P3 是什么交易设置？',
+      retrievedChunks: retrieved,
+    });
+
+    const prompt = requests[0]?.messages?.map((message) => message.content).join('\n') ?? '';
+    expect(prompt).toContain('P1/P2/P3');
+    expect(prompt).toContain('P1 P2 P3');
+    expect(prompt).not.toContain('全面提速');
+    expect(response.citations).toHaveLength(2);
   });
 
   it('falls back to grounded context when the LLM returns only a safety label', async () => {
@@ -1065,6 +1192,35 @@ function jsonResponse(payload: unknown): Response {
     headers: { 'Content-Type': 'application/json' },
     status: 200,
   });
+}
+
+function createRetrievedChunk(input: {
+  id: string;
+  sourceType?: RetrievedChunk['metadata']['sourceType'];
+  sourceUrl?: string;
+  text: string;
+  title: string;
+}): RetrievedChunk {
+  return {
+    documentId: input.id,
+    embedding: [],
+    id: input.id,
+    lexicalScore: 1,
+    metadata: {
+      file: `/docs/${input.id}.md`,
+      headingPath: [input.title],
+      module: input.title,
+      sourceType: input.sourceType ?? 'official_docs',
+      title: input.title,
+      ...(input.sourceUrl === undefined ? {} : { sourceUrl: input.sourceUrl }),
+    },
+    rank: 1,
+    score: 1,
+    sourceBoost: 0,
+    text: input.text,
+    tokens: [],
+    vectorScore: 1,
+  };
 }
 
 function streamResponse(chunks: string[]): Response {

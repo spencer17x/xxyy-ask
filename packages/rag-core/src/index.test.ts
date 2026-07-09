@@ -10,6 +10,9 @@ describe('rag-core public exports', () => {
     expect(ragCore.retrieve).toBeTypeOf('function');
     expect(ragCore.createLocalRetriever).toBeTypeOf('function');
     expect(ragCore.createGroundedAnswer).toBeTypeOf('function');
+    expect(ragCore.createAttachmentsFromChunks).toBeTypeOf('function');
+    expect(ragCore.createCitationsFromChunks).toBeTypeOf('function');
+    expect(ragCore.selectGroundingChunks).toBeTypeOf('function');
     expect(ragCore.createOpenAiAnswerProvider).toBeTypeOf('function');
     expect(ragCore.LlmConfigurationError).toBeTypeOf('function');
     expect(ragCore.createPgPool).toBeTypeOf('function');
@@ -27,8 +30,10 @@ describe('rag-core public exports', () => {
       'VectorStoreConfigurationError',
       'VectorStoreUnavailableError',
       'classifyQuestion',
+      'createAttachmentsFromChunks',
       'createBoundaryAnswer',
       'createChatService',
+      'createCitationsFromChunks',
       'createGroundedAnswer',
       'createLazyRetriever',
       'createLocalRetriever',
@@ -44,6 +49,7 @@ describe('rag-core public exports', () => {
       'redactSensitiveSupportText',
       'resolveWorkspaceCwd',
       'retrieve',
+      'selectGroundingChunks',
       'toPgVectorLiteral',
       'workspacePackageName',
     ]);

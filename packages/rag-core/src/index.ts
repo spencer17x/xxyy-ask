@@ -1,6 +1,12 @@
 export const workspacePackageName = '@xxyy/rag-core';
 
-export { createBoundaryAnswer, createGroundedAnswer } from './answer.js';
+export {
+  createAttachmentsFromChunks,
+  createBoundaryAnswer,
+  createCitationsFromChunks,
+  createGroundedAnswer,
+  selectGroundingChunks,
+} from './answer.js';
 export { classifyQuestion } from './classify.js';
 export { loadRagConfig } from './config.js';
 export { loadWorkspaceEnv, resolveWorkspaceCwd } from './env.js';

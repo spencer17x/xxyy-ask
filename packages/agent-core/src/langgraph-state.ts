@@ -1,6 +1,6 @@
 import { Annotation } from '@langchain/langgraph';
 
-import type { AgentRoute, ChatRequest, ChatResponse, Citation } from '@xxyy/shared';
+import type { AgentRoute, ChatAttachment, ChatRequest, ChatResponse, Citation } from '@xxyy/shared';
 
 export const AGENT_MAX_STEPS_DEFAULT = 4;
 
@@ -53,6 +53,7 @@ export type AgentEvidence =
   | {
       kind: 'search_results';
       output: {
+        attachments?: ChatAttachment[];
         chunks: unknown[];
         citations: Citation[];
         confidence: number;

@@ -65,6 +65,43 @@ describe('createProductTools', () => {
     expect(result.chunks[0]).toHaveProperty('sourceBoost');
   });
 
+  it('returns attachments from selected search result evidence', async () => {
+    const registry = createToolRegistry();
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [
+      createRetrievedChunk({
+        id: 'mobile-app',
+        metadata: {
+          sourceType: 'official_docs',
+          title: '移动端桌面入口',
+        },
+        text: '标准客服回答：可以添加到桌面，和 App 体验差不多。演示视频：[添加到桌面演示](/assets/xxyy-add-to-home.mp4)',
+      }),
+      createRetrievedChunk({
+        id: 'token-info',
+        text: '代币基本信息：合约地址、价格、流动性、市值、安全性数据。',
+      }),
+    ]);
+
+    for (const tool of createProductTools({ config: { topK: 2 }, retriever: { retrieve } })) {
+      registry.register(tool);
+    }
+
+    const result = (await registry.execute('search_product_docs', {
+      query: 'XXYY 有 APP 吗？',
+    })) as { attachments?: unknown[]; citations: Array<{ title: string }> };
+
+    expect(result.citations).toHaveLength(1);
+    expect(result.citations[0]?.title).toBe('移动端桌面入口');
+    expect(result.attachments).toEqual([
+      {
+        kind: 'video',
+        mediaType: 'video/mp4',
+        title: '添加到桌面演示',
+        url: '/assets/xxyy-add-to-home.mp4',
+      },
+    ]);
+  });
+
   it('rejects blank product tool inputs at the schema boundary', () => {
     expect(searchProductDocsInputSchema.safeParse({ query: '' }).success).toBe(false);
     expect(searchProductDocsInputSchema.safeParse({ query: '   ' }).success).toBe(false);
@@ -139,7 +176,7 @@ describe('createProductTools', () => {
       answer: 'intent product_qa; chunks 1',
       intent: 'product_qa',
     });
-    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 6 });
+    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 24 });
     const answerInput = answer.mock.calls[0]?.[0];
     expect(answerInput).toBeDefined();
     expect(answerInput?.classification).toMatchObject({
@@ -147,6 +184,55 @@ describe('createProductTools', () => {
       reason: 'planner selected product answer tool',
     });
     expect(answerInput?.question).toBe('支持跟单么');
+  });
+
+  it('reranks product evidence before answering short copy-trading support questions', async () => {
+    const registry = createToolRegistry();
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [
+      createRetrievedChunk({
+        id: 'generic-trading-summary',
+        score: 24,
+        text: '支持快捷买卖、挂单、Dev Sell、自动止盈止损、一键回本、持仓页一键卖出、多钱包快捷交易、跟单交易。',
+      }),
+      createRetrievedChunk({
+        id: 'base-single-chain-update',
+        score: 23,
+        text: 'Base 跟单、自动止盈止损、地址监控、挂单、扫链全功能满血支持。',
+      }),
+      createRetrievedChunk({
+        id: 'copy-trading-launch',
+        score: 22,
+        text: '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。',
+      }),
+    ]);
+    const answer = vi.fn<AnswerProvider['answer']>((input) =>
+      Promise.resolve({
+        answer: input.retrievedChunks[0]?.text ?? '',
+        citations: [],
+        confidence: input.retrievedChunks[0]?.score ?? 0,
+        intent: input.classification.intent,
+      }),
+    );
+
+    for (const tool of createProductTools({
+      answerProvider: { answer },
+      config: { topK: 1 },
+      retriever: { retrieve },
+    })) {
+      registry.register(tool);
+    }
+
+    await expect(
+      registry.execute('answer_product_question', {
+        channel: 'agent',
+        question: 'XXYY支持跟单么',
+      }),
+    ).resolves.toMatchObject({
+      answer:
+        '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。',
+      intent: 'product_qa',
+    });
+    expect(retrieve).toHaveBeenCalledWith('XXYY支持跟单么', { topK: 4 });
   });
 
   it('keeps realtime account lookups blocked even when planner selects answer_product_question', async () => {
@@ -233,7 +319,94 @@ describe('createProductTools', () => {
     expect(result.citations[0]?.excerpt).not.toMatch(/\s{2,}|\n/u);
   });
 
-  it('caps externally supplied search topK before calling the retriever', async () => {
+  it('filters weak citations for trade-setting preset search results', async () => {
+    const registry = createToolRegistry();
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [
+      createRetrievedChunk({
+        id: 'p123-summary',
+        metadata: {
+          sourceType: 'x_updates',
+          title: 'XXYY X 历史推文产品更新汇总',
+        },
+        text: '支持 P1/P2/P3 交易设置档位，不同买卖和挂单场景可使用不同 gas 与滑点。',
+      }),
+      createRetrievedChunk({
+        id: 'p123-post',
+        metadata: {
+          sourceType: 'x_updates',
+          sourceUrl: 'https://x.com/useXXYYio/status/2026285686907883612',
+          title: 'X Post 2026285686907883612',
+        },
+        text: '交易设置多档位切换 P1 P2 P3，买卖/挂单支持不同gas与滑点。',
+      }),
+      createRetrievedChunk({
+        id: 'speed-summary',
+        metadata: {
+          sourceType: 'x_updates',
+          title: 'XXYY X 历史推文产品更新汇总',
+        },
+        text: '全面提速：扫链新盘秒出，K 线 0 延迟，图片实时推送。',
+      }),
+    ]);
+
+    for (const tool of createProductTools({ config: { topK: 3 }, retriever: { retrieve } })) {
+      registry.register(tool);
+    }
+
+    const result = (await registry.execute('search_product_docs', {
+      query: 'P1/P2/P3 是什么交易设置？',
+    })) as { citations: Array<{ excerpt: string; sourceUrl?: string; title: string }> };
+
+    expect(result.citations).toHaveLength(2);
+    expect(result.citations.map((citation) => citation.title)).toEqual(
+      expect.arrayContaining(['XXYY X 历史推文产品更新汇总', 'X Post 2026285686907883612']),
+    );
+    expect(result.citations.map((citation) => citation.excerpt).join('\n')).not.toContain(
+      '全面提速',
+    );
+  });
+
+  it('uses the original question to filter direct source search citations', async () => {
+    const registry = createToolRegistry();
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [
+      createRetrievedChunk({
+        id: 'wallet-note-post',
+        metadata: {
+          sourceType: 'x_updates',
+          sourceUrl: 'https://x.com/useXXYYio/status/2030954722350575916',
+          title: 'X Post 2030954722350575916',
+        },
+        text: '钱包备注支持最多 1 万条，快速捕捉前排地址。',
+      }),
+      createRetrievedChunk({
+        id: 'holders-note-post',
+        metadata: {
+          sourceType: 'x_updates',
+          sourceUrl: 'https://x.com/useXXYYio/status/2063938732311601370',
+          title: 'X Post 2063938732311601370',
+        },
+        text: 'Holders数据新增备注、Dev、新钱包、老鼠仓、捆绑信息。',
+      }),
+    ]);
+
+    for (const tool of createProductTools({ config: { topK: 2 }, retriever: { retrieve } })) {
+      registry.register(tool);
+    }
+
+    const result = (await registry.execute('search_product_docs', {
+      query: '钱包备注 1 万条',
+      question: '钱包备注支持最多 1 万条是哪条推文？',
+    })) as { citations: Array<{ sourceUrl?: string; title: string }> };
+
+    expect(result.citations).toEqual([
+      expect.objectContaining({
+        sourceUrl: 'https://x.com/useXXYYio/status/2030954722350575916',
+        title: 'X Post 2030954722350575916',
+      }),
+    ]);
+  });
+
+  it('caps externally supplied search topK before reranking candidate expansion', async () => {
     const registry = createToolRegistry();
     const retrieve = vi.fn<Retriever['retrieve']>(() => []);
 
@@ -246,7 +419,7 @@ describe('createProductTools', () => {
       topK: 999,
     });
 
-    expect(retrieve).toHaveBeenCalledWith('XXYY Pro 权益', { topK: 20 });
+    expect(retrieve).toHaveBeenCalledWith('XXYY Pro 权益', { topK: 80 });
   });
 });
 

@@ -129,6 +129,112 @@ describe('createLangGraphCustomerRuntime', () => {
     );
   });
 
+  it('overrides unsupported planner finals for deterministic product questions', async () => {
+    const registry = createToolRegistry();
+    const response: ChatResponse = {
+      answer: 'P1/P2/P3 是交易设置档位，可为买卖/挂单配置不同 gas 与滑点。',
+      citations: [
+        {
+          excerpt: '交易设置多档位切换 P1 P2 P3，买卖/挂单支持不同gas与滑点。',
+          file: 'docs/product-features/sources/usexxyyio-x-posts.jsonl',
+          sourceUrl: 'https://x.com/useXXYYio/status/2026285686907883612',
+          title: 'X Post 2026285686907883612',
+        },
+      ],
+      confidence: 0.82,
+      intent: 'product_qa',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const runtime = createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          kind: 'final',
+          reason: 'Planner incorrectly declined a product feature question.',
+          response: {
+            answer: '当前无法回答该交易设置问题。',
+            citations: [],
+            confidence: 0.3,
+            intent: 'unknown',
+          },
+          route: 'clarify',
+        },
+      ]),
+      registry,
+    });
+
+    await expect(
+      runtime.ask({
+        channel: 'web',
+        message: 'P1/P2/P3 是什么交易设置？',
+      }),
+    ).resolves.toEqual({
+      ...response,
+      agentRoute: 'product_answer',
+    });
+    expect(execute).toHaveBeenCalledWith(
+      { question: 'P1/P2/P3 是什么交易设置？' },
+      { channel: 'web', sessionId: undefined, userIdPresent: false },
+    );
+  });
+
+  it('falls back to the product answer tool when planner parsing fails for a deterministic product question', async () => {
+    const registry = createToolRegistry();
+    const response: ChatResponse = {
+      answer: 'XXYY 支持跟单功能。',
+      citations: [
+        {
+          excerpt: 'XXYY 跟单支持 SOL 和 BSC。',
+          file: 'docs/product-features/xxyy-x-updates.md',
+          title: '跟单支持链',
+        },
+      ],
+      confidence: 0.82,
+      intent: 'product_qa',
+    };
+    const execute = vi.fn(() => Promise.resolve(response));
+    const planner = {
+      plan: vi.fn(() => Promise.reject(new PlannerModelParseError('invalid planner JSON'))),
+    };
+
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer a product question.',
+      inputSchema: z.object({
+        question: z.string(),
+      }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute,
+    });
+
+    await expect(
+      createLangGraphCustomerRuntime({ planner, registry }).ask({
+        channel: 'web',
+        message: 'XXYY支持跟单么',
+      }),
+    ).resolves.toEqual({
+      ...response,
+      agentRoute: 'product_answer',
+    });
+    expect(planner.plan).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledWith(
+      { question: 'XXYY支持跟单么' },
+      { channel: 'web', sessionId: undefined, userIdPresent: false },
+    );
+  });
+
   it('returns boundary answers before planner execution for obvious private lookup requests', async () => {
     const registry = createToolRegistry();
     const planner = {
@@ -424,6 +530,145 @@ describe('createLangGraphCustomerRuntime', () => {
     expect(response.answer).toContain('XXYY 跟单支持 SOL 和 BSC');
     expect(execute).toHaveBeenCalledWith(
       { query: 'XXYY 跟单 支持 哪些链' },
+      { channel: 'web', userIdPresent: false },
+    );
+  });
+
+  it('passes attachments through composed search evidence responses', async () => {
+    const registry = createToolRegistry();
+    const attachments = [
+      {
+        kind: 'video' as const,
+        mediaType: 'video/mp4',
+        title: '添加到桌面演示',
+        url: '/assets/xxyy-add-to-home.mp4',
+      },
+    ];
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        attachments,
+        chunks: [
+          {
+            id: 'mobile-app',
+            text: '标准客服回答：可以添加到桌面，和 App 体验差不多。',
+          },
+        ],
+        citations: [
+          {
+            excerpt: '可以添加到桌面，和 App 体验差不多。',
+            file: 'docs/product-features/pages/64-getting-started__mobile-app.md',
+            title: '移动端桌面入口',
+          },
+        ],
+        confidence: 8,
+      }),
+    );
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        attachments: z.array(z.unknown()).optional(),
+        chunks: z.array(z.object({ id: z.string(), text: z.string() })),
+        citations: z.array(
+          z.object({
+            excerpt: z.string(),
+            file: z.string(),
+            title: z.string(),
+          }),
+        ),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { query: 'XXYY 有 APP 吗？' },
+          kind: 'tool',
+          reason: 'Search mobile app docs.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).ask({
+      channel: 'web',
+      message: 'XXYY 有 APP 吗？',
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'product_answer',
+      attachments,
+      intent: 'product_qa',
+    });
+  });
+
+  it('normalizes planner search question input into a docs query', async () => {
+    const registry = createToolRegistry();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        chunks: [
+          {
+            id: 'chunk-1',
+            text: 'XXYY Pro 支持独享服务器和节点。',
+          },
+        ],
+        citations: [
+          {
+            excerpt: 'XXYY Pro 支持独享服务器和节点。',
+            file: 'docs/product-features/pages/59-getting-started__xxyy-pro-quan-yi.md',
+            title: 'XXYY Pro 权益',
+          },
+        ],
+        confidence: 10,
+      }),
+    );
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        chunks: z.array(z.object({ id: z.string(), text: z.string() })),
+        citations: z.array(
+          z.object({
+            excerpt: z.string(),
+            file: z.string(),
+            title: z.string(),
+          }),
+        ),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { question: 'XXYY Pro 权益' },
+          kind: 'tool',
+          reason: 'Search product docs first.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).ask({
+      channel: 'web',
+      message: 'XXYY Pro 有哪些权益？',
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'product_answer',
+      intent: 'product_qa',
+    });
+    expect(execute).toHaveBeenCalledWith(
+      { query: 'XXYY Pro 权益' },
       { channel: 'web', userIdPresent: false },
     );
   });
@@ -744,6 +989,8 @@ describe('createLangGraphCustomerRuntime', () => {
       citations: [],
       intent: 'unknown',
     });
+    expect(response.answer).toContain('知识库检索或 AI 服务暂时不可用');
+    expect(response.answer).not.toContain('请补充一个具体的 XXYY 产品问题');
     expect(execute).toHaveBeenCalledOnce();
   });
 

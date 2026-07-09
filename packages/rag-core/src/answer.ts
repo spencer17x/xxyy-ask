@@ -1,4 +1,5 @@
 import type { ChatAttachment, ChatResponse, Citation, Classification, Intent } from '@xxyy/shared';
+import { tokenize } from '@xxyy/knowledge';
 
 import type { RetrievedChunk } from './retrieve.js';
 
@@ -25,7 +26,8 @@ export function createGroundedAnswer(
     };
   }
 
-  const citations = createCitationsFromChunks(retrievedChunks);
+  const groundingChunks = selectGroundingChunks(question, retrievedChunks);
+  const citations = createCitationsFromChunks(groundingChunks);
   const excerpts = citations.map((citation) => citation.excerpt);
   const answerPrefix =
     classification.intent === 'how_to' ? '根据知识库，可以按这些信息操作：' : '根据知识库，';
@@ -37,11 +39,39 @@ export function createGroundedAnswer(
       citations,
       confidence: calculateGroundedConfidence(
         classification.confidence,
-        retrievedChunks[0]?.score ?? 0,
+        groundingChunks[0]?.score ?? 0,
       ),
     },
-    createAttachmentsFromChunks(retrievedChunks),
+    createAttachmentsFromChunks(groundingChunks),
   );
+}
+
+export function selectGroundingChunks(
+  question: string,
+  retrievedChunks: RetrievedChunk[],
+): RetrievedChunk[] {
+  const highRankedChunks = retrievedChunks.slice(0, MAX_CITATIONS);
+  const standardAnswerChunk = highRankedChunks.find((chunk) => /标准客服回答：/u.test(chunk.text));
+  if (standardAnswerChunk !== undefined && !requiresMultipleGroundingSources(question)) {
+    return [standardAnswerChunk];
+  }
+
+  if (isDirectSourceQuestion(question)) {
+    const directXPostChunk = selectBestDirectXPostChunk(
+      question,
+      highRankedChunks.filter(isDirectXPostChunk),
+    );
+    if (directXPostChunk !== undefined) {
+      return [directXPostChunk];
+    }
+  }
+
+  const topicalChunks = selectTopicalGroundingChunks(question, highRankedChunks);
+  if (topicalChunks.length > 0) {
+    return topicalChunks;
+  }
+
+  return highRankedChunks;
 }
 
 function withOptionalAttachments(
@@ -90,6 +120,141 @@ function extractVideoAttachments(text: string): ChatAttachment[] {
   }
 
   return attachments;
+}
+
+function isDirectSourceQuestion(question: string): boolean {
+  return /哪条推文|哪条推特|哪篇推文|哪篇推特|具体推文|具体推特|tweet|x\s*post/iu.test(
+    question.normalize('NFKC'),
+  );
+}
+
+function requiresMultipleGroundingSources(question: string): boolean {
+  return (
+    /比较|对比|区别|分别|同时|以及|与|\bcompare\b|\bversus\b|\bvs\b/iu.test(question) ||
+    /(?:权益|功能|设置|上限|限制|管理).+和.+(?:权益|功能|设置|上限|限制|管理)/u.test(question)
+  );
+}
+
+function isDirectXPostChunk(chunk: RetrievedChunk): boolean {
+  return (
+    chunk.metadata.sourceType === 'x_updates' &&
+    /^X Post \d+/u.test(chunk.metadata.title) &&
+    /^https:\/\/x\.com\//u.test(chunk.metadata.sourceUrl ?? '')
+  );
+}
+
+function selectBestDirectXPostChunk(
+  question: string,
+  chunks: RetrievedChunk[],
+): RetrievedChunk | undefined {
+  let bestChunk: RetrievedChunk | undefined;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  const queryTokens = meaningfulSourceQuestionTokens(question);
+
+  for (const chunk of chunks) {
+    const evidence = toEvidenceText(chunk);
+    let score = 0;
+    for (const token of queryTokens) {
+      if (evidence.includes(token)) {
+        score += token.length > 2 ? token.length : 1;
+      }
+    }
+
+    if (score > bestScore) {
+      bestChunk = chunk;
+      bestScore = score;
+    }
+  }
+
+  return bestChunk;
+}
+
+function meaningfulSourceQuestionTokens(question: string): string[] {
+  const stopTokens = new Set([
+    'tweet',
+    'post',
+    'x',
+    '哪条',
+    '哪篇',
+    '具体',
+    '推文',
+    '推特',
+    '来源',
+  ]);
+  return tokenize(question).filter((token) => token.length > 1 && !stopTokens.has(token));
+}
+
+function selectTopicalGroundingChunks(
+  question: string,
+  chunks: RetrievedChunk[],
+): RetrievedChunk[] {
+  const normalizedQuestion = normalizeForEvidenceMatch(question);
+
+  if (isTradeSettingPresetText(normalizedQuestion)) {
+    return chunks
+      .filter((chunk) => isTradeSettingPresetEvidence(toEvidenceText(chunk)))
+      .slice(0, 2);
+  }
+
+  if (isBaseB20SupportText(normalizedQuestion)) {
+    return chunks.filter((chunk) => isBaseB20SupportEvidence(toEvidenceText(chunk))).slice(0, 2);
+  }
+
+  if (isCopyTradingSupportText(normalizedQuestion)) {
+    return chunks
+      .filter((chunk) => isCopyTradingSupportEvidence(toEvidenceText(chunk)))
+      .slice(0, 2);
+  }
+
+  return [];
+}
+
+function toEvidenceText(chunk: RetrievedChunk): string {
+  return normalizeForEvidenceMatch(
+    [chunk.metadata.title, chunk.metadata.module, ...chunk.metadata.headingPath, chunk.text].join(
+      ' ',
+    ),
+  );
+}
+
+function normalizeForEvidenceMatch(text: string): string {
+  return text.normalize('NFKC').toLowerCase();
+}
+
+function isTradeSettingPresetText(normalizedText: string): boolean {
+  return /p\s*1\s*[/｜|]?\s*p\s*2\s*[/｜|]?\s*p\s*3|p1\/p2\/p3/u.test(normalizedText);
+}
+
+function isTradeSettingPresetEvidence(normalizedEvidence: string): boolean {
+  return (
+    isTradeSettingPresetText(normalizedEvidence) &&
+    /交易设置|多档位|档位/u.test(normalizedEvidence) &&
+    /gas|滑点|买卖|挂单/u.test(normalizedEvidence)
+  );
+}
+
+function isBaseB20SupportText(normalizedText: string): boolean {
+  return /\bb20\b/u.test(normalizedText);
+}
+
+function isBaseB20SupportEvidence(normalizedEvidence: string): boolean {
+  return (
+    isBaseB20SupportText(normalizedEvidence) &&
+    /全面支持|支持.*交易|代币交易|专属标识/u.test(normalizedEvidence)
+  );
+}
+
+function isCopyTradingSupportText(normalizedText: string): boolean {
+  return /跟单|copy\s*trading|copy\s*trade|copytrade/u.test(normalizedText);
+}
+
+function isCopyTradingSupportEvidence(normalizedEvidence: string): boolean {
+  return (
+    isCopyTradingSupportText(normalizedEvidence) &&
+    /功能上线|支持\s*(?:\d+|[一二三四五六七八九十]+)\s*大?公链|利润|胜率|跟单金额|卖出比例|gas|滑点|过滤条件|自定义/u.test(
+      normalizedEvidence,
+    )
+  );
 }
 
 export function createBoundaryAnswer(classification: Classification): ChatResponse {
@@ -166,12 +331,18 @@ function normalizeCitationFile(file: string): string {
 }
 
 function createExcerpt(text: string): string {
-  const compact = text.replace(/\s+/gu, ' ').trim();
+  const compact = (extractStandardCustomerAnswer(text) ?? text).replace(/\s+/gu, ' ').trim();
   if (compact.length <= MAX_EXCERPT_LENGTH) {
     return compact;
   }
 
   return `${compact.slice(0, MAX_EXCERPT_LENGTH - 1)}…`;
+}
+
+function extractStandardCustomerAnswer(text: string): string | undefined {
+  const match = /标准客服回答：(?<answer>.*?)(?:用户问|演示视频：|\n{2,}|$)/su.exec(text);
+  const answer = match?.groups?.answer?.trim();
+  return answer === undefined || answer.length === 0 ? undefined : answer;
 }
 
 function calculateGroundedConfidence(classificationConfidence: number, topScore: number): number {
