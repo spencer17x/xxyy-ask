@@ -4,12 +4,14 @@ import { AI_SERVICE_TEST_QUESTION, checkAiService } from './ai-service-check.js'
 
 describe('checkAiService', () => {
   it('posts a lightweight product question to the normal chat endpoint', async () => {
-    const fetchImpl = vi.fn(async () =>
-      jsonResponse({
-        answer: 'XXYY Pro 包含更多权益。',
-        confidence: 0.82,
-        intent: 'product_qa',
-      }),
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({
+          answer: 'XXYY Pro 包含更多权益。',
+          confidence: 0.82,
+          intent: 'product_qa',
+        }),
+      ),
     ) as unknown as typeof fetch;
 
     const result = await checkAiService(fetchImpl, 'session-test');
@@ -32,8 +34,8 @@ describe('checkAiService', () => {
   });
 
   it('returns a compact API error when the chat endpoint rejects the check', async () => {
-    const fetchImpl = vi.fn(async () =>
-      jsonResponse({ message: 'LLM 配置缺失' }, { status: 503 }),
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(jsonResponse({ message: 'LLM 配置缺失' }, { status: 503 })),
     ) as unknown as typeof fetch;
 
     await expect(checkAiService(fetchImpl, 'session-test')).resolves.toEqual({
@@ -44,8 +46,8 @@ describe('checkAiService', () => {
   });
 
   it('treats malformed success payloads as an unavailable service', async () => {
-    const fetchImpl = vi.fn(async () =>
-      jsonResponse({ answer: '', confidence: 0.7, intent: 'product_qa' }),
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(jsonResponse({ answer: '', confidence: 0.7, intent: 'product_qa' })),
     ) as unknown as typeof fetch;
 
     await expect(checkAiService(fetchImpl, 'session-test')).resolves.toEqual({

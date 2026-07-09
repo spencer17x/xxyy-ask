@@ -423,7 +423,11 @@ describe('createProductTools', () => {
   });
 });
 
-function createRetrievedChunk(overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
+type RetrievedChunkOverrides = Omit<Partial<RetrievedChunk>, 'metadata'> & {
+  metadata?: Partial<RetrievedChunk['metadata']>;
+};
+
+function createRetrievedChunk(overrides: RetrievedChunkOverrides = {}): RetrievedChunk {
   const base: RetrievedChunk = {
     documentId: 'pro',
     embedding: [],
