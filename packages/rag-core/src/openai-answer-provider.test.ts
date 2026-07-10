@@ -638,13 +638,23 @@ describe('createOpenAiAnswerProvider', () => {
     expect(response.confidence).toBeLessThan(0.5);
   });
 
-  it('does not let an unrelated standard answer bypass direct support entity evidence', async () => {
-    const requests: unknown[] = [];
+  it('grounds support questions on direct entity evidence before asking the LLM', async () => {
+    const requests: Array<{ messages?: Array<{ content?: string }> }> = [];
     const fetchImpl: typeof fetch = (_input, init) => {
       if (typeof init?.body === 'string') {
-        requests.push(JSON.parse(init.body));
+        requests.push(JSON.parse(init.body) as { messages?: Array<{ content?: string }> });
       }
-      return Promise.resolve(jsonResponse({ choices: [] }));
+      return Promise.resolve(
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                content: '支持。XXYY 当前支持 Robinhood。',
+              },
+            },
+          ],
+        }),
+      );
     };
     const provider = createOpenAiAnswerProvider({
       apiKey: 'test-key',
@@ -675,16 +685,19 @@ describe('createOpenAiAnswerProvider', () => {
       retrievedChunks: retrieved,
     });
 
-    expect(requests).toEqual([]);
+    expect(requests).toHaveLength(1);
+    const prompt = requests[0]?.messages?.map((message) => message.content).join('\n') ?? '';
+    expect(prompt).toContain('XXYY 当前支持 Robinhood。');
+    expect(prompt).not.toContain('可以添加到桌面');
     expect(response.answer).toBe('支持。XXYY 当前支持 Robinhood。');
     expect(response.citations[0]?.title).toBe('Robinhood 支持范围');
   });
 
-  it('answers direct support questions deterministically instead of letting the LLM dump excerpts', async () => {
-    const requests: unknown[] = [];
+  it('asks the LLM to answer grounded support questions instead of pasting evidence sentences', async () => {
+    const requests: Array<{ messages?: Array<{ content?: string }> }> = [];
     const fetchImpl: typeof fetch = (_input, init) => {
       if (typeof init?.body === 'string') {
-        requests.push(JSON.parse(init.body));
+        requests.push(JSON.parse(init.body) as { messages?: Array<{ content?: string }> });
       }
       return Promise.resolve(
         jsonResponse({
@@ -692,7 +705,7 @@ describe('createOpenAiAnswerProvider', () => {
             {
               message: {
                 content:
-                  '根据知识库，- FourMeme Agentic 模式支持：在 XXYY 完成 BSC 代币交易后可自动 mint Agent NFT。 - 跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链。',
+                  '支持。XXYY 跟单已上线，覆盖 SOL、BSC、Base、ETH、X Layer、Plasma，并可自定义金额、卖出比例、gas、滑点与过滤条件。',
               },
             },
           ],
@@ -731,11 +744,12 @@ describe('createOpenAiAnswerProvider', () => {
       retrievedChunks: retrieved,
     });
 
-    expect(requests).toEqual([]);
+    expect(requests).toHaveLength(1);
+    const prompt = requests[0]?.messages?.map((message) => message.content).join('\n') ?? '';
+    expect(prompt).toContain('跟单功能上线');
     expect(response.answer).toBe(
-      '支持。跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。',
+      '支持。XXYY 跟单已上线，覆盖 SOL、BSC、Base、ETH、X Layer、Plasma，并可自定义金额、卖出比例、gas、滑点与过滤条件。',
     );
-    expect(response.answer).not.toContain('FourMeme');
     expect(response.citations).toHaveLength(2);
   });
 
