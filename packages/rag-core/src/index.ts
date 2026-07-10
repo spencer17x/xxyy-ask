@@ -5,9 +5,12 @@ export {
   createBoundaryAnswer,
   createCitationsFromChunks,
   createGroundedAnswer,
+  createInsufficientKnowledgeAnswer,
+  createSupportConclusionFromEvidence,
   selectGroundingChunks,
+  shouldUseDeterministicSupportAnswer,
 } from './answer.js';
-export { classifyQuestion } from './classify.js';
+export { classifyQuestion, hasProductDomainSignal } from './classify.js';
 export { loadRagConfig } from './config.js';
 export { loadWorkspaceEnv, resolveWorkspaceCwd } from './env.js';
 export { evaluateCases } from './evaluate.js';
@@ -53,10 +56,13 @@ export type {
   PgFeedbackStore,
   PgFeedbackStoreOptions,
   PgClientLike,
+  PgTransactionClientLike,
+  PgVectorMigrationOptions,
   PgVectorStore,
   PgVectorStoreOptions,
   RecordFeedbackInput,
   RecordIngestionRunInput,
+  ReplaceChunksOptions,
 } from './pgvector-store.js';
 export type { RetrieveOptions, RetrievedChunk } from './retrieve.js';
 export type { Reranker, RerankingRetrieverOptions, Retriever } from './retriever.js';

@@ -222,7 +222,7 @@ describe('createLangGraphCustomerRuntime', () => {
     await expect(
       createLangGraphCustomerRuntime({ planner, registry }).ask({
         channel: 'web',
-        message: 'XXYY支持跟单么',
+        message: 'XXYY Pro 有哪些权益？',
       }),
     ).resolves.toEqual({
       ...response,
@@ -230,7 +230,7 @@ describe('createLangGraphCustomerRuntime', () => {
     });
     expect(planner.plan).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenCalledWith(
-      { question: 'XXYY支持跟单么' },
+      { question: 'XXYY Pro 有哪些权益？' },
       { channel: 'web', sessionId: undefined, userIdPresent: false },
     );
   });
@@ -396,6 +396,59 @@ describe('createLangGraphCustomerRuntime', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it.each([
+    '这个 tx hash 是不是被夹了，有 MEV sandwich 吗？',
+    '分析 https://solscan.io/tx/abc',
+    '帮我查这个池子有没有夹子',
+    '分析一下这笔链上交易',
+  ])(
+    'pre-blocks unsupported transaction analysis before planner execution: %s',
+    async (message) => {
+      const registry = createToolRegistry();
+      const execute = vi.fn(() => {
+        throw new Error('tool should not be called');
+      });
+      const planner = {
+        plan: vi.fn(() =>
+          Promise.resolve({
+            kind: 'final' as const,
+            reason: 'Planner-authored boundary.',
+            response: {
+              answer: 'planner response',
+              citations: [],
+              confidence: 0.5,
+              intent: 'unknown' as const,
+            },
+            route: 'boundary' as const,
+          }),
+        ),
+      };
+
+      registry.register({
+        name: 'answer_product_question',
+        description: 'Answer a product question.',
+        inputSchema: z.object({}),
+        outputSchema: z.object({}),
+        policy: toolPolicy,
+        execute,
+      });
+
+      const response = await createLangGraphCustomerRuntime({ planner, registry }).ask({
+        channel: 'web',
+        message,
+      });
+
+      expect(response).toMatchObject({
+        agentRoute: 'boundary',
+        citations: [],
+        intent: 'unknown',
+      });
+      expect(response.answer).toContain('当前不分析交易哈希');
+      expect(planner.plan).not.toHaveBeenCalled();
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
   it('returns clarification when the planner requests an unauthorized tool', async () => {
     const registry = createToolRegistry();
     const execute = vi.fn(() => {
@@ -532,6 +585,83 @@ describe('createLangGraphCustomerRuntime', () => {
       { query: 'XXYY 跟单 支持 哪些链' },
       { channel: 'web', userIdPresent: false },
     );
+  });
+
+  it('composes concise support answers from planner-selected search evidence', async () => {
+    const registry = createToolRegistry();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        chunks: [
+          {
+            id: 'copy-trading-summary',
+            text: '- FourMeme Agentic 模式支持：在 XXYY 完成 BSC 代币交易后可自动 mint Agent NFT。 - 跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。 - 开放交易 API。',
+          },
+          {
+            id: 'copy-trading-post',
+            text: '🔗支持6大公链，#SOL #BSC #Base #ETH #XLayer #Plasma 📈输入地址即可查看利润、胜率数据，判断是否值得跟单 ⚙️自定义跟单金额、卖出比例、gas/滑点/交易设置，速度更快',
+          },
+        ],
+        citations: [
+          {
+            excerpt:
+              '- FourMeme Agentic 模式支持：在 XXYY 完成 BSC 代币交易后可自动 mint Agent NFT。 - 跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。 - 开放交易 API。',
+            file: 'docs/product-features/xxyy-x-updates.md',
+            title: 'XXYY X 历史推文产品更新汇总',
+          },
+          {
+            excerpt:
+              '🔗支持6大公链，#SOL #BSC #Base #ETH #XLayer #Plasma 📈输入地址即可查看利润、胜率数据，判断是否值得跟单 ⚙️自定义跟单金额、卖出比例、gas/滑点/交易设置，速度更快',
+            file: 'docs/product-features/sources/usexxyyio-x-posts.jsonl',
+            sourceUrl: 'https://x.com/useXXYYio/status/2029522365408067746',
+            title: 'X Post 2029522365408067746',
+          },
+        ],
+        confidence: 12,
+      }),
+    );
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        chunks: z.array(z.object({ id: z.string(), text: z.string() })),
+        citations: z.array(
+          z.object({
+            excerpt: z.string(),
+            file: z.string(),
+            sourceUrl: z.string().optional(),
+            title: z.string(),
+          }),
+        ),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { query: '支持跟单么' },
+          kind: 'tool',
+          reason: 'Search product docs first.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).ask({
+      channel: 'web',
+      message: '支持跟单么',
+    });
+
+    expect(response.answer).toBe(
+      '支持。跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。',
+    );
+    expect(response.answer).not.toContain('FourMeme');
+    expect(response.answer).not.toContain('🔗');
+    expect(response.citations).toHaveLength(2);
   });
 
   it('passes attachments through composed search evidence responses', async () => {
@@ -771,6 +901,93 @@ describe('createLangGraphCustomerRuntime', () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it('streams accumulated multi-module search evidence with ask parity', async () => {
+    const registry = createToolRegistry();
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce({
+        chunks: [{ id: 'pro-chunk', text: 'XXYY Pro 支持独享服务器和节点。' }],
+        citations: [
+          {
+            excerpt: 'XXYY Pro 支持独享服务器和节点。',
+            file: 'docs/product-features/pro.md',
+            title: 'XXYY Pro 权益',
+          },
+        ],
+        confidence: 11,
+      })
+      .mockResolvedValueOnce({
+        chunks: [{ id: 'wallet-chunk', text: '每条链最多创建100个交易钱包。' }],
+        citations: [
+          {
+            excerpt: '每条链最多创建100个交易钱包。',
+            file: 'docs/product-features/wallet.md',
+            title: '钱包管理',
+          },
+        ],
+        confidence: 10,
+      });
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        chunks: z.array(z.object({ id: z.string(), text: z.string() })),
+        citations: z.array(z.object({ excerpt: z.string(), file: z.string(), title: z.string() })),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { query: 'XXYY Pro 权益' },
+          kind: 'tool',
+          reason: 'Search Pro benefits.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+        {
+          input: { query: '钱包管理上限' },
+          kind: 'tool',
+          reason: 'Search wallet limits.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).stream({
+      channel: 'web',
+      message: '请比较 XXYY Pro 权益和钱包管理上限',
+    })) {
+      events.push(event);
+    }
+
+    const answer = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: 'answer_delta' }> => {
+        return event.type === 'answer_delta';
+      })
+      .map((event) => event.delta)
+      .join('');
+    const metadata = events.find(
+      (event): event is Extract<ChatStreamEvent, { type: 'metadata' }> => {
+        return event.type === 'metadata';
+      },
+    );
+
+    expect(answer).toContain('独享服务器和节点');
+    expect(answer).toContain('每条链最多创建100个交易钱包');
+    expect(metadata?.citations.map((citation) => citation.file)).toEqual([
+      'docs/product-features/pro.md',
+      'docs/product-features/wallet.md',
+    ]);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
   it('stops before executing a repeated planner tool input', async () => {
     const registry = createToolRegistry();
     const execute = vi.fn(() =>
@@ -823,6 +1040,114 @@ describe('createLangGraphCustomerRuntime', () => {
       intent: 'unknown',
     });
     expect(response.answer).toContain('重复检索');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('streams clarification before executing a repeated planner tool input', async () => {
+    const registry = createToolRegistry();
+    const execute = vi.fn(() => Promise.resolve({ chunks: [], citations: [], confidence: 0 }));
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        chunks: z.array(z.unknown()),
+        citations: z.array(z.unknown()),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { query: '不存在的功能' },
+          kind: 'tool',
+          reason: 'Search product docs.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+        {
+          input: { query: '不存在的功能' },
+          kind: 'tool',
+          reason: 'Repeat the same search.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).stream({
+      channel: 'web',
+      message: '这个不存在的功能怎么用？',
+    })) {
+      events.push(event);
+    }
+
+    const answer = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: 'answer_delta' }> => {
+        return event.type === 'answer_delta';
+      })
+      .map((event) => event.delta)
+      .join('');
+    expect(answer).toContain('重复检索');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a concise no-evidence answer when repeated searches cannot prove support', async () => {
+    const registry = createToolRegistry();
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        chunks: [],
+        citations: [],
+        confidence: 0,
+      }),
+    );
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        chunks: z.array(z.unknown()),
+        citations: z.array(z.unknown()),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const response = await createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { query: 'robinhood 支持' },
+          kind: 'tool',
+          reason: 'Search product docs.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+        {
+          input: { query: 'robinhood 支持' },
+          kind: 'tool',
+          reason: 'Repeat the same search.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).ask({
+      channel: 'web',
+      message: '当前支持robinhood么',
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'product_answer',
+      citations: [],
+      intent: 'product_qa',
+    });
+    expect(response.answer).toBe('当前知识库没有明确说明 XXYY 支持 robinhood，不能确认已支持。');
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
@@ -881,6 +1206,59 @@ describe('createLangGraphCustomerRuntime', () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it('streams clarification after two distinct searches produce no evidence', async () => {
+    const registry = createToolRegistry();
+    const execute = vi.fn(() => Promise.resolve({ chunks: [], citations: [], confidence: 0 }));
+
+    registry.register({
+      name: 'search_product_docs',
+      description: 'Search product docs.',
+      inputSchema: z.object({ query: z.string() }),
+      outputSchema: z.object({
+        chunks: z.array(z.unknown()),
+        citations: z.array(z.unknown()),
+        confidence: z.number(),
+      }),
+      policy: toolPolicy,
+      execute,
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([
+        {
+          input: { query: '不存在的模块一' },
+          kind: 'tool',
+          reason: 'Search the first module.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+        {
+          input: { query: '不存在的模块二' },
+          kind: 'tool',
+          reason: 'Search the second module.',
+          route: 'product_answer',
+          toolName: 'search_product_docs' as never,
+        },
+      ]),
+      registry,
+    }).stream({
+      channel: 'web',
+      message: '这个不存在的功能怎么用？',
+    })) {
+      events.push(event);
+    }
+
+    const answer = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: 'answer_delta' }> => {
+        return event.type === 'answer_delta';
+      })
+      .map((event) => event.delta)
+      .join('');
+    expect(answer).toContain('连续检索后没有找到新的知识库证据');
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     ['parse', new PlannerModelParseError('invalid planner json')],
     ['request', new PlannerModelRequestError('planner request failed')],
@@ -920,7 +1298,7 @@ describe('createLangGraphCustomerRuntime', () => {
         .fn()
         .mockRejectedValueOnce(new PlannerModelParseError('invalid route'))
         .mockResolvedValueOnce({
-          input: { question: 'XXYY支持跟单么' },
+          input: { question: 'XXYY Pro 有哪些权益？' },
           kind: 'tool' as const,
           reason: 'Use product docs after retry.',
           route: 'product_answer' as const,
@@ -940,7 +1318,7 @@ describe('createLangGraphCustomerRuntime', () => {
     await expect(
       createLangGraphCustomerRuntime({ planner, registry }).ask({
         channel: 'cli',
-        message: 'XXYY支持跟单么',
+        message: 'XXYY Pro 有哪些权益？',
       }),
     ).resolves.toEqual({
       ...response,
@@ -948,7 +1326,7 @@ describe('createLangGraphCustomerRuntime', () => {
     });
     expect(planner.plan).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenCalledWith(
-      { question: 'XXYY支持跟单么' },
+      { question: 'XXYY Pro 有哪些权益？' },
       { channel: 'cli', sessionId: undefined, userIdPresent: false },
     );
   });

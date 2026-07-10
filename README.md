@@ -71,7 +71,7 @@ TRUST_PROXY=false
 TELEGRAM_BOT_TOKEN=
 ```
 
-数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。默认 embedding 维度是 `1536`，匹配 `text-embedding-3-small`；更换 embedding 模型时需要同步调整 `EMBEDDING_DIMENSION`，并对 pgvector schema 做迁移后重新 ingest。`.env.example` 会列出当前代码支持的环境变量。
+数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。默认 embedding 维度是 `1536`，匹配 `text-embedding-3-small`；更换 embedding 模型和维度时需要同步调整 `EMBEDDING_DIMENSION`，备份数据库后显式运行 `pnpm rag:ingest -- --rebuild-embedding-schema`。`.env.example` 会列出当前代码支持的环境变量。
 
 ## 启动
 
@@ -81,7 +81,7 @@ TELEGRAM_BOT_TOKEN=
 pnpm run app:dev
 ```
 
-本地模式下，启动脚本会尝试启动本地 pgvector，然后启动 API + Web。默认不刷新知识库，避免每次开发启动都触发抓取或写库。
+本地模式下，启动脚本会尝试启动本地 pgvector，构建最新 Web 静态资源，然后启动 API + Web。默认不刷新知识库，避免每次开发启动都触发抓取或写库。
 
 需要在启动前更新知识库时显式传参：
 
@@ -122,6 +122,7 @@ RAG 和数据库命令：
 
 ```bash
 pnpm rag:ingest
+pnpm rag:ingest -- --rebuild-embedding-schema # 仅用于有意更换 embedding 维度
 pnpm rag:sync:x
 pnpm rag:migrate
 pnpm rag:stats
@@ -129,9 +130,10 @@ pnpm rag:evaluate
 pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 ```
 
-- `pnpm rag:ingest` 执行数据库迁移、重新生成 embeddings、写入 pgvector，并记录 ingestion run。
+- `pnpm rag:ingest` 执行数据库迁移、重新生成 embeddings，并在同一事务内替换 pgvector chunks 和记录 ingestion run。
+- `pnpm rag:ingest -- --rebuild-embedding-schema` 会事务性清空知识 chunks、按当前 `EMBEDDING_DIMENSION` 重建 embedding 列和向量索引，再写入完整知识库；只在有意更换维度且已备份时使用。
 - `pnpm rag:sync:x` 只同步官方 X / Twitter 更新中新增或变更的 chunks，不会 prune 旧知识块。
-- `pnpm rag:migrate` 只执行数据库迁移，不调用 embedding 或 LLM。
+- `pnpm rag:migrate` 只执行非破坏性数据库迁移，不调用 embedding 或 LLM；若检测到现有向量维度不匹配会明确失败，不会自动删列。
 - `pnpm rag:stats` 查看文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 - `pnpm rag:evaluate` 运行便宜的 deterministic golden QA 子集；`pnpm rag:evaluate -- --provider` 使用正式 Agent/pgvector/OpenAI-compatible provider 做人工全链路评估。
 - `pnpm rag:ask` 从命令行调用客服 Agent。
@@ -165,6 +167,8 @@ Web UI：
 ```http
 GET /
 ```
+
+生产模式启用 chat 鉴权时，在 Web UI 的 `API token` 密码框手动输入 token。该值只保存在当前 React 页面内存中，用于 chat 和 AI 检测请求的 Bearer header；刷新页面即清除，不会写入浏览器 storage 或前端构建产物。
 
 健康检查：
 

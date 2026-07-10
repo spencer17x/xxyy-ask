@@ -8,14 +8,28 @@ import {
 } from './pgvector-store.js';
 
 class FakePgClient {
+  failSqlIncludes: string | undefined;
   queuedRows: unknown[][] = [];
   queries: Array<{ sql: string; values: readonly unknown[] }> = [];
+  releaseCount = 0;
   rows: unknown[] = [];
 
   query<T>(sql: string, values: readonly unknown[] = []): Promise<{ rows: T[] }> {
     this.queries.push({ sql, values });
+    if (this.failSqlIncludes !== undefined && sql.includes(this.failSqlIncludes)) {
+      return Promise.reject(new Error(`forced query failure: ${this.failSqlIncludes}`));
+    }
     const rows = this.queuedRows.length > 0 ? (this.queuedRows.shift() ?? []) : this.rows;
     return Promise.resolve({ rows: rows as T[] });
+  }
+
+  connect() {
+    return Promise.resolve({
+      query: this.query.bind(this),
+      release: () => {
+        this.releaseCount += 1;
+      },
+    });
   }
 }
 
@@ -59,6 +73,30 @@ describe('createPgVectorStore', () => {
     await store.migrate();
 
     expect(client.queries.map((query) => query.sql).join('\n')).toContain('embedding vector(3)');
+  });
+
+  it('rejects ordinary migration when the existing vector dimension differs', async () => {
+    const client = new FakePgClient();
+    client.rows = [{ embedding_type: 'vector(1536)' }];
+    const store = createPgVectorStore({
+      client,
+      embeddingDimension: 3072,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await expect(store.migrate()).rejects.toThrow('--rebuild-embedding-schema');
+  });
+
+  it('allows dimension mismatch inspection only for an explicit rebuild flow', async () => {
+    const client = new FakePgClient();
+    client.rows = [{ embedding_type: 'vector(1536)' }];
+    const store = createPgVectorStore({
+      client,
+      embeddingDimension: 3072,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await expect(store.migrate({ allowEmbeddingDimensionMismatch: true })).resolves.toBeUndefined();
   });
 
   it('records ingestion runs for production knowledge versioning', async () => {
@@ -372,29 +410,84 @@ describe('createPgVectorStore', () => {
     );
   });
 
-  it('replaces stale chunks after upserting the current index', async () => {
+  it('atomically replaces stale chunks and records the ingestion run', async () => {
     const client = new FakePgClient();
     const store = createPgVectorStore({
       client,
       embeddingProvider: { embedTexts: () => Promise.resolve([]) },
     });
 
-    await store.replaceChunks([
-      createChunk({
-        id: 'official_docs:pro:chunk:0001',
-      }),
-      createChunk({
-        contentHash: 'hash-2',
-        id: 'official_docs:pro:chunk:0002',
-      }),
-    ]);
+    await store.replaceChunks(
+      [
+        createChunk({
+          id: 'official_docs:pro:chunk:0001',
+        }),
+        createChunk({
+          contentHash: 'hash-2',
+          id: 'official_docs:pro:chunk:0002',
+        }),
+      ],
+      createIngestionRunInput(),
+    );
 
-    expect(client.queries[0]?.sql).toContain('insert into knowledge_chunks');
-    expect(client.queries[1]?.sql).toContain('insert into knowledge_chunks');
-    expect(client.queries[2]?.sql).toContain('delete from knowledge_chunks');
-    expect(client.queries[2]?.values).toEqual([
+    const sql = client.queries.map((query) => query.sql.trim().toLowerCase());
+    expect(sql[0]).toBe('begin');
+    expect(sql[1]).toContain('insert into knowledge_chunks');
+    expect(sql[2]).toContain('insert into knowledge_chunks');
+    expect(sql[3]).toContain('delete from knowledge_chunks');
+    expect(client.queries[3]?.values).toEqual([
       ['official_docs:pro:chunk:0001', 'official_docs:pro:chunk:0002'],
     ]);
+    expect(sql[4]).toContain('insert into rag_ingestion_runs');
+    expect(sql[5]).toBe('commit');
+    expect(client.releaseCount).toBe(1);
+  });
+
+  it.each(['insert into knowledge_chunks', 'insert into rag_ingestion_runs'])(
+    'rolls back atomic replacement when %s fails',
+    async (failedSql) => {
+      const client = new FakePgClient();
+      client.failSqlIncludes = failedSql;
+      const store = createPgVectorStore({
+        client,
+        embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+      });
+
+      await expect(
+        store.replaceChunks([createChunk()], createIngestionRunInput()),
+      ).rejects.toBeInstanceOf(VectorStoreUnavailableError);
+
+      const sql = client.queries.map((query) => query.sql.trim().toLowerCase());
+      expect(sql).toContain('rollback');
+      expect(sql).not.toContain('commit');
+      expect(client.releaseCount).toBe(1);
+    },
+  );
+
+  it('rebuilds the embedding column inside the atomic replacement transaction', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingDimension: 3,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await store.replaceChunks(
+      [createChunk({ embedding: [0.1, 0.2, 0.3] })],
+      createIngestionRunInput(),
+      {
+        rebuildEmbeddingSchema: true,
+      },
+    );
+
+    const sql = client.queries.map((query) => query.sql.trim().toLowerCase()).join('\n');
+    expect(sql).toContain('truncate table knowledge_chunks');
+    expect(sql).toContain('drop index if exists knowledge_chunks_embedding_idx');
+    expect(sql).toContain('alter table knowledge_chunks drop column embedding');
+    expect(sql).toContain('alter table knowledge_chunks add column embedding vector(3) not null');
+    expect(sql).toContain('create index knowledge_chunks_embedding_idx');
+    expect(client.queries.at(-1)?.sql.trim().toLowerCase()).toBe('commit');
+    expect(client.releaseCount).toBe(1);
   });
 
   it('rejects upsert chunk embeddings with the wrong dimension', async () => {
@@ -485,6 +578,51 @@ describe('createPgVectorStore', () => {
       },
       text: 'XXYY Pro 支持 Telegram 钱包监控。',
     });
+  });
+
+  it('drops nearest-neighbor rows without lexical or minimum vector relevance', async () => {
+    const client = new FakePgClient();
+    client.rows = [createKnowledgeRow({ embedding_distance: 2, tokens: ['xxyy'] })];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1 })]),
+      },
+    });
+
+    await expect(store.retrieve('unrelated request', { topK: 1 })).resolves.toEqual([]);
+  });
+
+  it('keeps rows with lexical overlap even when vector relevance is below threshold', async () => {
+    const client = new FakePgClient();
+    client.rows = [createKnowledgeRow({ embedding_distance: 2, tokens: ['robinhood'] })];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1 })]),
+      },
+    });
+
+    const results = await store.retrieve('robinhood', { topK: 1 });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.lexicalScore).toBe(1);
+  });
+
+  it('keeps rows above the minimum vector relevance without lexical overlap', async () => {
+    const client = new FakePgClient();
+    client.rows = [createKnowledgeRow({ embedding_distance: 0.7, tokens: ['xxyy'] })];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1 })]),
+      },
+    });
+
+    const results = await store.retrieve('unrelated request', { topK: 1 });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.vectorScore).toBeCloseTo(0.3);
   });
 
   it('includes token-overlap candidates for short feature questions', async () => {
@@ -723,5 +861,38 @@ function createChunk(overrides: TestChunkOverrides = {}): TestChunk {
     text: 'XXYY Pro 支持 Telegram 钱包监控。',
     tokens: ['xxyy', 'pro', 'telegram'],
     ...chunkOverrides,
+  };
+}
+
+function createKnowledgeRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    content: 'XXYY product information.',
+    document_id: 'official_docs:product',
+    embedding_distance: 0.1,
+    effective_at: '2026-03-16T11:12:30.350Z',
+    file: 'docs/product.md',
+    heading_path: ['XXYY Product'],
+    id: 'official_docs:product:chunk:0001',
+    module: 'XXYY Product',
+    order_index: null,
+    retrieved_at: null,
+    source_type: 'official_docs',
+    source_url: null,
+    status: 'current',
+    supersedes: [],
+    title: 'XXYY Product',
+    tokens: ['xxyy'],
+    ...overrides,
+  };
+}
+
+function createIngestionRunInput() {
+  return {
+    chunkCount: 2,
+    contentHash: 'content-hash-1',
+    documentCount: 1,
+    runId: 'ingest_20260606T010203Z_abcd1234',
+    source: 'cli',
+    sourceCounts: { official_docs: 2 },
   };
 }

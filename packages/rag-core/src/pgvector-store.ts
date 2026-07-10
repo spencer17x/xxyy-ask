@@ -18,7 +18,13 @@ import {
 import type { Retriever } from './retriever.js';
 
 export interface PgClientLike {
+  connect?(): Promise<PgTransactionClientLike>;
   query<T>(sql: string, values?: readonly unknown[]): Promise<{ rows: T[] }>;
+}
+
+export interface PgTransactionClientLike {
+  query<T>(sql: string, values?: readonly unknown[]): Promise<{ rows: T[] }>;
+  release(): void;
 }
 
 interface PgVectorChunkMetadata extends ChunkMetadata {
@@ -34,11 +40,23 @@ export interface PgVectorStore extends Retriever {
   getChunkContentHashes(chunkIds: readonly string[]): Promise<Map<string, string>>;
   getFeedbackStats(options?: GetFeedbackStatsOptions): Promise<FeedbackStats>;
   getStats(): Promise<KnowledgeStats>;
-  migrate(): Promise<void>;
+  migrate(options?: PgVectorMigrationOptions): Promise<void>;
   recordFeedback(input: RecordFeedbackInput): Promise<void>;
   recordIngestionRun(input: RecordIngestionRunInput): Promise<void>;
-  replaceChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void>;
+  replaceChunks(
+    chunks: EmbeddedKnowledgeChunk[],
+    ingestionRun: RecordIngestionRunInput,
+    options?: ReplaceChunksOptions,
+  ): Promise<void>;
   upsertChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void>;
+}
+
+export interface PgVectorMigrationOptions {
+  allowEmbeddingDimensionMismatch?: boolean;
+}
+
+export interface ReplaceChunksOptions {
+  rebuildEmbeddingSchema?: boolean;
 }
 
 export interface PgVectorStoreOptions {
@@ -195,6 +213,7 @@ interface FeedbackRecordRow {
 const DEFAULT_PGVECTOR_EMBEDDING_DIMENSION = 1536;
 const DEFAULT_TOP_K = 6;
 const LEXICAL_SCORE_WEIGHT = 0.5;
+const MIN_VECTOR_SCORE = 0.25;
 const DIRECT_X_POST_SOURCE_BOOST = 6;
 const CURRENT_STATUS_BOOST = 0.2;
 const CURRENT_X_UPDATE_BOOST = 0.25;
@@ -234,12 +253,15 @@ export function createPgFeedbackStore(options: PgFeedbackStoreOptions): PgFeedba
 
 export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStore {
   const embeddingDimension = normalizeEmbeddingDimension(options.embeddingDimension);
-  const upsertChunks = async (chunks: EmbeddedKnowledgeChunk[]): Promise<void> => {
+  const upsertChunksWithClient = async (
+    client: PgClientLike,
+    chunks: EmbeddedKnowledgeChunk[],
+  ): Promise<void> => {
     for (const chunk of chunks) {
       validateEmbedding(chunk.embedding, embeddingDimension);
 
       await queryDatabase(
-        options.client,
+        client,
         `
         insert into knowledge_chunks (
           id, document_id, title, module, source_type, source_url, file,
@@ -291,6 +313,8 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
       );
     }
   };
+  const upsertChunks = (chunks: EmbeddedKnowledgeChunk[]): Promise<void> =>
+    upsertChunksWithClient(options.client, chunks);
 
   return {
     async getChunkContentHashes(chunkIds: readonly string[]): Promise<Map<string, string>> {
@@ -334,7 +358,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
       };
     },
 
-    async migrate(): Promise<void> {
+    async migrate(migrationOptions: PgVectorMigrationOptions = {}): Promise<void> {
       await queryDatabase(options.client, 'create extension if not exists vector');
       await queryDatabase(
         options.client,
@@ -362,6 +386,11 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           updated_at timestamptz not null default now()
         )
       `,
+      );
+      await assertEmbeddingDimensionMatches(
+        options.client,
+        embeddingDimension,
+        migrationOptions.allowEmbeddingDimensionMismatch === true,
       );
       await queryDatabase(
         options.client,
@@ -482,32 +511,28 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
     },
 
     async recordIngestionRun(input: RecordIngestionRunInput): Promise<void> {
-      await queryDatabase(
-        options.client,
-        `
-        insert into rag_ingestion_runs (
-          run_id, source, document_count, chunk_count, source_counts, content_hash
-        )
-        values ($1, $2, $3, $4, $5::jsonb, $6)
-        on conflict (run_id) do nothing
-        `,
-        [
-          input.runId,
-          input.source,
-          input.documentCount,
-          input.chunkCount,
-          JSON.stringify(input.sourceCounts),
-          input.contentHash,
-        ],
-      );
+      await recordIngestionRun(options.client, input);
     },
 
-    async replaceChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void> {
-      await upsertChunks(chunks);
-      await pruneStaleChunks(
-        options.client,
-        chunks.map((chunk) => chunk.id),
-      );
+    async replaceChunks(
+      chunks: EmbeddedKnowledgeChunk[],
+      ingestionRun: RecordIngestionRunInput,
+      replaceOptions: ReplaceChunksOptions = {},
+    ): Promise<void> {
+      await withTransaction(options.client, async (client) => {
+        if (replaceOptions.rebuildEmbeddingSchema === true) {
+          await rebuildEmbeddingSchema(client, embeddingDimension);
+        }
+
+        await upsertChunksWithClient(client, chunks);
+        if (replaceOptions.rebuildEmbeddingSchema !== true) {
+          await pruneStaleChunks(
+            client,
+            chunks.map((chunk) => chunk.id),
+          );
+        }
+        await recordIngestionRun(client, ingestionRun);
+      });
     },
 
     upsertChunks,
@@ -571,6 +596,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
 
       return response.rows
         .map((row) => mapRow(row, question, queryTokens))
+        .filter(hasMinimumRetrievalEvidence)
         .sort(compareRetrievedChunks)
         .slice(0, topK)
         .map((chunk, index) => ({ ...chunk, rank: index + 1 }));
@@ -687,6 +713,30 @@ async function recordFeedback(client: PgClientLike, input: RecordFeedbackInput):
       input.intent,
       input.citationCount,
       comment,
+    ],
+  );
+}
+
+async function recordIngestionRun(
+  client: PgClientLike,
+  input: RecordIngestionRunInput,
+): Promise<void> {
+  await queryDatabase(
+    client,
+    `
+    insert into rag_ingestion_runs (
+      run_id, source, document_count, chunk_count, source_counts, content_hash
+    )
+    values ($1, $2, $3, $4, $5::jsonb, $6)
+    on conflict (run_id) do nothing
+    `,
+    [
+      input.runId,
+      input.source,
+      input.documentCount,
+      input.chunkCount,
+      JSON.stringify(input.sourceCounts),
+      input.contentHash,
     ],
   );
 }
@@ -812,6 +862,97 @@ async function pruneStaleChunks(client: PgClientLike, retainedChunkIds: string[]
   );
 }
 
+async function assertEmbeddingDimensionMatches(
+  client: PgClientLike,
+  embeddingDimension: number,
+  allowMismatch: boolean,
+): Promise<void> {
+  const response = await queryDatabase<{ embedding_type: string }>(
+    client,
+    `
+    select format_type(atttypid, atttypmod) as embedding_type
+    from pg_attribute
+    where attrelid = 'knowledge_chunks'::regclass
+      and attname = 'embedding'
+      and not attisdropped
+    `,
+  );
+  const embeddingType = response.rows[0]?.embedding_type;
+  if (embeddingType === undefined) {
+    return;
+  }
+  const existingDimension = parseVectorDimension(embeddingType);
+  if (existingDimension === embeddingDimension) {
+    return;
+  }
+  if (allowMismatch) {
+    return;
+  }
+
+  throw new VectorStoreConfigurationError(
+    `knowledge_chunks.embedding is ${embeddingType ?? 'missing'}, but EMBEDDING_DIMENSION is ${embeddingDimension}. Run pnpm rag:ingest -- --rebuild-embedding-schema for an intentional dimension change.`,
+  );
+}
+
+function parseVectorDimension(embeddingType: string | undefined): number | undefined {
+  const match = /^vector\((\d+)\)$/u.exec(embeddingType ?? '');
+  return match?.[1] === undefined ? undefined : Number(match[1]);
+}
+
+async function rebuildEmbeddingSchema(
+  client: PgClientLike,
+  embeddingDimension: number,
+): Promise<void> {
+  await queryDatabase(client, 'truncate table knowledge_chunks');
+  await queryDatabase(client, 'drop index if exists knowledge_chunks_embedding_idx');
+  await queryDatabase(client, 'alter table knowledge_chunks drop column embedding');
+  await queryDatabase(
+    client,
+    `alter table knowledge_chunks add column embedding vector(${embeddingDimension}) not null`,
+  );
+  await queryDatabase(
+    client,
+    `
+    create index knowledge_chunks_embedding_idx
+      on knowledge_chunks using ivfflat (embedding vector_cosine_ops)
+    `,
+  );
+}
+
+async function withTransaction<T>(
+  pool: PgClientLike,
+  operation: (client: PgClientLike) => Promise<T>,
+): Promise<T> {
+  if (pool.connect === undefined) {
+    throw new VectorStoreConfigurationError(
+      'Atomic knowledge replacement requires a PostgreSQL Pool connection.',
+    );
+  }
+
+  let client: PgTransactionClientLike;
+  try {
+    client = await pool.connect();
+  } catch (error) {
+    throw new VectorStoreUnavailableError(error);
+  }
+
+  try {
+    await queryDatabase(client, 'begin');
+    const result = await operation(client);
+    await queryDatabase(client, 'commit');
+    return result;
+  } catch (error) {
+    try {
+      await client.query('rollback');
+    } catch {
+      // Preserve the operation error; rollback failure is secondary.
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function queryDatabase<T>(
   client: PgClientLike,
   sql: string,
@@ -926,6 +1067,10 @@ function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[])
     sourceBoost: Number(rowSourceBoost.toFixed(8)),
     vectorScore,
   };
+}
+
+function hasMinimumRetrievalEvidence(chunk: RetrievedChunk): boolean {
+  return chunk.lexicalScore > 0 || chunk.vectorScore >= MIN_VECTOR_SCORE;
 }
 
 function sourceBoost(sourceType: SourceType): number {

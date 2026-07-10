@@ -39,6 +39,8 @@ describe('classifyQuestion', () => {
     ['自动止盈止损是什么时候上线的？', 'product_qa'],
     ['交易 API 和 Agent Skill 是什么时候开放的？', 'product_qa'],
     ['P1/P2/P3 是什么交易设置？', 'product_qa'],
+    ['当前支持robinhood么', 'product_qa'],
+    ['支持跟单么', 'product_qa'],
     ['帮我查一下钱包余额和账户交易记录', 'realtime_account_query'],
     ['这个 tx hash 是不是被夹了，有 MEV sandwich 吗？', 'unknown'],
     [
@@ -93,7 +95,7 @@ describe('classifyQuestion', () => {
       classifyQuestion(
         'lookup this transaction 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef sandwich?',
       ).intent,
-    ).toBe('realtime_account_query');
+    ).toBe('unknown');
   });
 
   it('keeps MEV and sandwich checks outside the current knowledge-base route', () => {
@@ -102,6 +104,18 @@ describe('classifyQuestion', () => {
 
   it('keeps generic MEV questions unknown without a product knowledge signal', () => {
     expect(classifyQuestion('什么是 MEV sandwich？').intent).toBe('unknown');
+  });
+
+  it.each([
+    '这个 tx hash 是不是被夹了，有 MEV sandwich 吗？',
+    '分析 https://solscan.io/tx/abc',
+    '帮我查这个池子有没有夹子',
+    '分析一下这笔链上交易',
+  ])('classifies unsupported transaction analysis before product planning: %s', (question) => {
+    expect(classifyQuestion(question)).toMatchObject({
+      intent: 'unknown',
+      reason: 'unsupported transaction or mev analysis request',
+    });
   });
 
   it('keeps ambiguous multi-hash sandwich checks outside the current knowledge-base route', () => {
@@ -145,6 +159,11 @@ describe('classifyQuestion', () => {
 
   it('does not classify account hacking requests as how-to product support', () => {
     expect(classifyQuestion('How to hack XXYY account?').intent).toBe('unknown');
+  });
+
+  it('requires a product signal for generic English support questions', () => {
+    expect(classifyQuestion('Can you support me with my homework?').intent).toBe('unknown');
+    expect(classifyQuestion('Does XXYY support Robinhood?').intent).toBe('product_qa');
   });
 
   it('classifies private key and seed phrase disclosure as a credential boundary', () => {

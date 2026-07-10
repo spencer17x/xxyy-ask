@@ -266,32 +266,13 @@ describe('createCustomerAgentChatService', () => {
     expect(requestBody.model).toBe('config-model');
   });
 
-  it('lets the LLM planner choose product tools for short feature questions', async () => {
+  it('bypasses the LLM planner for short support questions', async () => {
     process.env.OPENAI_API_KEY = 'env-key';
     process.env.OPENAI_BASE_URL = 'https://env.example/v1';
     process.env.OPENAI_MODEL = 'env-model';
-    const fetchImpl = vi.fn<typeof fetch>(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            choices: [
-              {
-                message: {
-                  content: JSON.stringify({
-                    input: { channel: 'web', question: '支持跟单么' },
-                    kind: 'tool',
-                    reason: 'The user asks whether an XXYY feature is supported.',
-                    route: 'product_answer',
-                    toolName: 'answer_product_question',
-                  }),
-                },
-              },
-            ],
-          }),
-          { status: 200 },
-        ),
-      ),
-    );
+    const fetchImpl = vi.fn<typeof fetch>(() => {
+      throw new Error('planner should not be called for deterministic support questions');
+    });
     vi.stubGlobal('fetch', fetchImpl);
     const retrieve = vi.fn<Retriever['retrieve']>(() => [
       createRetrievedChunk({
@@ -324,13 +305,13 @@ describe('createCustomerAgentChatService', () => {
       confidence: 0.81,
       intent: 'product_qa',
     });
-    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl).not.toHaveBeenCalled();
     expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 4 });
     const answerInput = answer.mock.calls[0]?.[0];
     expect(answerInput).toBeDefined();
     expect(answerInput?.classification).toMatchObject({
       intent: 'product_qa',
-      reason: 'planner selected product answer tool',
+      reason: 'asks whether a product capability is supported',
     });
   });
 });

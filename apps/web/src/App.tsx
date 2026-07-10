@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement, RefObject } from 'react';
 
+import { createApiHeaders } from './api-auth.js';
 import { checkAiService } from './ai-service-check.js';
 import { readChatStream } from './chat-stream.js';
 import { Markdown } from './Markdown.js';
@@ -18,6 +19,7 @@ const SESSION_STORAGE_KEY = 'xxyy.ask.sessionId';
 const AI_CHECK_IDLE_STATUS = 'AI 未测试';
 
 export function App(): ReactElement {
+  const [authToken, setAuthToken] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([createWelcomeMessage()]);
   const [input, setInput] = useState('');
   const [aiCheckBusy, setAiCheckBusy] = useState(false);
@@ -69,7 +71,7 @@ export function App(): ReactElement {
     try {
       const response = await fetch('/api/chat/stream', {
         body: JSON.stringify({ channel: 'web', message: text, sessionId }),
-        headers: { 'Content-Type': 'application/json' },
+        headers: createApiHeaders(authToken),
         method: 'POST',
       });
       if (!response.ok) {
@@ -135,7 +137,7 @@ export function App(): ReactElement {
     setAiCheckOk(undefined);
     setAiCheckStatus('AI 检测中');
     try {
-      const result = await checkAiService(fetch, sessionId);
+      const result = await checkAiService(fetch, sessionId, authToken);
       setAiCheckOk(result.ok);
       setAiCheckStatus(result.statusText);
     } catch (error) {
@@ -178,8 +180,10 @@ export function App(): ReactElement {
           aiCheckBusy={aiCheckBusy}
           aiCheckOk={aiCheckOk}
           aiCheckStatus={aiCheckStatus}
+          authToken={authToken}
           intent={intent}
           onAiCheck={testAiService}
+          onAuthTokenChange={setAuthToken}
           onClear={clearChat}
           status={status}
         />
@@ -274,16 +278,20 @@ function ChatHeader({
   aiCheckBusy,
   aiCheckOk,
   aiCheckStatus,
+  authToken,
   intent,
   onAiCheck,
+  onAuthTokenChange,
   onClear,
   status,
 }: {
   aiCheckBusy: boolean;
   aiCheckOk: boolean | undefined;
   aiCheckStatus: string;
+  authToken: string;
   intent: string;
   onAiCheck: () => Promise<void>;
+  onAuthTokenChange: (token: string) => void;
   onClear: () => void;
   status: string;
 }): ReactElement {
@@ -303,6 +311,16 @@ function ChatHeader({
         <div className="header-subtitle">基于 XXYY 文档和更新日志回答</div>
       </div>
       <div className="status-group">
+        <label className="api-token-field">
+          <span>API token</span>
+          <input
+            autoComplete="off"
+            onChange={(event) => onAuthTokenChange(event.target.value)}
+            placeholder="Bearer token"
+            type="password"
+            value={authToken}
+          />
+        </label>
         <button
           className="ai-check-button"
           disabled={aiCheckBusy}

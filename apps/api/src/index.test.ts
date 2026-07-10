@@ -38,11 +38,14 @@ async function callHandler(
     method: string;
     url: string;
     body?: unknown;
+    bodyChunks?: Buffer[];
     headers?: Record<string, string>;
     remoteAddress?: string;
   },
 ): Promise<CapturedResponse> {
-  const chunks = input.body === undefined ? [] : [Buffer.from(JSON.stringify(input.body), 'utf8')];
+  const chunks =
+    input.bodyChunks ??
+    (input.body === undefined ? [] : [Buffer.from(JSON.stringify(input.body), 'utf8')]);
   const request = {
     method: input.method,
     ...(input.remoteAddress === undefined
@@ -476,6 +479,44 @@ describe('createRequestHandler', () => {
     });
   });
 
+  it('decodes UTF-8 only after all request bytes are buffered', async () => {
+    const body = Buffer.from(JSON.stringify({ channel: 'web', message: '你' }), 'utf8');
+    const splitAt = body.indexOf(Buffer.from('你', 'utf8')) + 1;
+    const ask = vi.fn(() =>
+      Promise.resolve({
+        answer: 'ok',
+        citations: [],
+        confidence: 0.8,
+        intent: 'product_qa' as const,
+      }),
+    );
+    const handler = createRequestHandler({
+      env: {},
+      getChatService: () =>
+        Promise.resolve({
+          ask,
+          async *stream() {
+            await Promise.resolve();
+            yield {
+              type: 'metadata' as const,
+              citations: [],
+              confidence: 0.8,
+              intent: 'product_qa' as const,
+            };
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      bodyChunks: [body.subarray(0, splitAt), body.subarray(splitAt)],
+      method: 'POST',
+      url: '/api/chat',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ message: '你' }));
+  });
+
   it('requires chat authorization in production when a chat token is configured', async () => {
     const getChatService = vi.fn(() =>
       Promise.resolve({
@@ -726,13 +767,15 @@ describe('createRequestHandler', () => {
     expect(limiter.size()).toBe(1);
   });
 
-  it('serves product media assets for chat attachments', async () => {
+  it('serves only explicitly approved product assets', async () => {
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-api-assets-'));
     const assetsDir = path.join(workspaceRoot, 'docs', 'product-features', 'assets');
     await mkdir(assetsDir, { recursive: true });
     await writeFile(path.join(assetsDir, 'xxyy-add-to-home.mp4'), Buffer.from('video-bytes'));
-    await writeFile(path.join(assetsDir, 'xxyy-feature-card.svg'), Buffer.from('<svg />'));
-    await writeFile(path.join(assetsDir, 'xxyy-feature.json'), Buffer.from('{"version":1}'));
+    await writeFile(
+      path.join(assetsDir, 'tx-analysis-report-index.jsonl'),
+      Buffer.from('{"private":true}\n'),
+    );
     const handler = createRequestHandler({ cwd: workspaceRoot, staticAssetsDir: assetsDir });
 
     const videoResponse = await callHandler(handler, {
@@ -744,23 +787,13 @@ describe('createRequestHandler', () => {
     expect(videoResponse.headers['Content-Type']).toBe('video/mp4');
     expect(videoResponse.rawBody).toEqual(Buffer.from('video-bytes'));
 
-    const imageResponse = await callHandler(handler, {
+    const blockedResponse = await callHandler(handler, {
       method: 'GET',
-      url: '/assets/xxyy-feature-card.svg',
+      url: '/assets/tx-analysis-report-index.jsonl',
     });
 
-    expect(imageResponse.statusCode).toBe(200);
-    expect(imageResponse.headers['Content-Type']).toBe('image/svg+xml');
-    expect(imageResponse.rawBody).toEqual(Buffer.from('<svg />'));
-
-    const reportResponse = await callHandler(handler, {
-      method: 'GET',
-      url: '/assets/xxyy-feature.json',
-    });
-
-    expect(reportResponse.statusCode).toBe(200);
-    expect(reportResponse.headers['Content-Type']).toBe('application/json; charset=utf-8');
-    expect(reportResponse.rawBody).toEqual(Buffer.from('{"version":1}'));
+    expect(blockedResponse.statusCode).toBe(404);
+    expect(blockedResponse.body).not.toContain('private');
   });
 
   it('serves Vite web app assets separately from product media assets', async () => {

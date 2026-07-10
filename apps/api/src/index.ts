@@ -24,6 +24,8 @@ import { supportedChannels } from '@xxyy/shared';
 import type { AnswerProvider, ChatService, RagEnv } from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
 
+const PRODUCT_ASSET_NAMES: ReadonlySet<string> = new Set(['xxyy-add-to-home.mp4']);
+
 type ApiEnv = RagEnv &
   Partial<
     Record<
@@ -210,7 +212,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       }
 
       if (request.method === 'GET' && requestUrl.pathname.startsWith('/assets/')) {
-        await sendStaticAsset(response, staticAssetsDir, requestUrl.pathname);
+        await sendStaticAsset(response, staticAssetsDir, requestUrl.pathname, PRODUCT_ASSET_NAMES);
         return;
       }
 
@@ -1072,16 +1074,17 @@ function createLazyAnswerProvider(config: ReturnType<typeof loadRagConfig>): Ans
 }
 
 async function readJsonBody(request: ApiRequestLike, maxBodyBytes: number): Promise<unknown> {
-  let body = '';
+  const chunks: Buffer[] = [];
   let byteLength = 0;
   for await (const chunk of request) {
-    const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-    byteLength += Buffer.byteLength(text, 'utf8');
+    const bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+    byteLength += bytes.length;
     if (byteLength > maxBodyBytes) {
       throw new PayloadTooLargeError();
     }
-    body += text;
+    chunks.push(bytes);
   }
+  const body = Buffer.concat(chunks, byteLength).toString('utf8');
 
   if (body.trim().length === 0) {
     throw new BadRequestError('Request body must be JSON.');
@@ -1191,9 +1194,13 @@ async function sendStaticAsset(
   response: ApiResponseLike,
   assetsDir: string,
   pathname: string,
+  allowedAssetNames?: ReadonlySet<string>,
 ): Promise<void> {
   const assetName = decodeURIComponent(pathname.replace(/^\/(?:assets|web-assets)\//u, ''));
-  if (!/^[A-Za-z0-9._-]+$/u.test(assetName)) {
+  if (
+    !/^[A-Za-z0-9._-]+$/u.test(assetName) ||
+    (allowedAssetNames !== undefined && !allowedAssetNames.has(assetName))
+  ) {
     sendJson(response, 404, { error: 'not_found', message: 'Asset not found.' });
     return;
   }

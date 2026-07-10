@@ -14,7 +14,7 @@ describe('checkAiService', () => {
       ),
     ) as unknown as typeof fetch;
 
-    const result = await checkAiService(fetchImpl, 'session-test');
+    const result = await checkAiService(fetchImpl, 'session-test', '  chat-secret  ');
 
     expect(fetchImpl).toHaveBeenCalledWith('/api/chat', {
       body: JSON.stringify({
@@ -22,7 +22,10 @@ describe('checkAiService', () => {
         message: AI_SERVICE_TEST_QUESTION,
         sessionId: 'session-test',
       }),
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: 'Bearer chat-secret',
+        'Content-Type': 'application/json',
+      },
       method: 'POST',
     });
     expect(result).toEqual({

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { Classification } from '@xxyy/shared';
 
-import { createBoundaryAnswer, createGroundedAnswer } from './answer.js';
+import {
+  createBoundaryAnswer,
+  createGroundedAnswer,
+  createSupportConclusionFromEvidence,
+} from './answer.js';
 import { retrieve, type RetrievedChunk } from './retrieve.js';
 import { createFixtureIndex } from './test-fixtures.js';
 
@@ -33,7 +37,7 @@ describe('createGroundedAnswer', () => {
     );
 
     expect(response.intent).toBe('product_qa');
-    expect(response.answer).toContain('根据知识库');
+    expect(response.answer).toContain('支持');
     expect(response.answer).toContain('Telegram 钱包监控');
     expect(response.citations).toHaveLength(1);
     const citation = response.citations[0];
@@ -285,6 +289,102 @@ describe('createGroundedAnswer', () => {
         title: 'X Post 2070536322838831188',
       }),
     ]);
+  });
+
+  it('summarizes support evidence as a short conclusion instead of dumping raw excerpts', () => {
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'copy-trading-summary',
+        sourceType: 'x_updates',
+        text: '- FourMeme Agentic 模式支持：在 XXYY 完成 BSC 代币交易后可自动 mint Agent NFT。 - 跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。 - 开放交易 API。',
+        title: 'XXYY X 历史推文产品更新汇总',
+      }),
+      createRetrievedChunk({
+        id: 'copy-trading-post',
+        sourceType: 'x_updates',
+        sourceUrl: 'https://x.com/useXXYYio/status/2029522365408067746',
+        text: '🔗支持6大公链，#SOL #BSC #Base #ETH #XLayer #Plasma 📈输入地址即可查看利润、胜率数据，判断是否值得跟单 ⚙️自定义跟单金额、卖出比例、gas/滑点/交易设置，速度更快',
+        title: 'X Post 2029522365408067746',
+      }),
+    ];
+
+    const response = createGroundedAnswer('支持跟单么', productClassification, retrieved);
+
+    expect(response.answer).toBe(
+      '支持。跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。',
+    );
+    expect(response.answer).not.toContain('FourMeme');
+    expect(response.answer).not.toContain('🔗');
+    expect(response.citations).toHaveLength(2);
+  });
+
+  it('returns a concise insufficient-evidence answer for unsupported external support entities', () => {
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'xpl-post',
+        sourceType: 'x_updates',
+        sourceUrl: 'https://x.com/useXXYYio/status/1973056573695242527',
+        text: 'https://t.co/vtLDOyE6Hd is the first tool to support $XPL with both charting and trading in one place🚀',
+        title: 'X Post 1973056573695242527',
+      }),
+      createRetrievedChunk({
+        id: 'scan-summary',
+        sourceType: 'x_updates',
+        text: '| 日期 | 更新点 | 推文 | | --- | --- | --- | | 2024-11-29 | Beta V0.1.2：秒线、1 分钟趋势、监控钱包分组 |',
+        title: 'XXYY X 历史推文产品更新汇总',
+      }),
+    ];
+
+    const response = createGroundedAnswer(
+      'XXYY当前是否支持robinhood',
+      productClassification,
+      retrieved,
+    );
+
+    expect(response.answer).toBe('当前知识库没有明确说明 XXYY 支持 robinhood，不能确认已支持。');
+    expect(response.answer).not.toContain('XPL');
+    expect(response.answer).not.toContain('| 日期 |');
+    expect(response.citations).toEqual([]);
+    expect(response.confidence).toBeLessThan(0.5);
+  });
+
+  it('does not treat roadmap language as current support evidence', () => {
+    expect(
+      createSupportConclusionFromEvidence('Does XXYY support Robinhood?', [
+        'XXYY 计划支持 Robinhood，预计下季度上线。',
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('matches short support entities as exact tokens instead of substrings', () => {
+    expect(
+      createSupportConclusionFromEvidence('XXYY 支持 OP 吗？', ['XXYY 支持 Copy Trading。']),
+    ).toBeUndefined();
+  });
+
+  it('selects direct entity support evidence before an unrelated standard answer', () => {
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'mobile-app',
+        text: '标准客服回答：可以添加到桌面，和 App 体验差不多。',
+        title: '移动端桌面入口',
+      }),
+      createRetrievedChunk({
+        id: 'robinhood-support',
+        text: 'XXYY 当前支持 Robinhood。',
+        title: 'Robinhood 支持范围',
+      }),
+    ];
+
+    const response = createGroundedAnswer(
+      'Does XXYY support Robinhood?',
+      productClassification,
+      retrieved,
+    );
+
+    expect(response.answer).toBe('支持。XXYY 当前支持 Robinhood。');
+    expect(response.citations).toHaveLength(1);
+    expect(response.citations[0]?.title).toBe('Robinhood 支持范围');
   });
 
   it.each([

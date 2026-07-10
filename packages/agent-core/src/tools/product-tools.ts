@@ -6,6 +6,7 @@ import {
   createAttachmentsFromChunks,
   createBoundaryAnswer,
   createCitationsFromChunks,
+  hasProductDomainSignal,
   createLocalRetriever,
   createMetadataReranker,
   createRerankingRetriever,
@@ -198,7 +199,7 @@ function classificationForPlannerSelectedProductQuestion(question: string): Clas
     return classification;
   }
 
-  if (!canPlannerSafelyOverrideProductClassification(classification)) {
+  if (!canPlannerSafelyOverrideProductClassification(classification, question)) {
     return classification;
   }
 
@@ -213,10 +214,14 @@ function shouldRetrieveForPlannerSelectedProductQuestion(classification: Classif
   return classification.intent === 'product_qa' || classification.intent === 'how_to';
 }
 
-function canPlannerSafelyOverrideProductClassification(classification: Classification): boolean {
+function canPlannerSafelyOverrideProductClassification(
+  classification: Classification,
+  question: string,
+): boolean {
   return (
     classification.intent === 'unknown' &&
-    classification.reason === 'no deterministic product support intent matched'
+    classification.reason === 'no deterministic product support intent matched' &&
+    hasProductDomainSignal(question)
   );
 }
 

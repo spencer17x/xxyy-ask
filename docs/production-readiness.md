@@ -114,7 +114,8 @@ Docker / container 要求：
 pgvector 注意事项：
 
 - 当前迁移会创建 `vector` extension、`knowledge_chunks_embedding_idx` cosine `ivfflat` 索引和 `knowledge_chunks_tokens_idx` GIN 索引。
-- 更换 embedding 模型或维度时，必须同步调整 `EMBEDDING_DIMENSION`，迁移 schema，并重新 `pnpm rag:ingest`。
+- 普通 `pnpm rag:migrate` 是非破坏性的；如果现有 `knowledge_chunks.embedding` 维度与 `EMBEDDING_DIMENSION` 不一致，它会失败并提示显式 rebuild，不会自动删除已有向量。
+- 更换 embedding 模型和维度时，必须先备份、同步调整 `EMBEDDING_DIMENSION`，再运行 `pnpm rag:ingest -- --rebuild-embedding-schema`。该命令会在同一事务内清空知识 chunks、重建 embedding 列和向量索引、写入完整 chunks，并记录 ingestion run；任一步失败都会回滚。
 - 调整 `RAG_TOP_K`、索引参数或重建索引后，先跑 `pnpm check` 和 provider-backed eval 抽样，确认引用质量没有下降。
 
 ## Human Handoff And Tickets

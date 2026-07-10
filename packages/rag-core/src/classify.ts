@@ -47,6 +47,39 @@ const productOperationPatterns = [
   /操作.*(买入|卖出|交易|挂单|swap)/u,
 ];
 
+const unsupportedTransactionAnalysisPatterns = [
+  /\b(?:0x)?[a-f0-9]{64}\b/u,
+  /(?:solscan\.io|solana\.fm|etherscan\.io|bscscan\.com|basescan\.org)\/(?:tx|transaction)\//u,
+  /交易哈希|tx\s*hash|transaction\s*hash|explorer|浏览器链接|池子查询|链上取证|链上交易|夹子|sandwich|\bmev\b/u,
+];
+
+const productSupportDomainPattern =
+  /跟单|扫链|挂单|监控|交易|钱包|移动端|app|telegram|swap|base|b20|p1\/p2\/p3|k\s*线|pump|tag\s*holder|holder|订单|批量导入|止盈|止损/u;
+
+const supportQuestionPattern =
+  /是否支持|当前支持|现在支持|支持.*(?:吗|么|不)|(?:does|do|can|is|are).*\bsupport\b|\bsupport(?:s|ed)?\b/u;
+
+const nonProductSupportLatinTokens = new Set([
+  'are',
+  'can',
+  'current',
+  'currently',
+  'do',
+  'does',
+  'i',
+  'is',
+  'me',
+  'my',
+  'now',
+  'please',
+  'support',
+  'supported',
+  'supports',
+  'the',
+  'this',
+  'you',
+]);
+
 const rules: IntentRule[] = [
   {
     intent: 'investment_advice',
@@ -122,6 +155,10 @@ export function classifyQuestion(question: string): Classification {
     );
   }
 
+  if (unsupportedTransactionAnalysisPatterns.some((pattern) => pattern.test(normalized))) {
+    return createClassification('unknown', 0.7, 'unsupported transaction or mev analysis request');
+  }
+
   const realtimeRule = rules.find((rule) => rule.intent === 'realtime_account_query');
   if (realtimeRule !== undefined && matchesRule(realtimeRule, normalized)) {
     const isUserSpecific = userSpecificLookupPatterns.some((pattern) => pattern.test(normalized));
@@ -136,6 +173,14 @@ export function classifyQuestion(question: string): Classification {
 
   if (productOperationPatterns.some((pattern) => pattern.test(normalized))) {
     return createClassification('how_to', 0.84, 'asks for product operation instructions');
+  }
+
+  if (isProductSupportQuestion(normalized)) {
+    return createClassification(
+      'product_qa',
+      0.72,
+      'asks whether a product capability is supported',
+    );
   }
 
   for (const rule of rules) {
@@ -155,8 +200,51 @@ export function classifyQuestion(question: string): Classification {
   return createClassification('unknown', 0.25, 'no deterministic product support intent matched');
 }
 
+export function hasProductDomainSignal(question: string): boolean {
+  const normalized = question.normalize('NFKC').trim().toLowerCase();
+  const productRule = rules.find((rule) => rule.intent === 'product_qa');
+
+  return (
+    productOperationPatterns.some((pattern) => pattern.test(normalized)) ||
+    productSupportDomainPattern.test(normalized) ||
+    (productRule !== undefined && matchesRule(productRule, normalized))
+  );
+}
+
 function matchesRule(rule: IntentRule, normalizedQuestion: string): boolean {
   return rule.patterns.some((pattern) => pattern.test(normalizedQuestion));
+}
+
+function isProductSupportQuestion(normalizedQuestion: string): boolean {
+  if (!supportQuestionPattern.test(normalizedQuestion)) {
+    return false;
+  }
+
+  if (productSupportDomainPattern.test(normalizedQuestion)) {
+    return true;
+  }
+
+  if (!hasExternalSupportEntity(normalizedQuestion)) {
+    return false;
+  }
+
+  return (
+    /是否支持|当前支持|现在支持|支持.*(?:吗|么|不)/u.test(normalizedQuestion) ||
+    /(?:does|do|can|is|are)\s+xxyy\b.*\bsupport\b|\bxxyy\b.*\bsupport(?:s|ed)?\b/u.test(
+      normalizedQuestion,
+    )
+  );
+}
+
+function hasExternalSupportEntity(normalizedQuestion: string): boolean {
+  const tokens = normalizedQuestion.match(/[a-z0-9]+(?:[-_][a-z0-9]+)*/gu) ?? [];
+  return tokens.some(
+    (token) =>
+      token.length > 1 &&
+      token !== 'xxyy' &&
+      token !== 'pro' &&
+      !nonProductSupportLatinTokens.has(token),
+  );
 }
 
 function createClassification(intent: Intent, confidence: number, reason: string): Classification {

@@ -95,7 +95,7 @@ describe('createChatService', () => {
     });
 
     expect(response.intent).toBe('unknown');
-    expect(response.answer).toContain('我还不确定你想咨询的具体问题');
+    expect(response.answer).toContain('当前不分析交易哈希');
     expect(response.citations).toEqual([]);
     expect(response.attachments).toBeUndefined();
   });

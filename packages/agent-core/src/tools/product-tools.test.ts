@@ -144,7 +144,7 @@ describe('createProductTools', () => {
     });
   });
 
-  it('trusts planner-selected product questions even when deterministic classification is unknown', async () => {
+  it('answers short copy-trading support questions with deterministic product classification', async () => {
     const registry = createToolRegistry();
     const retrieve = vi.fn<Retriever['retrieve']>(() => [
       createRetrievedChunk({
@@ -181,7 +181,7 @@ describe('createProductTools', () => {
     expect(answerInput).toBeDefined();
     expect(answerInput?.classification).toMatchObject({
       intent: 'product_qa',
-      reason: 'planner selected product answer tool',
+      reason: 'asks whether a product capability is supported',
     });
     expect(answerInput?.question).toBe('支持跟单么');
   });
@@ -270,7 +270,14 @@ describe('createProductTools', () => {
   it('keeps investment advice blocked even when planner selects answer_product_question', async () => {
     const registry = createToolRegistry();
     const retrieve = vi.fn<Retriever['retrieve']>(() => [createRetrievedChunk()]);
-    const answer = vi.fn<AnswerProvider['answer']>();
+    const answer = vi.fn<AnswerProvider['answer']>(() =>
+      Promise.resolve({
+        answer: 'planner-overridden product response',
+        citations: [],
+        confidence: 0.7,
+        intent: 'product_qa',
+      }),
+    );
 
     for (const tool of createProductTools({
       answerProvider: { answer },
@@ -287,6 +294,31 @@ describe('createProductTools', () => {
     expect(result).toMatchObject({
       citations: [],
       intent: 'investment_advice',
+    });
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(answer).not.toHaveBeenCalled();
+  });
+
+  it('keeps unsupported transaction analysis blocked when planner selects answer_product_question', async () => {
+    const registry = createToolRegistry();
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [createRetrievedChunk()]);
+    const answer = vi.fn<AnswerProvider['answer']>();
+
+    for (const tool of createProductTools({
+      answerProvider: { answer },
+      retriever: { retrieve },
+    })) {
+      registry.register(tool);
+    }
+
+    const result = (await registry.execute('answer_product_question', {
+      question: '这个 tx hash 是不是被夹了，有 MEV sandwich 吗？',
+    })) as ChatResponse;
+
+    expect(result.answer).toContain('当前不分析交易哈希');
+    expect(result).toMatchObject({
+      citations: [],
+      intent: 'unknown',
     });
     expect(retrieve).not.toHaveBeenCalled();
     expect(answer).not.toHaveBeenCalled();

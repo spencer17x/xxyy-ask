@@ -9,7 +9,7 @@
     "agent:smoke": "node scripts/agent-smoke.mjs",
     "api:dev": "pnpm --filter @xxyy/api start",
     "app:dev": "node scripts/start-agent.mjs",
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm rag:evaluate",
+    "check": "pnpm --filter @xxyy/web build && pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm rag:evaluate",
     "format": "prettier --write \"**/*.{ts,js,mjs,cjs,json,md,yml,yaml}\" \".vscode/*.json\"",
     "format:check": "prettier --check \"**/*.{ts,js,mjs,cjs,json,md,yml,yaml}\" \".vscode/*.json\"",
     "lint": "eslint . --max-warnings=0",

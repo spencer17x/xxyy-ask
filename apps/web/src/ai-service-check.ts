@@ -1,3 +1,5 @@
+import { createApiHeaders } from './api-auth.js';
+
 export const AI_SERVICE_TEST_QUESTION = 'XXYY Pro 有哪些权益？';
 
 export type AiServiceCheckResult =
@@ -24,6 +26,7 @@ interface ChatCheckPayload {
 export async function checkAiService(
   fetchImpl: typeof fetch,
   sessionId: string,
+  authToken?: string,
 ): Promise<AiServiceCheckResult> {
   let response: Response;
   try {
@@ -33,7 +36,7 @@ export async function checkAiService(
         message: AI_SERVICE_TEST_QUESTION,
         sessionId,
       }),
-      headers: { 'Content-Type': 'application/json' },
+      headers: createApiHeaders(authToken),
       method: 'POST',
     });
   } catch (error) {

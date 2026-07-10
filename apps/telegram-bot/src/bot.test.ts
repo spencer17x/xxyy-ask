@@ -346,6 +346,78 @@ describe('createTelegramBot', () => {
       timeout: 30,
     });
   });
+
+  it('logs and skips a poison update without blocking later updates', async () => {
+    const getUpdates = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          message: { chat: { id: 123 }, message_id: 1, text: '/help' },
+          update_id: 41,
+        },
+        {
+          message: { chat: { id: 123 }, message_id: 2, text: '/help' },
+          update_id: 42,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const sendMessage = createSendMessageMock()
+      .mockRejectedValueOnce(new Error('permanent send failure'))
+      .mockResolvedValueOnce();
+    const logger = {
+      error: vi.fn(),
+      info: vi.fn(),
+    };
+    const bot = createTelegramBot({
+      api: { getUpdates, sendMessage, sendPhoto: vi.fn() },
+      chatService: { ask: vi.fn(() => Promise.resolve(createResponse())) },
+      config: loadTelegramBotConfig({ TELEGRAM_BOT_TOKEN: 'bot-token' }),
+      logger,
+    });
+
+    await bot.pollOnce();
+    await bot.pollOnce();
+
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledWith(
+      'Telegram update 41 failed.',
+      expect.objectContaining({ message: 'permanent send failure' }),
+    );
+    expect(getUpdates).toHaveBeenNthCalledWith(2, {
+      limit: 100,
+      offset: 43,
+      timeout: 30,
+    });
+  });
+
+  it('sends oversized formatted answers as valid plain-text chunks', async () => {
+    const sendMessage = createSendMessageMock();
+    const bot = createTelegramBot({
+      api: { getUpdates: vi.fn(), sendMessage, sendPhoto: vi.fn() },
+      chatService: {
+        ask: vi.fn(() =>
+          Promise.resolve(
+            createResponse({
+              answer: `**${'A'.repeat(5000)}**`,
+            }),
+          ),
+        ),
+      },
+      config: loadTelegramBotConfig({ TELEGRAM_BOT_TOKEN: 'bot-token' }),
+    });
+
+    await bot.handleUpdate({
+      message: { chat: { id: 123 }, message_id: 1, text: 'XXYY Pro 权益' },
+      update_id: 10,
+    });
+
+    const messages = sendMessage.mock.calls.map(([message]) => message);
+    expect(messages.length).toBeGreaterThan(1);
+    expect(messages.every((message) => message.text.length <= 4096)).toBe(true);
+    expect(messages.every((message) => message.parseMode === undefined)).toBe(true);
+    expect(messages.map((message) => message.text).join('')).not.toContain('<b>');
+  });
 });
 
 describe('message formatting helpers', () => {

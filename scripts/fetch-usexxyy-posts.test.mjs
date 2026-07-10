@@ -6,15 +6,84 @@ import {
   extractTimelinePage,
   findJavaScriptAssetUrls,
   getLatestPostCutoff,
+  loadScrapeRuntimeConfig,
   mergeXPosts,
   parseScrapeArgs,
   shouldKeepFetchedPost,
+  validateFullRefresh,
 } from './fetch-usexxyy-posts.mjs';
 
 describe('parseScrapeArgs', () => {
   it('defaults to incremental scraping and supports explicit full refreshes', () => {
-    expect(parseScrapeArgs([])).toEqual({ full: false });
-    expect(parseScrapeArgs(['--', '--full'])).toEqual({ full: true });
+    expect(parseScrapeArgs([])).toEqual({ allowShrink: false, full: false });
+    expect(parseScrapeArgs(['--', '--full'])).toEqual({ allowShrink: false, full: true });
+    expect(parseScrapeArgs(['--full', '--allow-shrink'])).toEqual({
+      allowShrink: true,
+      full: true,
+    });
+  });
+
+  it('allows shrink override only for explicit full refreshes', () => {
+    expect(() => parseScrapeArgs(['--allow-shrink'])).toThrow('--allow-shrink requires --full');
+  });
+});
+
+describe('scrape runtime safety', () => {
+  it.each([
+    [{ XXYY_X_MAX_PAGES: '0' }, 'XXYY_X_MAX_PAGES'],
+    [{ XXYY_X_MAX_PAGES: 'NaN' }, 'XXYY_X_MAX_PAGES'],
+    [{ XXYY_X_PAGE_SIZE: '-1' }, 'XXYY_X_PAGE_SIZE'],
+    [{ XXYY_X_REQUEST_DELAY_MS: '-1' }, 'XXYY_X_REQUEST_DELAY_MS'],
+  ])('rejects invalid numeric configuration: %o', (env, variableName) => {
+    expect(() => loadScrapeRuntimeConfig(env)).toThrow(variableName);
+  });
+
+  it('loads validated numeric configuration with safe defaults', () => {
+    expect(loadScrapeRuntimeConfig({})).toEqual({
+      maxPages: 100,
+      pageSize: 40,
+      requestDelayMs: 250,
+    });
+    expect(
+      loadScrapeRuntimeConfig({
+        XXYY_X_MAX_PAGES: '5',
+        XXYY_X_PAGE_SIZE: '20',
+        XXYY_X_REQUEST_DELAY_MS: '0',
+      }),
+    ).toEqual({ maxPages: 5, pageSize: 20, requestDelayMs: 0 });
+  });
+
+  it('rejects empty or incomplete full refreshes', () => {
+    expect(() =>
+      validateFullRefresh({
+        allowShrink: false,
+        completed: true,
+        existingPostCount: 100,
+        fetchedPostCount: 0,
+        stoppedAtPageCap: false,
+      }),
+    ).toThrow('returned no posts');
+    expect(() =>
+      validateFullRefresh({
+        allowShrink: false,
+        completed: false,
+        existingPostCount: 100,
+        fetchedPostCount: 100,
+        stoppedAtPageCap: true,
+      }),
+    ).toThrow('page cap');
+  });
+
+  it('rejects a full refresh below 80 percent of existing coverage unless overridden', () => {
+    const refresh = {
+      completed: true,
+      existingPostCount: 100,
+      fetchedPostCount: 79,
+      stoppedAtPageCap: false,
+    };
+
+    expect(() => validateFullRefresh({ ...refresh, allowShrink: false })).toThrow('--allow-shrink');
+    expect(() => validateFullRefresh({ ...refresh, allowShrink: true })).not.toThrow();
   });
 });
 

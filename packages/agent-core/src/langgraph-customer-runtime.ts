@@ -11,7 +11,10 @@ import type {
 import {
   classifyQuestion,
   createBoundaryAnswer,
+  createInsufficientKnowledgeAnswer,
+  createSupportConclusionFromEvidence,
   LlmConfigurationError,
+  shouldUseDeterministicSupportAnswer,
   VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
 
@@ -99,54 +102,73 @@ async function* streamRuntimeRequest(
   options: CreateLangGraphCustomerRuntimeOptions,
   maxSteps: number,
 ): AsyncIterable<ChatStreamEvent> {
-  const initialState = createInitialAgentState(request, { maxSteps }) as LangGraphAgentState;
-  const plannerPatch = await plannerNode(initialState, options);
+  let state = createInitialAgentState(request, { maxSteps }) as LangGraphAgentState;
 
-  if (plannerPatch.finalResponse !== undefined) {
-    yield* streamChatResponse(plannerPatch.finalResponse);
-    return;
-  }
-
-  const plan = plannerPatch.plan;
-  if (plan === undefined) {
-    yield* streamChatResponse(createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION));
-    return;
-  }
-
-  if (plan.kind === 'final') {
-    if (!isFinalPlannerRoute(plan.route)) {
-      yield* streamChatResponse(createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION));
-      return;
+  while (state.finalResponse === undefined) {
+    state = applyStatePatch(state, await plannerNode(state, options));
+    if (state.finalResponse !== undefined) {
+      break;
     }
 
-    yield* streamChatResponse(withAgentRoute(plan.response, normalizeAgentRoute(plan.route)));
-    return;
-  }
+    const plan = state.plan;
+    if (plan === undefined || plan.kind === 'final') {
+      state = applyStatePatch(state, answerComposerNode(state));
+      break;
+    }
 
-  if (!isAllowedAgentToolName(plan.toolName)) {
-    yield* streamChatResponse(createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION));
-    return;
-  }
-
-  const toolInput = inputForToolExecution(plan, request);
-  const context = toolContextFromRequest(request);
-  try {
-    const toolStream = options.registry.stream(plan.toolName, toolInput, context);
-    if (toolStream !== undefined) {
-      for await (const event of toolStream) {
-        yield withStreamAgentRoute(event as ChatStreamEvent, routeForToolName(plan.toolName));
+    if (plan.toolName === 'answer_product_question') {
+      const toolInput = inputForToolExecution(plan, request);
+      try {
+        const toolStream = options.registry.stream(
+          plan.toolName,
+          toolInput,
+          toolContextFromRequest(request),
+        );
+        if (toolStream !== undefined) {
+          for await (const event of toolStream) {
+            yield withStreamAgentRoute(event as ChatStreamEvent, 'product_answer');
+          }
+          return;
+        }
+      } catch (error) {
+        if (isProductConfigurationError(error)) {
+          throw error;
+        }
+        yield* streamChatResponse(withAgentRoute(toolFailureResponse(plan.toolName), 'clarify'));
+        return;
       }
-      return;
     }
 
-    const output = await options.registry.execute(plan.toolName, toolInput, context);
-    yield* streamChatResponse(responseFromEvidence(evidenceFromToolOutput(plan.toolName, output)));
-  } catch (error) {
-    if (isProductConfigurationError(error)) {
-      throw error;
-    }
-    yield* streamChatResponse(withAgentRoute(toolFailureResponse(plan.toolName), 'clarify'));
+    state = applyStatePatch(state, await toolExecutorNode(state, options.registry));
+    state = applyStatePatch(state, observeNode(state));
   }
+
+  if (state.finalResponse === undefined) {
+    state = applyStatePatch(state, answerComposerNode(state));
+  }
+
+  yield* streamChatResponse(
+    state.finalResponse ?? createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION),
+  );
+}
+
+function applyStatePatch(
+  state: LangGraphAgentState,
+  patch: Partial<AgentState>,
+): LangGraphAgentState {
+  return {
+    ...state,
+    ...patch,
+    errors: [...state.errors, ...(patch.errors ?? [])],
+    evidence: [...state.evidence, ...(patch.evidence ?? [])],
+    finalResponse: patch.finalResponse ?? state.finalResponse,
+    messages: [...state.messages, ...(patch.messages ?? [])],
+    plan: patch.plan ?? state.plan,
+    policyDecision: patch.policyDecision ?? state.policyDecision,
+    route: patch.route ?? state.route,
+    toolCalls: [...state.toolCalls, ...(patch.toolCalls ?? [])],
+    toolResults: [...state.toolResults, ...(patch.toolResults ?? [])],
+  };
 }
 
 function deterministicPreGuard(request: ChatRequest): ChatResponse | undefined {
@@ -173,7 +195,8 @@ function isBoundaryUnknownReason(reason: string): boolean {
   return (
     reason === 'unsafe or unsupported operation request' ||
     reason === 'business action execution request' ||
-    reason === 'private credential or seed phrase disclosure'
+    reason === 'private credential or seed phrase disclosure' ||
+    reason === 'unsupported transaction or mev analysis request'
   );
 }
 
@@ -201,6 +224,19 @@ async function plannerNode(
         '当前问题需要更多步骤才能可靠处理，请补充更具体的问题。',
       ),
       route: 'clarify',
+    };
+  }
+
+  const deterministicSupportPlan = deterministicSupportProductAnswerPlan(
+    state.request,
+    options.registry,
+    state,
+  );
+  if (deterministicSupportPlan !== undefined) {
+    return {
+      currentStep: state.currentStep + 1,
+      plan: deterministicSupportPlan,
+      route: 'product_answer',
     };
   }
 
@@ -261,6 +297,16 @@ async function plannerNode(
   }
 
   if (plan.kind === 'tool' && isRepeatedToolInput(plan, state)) {
+    const noEvidenceSupportResponse = noEvidenceSupportResponseForQuestion(state.request.message);
+    if (noEvidenceSupportResponse !== undefined) {
+      return {
+        currentStep: state.currentStep + 1,
+        errors: [...planningErrors, `Repeated tool input: ${plan.toolName}`],
+        finalResponse: withAgentRoute(noEvidenceSupportResponse, 'product_answer'),
+        route: 'product_answer',
+      };
+    }
+
     return {
       currentStep: state.currentStep + 1,
       errors: [...planningErrors, `Repeated tool input: ${plan.toolName}`],
@@ -319,6 +365,18 @@ function fallbackProductAnswerPlan(
     route: 'product_answer',
     toolName: 'answer_product_question',
   };
+}
+
+function deterministicSupportProductAnswerPlan(
+  request: ChatRequest,
+  registry: ToolRegistry,
+  state: LangGraphAgentState,
+): Extract<AgentPlan, { kind: 'tool' }> | undefined {
+  if (state.currentStep > 0 || !shouldUseDeterministicSupportAnswer(request.message)) {
+    return undefined;
+  }
+
+  return fallbackProductAnswerPlan(request, registry);
 }
 
 function routeAfterPlanner(state: LangGraphAgentState): CustomerRuntimeNode {
@@ -402,20 +460,28 @@ function observeNode(state: LangGraphAgentState): Partial<AgentState> {
 
   if (evidence.kind === 'chat_response') {
     return {
-      finalResponse: responseFromEvidence(evidence),
+      finalResponse: responseFromEvidence(evidence, state.request.message),
     };
   }
 
   if (evidence.output.citations.length > 0 && hasSufficientSearchEvidence(state)) {
     return {
       finalResponse: withAgentRoute(
-        responseFromSearchEvidenceList(searchEvidenceList(state.evidence)),
+        responseFromSearchEvidenceList(searchEvidenceList(state.evidence), state.request.message),
         'product_answer',
       ),
     };
   }
 
   if (consecutiveEmptySearchEvidenceCount(state.evidence) >= 2) {
+    const noEvidenceSupportResponse = noEvidenceSupportResponseForQuestion(state.request.message);
+    if (noEvidenceSupportResponse !== undefined) {
+      return {
+        finalResponse: withAgentRoute(noEvidenceSupportResponse, 'product_answer'),
+        route: 'product_answer',
+      };
+    }
+
     return {
       finalResponse: createClarificationResponse(
         '连续检索后没有找到新的知识库证据。请补充更具体的产品功能、模块、时间范围或官方更新线索。',
@@ -487,14 +553,14 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
     if (searchEvidence.length > 0) {
       return {
         finalResponse: withAgentRoute(
-          responseFromSearchEvidenceList(searchEvidence),
+          responseFromSearchEvidenceList(searchEvidence, state.request.message),
           'product_answer',
         ),
       };
     }
 
     return {
-      finalResponse: responseFromEvidence(evidence),
+      finalResponse: responseFromEvidence(evidence, state.request.message),
     };
   }
 
@@ -541,10 +607,10 @@ function evidenceFromToolOutput(toolName: string, output: unknown): AgentEvidenc
   };
 }
 
-function responseFromEvidence(evidence: AgentEvidence): ChatResponse {
+function responseFromEvidence(evidence: AgentEvidence, question: string): ChatResponse {
   if (evidence.kind === 'search_results') {
     return withAgentRoute(
-      responseFromSearchEvidence(evidence.output),
+      responseFromSearchEvidence(evidence.output, question),
       routeForToolName(evidence.toolName),
     );
   }
@@ -569,13 +635,20 @@ function routeForToolName(_toolName: string): AgentRoute {
 
 type AgentEvidenceForSearch = Extract<AgentEvidence, { kind: 'search_results' }>['output'];
 
-function responseFromSearchEvidence(output: AgentEvidenceForSearch): ChatResponse {
-  return responseFromSearchEvidenceList([
-    { kind: 'search_results', output, toolName: 'search_product_docs' },
-  ]);
+function responseFromSearchEvidence(
+  output: AgentEvidenceForSearch,
+  question: string,
+): ChatResponse {
+  return responseFromSearchEvidenceList(
+    [{ kind: 'search_results', output, toolName: 'search_product_docs' }],
+    question,
+  );
 }
 
-function responseFromSearchEvidenceList(evidenceList: AgentEvidence[]): ChatResponse {
+function responseFromSearchEvidenceList(
+  evidenceList: AgentEvidence[],
+  question: string,
+): ChatResponse {
   const outputs = evidenceList
     .filter((evidence): evidence is Extract<AgentEvidence, { kind: 'search_results' }> => {
       return evidence.kind === 'search_results';
@@ -584,18 +657,32 @@ function responseFromSearchEvidenceList(evidenceList: AgentEvidence[]): ChatResp
   const citations = uniqueCitations(outputs.flatMap((output) => output.citations));
   const attachments = uniqueAttachments(outputs.flatMap((output) => output.attachments ?? []));
   const excerpts = citations.map((citation) => citation.excerpt);
+  const supportConclusion = createSupportConclusionFromEvidence(question, excerpts);
   const confidence = outputs.reduce((max, output) => Math.max(max, output.confidence), 0);
 
   return {
     answer:
       excerpts.length === 0
         ? '当前知识库没有找到直接相关的产品资料。'
-        : `根据知识库，${excerpts.join(' ')}`,
+        : (supportConclusion ?? `根据知识库，${excerpts.join(' ')}`),
     citations,
     confidence: Number(Math.min(0.9, Math.max(0.55, confidence / 10)).toFixed(2)),
     intent: 'product_qa',
     ...(attachments.length === 0 ? {} : { attachments }),
   };
+}
+
+function noEvidenceSupportResponseForQuestion(question: string): ChatResponse | undefined {
+  if (!shouldUseDeterministicSupportAnswer(question)) {
+    return undefined;
+  }
+
+  const classification = classifyQuestion(question);
+  if (classification.intent !== 'product_qa' && classification.intent !== 'how_to') {
+    return undefined;
+  }
+
+  return createInsufficientKnowledgeAnswer(question, classification.intent);
 }
 
 function hasSufficientSearchEvidence(state: LangGraphAgentState): boolean {

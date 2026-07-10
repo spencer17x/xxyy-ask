@@ -49,7 +49,7 @@ type CliCommand =
   | { command: 'ask'; question: string }
   | { command: 'evaluate'; providerBacked: boolean }
   | { command: 'feedback:backlog' }
-  | { command: 'ingest' }
+  | { command: 'ingest'; rebuildEmbeddingSchema: boolean }
   | { command: 'migrate' }
   | { command: 'stats' }
   | { command: 'sync:x' }
@@ -92,7 +92,7 @@ interface CliChatRuntime {
 
 const HELP_TEXT = [
   'Usage:',
-  '  pnpm rag:ingest',
+  '  pnpm rag:ingest [--rebuild-embedding-schema]',
   '  pnpm rag:sync:x',
   '  pnpm rag:migrate',
   '  pnpm rag:stats',
@@ -113,7 +113,6 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
   if (
     command === 'evaluate' ||
     command === 'feedback:backlog' ||
-    command === 'ingest' ||
     command === 'migrate' ||
     command === 'stats' ||
     command === 'sync:x'
@@ -124,11 +123,27 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     return { command };
   }
 
+  if (command === 'ingest') {
+    return parseIngestArgs(rawRest);
+  }
+
   if (command === 'ask') {
     return parseAskArgs(rawRest);
   }
 
   return { command: 'help', error: `Unknown command: ${command}` };
+}
+
+function parseIngestArgs(rawArgs: readonly string[]): CliCommand {
+  const args = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs;
+  if (args.length === 0) {
+    return { command: 'ingest', rebuildEmbeddingSchema: false };
+  }
+  if (args.length === 1 && args[0] === '--rebuild-embedding-schema') {
+    return { command: 'ingest', rebuildEmbeddingSchema: true };
+  }
+
+  return { command: 'help', error: `Unknown rag:ingest option: ${args.join(' ')}` };
 }
 
 function parseAskArgs(rawArgs: readonly string[]): CliCommand {
@@ -359,7 +374,7 @@ export async function runCli(
 
   if (parsed.command === 'ingest') {
     try {
-      const summary = await ingest({ ...io, cwd: workspaceCwd });
+      const summary = await ingest({ ...io, cwd: workspaceCwd }, parsed.rebuildEmbeddingSchema);
       writeLine(io.stdout, formatIngestSummary(summary));
       return 0;
     } catch (error) {
@@ -461,7 +476,7 @@ export async function runCli(
   }
 }
 
-async function ingest(io: CliIo): Promise<IngestSummary> {
+async function ingest(io: CliIo, rebuildEmbeddingSchema: boolean): Promise<IngestSummary> {
   const config = loadRagConfig(io.env);
   const documents = await loadProductDocuments({ cwd: io.cwd });
   const chunks = prepareKnowledgeChunks(documents);
@@ -480,14 +495,23 @@ async function ingest(io: CliIo): Promise<IngestSummary> {
       embeddingDimension: config.embeddingDimension,
       embeddingProvider,
     });
-    await store.migrate();
+    if (rebuildEmbeddingSchema) {
+      await store.migrate({ allowEmbeddingDimensionMismatch: true });
+    } else {
+      await store.migrate();
+    }
     const embeddedChunks = await embedPreparedChunks(chunks, embeddingProvider);
     const ingestionRun = createIngestionRun({
       chunks: embeddedChunks,
       documentCount: documents.length,
     });
-    await store.replaceChunks(embeddedChunks);
-    await store.recordIngestionRun(ingestionRun);
+    if (rebuildEmbeddingSchema) {
+      await store.replaceChunks(embeddedChunks, ingestionRun, {
+        rebuildEmbeddingSchema: true,
+      });
+    } else {
+      await store.replaceChunks(embeddedChunks, ingestionRun);
+    }
     return {
       documentCount: documents.length,
       chunkCount: chunks.length,

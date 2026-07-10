@@ -7,12 +7,16 @@ describe('rag-core public exports', () => {
     expect(ragCore.workspacePackageName).toBe('@xxyy/rag-core');
     expect(ragCore.loadRagConfig).toBeTypeOf('function');
     expect(ragCore.classifyQuestion).toBeTypeOf('function');
+    expect(ragCore.hasProductDomainSignal).toBeTypeOf('function');
     expect(ragCore.retrieve).toBeTypeOf('function');
     expect(ragCore.createLocalRetriever).toBeTypeOf('function');
     expect(ragCore.createGroundedAnswer).toBeTypeOf('function');
     expect(ragCore.createAttachmentsFromChunks).toBeTypeOf('function');
     expect(ragCore.createCitationsFromChunks).toBeTypeOf('function');
     expect(ragCore.selectGroundingChunks).toBeTypeOf('function');
+    expect(ragCore.createInsufficientKnowledgeAnswer).toBeTypeOf('function');
+    expect(ragCore.createSupportConclusionFromEvidence).toBeTypeOf('function');
+    expect(ragCore.shouldUseDeterministicSupportAnswer).toBeTypeOf('function');
     expect(ragCore.createOpenAiAnswerProvider).toBeTypeOf('function');
     expect(ragCore.LlmConfigurationError).toBeTypeOf('function');
     expect(ragCore.createPgPool).toBeTypeOf('function');
@@ -35,6 +39,7 @@ describe('rag-core public exports', () => {
       'createChatService',
       'createCitationsFromChunks',
       'createGroundedAnswer',
+      'createInsufficientKnowledgeAnswer',
       'createLazyRetriever',
       'createLocalRetriever',
       'createMetadataReranker',
@@ -43,13 +48,16 @@ describe('rag-core public exports', () => {
       'createPgPool',
       'createPgVectorStore',
       'createRerankingRetriever',
+      'createSupportConclusionFromEvidence',
       'evaluateCases',
+      'hasProductDomainSignal',
       'loadRagConfig',
       'loadWorkspaceEnv',
       'redactSensitiveSupportText',
       'resolveWorkspaceCwd',
       'retrieve',
       'selectGroundingChunks',
+      'shouldUseDeterministicSupportAnswer',
       'toPgVectorLiteral',
       'workspacePackageName',
     ]);

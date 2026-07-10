@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const COMMANDS = {
+  buildWeb: {
+    args: ['--filter', '@xxyy/web', 'build'],
+    command: 'pnpm',
+    label: 'build Web',
+  },
   ingestKnowledge: {
     args: ['rag:ingest'],
     command: 'pnpm',
@@ -134,6 +139,17 @@ export async function runAgentStart(options = {}) {
   });
   if (prepareExitCode !== 0) {
     return prepareExitCode;
+  }
+
+  const buildExitCode = await runLoggedCommand({
+    command: COMMANDS.buildWeb,
+    cwd,
+    env,
+    log,
+    runCommand,
+  });
+  if (buildExitCode !== 0) {
+    return buildExitCode;
   }
 
   return runLoggedCommand({

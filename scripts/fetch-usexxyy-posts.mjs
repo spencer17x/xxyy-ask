@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,30 +12,39 @@ const JSONL_FILE = 'usexxyyio-x-posts.jsonl';
 const META_FILE = 'usexxyyio-x-posts.meta.json';
 const UPDATES_FILE = path.join('docs', 'product-features', 'xxyy-x-updates.md');
 const RAW_INDEX_HEADING = '## 可溯源原始消息索引';
-const MAX_PAGES = Number(process.env.XXYY_X_MAX_PAGES ?? 100);
-const PAGE_SIZE = Number(process.env.XXYY_X_PAGE_SIZE ?? 40);
-const REQUEST_DELAY_MS = Number(process.env.XXYY_X_REQUEST_DELAY_MS ?? 250);
-
 const USER_BY_SCREEN_NAME = 'UserByScreenName';
 const USER_TWEETS = 'UserTweets';
 
 export async function main(args = process.argv.slice(2)) {
   const options = parseScrapeArgs(args);
+  const runtimeConfig = loadScrapeRuntimeConfig();
   const cwd = process.cwd();
   const fetchedAt = new Date().toISOString();
   const outputDir = path.join(cwd, OUTPUT_DIR);
   const jsonlPath = path.join(outputDir, JSONL_FILE);
-  const existingPosts = options.full ? [] : await readExistingXPosts(jsonlPath);
+  const localPosts = await readExistingXPosts(jsonlPath);
+  const existingPosts = options.full ? [] : localPosts;
   const cutoff = options.full ? undefined : getLatestPostCutoff(existingPosts);
 
   const webConfig = await loadXWebConfig();
   const guestToken = await activateGuest(webConfig.bearerToken);
   const headers = createXHeaders(webConfig.bearerToken, guestToken);
   const account = await fetchAccount(webConfig, headers);
-  const fetchedPosts = await fetchTimelinePosts(webConfig, headers, account, {
+  const timelineResult = await fetchTimelinePosts(webConfig, headers, account, {
     cutoff,
     fetchedAt,
+    runtimeConfig,
   });
+  const fetchedPosts = timelineResult.posts;
+  if (options.full) {
+    validateFullRefresh({
+      allowShrink: options.allowShrink,
+      completed: timelineResult.completed,
+      existingPostCount: localPosts.length,
+      fetchedPostCount: fetchedPosts.length,
+      stoppedAtPageCap: timelineResult.stoppedAtPageCap,
+    });
+  }
   const posts = options.full ? fetchedPosts : mergeXPosts(existingPosts, fetchedPosts);
 
   await mkdir(outputDir, { recursive: true });
@@ -47,7 +56,9 @@ export async function main(args = process.argv.slice(2)) {
       fetchedPosts: fetchedPosts.length,
       mode: options.full ? 'full' : 'incremental',
       note: 'Covers public profile timeline posts visible to the anonymous X web client. Replies not shown in UserTweets are not included unless X exposes them in the profile timeline.',
-      pageSize: PAGE_SIZE,
+      pageSize: runtimeConfig.pageSize,
+      traversalCompleted: timelineResult.completed,
+      traversalStoppedAtPageCap: timelineResult.stoppedAtPageCap,
       ...(cutoff === undefined
         ? {}
         : {
@@ -80,6 +91,7 @@ export async function main(args = process.argv.slice(2)) {
 
 export function parseScrapeArgs(args) {
   const normalizedArgs = args[0] === '--' ? args.slice(1) : args;
+  let allowShrink = false;
   let full = false;
 
   for (const option of normalizedArgs) {
@@ -87,11 +99,65 @@ export function parseScrapeArgs(args) {
       full = true;
       continue;
     }
+    if (option === '--allow-shrink') {
+      allowShrink = true;
+      continue;
+    }
 
     throw new Error(`Unknown option: ${option}`);
   }
 
-  return { full };
+  if (allowShrink && !full) {
+    throw new Error('--allow-shrink requires --full.');
+  }
+
+  return { allowShrink, full };
+}
+
+export function loadScrapeRuntimeConfig(env = process.env) {
+  return {
+    maxPages: parsePositiveInteger(env.XXYY_X_MAX_PAGES, 100, 'XXYY_X_MAX_PAGES'),
+    pageSize: parsePositiveInteger(env.XXYY_X_PAGE_SIZE, 40, 'XXYY_X_PAGE_SIZE'),
+    requestDelayMs: parseNonNegativeInteger(
+      env.XXYY_X_REQUEST_DELAY_MS,
+      250,
+      'XXYY_X_REQUEST_DELAY_MS',
+    ),
+  };
+}
+
+function parsePositiveInteger(rawValue, fallback, variableName) {
+  const value = rawValue === undefined ? fallback : Number(rawValue);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${variableName} must be a positive integer.`);
+  }
+  return value;
+}
+
+function parseNonNegativeInteger(rawValue, fallback, variableName) {
+  const value = rawValue === undefined ? fallback : Number(rawValue);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${variableName} must be a non-negative integer.`);
+  }
+  return value;
+}
+
+export function validateFullRefresh(options) {
+  if (options.fetchedPostCount === 0) {
+    throw new Error('Full X refresh returned no posts; existing knowledge was not replaced.');
+  }
+  if (!options.completed || options.stoppedAtPageCap) {
+    throw new Error('Full X refresh reached the page cap before traversal completed.');
+  }
+  if (
+    options.existingPostCount > 0 &&
+    options.fetchedPostCount < options.existingPostCount * 0.8 &&
+    !options.allowShrink
+  ) {
+    throw new Error(
+      `Full X refresh shrank from ${options.existingPostCount} to ${options.fetchedPostCount} posts; rerun with --allow-shrink only after verifying the upstream change.`,
+    );
+  }
 }
 
 async function loadXWebConfig() {
@@ -351,11 +417,14 @@ async function fetchAccount(webConfig, headers) {
 
 async function fetchTimelinePosts(webConfig, headers, account, options) {
   const operation = webConfig.operations[USER_TWEETS];
+  const { maxPages, pageSize, requestDelayMs } = options.runtimeConfig;
   const seen = new Map();
+  let completed = false;
   let cursor;
+  let stoppedAtPageCap = false;
 
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const variables = createTimelineVariables(operation, account, cursor);
+  for (let page = 0; page < maxPages; page += 1) {
+    const variables = createTimelineVariables(operation, account, cursor, pageSize);
     const payload = await fetchGraphql(operation, headers, variables);
     const { bottomCursor, tweets } = extractTimelinePage(payload);
     let reachedCutoff = false;
@@ -376,31 +445,43 @@ async function fetchTimelinePosts(webConfig, headers, account, options) {
       }
     }
 
-    if (reachedCutoff || bottomCursor === undefined || bottomCursor === cursor || newCount === 0) {
+    if (reachedCutoff || bottomCursor === undefined || bottomCursor === cursor) {
+      completed = true;
+      break;
+    }
+    if (newCount === 0) {
+      break;
+    }
+    if (page + 1 >= maxPages) {
+      stoppedAtPageCap = true;
       break;
     }
 
     cursor = bottomCursor;
-    await delay(REQUEST_DELAY_MS);
+    await delay(requestDelayMs);
   }
 
-  return Array.from(seen.values()).sort((left, right) =>
-    right.createdAtIso.localeCompare(left.createdAtIso),
-  );
+  return {
+    completed,
+    posts: Array.from(seen.values()).sort((left, right) =>
+      right.createdAtIso.localeCompare(left.createdAtIso),
+    ),
+    stoppedAtPageCap,
+  };
 }
 
-function createTimelineVariables(operation, account, cursor) {
+function createTimelineVariables(operation, account, cursor, pageSize) {
   if (operation.variableStyle === 'screenName') {
     return {
       screenName: account.screenName ?? ACCOUNT,
-      count: PAGE_SIZE,
+      count: pageSize,
       cursor: cursor ?? null,
     };
   }
 
   return {
     userId: account.restId,
-    count: PAGE_SIZE,
+    count: pageSize,
     includePromotedContent: false,
     withQuickPromoteEligibilityTweetFields: true,
     withVoice: true,
@@ -755,11 +836,11 @@ function withoutUndefined(record) {
 
 async function writeJsonl(filePath, posts) {
   const body = `${posts.map((post) => JSON.stringify(post)).join('\n')}\n`;
-  await writeFile(filePath, body, 'utf8');
+  await writeFileAtomically(filePath, body);
 }
 
 async function writeMeta(filePath, metadata) {
-  await writeFile(filePath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+  await writeFileAtomically(filePath, `${JSON.stringify(metadata, null, 2)}\n`);
 }
 
 async function updateRawIndexSection(filePath, posts, fetchedAt) {
@@ -767,7 +848,17 @@ async function updateRawIndexSection(filePath, posts, fetchedAt) {
   const headingIndex = current.indexOf(`\n${RAW_INDEX_HEADING}\n`);
   const base = headingIndex >= 0 ? current.slice(0, headingIndex).trimEnd() : current.trimEnd();
   const section = renderRawIndexSection(posts, fetchedAt);
-  await writeFile(filePath, `${base}\n\n${section}\n`, 'utf8');
+  await writeFileAtomically(filePath, `${base}\n\n${section}\n`);
+}
+
+async function writeFileAtomically(filePath, contents) {
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  try {
+    await writeFile(temporaryPath, contents, 'utf8');
+    await rename(temporaryPath, filePath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
 }
 
 function renderRawIndexSection(posts, fetchedAt) {

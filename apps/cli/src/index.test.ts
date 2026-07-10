@@ -36,7 +36,14 @@ describe('parseCliArgs', () => {
   });
 
   it('parses retained commands that do not require extra arguments', () => {
-    expect(parseCliArgs(['ingest'])).toEqual({ command: 'ingest' });
+    expect(parseCliArgs(['ingest'])).toEqual({
+      command: 'ingest',
+      rebuildEmbeddingSchema: false,
+    });
+    expect(parseCliArgs(['ingest', '--', '--rebuild-embedding-schema'])).toEqual({
+      command: 'ingest',
+      rebuildEmbeddingSchema: true,
+    });
     expect(parseCliArgs(['migrate'])).toEqual({ command: 'migrate' });
     expect(parseCliArgs(['stats'])).toEqual({ command: 'stats' });
     expect(parseCliArgs(['sync:x'])).toEqual({ command: 'sync:x' });
@@ -693,14 +700,36 @@ describe('runCli', () => {
       });
 
       expect(exitCode).toBe(0);
-      expect(events).toEqual(['migrate', 'embed', 'replace', 'record', 'pool.end']);
-      expect(recordIngestionRun).toHaveBeenCalledWith(
+      expect(events).toEqual(['migrate', 'embed', 'replace', 'pool.end']);
+      expect(replaceChunks).toHaveBeenCalledWith(
+        [expect.objectContaining({ id: 'chunk-1' })],
         expect.objectContaining({
           chunkCount: 1,
           documentCount: 1,
           source: 'cli',
           sourceCounts: { official_docs: 1 },
         }),
+      );
+      expect(recordIngestionRun).not.toHaveBeenCalled();
+
+      events.length = 0;
+      const rebuildExitCode = await runCliWithMocks(
+        ['ingest', '--', '--rebuild-embedding-schema'],
+        {
+          cwd: process.cwd(),
+          env: {},
+          stderr: { write: () => true },
+          stdout: { write: () => true },
+        },
+      );
+
+      expect(rebuildExitCode).toBe(0);
+      expect(events).toEqual(['migrate', 'embed', 'replace', 'pool.end']);
+      expect(migrate).toHaveBeenLastCalledWith({ allowEmbeddingDimensionMismatch: true });
+      expect(replaceChunks).toHaveBeenLastCalledWith(
+        [expect.objectContaining({ id: 'chunk-1' })],
+        expect.objectContaining({ source: 'cli' }),
+        { rebuildEmbeddingSchema: true },
       );
     } finally {
       vi.doUnmock('@xxyy/knowledge');

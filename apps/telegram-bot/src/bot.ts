@@ -202,8 +202,13 @@ export function createTelegramBot(options: CreateTelegramBotOptions): TelegramBo
       });
 
       for (const update of updates) {
-        await handleUpdate(update);
-        offset = update.update_id + 1;
+        try {
+          await handleUpdate(update);
+        } catch (error) {
+          options.logger?.error(`Telegram update ${update.update_id} failed.`, error);
+        } finally {
+          offset = update.update_id + 1;
+        }
       }
     },
   };
@@ -364,14 +369,23 @@ export async function sendChatResponse(
   replyToMessageId?: number,
 ): Promise<void> {
   const attachmentLines = attachmentFallbackLines(response.attachments, config.publicBaseUrl);
-  const message = formatTelegramChatResponse(response, attachmentLines);
-  for (const chunk of splitTelegramMessage(message, TELEGRAM_MESSAGE_LIMIT)) {
+  const htmlMessage = formatTelegramChatResponse(response, attachmentLines);
+  if (htmlMessage.length <= TELEGRAM_MESSAGE_LIMIT) {
     await api.sendMessage({
       chatId,
       parseMode: 'HTML',
       ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
-      text: chunk,
+      text: htmlMessage,
     });
+  } else {
+    const plainText = formatTelegramPlainTextResponse(response, attachmentLines);
+    for (const chunk of splitTelegramMessage(plainText, TELEGRAM_MESSAGE_LIMIT)) {
+      await api.sendMessage({
+        chatId,
+        ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
+        text: chunk,
+      });
+    }
   }
 
   for (const attachment of response.attachments ?? []) {
@@ -398,6 +412,36 @@ function formatTelegramChatResponse(response: ChatResponse, attachmentLines: str
     ...telegramCitationLines(response.citations),
   ];
   return lines.join('\n').trim();
+}
+
+function formatTelegramPlainTextResponse(
+  response: ChatResponse,
+  attachmentLines: string[],
+): string {
+  const lines = [
+    markdownToPlainText(response.answer),
+    ...attachmentLines,
+    ...telegramPlainTextCitationLines(response.citations),
+  ];
+  return lines.join('\n').trim();
+}
+
+function telegramPlainTextCitationLines(citations: ChatResponse['citations']): string[] {
+  if (citations.length === 0) {
+    return [];
+  }
+
+  return [
+    '',
+    '来源',
+    ...citations.flatMap((citation, index) => [
+      `${index + 1}. ${citation.title}${
+        citation.sourceUrl === undefined ? '' : ` ${citation.sourceUrl}`
+      }`,
+      citation.file,
+      citation.excerpt,
+    ]),
+  ];
 }
 
 function telegramCitationLines(citations: ChatResponse['citations']): string[] {
@@ -428,6 +472,10 @@ function markdownToTelegramHtml(text: string): string {
   return escapeHtml(text)
     .replace(/\*\*([^*\n][^*]*?)\*\*/gu, '<b>$1</b>')
     .replace(/`([^`\n]+?)`/gu, '<code>$1</code>');
+}
+
+function markdownToPlainText(text: string): string {
+  return text.replace(/\*\*([^*\n][^*]*?)\*\*/gu, '$1').replace(/`([^`\n]+?)`/gu, '$1');
 }
 
 function escapeHtml(text: string): string {

@@ -55,7 +55,7 @@ describe('runAgentStart', () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(commands).toEqual(['start API and Web']);
+    expect(commands).toEqual(['build Web', 'start API and Web']);
   });
 
   it('checks incremental updates before serving when sync is requested', async () => {
@@ -78,6 +78,7 @@ describe('runAgentStart', () => {
       'knowledge stats',
       'refresh X updates',
       'sync X knowledge',
+      'build Web',
       'start API and Web',
     ]);
   });
@@ -109,6 +110,7 @@ describe('runAgentStart', () => {
       'ingest knowledge',
       'refresh X updates',
       'sync X knowledge',
+      'build Web',
       'start API and Web',
     ]);
   });
@@ -130,7 +132,7 @@ describe('runAgentStart', () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(commands).toEqual(['start API and Web']);
+    expect(commands).toEqual(['build Web', 'start API and Web']);
   });
 
   it('ingests a missing production knowledge base before incremental sync', async () => {
@@ -154,6 +156,7 @@ describe('runAgentStart', () => {
       'ingest knowledge',
       'refresh X updates',
       'sync X knowledge',
+      'build Web',
       'start API and Web',
     ]);
   });
@@ -196,7 +199,12 @@ describe('runAgentStart', () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(commands).toEqual(['knowledge stats', 'refresh X updates', 'start API and Web']);
+    expect(commands).toEqual([
+      'knowledge stats',
+      'refresh X updates',
+      'build Web',
+      'start API and Web',
+    ]);
     expect(logs.join('\n')).toContain(
       'Warning: refresh X updates failed; starting with existing knowledge.',
     );
@@ -218,6 +226,7 @@ describe('runAgentStart', () => {
     expect(commands).toEqual([
       { args: ['x:scrape', '--', '--full'], label: 'refresh X updates' },
       { args: ['rag:ingest'], label: 'ingest knowledge' },
+      { args: ['--filter', '@xxyy/web', 'build'], label: 'build Web' },
       { args: ['--filter', '@xxyy/api', 'start'], label: 'start API and Web' },
     ]);
   });
@@ -235,7 +244,26 @@ describe('runAgentStart', () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(commands).toEqual(['ingest knowledge', 'start API and Web']);
+    expect(commands).toEqual(['ingest knowledge', 'build Web', 'start API and Web']);
+  });
+
+  it('does not start the API when the Web build fails', async () => {
+    const commands = [];
+    const exitCode = await runAgentStart({
+      args: ['--service'],
+      env: {},
+      log: () => {},
+      runCommand(command) {
+        commands.push(command.label);
+        return Promise.resolve({
+          exitCode: command.label === 'build Web' ? 1 : 0,
+          stdout: '',
+        });
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(commands).toEqual(['build Web']);
   });
 });
 
