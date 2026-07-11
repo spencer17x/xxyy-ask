@@ -16,6 +16,7 @@ import {
   type RagConfig,
   type RetrievedChunk,
   type Retriever,
+  type QualityTracer,
 } from '@xxyy/rag-core';
 
 import type { ToolDefinition } from '../tool-registry.js';
@@ -29,6 +30,7 @@ export interface CreateProductToolsOptions {
   config?: Partial<RagConfig>;
   index?: RagIndex;
   retriever?: Retriever;
+  tracer?: QualityTracer;
 }
 
 const productToolPolicy = {
@@ -247,6 +249,7 @@ function createConfiguredRetriever(options: CreateProductToolsOptions): Retrieve
 
   return createRerankingRetriever(retriever, createMetadataReranker(), {
     candidateMultiplier: RERANK_CANDIDATE_MULTIPLIER,
+    ...(options.tracer === undefined ? {} : { tracer: options.tracer }),
   });
 }
 

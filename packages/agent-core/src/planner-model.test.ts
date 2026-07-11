@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { createInMemoryQualityTracer } from '@xxyy/rag-core';
+
 import {
   PlannerConfigurationError,
   PlannerModelParseError,
@@ -112,6 +114,59 @@ describe('planner model', () => {
         method: 'POST',
       }),
     );
+  });
+
+  it('traces planner inputs and parsed plan summaries without prompts or raw output', async () => {
+    const { records, tracer } = createInMemoryQualityTracer();
+    const rawModelContent = JSON.stringify({
+      input: { channel: 'web', question: 'XXYY Pro 有哪些权益？' },
+      kind: 'tool',
+      reason: 'product question secret raw reason',
+      route: 'product_answer',
+      toolName: 'answer_product_question',
+    });
+    const planner = createOpenAiCompatiblePlannerModel({
+      apiKey: 'test-key',
+      baseUrl: 'https://example.test/v1',
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ choices: [{ message: { content: rawModelContent } }] }), {
+            status: 200,
+          }),
+        ),
+      model: 'test-model',
+      promptVersion: 'planner-v-test',
+      tracer,
+    });
+
+    await planner.plan({
+      request: { channel: 'web', message: 'email alice@example.com XXYY Pro 有哪些权益？' },
+      stateSummary: 'secret raw state summary',
+      tools: [{ description: 'Answer products', name: 'answer_product_question' }],
+    });
+
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        inputs: {
+          channel: 'web',
+          promptVersion: 'planner-v-test',
+          question: 'email [email] XXYY Pro 有哪些权益？',
+          stateSummaryLength: 24,
+          toolNames: ['answer_product_question'],
+        },
+        name: 'llm.planner',
+        outputs: {
+          kind: 'tool',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
+        },
+      }),
+    );
+    const serialized = JSON.stringify(records);
+    expect(serialized).not.toContain('test-key');
+    expect(serialized).not.toContain('secret raw state summary');
+    expect(serialized).not.toContain('secret raw reason');
+    expect(serialized).not.toContain('You are the XXYY');
   });
 
   it('throws a planner parse error for unusable model output', async () => {

@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 
-import { chatStreamEventSchema } from '@xxyy/shared';
+import { chatStreamEventSchema, type ChatStreamEvent } from '@xxyy/shared';
+import { noopQualityTracer, type QualityTracer } from '@xxyy/rag-core';
 
 export interface ToolPolicy {
   requiresOpsAuth: boolean;
@@ -67,8 +68,13 @@ export interface ToolRegistry {
   stream(name: string, input: unknown, context?: ToolContext): AsyncIterable<unknown> | undefined;
 }
 
-export function createToolRegistry(): ToolRegistry {
+export interface CreateToolRegistryOptions {
+  tracer?: QualityTracer;
+}
+
+export function createToolRegistry(options: CreateToolRegistryOptions = {}): ToolRegistry {
   const tools = new Map<string, RegisteredToolDefinition>();
+  const tracer = options.tracer ?? noopQualityTracer;
 
   return {
     async execute(name, input, context = {}) {
@@ -79,8 +85,13 @@ export function createToolRegistry(): ToolRegistry {
 
       assertToolPolicyAllowsExecution(definition, context);
       const parsedInput = definition.inputSchema.parse(input);
-      const output = await definition.execute(parsedInput, context);
-      return definition.outputSchema.parse(output);
+      return tracer.run(
+        createToolSpan(name, parsedInput, context, summarizeToolOutput),
+        async () => {
+          const output = await definition.execute(parsedInput, context);
+          return definition.outputSchema.parse(output);
+        },
+      );
     },
 
     get(name) {
@@ -108,9 +119,88 @@ export function createToolRegistry(): ToolRegistry {
       assertToolPolicyAllowsExecution(definition, context);
       const parsedInput = definition.inputSchema.parse(input);
       const stream = definition.stream?.(parsedInput, context);
-      return stream === undefined ? undefined : validateChatStreamEvents(stream);
+      if (stream === undefined) {
+        return undefined;
+      }
+      return tracer.stream(createToolStreamSpan(name, parsedInput, context), () =>
+        validateChatStreamEvents(stream),
+      );
     },
   };
+}
+
+function createToolSpan<T>(
+  name: string,
+  input: unknown,
+  context: ToolContext,
+  output: (value: T) => Record<string, unknown>,
+) {
+  return {
+    inputs: { inputKeys: objectKeys(input) },
+    metadata: toolMetadata(name, context),
+    name: 'agent.tool',
+    output,
+    runType: 'tool' as const,
+  };
+}
+
+function createToolStreamSpan(name: string, input: unknown, context: ToolContext) {
+  return {
+    event: summarizeStreamEvent,
+    inputs: { inputKeys: objectKeys(input) },
+    metadata: toolMetadata(name, context),
+    name: 'agent.tool',
+    output: (events: readonly Record<string, unknown>[]) => ({
+      eventCount: events.length,
+      eventTypes: events.map((event) => event.type),
+    }),
+    runType: 'tool' as const,
+  };
+}
+
+function toolMetadata(name: string, context: ToolContext): Record<string, unknown> {
+  return {
+    ...(context.channel === undefined ? {} : { channel: context.channel }),
+    ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+    toolName: name,
+    userIdPresent: context.userIdPresent === true,
+  };
+}
+
+function summarizeToolOutput(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) {
+    return { outputType: typeof value };
+  }
+  return {
+    ...(Array.isArray(value.attachments) ? { attachmentCount: value.attachments.length } : {}),
+    ...(Array.isArray(value.chunks) ? { chunkCount: value.chunks.length } : {}),
+    ...(Array.isArray(value.citations) ? { citationCount: value.citations.length } : {}),
+    ...(typeof value.intent === 'string' ? { intent: value.intent } : {}),
+    outputKeys: Object.keys(value).sort(),
+  };
+}
+
+function summarizeStreamEvent(event: unknown): Record<string, unknown> {
+  const parsed = chatStreamEventSchema.parse(event) as ChatStreamEvent;
+  if (parsed.type === 'metadata') {
+    return {
+      attachmentCount: parsed.attachments?.length ?? 0,
+      citationCount: parsed.citations.length,
+      intent: parsed.intent,
+      type: parsed.type,
+    };
+  }
+  return parsed.type === 'status'
+    ? { phase: parsed.phase, type: parsed.type }
+    : { type: parsed.type };
+}
+
+function objectKeys(value: unknown): string[] {
+  return isRecord(value) ? Object.keys(value).sort() : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function assertToolPolicyAllowsExecution(

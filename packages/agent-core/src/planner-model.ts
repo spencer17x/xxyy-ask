@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { ChatRequest } from '@xxyy/shared';
-import { redactSensitiveSupportText } from '@xxyy/rag-core';
+import { noopQualityTracer, redactSensitiveSupportText, type QualityTracer } from '@xxyy/rag-core';
 
 import {
   ALLOWED_AGENT_TOOL_NAMES,
@@ -30,7 +30,9 @@ export interface OpenAiCompatiblePlannerModelOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
   model: string | undefined;
+  promptVersion?: string;
   requestTimeoutMs?: number;
+  tracer?: QualityTracer;
 }
 
 interface ChatCompletionResponse {
@@ -42,6 +44,7 @@ interface ChatCompletionResponse {
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+export const PLANNER_PROMPT_VERSION = 'planner-v1';
 
 const plannerRoutes = [
   'boundary',
@@ -176,21 +179,61 @@ export function createOpenAiCompatiblePlannerModel(
   const endpoint = `${options.baseUrl.replace(/\/+$/u, '')}/chat/completions`;
   const fetchImpl = options.fetchImpl ?? fetch;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const promptVersion = options.promptVersion ?? PLANNER_PROMPT_VERSION;
+  const tracer = options.tracer ?? noopQualityTracer;
 
   return {
     async plan(input) {
-      const response = await fetchWithTimeout(fetchImpl, endpoint, {
-        apiKey,
-        body: createPlannerRequestBody(model, input),
-        requestTimeoutMs,
-      });
-      const payload = await parseChatCompletionResponse(response);
-      const content = payload.choices?.[0]?.message?.content;
-      if (content === undefined) {
-        throw new PlannerModelParseError('Planner response did not include message content.');
-      }
-      return parsePlannerContent(content);
+      return tracer.run(
+        {
+          inputs: {
+            channel: input.request.channel,
+            promptVersion,
+            question: redactSensitiveSupportText(input.request.message),
+            stateSummaryLength: input.stateSummary.length,
+            toolNames: input.tools.map((tool) => tool.name),
+          },
+          metadata: {
+            model,
+            promptVersion,
+            ...(input.request.requestId === undefined
+              ? {}
+              : { requestId: input.request.requestId }),
+            sessionIdPresent: input.request.sessionId !== undefined,
+            userIdPresent: input.request.userId !== undefined,
+          },
+          name: 'llm.planner',
+          output: summarizePlan,
+          runType: 'llm',
+        },
+        async () => {
+          const response = await fetchWithTimeout(fetchImpl, endpoint, {
+            apiKey,
+            body: createPlannerRequestBody(model, input),
+            requestTimeoutMs,
+          });
+          const payload = await parseChatCompletionResponse(response);
+          const content = payload.choices?.[0]?.message?.content;
+          if (content === undefined) {
+            throw new PlannerModelParseError('Planner response did not include message content.');
+          }
+          return parsePlannerContent(content);
+        },
+      );
     },
+  };
+}
+
+function summarizePlan(plan: AgentPlan): Record<string, unknown> {
+  if (plan.kind === 'tool') {
+    return { kind: plan.kind, route: plan.route, toolName: plan.toolName };
+  }
+  return {
+    answerLength: plan.response.answer.length,
+    citationCount: plan.response.citations.length,
+    intent: plan.response.intent,
+    kind: plan.kind,
+    route: plan.route,
   };
 }
 

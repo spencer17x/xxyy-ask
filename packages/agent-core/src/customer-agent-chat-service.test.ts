@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatResponse } from '@xxyy/shared';
 import {
+  createInMemoryQualityTracer,
   LlmConfigurationError,
   type AnswerProvider,
   type RetrievedChunk,
@@ -75,6 +76,41 @@ describe('createCustomerAgentChatService', () => {
       intent: 'product_qa',
     });
     expect(retrieveCalls).toEqual([{ question: 'XXYY Pro 有哪些权益？', topK: 4 }]);
+  });
+
+  it('propagates one tracer through request, tool, and reranking layers', async () => {
+    const { records, tracer } = createInMemoryQualityTracer();
+    const service = createCustomerAgentChatService({
+      answerProvider: {
+        answer(input) {
+          return Promise.resolve({
+            answer: 'XXYY Pro 权益。',
+            citations: [],
+            confidence: 0.8,
+            intent: input.classification.intent,
+          });
+        },
+      },
+      config: { topK: 1 },
+      planner: createScriptedPlannerModel([]),
+      retriever: {
+        retrieve: () => [createRetrievedChunk()],
+      },
+      tracer,
+    });
+
+    await service.ask({ channel: 'web', message: 'XXYY Pro 有哪些权益？' });
+
+    expect(records.map((record) => record.name)).toEqual([
+      'chat.request',
+      'agent.classify',
+      'agent.guard',
+      'agent.tool',
+      'rag.metadata_rerank',
+    ]);
+    const tool = records.find((record) => record.name === 'agent.tool');
+    const rerank = records.find((record) => record.name === 'rag.metadata_rerank');
+    expect(rerank?.parentId).toBe(tool?.id);
   });
 
   it('pre-blocks boundary-like questions without touching planner or product retrieval', async () => {

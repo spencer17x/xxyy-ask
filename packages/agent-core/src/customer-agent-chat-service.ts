@@ -4,6 +4,7 @@ import {
   loadRagConfig,
   type AnswerProvider,
   type RagConfig,
+  type QualityTracer,
   type Retriever,
 } from '@xxyy/rag-core';
 
@@ -27,6 +28,7 @@ export interface CreateCustomerAgentChatServiceOptions {
   /** @deprecated Compatibility field retained during LangGraph migration. */
   qualitySignals?: unknown;
   retriever?: Retriever;
+  tracer?: QualityTracer;
   /** @deprecated Compatibility field retained during LangGraph migration. */
   sessionContext?: unknown;
 }
@@ -34,24 +36,31 @@ export interface CreateCustomerAgentChatServiceOptions {
 export function createCustomerAgentChatService(
   options: CreateCustomerAgentChatServiceOptions,
 ): CustomerAgentRuntime {
-  const registry = createToolRegistry();
+  const registry = createToolRegistry(
+    options.tracer === undefined ? {} : { tracer: options.tracer },
+  );
 
   for (const tool of createProductTools({
     answerProvider: options.answerProvider,
     ...(options.config === undefined ? {} : { config: options.config }),
     ...(options.index === undefined ? {} : { index: options.index }),
     ...(options.retriever === undefined ? {} : { retriever: options.retriever }),
+    ...(options.tracer === undefined ? {} : { tracer: options.tracer }),
   })) {
     registry.register(tool);
   }
 
   return createLangGraphCustomerRuntime({
-    planner: options.planner ?? createDefaultPlannerModel(options.config),
+    planner: options.planner ?? createDefaultPlannerModel(options.config, options.tracer),
     registry,
+    ...(options.tracer === undefined ? {} : { tracer: options.tracer }),
   });
 }
 
-function createDefaultPlannerModel(configOverrides: Partial<RagConfig> | undefined): PlannerModel {
+function createDefaultPlannerModel(
+  configOverrides: Partial<RagConfig> | undefined,
+  tracer: QualityTracer | undefined,
+): PlannerModel {
   const config = {
     ...loadRagConfig(),
     ...(configOverrides ?? {}),
@@ -73,6 +82,7 @@ function createDefaultPlannerModel(configOverrides: Partial<RagConfig> | undefin
     baseUrl: config.openAiBaseUrl,
     model: config.openAiModel,
     requestTimeoutMs: config.openAiRequestTimeoutMs,
+    ...(tracer === undefined ? {} : { tracer }),
   });
 }
 

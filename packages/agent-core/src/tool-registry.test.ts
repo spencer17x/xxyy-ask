@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { createInMemoryQualityTracer } from '@xxyy/rag-core';
+
 import {
   ToolRegistryDuplicateNameError,
   ToolRegistryOpsAuthRequiredError,
@@ -68,6 +70,86 @@ describe('createToolRegistry', () => {
         input: { value: 'x' },
       },
     ]);
+  });
+
+  it('traces validated tool execution with bounded input and output summaries', async () => {
+    const { records, tracer } = createInMemoryQualityTracer();
+    const registry = createToolRegistry({ tracer });
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer products.',
+      inputSchema: z.object({ question: z.string() }),
+      outputSchema: z.object({
+        answer: z.string(),
+        citations: z.array(z.object({ title: z.string() })),
+        intent: z.literal('product_qa'),
+      }),
+      policy: { requiresOpsAuth: false },
+      execute: () => ({
+        answer: 'secret raw answer',
+        citations: [{ title: 'Pro' }],
+        intent: 'product_qa' as const,
+      }),
+    });
+
+    await registry.execute(
+      'answer_product_question',
+      { question: 'secret raw question' },
+      { channel: 'web', requestId: 'req-1', sessionId: 'session-secret' },
+    );
+    await expect(registry.execute('answer_product_question', { question: 42 })).rejects.toThrow(
+      z.ZodError,
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      inputs: { inputKeys: ['question'] },
+      metadata: {
+        channel: 'web',
+        requestId: 'req-1',
+        toolName: 'answer_product_question',
+      },
+      name: 'agent.tool',
+      outputs: {
+        citationCount: 1,
+        intent: 'product_qa',
+        outputKeys: ['answer', 'citations', 'intent'],
+      },
+      runType: 'tool',
+    });
+    const serialized = JSON.stringify(records);
+    expect(serialized).not.toContain('secret raw question');
+    expect(serialized).not.toContain('secret raw answer');
+    expect(serialized).not.toContain('session-secret');
+  });
+
+  it('traces streamed tool event types without retaining deltas', async () => {
+    const { records, tracer } = createInMemoryQualityTracer();
+    const registry = createToolRegistry({ tracer });
+    registry.register({
+      name: 'stream_answer',
+      description: 'Streams.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      policy: { requiresOpsAuth: false },
+      execute: () => ({}),
+      async *stream() {
+        yield { type: 'answer_delta', delta: 'secret stream delta' };
+        yield { type: 'metadata', citations: [], confidence: 0.9, intent: 'product_qa' };
+      },
+    });
+
+    const events: unknown[] = [];
+    for await (const event of registry.stream('stream_answer', {}) ?? []) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(2);
+    expect(records[0]).toMatchObject({
+      name: 'agent.tool',
+      outputs: { eventCount: 2, eventTypes: ['answer_delta', 'metadata'] },
+    });
+    expect(JSON.stringify(records)).not.toContain('secret stream delta');
   });
 
   it('requires explicit ops auth context for protected execute tools', async () => {

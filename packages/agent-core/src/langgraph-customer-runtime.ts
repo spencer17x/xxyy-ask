@@ -14,6 +14,8 @@ import {
   createInsufficientKnowledgeAnswer,
   createSupportConclusionFromEvidence,
   LlmConfigurationError,
+  noopQualityTracer,
+  type QualityTracer,
   shouldUseDeterministicSupportAnswer,
   VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
@@ -49,6 +51,7 @@ export interface CreateLangGraphCustomerRuntimeOptions {
   maxSteps?: number;
   planner: PlannerModel;
   registry: ToolRegistry;
+  tracer?: QualityTracer;
 }
 
 type CustomerRuntimeNode = 'answer_composer' | 'observe' | 'planner' | 'tool_executor';
@@ -68,9 +71,10 @@ export function createLangGraphCustomerRuntime(
 ): CustomerAgentRuntime {
   const maxSteps = options.maxSteps ?? AGENT_MAX_STEPS_DEFAULT;
   const graph = createCustomerGraph(options);
+  const tracer = options.tracer ?? noopQualityTracer;
 
-  async function ask(request: ChatRequest): Promise<ChatResponse> {
-    const guardedResponse = deterministicPreGuard(request);
+  async function askInternal(request: ChatRequest): Promise<ChatResponse> {
+    const guardedResponse = await tracePreGuard(request, tracer);
     if (guardedResponse !== undefined) {
       return guardedResponse;
     }
@@ -82,28 +86,122 @@ export function createLangGraphCustomerRuntime(
     return finalState.finalResponse ?? createClarificationResponse('无法生成可靠回答。');
   }
 
+  async function* streamInternal(request: ChatRequest): AsyncIterable<ChatStreamEvent> {
+    const guardedResponse = await tracePreGuard(request, tracer);
+    if (guardedResponse !== undefined) {
+      yield* streamChatResponse(guardedResponse);
+      return;
+    }
+
+    // Stream-only fast path: skip planner tool choice for ordinary product
+    // questions so clients get retrieve/answer status + token deltas instead of
+    // a search-then-dump path that appears as a single paint.
+    const productStream = streamDirectProductAnswer(request, options.registry);
+    if (productStream !== undefined) {
+      yield* productStream;
+      return;
+    }
+
+    yield* streamRuntimeRequest(request, options, maxSteps);
+  }
+
   return {
-    ask,
+    ask(request) {
+      return tracer.run(createRequestSpan(request), () => askInternal(request));
+    },
 
-    async *stream(request) {
-      const guardedResponse = deterministicPreGuard(request);
-      if (guardedResponse !== undefined) {
-        yield* streamChatResponse(guardedResponse);
-        return;
-      }
-
-      // Stream-only fast path: skip planner tool choice for ordinary product
-      // questions so clients get retrieve/answer status + token deltas instead of
-      // a search-then-dump path that appears as a single paint.
-      const productStream = streamDirectProductAnswer(request, options.registry);
-      if (productStream !== undefined) {
-        yield* productStream;
-        return;
-      }
-
-      yield* streamRuntimeRequest(request, options, maxSteps);
+    stream(request) {
+      return tracer.stream(createRequestStreamSpan(request), () => streamInternal(request));
     },
   };
+}
+
+function createRequestSpan(request: ChatRequest) {
+  return {
+    inputs: requestSummary(request),
+    metadata: requestMetadata(request),
+    name: 'chat.request',
+    output: summarizeResponse,
+    runType: 'chain' as const,
+  };
+}
+
+function createRequestStreamSpan(request: ChatRequest) {
+  return {
+    event: summarizeStreamEvent,
+    inputs: requestSummary(request),
+    metadata: requestMetadata(request),
+    name: 'chat.request',
+    output: (events: readonly Record<string, unknown>[]) => ({
+      eventCount: events.length,
+      eventTypes: events.map((event) => event.type),
+    }),
+    runType: 'chain' as const,
+  };
+}
+
+function requestSummary(request: ChatRequest): Record<string, unknown> {
+  return {
+    channel: request.channel,
+    messageLength: request.message.length,
+    sessionIdPresent: request.sessionId !== undefined,
+    userIdPresent: request.userId !== undefined,
+  };
+}
+
+function requestMetadata(request: ChatRequest): Record<string, unknown> {
+  return request.requestId === undefined ? {} : { requestId: request.requestId };
+}
+
+function summarizeResponse(response: ChatResponse): Record<string, unknown> {
+  return {
+    ...(response.agentRoute === undefined ? {} : { agentRoute: response.agentRoute }),
+    attachmentCount: response.attachments?.length ?? 0,
+    citationCount: response.citations.length,
+    intent: response.intent,
+    ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
+  };
+}
+
+function summarizeStreamEvent(event: ChatStreamEvent): Record<string, unknown> {
+  if (event.type === 'metadata') {
+    return {
+      ...(event.agentRoute === undefined ? {} : { agentRoute: event.agentRoute }),
+      attachmentCount: event.attachments?.length ?? 0,
+      citationCount: event.citations.length,
+      intent: event.intent,
+      type: event.type,
+    };
+  }
+  return event.type === 'status' ? { phase: event.phase, type: event.type } : { type: event.type };
+}
+
+async function tracePreGuard(
+  request: ChatRequest,
+  tracer: QualityTracer,
+): Promise<ChatResponse | undefined> {
+  const classification = await tracer.run(
+    {
+      inputs: { messageLength: request.message.length },
+      name: 'agent.classify',
+      output: (result) => ({ confidence: result.confidence, intent: result.intent }),
+      runType: 'chain',
+    },
+    () => Promise.resolve(classifyQuestion(request.message)),
+  );
+  return tracer.run(
+    {
+      inputs: { intent: classification.intent },
+      name: 'agent.guard',
+      output: (response) => ({
+        blocked: response !== undefined,
+        ...(response?.agentRoute === undefined ? {} : { agentRoute: response.agentRoute }),
+        ...(response === undefined ? {} : { intent: response.intent }),
+      }),
+      runType: 'chain',
+    },
+    () => Promise.resolve(deterministicPreGuard(request, classification)),
+  );
 }
 
 function streamDirectProductAnswer(
@@ -237,8 +335,10 @@ function applyStatePatch(
   };
 }
 
-function deterministicPreGuard(request: ChatRequest): ChatResponse | undefined {
-  const classification = classifyQuestion(request.message);
+function deterministicPreGuard(
+  request: ChatRequest,
+  classification: Classification = classifyQuestion(request.message),
+): ChatResponse | undefined {
   if (!shouldReturnDeterministicBoundary(classification)) {
     return undefined;
   }

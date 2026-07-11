@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
-import { LlmConfigurationError } from '@xxyy/rag-core';
+import { createInMemoryQualityTracer, LlmConfigurationError } from '@xxyy/rag-core';
 
 import { createLangGraphCustomerRuntime } from './langgraph-customer-runtime.js';
 import {
@@ -1621,5 +1621,100 @@ describe('createLangGraphCustomerRuntime', () => {
     });
     expect(planner.plan).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('traces root classification and deterministic guard for boundary requests', async () => {
+    const { records, tracer } = createInMemoryQualityTracer();
+    const runtime = createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([]),
+      registry: createToolRegistry({ tracer }),
+      tracer,
+    });
+
+    const response = await runtime.ask({
+      channel: 'web',
+      message: '帮我查一下钱包余额 alice@example.com',
+      requestId: 'req-boundary',
+      sessionId: 'session-secret',
+      userId: 'user-secret',
+    });
+
+    expect(response.agentRoute).toBe('boundary');
+    expect(records.map((record) => record.name)).toEqual([
+      'chat.request',
+      'agent.classify',
+      'agent.guard',
+    ]);
+    expect(records[1]?.parentId).toBe(records[0]?.id);
+    expect(records[2]?.parentId).toBe(records[0]?.id);
+    expect(records[0]).toMatchObject({
+      inputs: {
+        channel: 'web',
+        messageLength: 27,
+        sessionIdPresent: true,
+        userIdPresent: true,
+      },
+      metadata: { requestId: 'req-boundary' },
+      outputs: {
+        agentRoute: 'boundary',
+        attachmentCount: 0,
+        citationCount: 0,
+        intent: 'realtime_account_query',
+      },
+    });
+    const serialized = JSON.stringify(records);
+    expect(serialized).not.toContain('alice@example.com');
+    expect(serialized).not.toContain('session-secret');
+    expect(serialized).not.toContain('user-secret');
+  });
+
+  it('keeps streamed request and tool spans nested without retaining deltas', async () => {
+    const { records, tracer } = createInMemoryQualityTracer();
+    const registry = createToolRegistry({ tracer });
+    registry.register({
+      name: 'answer_product_question',
+      description: 'Answer products.',
+      inputSchema: z.object({ question: z.string() }),
+      outputSchema: z.custom<ChatResponse>(() => true),
+      policy: toolPolicy,
+      execute: () =>
+        ({
+          answer: '',
+          citations: [],
+          confidence: 0.8,
+          intent: 'product_qa',
+        }) satisfies ChatResponse,
+      async *stream() {
+        yield { type: 'answer_delta', delta: 'secret product delta' };
+        yield { type: 'metadata', citations: [], confidence: 0.8, intent: 'product_qa' };
+      },
+    });
+    const runtime = createLangGraphCustomerRuntime({
+      planner: createScriptedPlannerModel([]),
+      registry,
+      tracer,
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of runtime.stream({
+      channel: 'web',
+      message: 'XXYY Pro 有哪些权益？',
+      requestId: 'req-stream',
+    })) {
+      events.push(event);
+    }
+
+    expect(events.some((event) => event.type === 'answer_delta')).toBe(true);
+    const root = records.find((record) => record.name === 'chat.request');
+    const tool = records.find((record) => record.name === 'agent.tool');
+    expect(root).toMatchObject({
+      outputs: {
+        eventCount: 3,
+        eventTypes: ['status', 'answer_delta', 'metadata'],
+      },
+      status: 'success',
+    });
+    expect(tool?.parentId).toBe(root?.id);
+    expect(JSON.stringify(records)).not.toContain('secret product delta');
   });
 });
