@@ -16,6 +16,11 @@ import {
   type RetrievedChunk,
 } from './retrieve.js';
 import type { Retriever } from './retriever.js';
+import {
+  noopQualityTracer,
+  summarizeRetrievedChunks,
+  type QualityTracer,
+} from './quality-trace.js';
 import { extractSupportEntityTokens, supportEntityEvidenceBoost } from './support-entity.js';
 
 export interface PgClientLike {
@@ -64,6 +69,7 @@ export interface PgVectorStoreOptions {
   client: PgClientLike;
   embeddingDimension?: number;
   embeddingProvider: BatchEmbeddingProvider;
+  tracer?: QualityTracer;
 }
 
 export interface PgFeedbackStore {
@@ -254,6 +260,7 @@ export function createPgFeedbackStore(options: PgFeedbackStoreOptions): PgFeedba
 
 export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStore {
   const embeddingDimension = normalizeEmbeddingDimension(options.embeddingDimension);
+  const tracer = options.tracer ?? noopQualityTracer;
   const upsertChunksWithClient = async (
     client: PgClientLike,
     chunks: EmbeddedKnowledgeChunk[],
@@ -539,7 +546,15 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
     upsertChunks,
 
     async retrieve(question: string, retrieveOptions: RetrieveOptions): Promise<RetrievedChunk[]> {
-      const [queryEmbedding] = await options.embeddingProvider.embedTexts([question]);
+      const [queryEmbedding] = await tracer.run(
+        {
+          inputs: { questionLength: question.length },
+          name: 'rag.query_embedding',
+          output: (embeddings) => ({ embeddingDimension: embeddings[0]?.length ?? 0 }),
+          runType: 'embedding',
+        },
+        () => options.embeddingProvider.embedTexts([question]),
+      );
       if (queryEmbedding === undefined) {
         return [];
       }
@@ -553,9 +568,22 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         .filter((entity) => entity.length >= 6)
         .map((entity) => `%${entity.slice(0, 6)}%`);
       const candidateLimit = Math.max(topK * 4, topK);
-      const response = await queryDatabase<KnowledgeChunkRow>(
-        options.client,
-        `
+      return tracer.run(
+        {
+          inputs: {
+            candidateLimit,
+            entityCount: supportEntities.length,
+            queryTokenCount: queryTokens.length,
+            topK,
+          },
+          name: 'rag.pgvector_candidates',
+          output: (chunks) => ({ chunks: summarizeRetrievedChunks(chunks) }),
+          runType: 'retriever',
+        },
+        async () => {
+          const response = await queryDatabase<KnowledgeChunkRow>(
+            options.client,
+            `
         with vector_candidates as (
           select
             id, document_id, title, module, source_type, source_url, file,
@@ -622,21 +650,23 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         from combined_candidates
         order by id, token_overlap desc, embedding_distance asc
         `,
-        [
-          toPgVectorLiteral(queryEmbedding),
-          candidateLimit,
-          queryTokens,
-          supportEntities,
-          entityPrefixPatterns,
-        ],
-      );
+            [
+              toPgVectorLiteral(queryEmbedding),
+              candidateLimit,
+              queryTokens,
+              supportEntities,
+              entityPrefixPatterns,
+            ],
+          );
 
-      return response.rows
-        .map((row) => mapRow(row, question, queryTokens, supportEntities))
-        .filter(hasMinimumRetrievalEvidence)
-        .sort(compareRetrievedChunks)
-        .slice(0, topK)
-        .map((chunk, index) => ({ ...chunk, rank: index + 1 }));
+          return response.rows
+            .map((row) => mapRow(row, question, queryTokens, supportEntities))
+            .filter(hasMinimumRetrievalEvidence)
+            .sort(compareRetrievedChunks)
+            .slice(0, topK)
+            .map((chunk, index) => ({ ...chunk, rank: index + 1 }));
+        },
+      );
     },
   };
 }

@@ -3,6 +3,11 @@ import { tokenize } from '@xxyy/knowledge';
 
 import { retrieve, type RetrieveOptions, type RetrievedChunk } from './retrieve.js';
 import { extractSupportEntityTokens, supportEntityEvidenceBoost } from './support-entity.js';
+import {
+  noopQualityTracer,
+  summarizeRetrievedChunks,
+  type QualityTracer,
+} from './quality-trace.js';
 
 export interface Retriever {
   retrieve(
@@ -21,6 +26,7 @@ export interface Reranker {
 
 export interface RerankingRetrieverOptions {
   candidateMultiplier?: number;
+  tracer?: QualityTracer;
 }
 
 const METADATA_RERANK_WEIGHT = 0.2;
@@ -82,8 +88,19 @@ export function createRerankingRetriever(
         ...retrieveOptions,
         topK: candidateTopK,
       });
-      const reranked = await reranker.rerank({ chunks: candidates, question, topK });
-      return reranked.slice(0, topK).map((chunk, index) => ({ ...chunk, rank: index + 1 }));
+      const tracer = options.tracer ?? noopQualityTracer;
+      return tracer.run(
+        {
+          inputs: { candidates: summarizeRetrievedChunks(candidates), topK },
+          name: 'rag.metadata_rerank',
+          output: (chunks) => ({ chunks: summarizeRetrievedChunks(chunks) }),
+          runType: 'retriever',
+        },
+        async () => {
+          const reranked = await reranker.rerank({ chunks: candidates, question, topK });
+          return reranked.slice(0, topK).map((chunk, index) => ({ ...chunk, rank: index + 1 }));
+        },
+      );
     },
   };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { RetrievedChunk } from './retrieve.js';
+import { createInMemoryQualityTracer } from './quality-trace.js';
 import { createMetadataReranker, createRerankingRetriever, type Retriever } from './retriever.js';
 
 describe('createRerankingRetriever', () => {
@@ -40,6 +41,38 @@ describe('createRerankingRetriever', () => {
       vectorScore: 0.1,
     });
     expect(results[0]?.rank).toBe(1);
+  });
+
+  it('traces bounded pre/post rerank summaries without chunk text', async () => {
+    const { records, tracer } = createInMemoryQualityTracer();
+    const retriever = createRerankingRetriever(
+      createBaseRetriever([
+        createChunk({ id: 'weak-related', title: '费用说明', score: 2 }),
+        createChunk({ id: 'direct-pro', title: 'XXYY Pro 权益', score: 1 }),
+      ]),
+      createMetadataReranker(),
+      { candidateMultiplier: 4, tracer },
+    );
+
+    await retriever.retrieve('XXYY Pro secret raw question', { topK: 1 });
+
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        inputs: {
+          candidates: [
+            expect.objectContaining({ id: 'weak-related', score: 2 }),
+            expect.objectContaining({ id: 'direct-pro', score: 1 }),
+          ],
+          topK: 1,
+        },
+        name: 'rag.metadata_rerank',
+        outputs: {
+          chunks: [expect.objectContaining({ id: 'direct-pro', rank: 1 })],
+        },
+      }),
+    );
+    expect(JSON.stringify(records)).not.toContain('secret raw question');
+    expect(JSON.stringify(records)).not.toContain('内容');
   });
 
   it('does not let metadata-only matches override much stronger retrieved evidence', async () => {

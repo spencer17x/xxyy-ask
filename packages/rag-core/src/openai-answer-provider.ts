@@ -9,6 +9,11 @@ import {
   selectGroundingChunks,
 } from './answer.js';
 import type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
+import {
+  noopQualityTracer,
+  summarizeRetrievedChunks,
+  type QualityTracer,
+} from './quality-trace.js';
 import { redactSensitiveSupportText } from './redaction.js';
 
 export interface OpenAiAnswerProviderOptions {
@@ -17,7 +22,9 @@ export interface OpenAiAnswerProviderOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
   maxRetries?: number;
+  promptVersion?: string;
   requestTimeoutMs?: number;
+  tracer?: QualityTracer;
 }
 
 interface ChatCompletionResponse {
@@ -41,11 +48,17 @@ interface ChatCompletionStreamResponse {
   }>;
 }
 
+interface AnswerExecution {
+  outcome: 'invalid_output_fallback' | 'model' | 'request_fallback';
+  response: ChatResponse;
+}
+
 const GROUNDED_INTENTS = new Set(['product_qa', 'how_to']);
 const MAX_CONTEXT_CHARS = 4000;
 const MAX_CONTEXT_CHUNK_CONTENT_CHARS = 900;
 const DEFAULT_MAX_RETRIES = 1;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+export const OPENAI_ANSWER_PROMPT_VERSION = 'answer-v1';
 
 export class LlmConfigurationError extends Error {}
 
@@ -84,6 +97,21 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
     DEFAULT_REQUEST_TIMEOUT_MS,
   );
   const maxRetries = normalizeNonNegativeInteger(options.maxRetries, DEFAULT_MAX_RETRIES);
+  const promptVersion = options.promptVersion ?? OPENAI_ANSWER_PROMPT_VERSION;
+  const tracer = options.tracer ?? noopQualityTracer;
+
+  const selectGrounding = (
+    input: AnswerProviderInput,
+  ): Promise<AnswerProviderInput['retrievedChunks']> =>
+    tracer.run(
+      {
+        inputs: { candidateCount: input.retrievedChunks.length },
+        name: 'rag.grounding_selection',
+        output: (chunks) => ({ chunks: summarizeRetrievedChunks(chunks) }),
+        runType: 'retriever',
+      },
+      () => Promise.resolve(selectGroundingChunks(input.question, input.retrievedChunks)),
+    );
 
   return {
     async answer(input: AnswerProviderInput): Promise<ChatResponse> {
@@ -100,7 +128,7 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
         };
       }
 
-      const groundingChunks = selectGroundingChunks(input.question, input.retrievedChunks);
+      const groundingChunks = await selectGrounding(input);
       if (groundingChunks.length === 0) {
         return createInsufficientKnowledgeAnswer(input.question, input.classification.intent);
       }
@@ -108,43 +136,80 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
       const groundedInput = { ...input, retrievedChunks: groundingChunks };
       const citations = createCitationsFromChunks(groundingChunks);
       const attachments = createAttachmentsFromChunks(groundingChunks);
-      let response: Response;
-      try {
-        response = await fetchChatCompletion(fetchImpl, endpoint, {
-          apiKey,
-          body: createChatCompletionBody(groundedInput, citations.length, model, false),
-          maxRetries,
-          requestTimeoutMs,
-        });
-      } catch (error) {
-        if (
-          error instanceof LlmRequestTimeoutError ||
-          error instanceof LlmRetryableRequestError ||
-          error instanceof LlmRequestStatusError
-        ) {
-          return createGroundedAnswer(input.question, input.classification, groundingChunks);
-        }
-        throw error;
-      }
-
-      const payload = (await response.json()) as ChatCompletionResponse;
-      const answer = payload.choices?.[0]?.message?.content?.trim();
-      if (answer === undefined || isUnusableModelAnswer(answer)) {
-        return createGroundedAnswer(input.question, input.classification, groundingChunks);
-      }
-
-      return withOptionalAttachments(
-        withOptionalTokenUsage(
-          {
-            answer,
-            citations,
-            confidence: calculateLlmConfidence(input.classification.confidence),
-            intent: input.classification.intent,
+      const execution = await tracer.run(
+        {
+          inputs: {
+            citationCount: citations.length,
+            model,
+            promptVersion,
+            stream: false,
           },
-          parseChatTokenUsage(payload.usage),
-        ),
-        attachments,
+          metadata: { model, promptVersion },
+          name: 'llm.answer',
+          output: (result: AnswerExecution) => ({
+            answerLength: result.response.answer.length,
+            citationCount: result.response.citations.length,
+            outcome: result.outcome,
+            ...(result.response.tokenUsage === undefined
+              ? {}
+              : { tokenUsage: result.response.tokenUsage }),
+          }),
+          runType: 'llm',
+        },
+        async (): Promise<AnswerExecution> => {
+          let response: Response;
+          try {
+            response = await fetchChatCompletion(fetchImpl, endpoint, {
+              apiKey,
+              body: createChatCompletionBody(groundedInput, citations.length, model, false),
+              maxRetries,
+              requestTimeoutMs,
+            });
+          } catch (error) {
+            if (
+              error instanceof LlmRequestTimeoutError ||
+              error instanceof LlmRetryableRequestError ||
+              error instanceof LlmRequestStatusError
+            ) {
+              return {
+                outcome: 'request_fallback',
+                response: createGroundedAnswer(
+                  input.question,
+                  input.classification,
+                  groundingChunks,
+                ),
+              };
+            }
+            throw error;
+          }
+
+          const payload = (await response.json()) as ChatCompletionResponse;
+          const answer = payload.choices?.[0]?.message?.content?.trim();
+          if (answer === undefined || isUnusableModelAnswer(answer)) {
+            return {
+              outcome: 'invalid_output_fallback',
+              response: createGroundedAnswer(input.question, input.classification, groundingChunks),
+            };
+          }
+
+          return {
+            outcome: 'model',
+            response: withOptionalAttachments(
+              withOptionalTokenUsage(
+                {
+                  answer,
+                  citations,
+                  confidence: calculateLlmConfidence(input.classification.confidence),
+                  intent: input.classification.intent,
+                },
+                parseChatTokenUsage(payload.usage),
+              ),
+              attachments,
+            ),
+          };
+        },
       );
+      return execution.response;
     },
 
     async *stream(input: AnswerProviderInput): AsyncIterable<ChatStreamEvent> {
@@ -163,7 +228,7 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
         return;
       }
 
-      const groundingChunks = selectGroundingChunks(input.question, input.retrievedChunks);
+      const groundingChunks = await selectGrounding(input);
       if (groundingChunks.length === 0) {
         yield* streamStaticAnswer(
           createInsufficientKnowledgeAnswer(input.question, input.classification.intent),
@@ -174,73 +239,106 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
       const groundedInput = { ...input, retrievedChunks: groundingChunks };
       const citations = createCitationsFromChunks(groundingChunks);
       const attachments = createAttachmentsFromChunks(groundingChunks);
-      let response: Response;
-      try {
-        response = await fetchChatCompletion(fetchImpl, endpoint, {
-          apiKey,
-          body: createChatCompletionBody(groundedInput, citations.length, model, true),
-          maxRetries,
-          requestTimeoutMs,
-        });
-      } catch (error) {
-        if (
-          error instanceof LlmRequestTimeoutError ||
-          error instanceof LlmRetryableRequestError ||
-          error instanceof LlmRequestStatusError
-        ) {
-          yield* streamStaticAnswer(
-            createGroundedAnswer(input.question, input.classification, groundingChunks),
-          );
-          return;
-        }
-        throw error;
-      }
-
-      if (response.body === null) {
-        throw new Error('LLM streaming response did not include a body.');
-      }
-
-      let pendingSafetyPrefix = '';
-      let streamedAnswer = '';
-      let yieldedAnswerDelta = false;
-      for await (const delta of parseChatCompletionStream(response.body)) {
-        streamedAnswer += delta;
-        if (pendingSafetyPrefix.length > 0 || isPotentialSafetyLabelPrefix(delta)) {
-          pendingSafetyPrefix += delta;
-          if (isPotentialSafetyLabelPrefix(pendingSafetyPrefix)) {
-            continue;
+      yield* tracer.stream(
+        {
+          event: (event: ChatStreamEvent) => {
+            if (event.type === 'answer_delta') {
+              return { type: event.type };
+            }
+            if (event.type === 'status') {
+              return { phase: event.phase, type: event.type };
+            }
+            return {
+              attachmentCount: event.attachments?.length ?? 0,
+              citationCount: event.citations.length,
+              intent: event.intent,
+              type: event.type,
+            };
+          },
+          inputs: {
+            citationCount: citations.length,
+            model,
+            promptVersion,
+            stream: true,
+          },
+          metadata: { model, promptVersion },
+          name: 'llm.answer',
+          output: (events) => ({
+            eventCount: events.length,
+            eventTypes: events.map((event) => event.type),
+          }),
+          runType: 'llm',
+        },
+        async function* (): AsyncIterable<ChatStreamEvent> {
+          let response: Response;
+          try {
+            response = await fetchChatCompletion(fetchImpl, endpoint, {
+              apiKey,
+              body: createChatCompletionBody(groundedInput, citations.length, model, true),
+              maxRetries,
+              requestTimeoutMs,
+            });
+          } catch (error) {
+            if (
+              error instanceof LlmRequestTimeoutError ||
+              error instanceof LlmRetryableRequestError ||
+              error instanceof LlmRequestStatusError
+            ) {
+              yield* streamStaticAnswer(
+                createGroundedAnswer(input.question, input.classification, groundingChunks),
+              );
+              return;
+            }
+            throw error;
           }
 
-          yield { type: 'answer_delta', delta: pendingSafetyPrefix };
-          yieldedAnswerDelta = true;
-          pendingSafetyPrefix = '';
-          continue;
-        }
+          if (response.body === null) {
+            throw new Error('LLM streaming response did not include a body.');
+          }
 
-        yield { type: 'answer_delta', delta };
-        yieldedAnswerDelta = true;
-      }
+          let pendingSafetyPrefix = '';
+          let streamedAnswer = '';
+          let yieldedAnswerDelta = false;
+          for await (const delta of parseChatCompletionStream(response.body)) {
+            streamedAnswer += delta;
+            if (pendingSafetyPrefix.length > 0 || isPotentialSafetyLabelPrefix(delta)) {
+              pendingSafetyPrefix += delta;
+              if (isPotentialSafetyLabelPrefix(pendingSafetyPrefix)) {
+                continue;
+              }
 
-      if (pendingSafetyPrefix.length > 0 && !isUnusableModelAnswer(pendingSafetyPrefix)) {
-        yield { type: 'answer_delta', delta: pendingSafetyPrefix };
-        yieldedAnswerDelta = true;
-      }
+              yield { type: 'answer_delta', delta: pendingSafetyPrefix };
+              yieldedAnswerDelta = true;
+              pendingSafetyPrefix = '';
+              continue;
+            }
 
-      if (!yieldedAnswerDelta && isUnusableModelAnswer(streamedAnswer)) {
-        yield* streamStaticAnswer(
-          createGroundedAnswer(input.question, input.classification, groundingChunks),
-        );
-        return;
-      }
+            yield { type: 'answer_delta', delta };
+            yieldedAnswerDelta = true;
+          }
 
-      yield withOptionalMetadataAttachments(
-        {
-          type: 'metadata',
-          citations,
-          confidence: calculateLlmConfidence(input.classification.confidence),
-          intent: input.classification.intent,
+          if (pendingSafetyPrefix.length > 0 && !isUnusableModelAnswer(pendingSafetyPrefix)) {
+            yield { type: 'answer_delta', delta: pendingSafetyPrefix };
+            yieldedAnswerDelta = true;
+          }
+
+          if (!yieldedAnswerDelta && isUnusableModelAnswer(streamedAnswer)) {
+            yield* streamStaticAnswer(
+              createGroundedAnswer(input.question, input.classification, groundingChunks),
+            );
+            return;
+          }
+
+          yield withOptionalMetadataAttachments(
+            {
+              type: 'metadata',
+              citations,
+              confidence: calculateLlmConfidence(input.classification.confidence),
+              intent: input.classification.intent,
+            },
+            attachments,
+          );
         },
-        attachments,
       );
     },
   };

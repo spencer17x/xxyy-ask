@@ -30,6 +30,7 @@ export {
   createInMemoryQualityTracer,
   noopQualityTracer,
   sanitizeQualityRecord,
+  summarizeRetrievedChunks,
 } from './quality-trace.js';
 export {
   createPgFeedbackStore,

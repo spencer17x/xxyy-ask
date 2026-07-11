@@ -6,6 +6,7 @@ import {
   type EmbeddedKnowledgeChunk,
   VectorStoreUnavailableError,
 } from './pgvector-store.js';
+import { createInMemoryQualityTracer } from './quality-trace.js';
 
 class FakePgClient {
   failSqlIncludes: string | undefined;
@@ -578,6 +579,42 @@ describe('createPgVectorStore', () => {
       },
       text: 'XXYY Pro 支持 Telegram 钱包监控。',
     });
+  });
+
+  it('traces embedding and pgvector candidates without raw query, vectors, or content', async () => {
+    const client = new FakePgClient();
+    client.rows = [createKnowledgeRow({ id: 'chunk-current', tokens: ['xxyy', 'pro'] })];
+    const { records, tracer } = createInMemoryQualityTracer();
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1 })]),
+      },
+      tracer,
+    });
+
+    await store.retrieve('XXYY Pro secret raw query', { topK: 1 });
+
+    expect(records.map((record) => record.name)).toEqual([
+      'rag.query_embedding',
+      'rag.pgvector_candidates',
+    ]);
+    expect(records[0]).toMatchObject({
+      inputs: { questionLength: 25 },
+      outputs: { embeddingDimension: 1536 },
+      runType: 'embedding',
+    });
+    expect(records[1]).toMatchObject({
+      inputs: { topK: 1 },
+      outputs: {
+        chunks: [expect.objectContaining({ id: 'chunk-current', rank: 1, status: 'current' })],
+      },
+      runType: 'retriever',
+    });
+    const serialized = JSON.stringify(records);
+    expect(serialized).not.toContain('secret raw query');
+    expect(serialized).not.toContain('knowledge content');
+    expect(serialized).not.toContain('[0.1');
   });
 
   it('drops nearest-neighbor rows without lexical or minimum vector relevance', async () => {

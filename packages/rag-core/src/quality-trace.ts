@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { redactSensitiveSupportText } from './redaction.js';
+import type { RetrievedChunk } from './retrieve.js';
 
 export type QualityRunType = 'chain' | 'embedding' | 'llm' | 'retriever' | 'tool';
 export type QualityTraceStatus = 'cancelled' | 'error' | 'running' | 'success';
@@ -200,6 +201,20 @@ function summarize(
 
 export function sanitizeQualityRecord(value: Record<string, unknown>): Record<string, unknown> {
   return sanitizeValue(value, 0) as Record<string, unknown>;
+}
+
+export function summarizeRetrievedChunks(
+  chunks: readonly RetrievedChunk[],
+): Array<Record<string, unknown>> {
+  return chunks.slice(0, 20).map((chunk) => ({
+    id: chunk.id,
+    lexicalScore: chunk.lexicalScore,
+    rank: chunk.rank,
+    score: chunk.score,
+    sourceType: chunk.metadata.sourceType,
+    status: chunk.metadata.status ?? 'current',
+    vectorScore: chunk.vectorScore,
+  }));
 }
 
 function sanitizeValue(value: unknown, depth: number): unknown {

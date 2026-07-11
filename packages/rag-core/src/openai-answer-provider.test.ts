@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatStreamEvent, Classification } from '@xxyy/shared';
 
 import { createOpenAiAnswerProvider } from './openai-answer-provider.js';
+import { createInMemoryQualityTracer } from './quality-trace.js';
 import { retrieve, type RetrievedChunk } from './retrieve.js';
 import { createFixtureIndex } from './test-fixtures.js';
 
@@ -1314,6 +1315,108 @@ describe('createOpenAiAnswerProvider', () => {
     expect(answer).toContain('独享服务器和节点');
     expect(answer).toContain('监控2000个钱包');
     expect(events.at(-1)?.type).toBe('metadata');
+  });
+
+  it('traces grounding and answer generation with bounded summaries', async () => {
+    const { records, tracer } = createInMemoryQualityTracer();
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl: () =>
+        Promise.resolve(
+          jsonResponse({
+            choices: [{ message: { content: 'XXYY Pro 提供独享服务器和节点。' } }],
+            usage: { completion_tokens: 10, prompt_tokens: 20, total_tokens: 30 },
+          }),
+        ),
+      model: 'gpt-test',
+      promptVersion: 'answer-v-test',
+      tracer,
+    });
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'pro-current',
+        text: 'raw secret chunk content：XXYY Pro 提供独享服务器和节点。',
+        title: 'XXYY Pro 权益',
+      }),
+    ];
+
+    const response = await provider.answer({
+      classification,
+      question: 'raw secret question：XXYY Pro 有什么权益？',
+      retrievedChunks: retrieved,
+    });
+
+    expect(response.answer).toContain('独享服务器和节点');
+    expect(records.map((record) => record.name)).toEqual(['rag.grounding_selection', 'llm.answer']);
+    expect(records[0]).toMatchObject({
+      outputs: { chunks: [expect.objectContaining({ id: 'pro-current' })] },
+    });
+    expect(records[1]).toMatchObject({
+      inputs: {
+        citationCount: 1,
+        model: 'gpt-test',
+        promptVersion: 'answer-v-test',
+        stream: false,
+      },
+      outputs: {
+        answerLength: response.answer.length,
+        citationCount: 1,
+        outcome: 'model',
+        tokenUsage: { completionTokens: 10, promptTokens: 20, totalTokens: 30 },
+      },
+    });
+    const serialized = JSON.stringify(records);
+    expect(serialized).not.toContain('raw secret question');
+    expect(serialized).not.toContain('raw secret chunk content');
+    expect(serialized).not.toContain('test-key');
+    expect(serialized).not.toContain(response.answer);
+  });
+
+  it('traces streamed answer event types without retaining deltas', async () => {
+    const { records, tracer } = createInMemoryQualityTracer();
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl: () =>
+        Promise.resolve(
+          streamResponse([
+            'data: {"choices":[{"delta":{"content":"secret-stream-delta"}}]}\n\n',
+            'data: [DONE]\n\n',
+          ]),
+        ),
+      model: 'gpt-test',
+      tracer,
+    });
+    if (provider.stream === undefined) {
+      throw new Error('Expected provider to support streaming');
+    }
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of provider.stream({
+      classification,
+      question: 'XXYY Pro 有什么权益？',
+      retrievedChunks: [
+        createRetrievedChunk({
+          id: 'pro-current',
+          text: 'XXYY Pro 提供独享服务器和节点。',
+          title: 'XXYY Pro 权益',
+        }),
+      ],
+    })) {
+      events.push(event);
+    }
+
+    expect(events[0]).toEqual({ type: 'answer_delta', delta: 'secret-stream-delta' });
+    expect(records.at(-1)).toMatchObject({
+      name: 'llm.answer',
+      outputs: {
+        eventCount: 2,
+        eventTypes: ['answer_delta', 'metadata'],
+      },
+      status: 'success',
+    });
+    expect(JSON.stringify(records)).not.toContain('secret-stream-delta');
   });
 
   it('fails fast when LLM configuration is incomplete', () => {
