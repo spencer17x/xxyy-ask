@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AnswerProvider } from './answer-provider.js';
-import { createChatService } from './chat-service.js';
+import { createChatService, type ChatService } from './chat-service.js';
 import { evaluateCases } from './evaluate.js';
 import { createFixtureIndex } from './test-fixtures.js';
 
@@ -268,6 +268,86 @@ describe('evaluateCases', () => {
     expect(report.results[0]).toMatchObject({
       passed: false,
       failureReasons: ['answer text is not supported by citations: 监控2000个钱包'],
+    });
+  });
+
+  it('captures observations and checks route and exact tool trajectory', async () => {
+    const response = {
+      agentRoute: 'product_answer' as const,
+      answer: '钱包监控当前支持5000个地址。',
+      citations: [],
+      confidence: 0.9,
+      intent: 'product_qa' as const,
+    };
+    const service: ChatService = {
+      ask: () => Promise.resolve(response),
+      async *stream() {
+        yield {
+          type: 'metadata' as const,
+          citations: [],
+          confidence: response.confidence,
+          intent: response.intent,
+        };
+      },
+    };
+    const cases = [
+      {
+        name: 'observed trajectory',
+        request: { channel: 'web' as const, message: '现在支持多少地址？' },
+        expectedIntent: 'product_qa' as const,
+        expectedAgentRoute: 'product_answer' as const,
+        expectedToolNames: ['answer_product_question'],
+        forbiddenChunkIds: ['chunk-old'],
+        referenceFacts: ['5000个地址'],
+        relevantChunkIds: ['chunk-current'],
+      },
+      {
+        name: 'trajectory mismatch',
+        request: { channel: 'web' as const, message: '现在支持多少地址？' },
+        expectedIntent: 'product_qa' as const,
+        expectedAgentRoute: 'clarify' as const,
+        expectedToolNames: ['lookup_other_tool'],
+      },
+      {
+        name: 'legacy case',
+        request: { channel: 'web' as const, message: '现在支持多少地址？' },
+        expectedIntent: 'product_qa' as const,
+      },
+    ];
+
+    const report = await evaluateCases(cases, service, {
+      observe(testCase, observedResponse) {
+        expect(observedResponse).toBe(response);
+        return testCase.name === 'legacy case'
+          ? {}
+          : {
+              retrievedChunkIds: ['chunk-current'],
+              toolNames: ['answer_product_question'],
+            };
+      },
+    });
+
+    expect(report.results[0]).toMatchObject({
+      actualAgentRoute: 'product_answer',
+      forbiddenChunkIds: ['chunk-old'],
+      passed: true,
+      referenceFacts: ['5000个地址'],
+      relevantChunkIds: ['chunk-current'],
+      response,
+      retrievedChunkIds: ['chunk-current'],
+      toolNames: ['answer_product_question'],
+    });
+    expect(report.results[1]).toMatchObject({
+      passed: false,
+      failureReasons: [
+        'agent route product_answer != clarify',
+        'tool trajectory answer_product_question != lookup_other_tool',
+      ],
+    });
+    expect(report.results[2]).toMatchObject({
+      passed: true,
+      retrievedChunkIds: [],
+      toolNames: [],
     });
   });
 });

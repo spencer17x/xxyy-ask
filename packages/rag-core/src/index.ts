@@ -49,6 +49,7 @@ export type { EnvRecord, LoadWorkspaceEnvOptions, WorkspaceEnv } from './env.js'
 export type {
   EvaluateCasesOptions,
   EvaluationCase,
+  EvaluationObservation,
   EvaluationReport,
   EvaluationResult,
 } from './evaluate.js';
