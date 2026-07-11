@@ -20,6 +20,10 @@ export const supportedAgentRoutes = ['boundary', 'clarify', 'product_answer'] as
 
 export type AgentRoute = (typeof supportedAgentRoutes)[number];
 
+export const supportedStreamStatusPhases = ['planning', 'retrieving', 'answering'] as const;
+
+export type StreamStatusPhase = (typeof supportedStreamStatusPhases)[number];
+
 export type SourceType = 'official_docs' | 'x_updates';
 export type KnowledgeStatus = 'current' | 'historical' | 'deprecated';
 
@@ -102,6 +106,11 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
     delta: z.string(),
   }),
   z.object({
+    type: z.literal('status'),
+    phase: z.enum(supportedStreamStatusPhases),
+    message: z.string().min(1),
+  }),
+  z.object({
     type: z.literal('metadata'),
     agentRoute: z.enum(supportedAgentRoutes).optional(),
     attachments: z.array(chatAttachmentSchema).optional(),
@@ -116,6 +125,11 @@ export type ChatStreamEvent =
   | {
       type: 'answer_delta';
       delta: string;
+    }
+  | {
+      type: 'status';
+      phase: StreamStatusPhase;
+      message: string;
     }
   | {
       type: 'metadata';

@@ -83,26 +83,43 @@ export function App(): ReactElement {
       }
 
       await readChatStream(response.body, (streamEvent) => {
-        if (streamEvent.event === 'answer_delta') {
-          const delta = streamEvent.payload.delta ?? '';
+        if (streamEvent.event === 'status') {
+          const statusMessage = streamEvent.payload.message ?? '处理中…';
           updateAssistantMessage(assistantId, (message) => ({
             ...message,
-            rawAnswer: message.rawAnswer + delta,
-            text: message.text + delta,
+            meta: statusMessage,
+            statusMessage,
           }));
+          setStatus(statusMessage);
+          return;
+        }
+
+        if (streamEvent.event === 'answer_delta') {
+          const delta = streamEvent.payload.delta ?? '';
+          updateAssistantMessage(assistantId, (message) => {
+            const { statusMessage: _statusMessage, ...rest } = message;
+            return {
+              ...rest,
+              rawAnswer: message.rawAnswer + delta,
+              text: message.text + delta,
+            };
+          });
           setStatus('Receiving');
           return;
         }
 
         if (streamEvent.event === 'metadata') {
           const metadata = streamEvent.payload;
-          updateAssistantMessage(assistantId, (message) => ({
-            ...message,
-            attachments: metadata.attachments ?? [],
-            citations: metadata.citations ?? [],
-            intent: metadata.intent,
-            meta: `${metadata.intent} · confidence ${metadata.confidence.toFixed(2)}`,
-          }));
+          updateAssistantMessage(assistantId, (message) => {
+            const { statusMessage: _statusMessage, ...rest } = message;
+            return {
+              ...rest,
+              attachments: metadata.attachments ?? [],
+              citations: metadata.citations ?? [],
+              intent: metadata.intent,
+              meta: `${metadata.intent} · confidence ${metadata.confidence.toFixed(2)}`,
+            };
+          });
           setStatus(`${metadata.intent} · ${metadata.confidence.toFixed(2)}`);
           setIntent(metadata.intent);
           return;
@@ -113,7 +130,10 @@ export function App(): ReactElement {
         }
       });
 
-      updateAssistantMessage(assistantId, (message) => ({ ...message, status: undefined }));
+      updateAssistantMessage(assistantId, (message) => {
+        const { status: _status, statusMessage: _statusMessage, ...rest } = message;
+        return rest;
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       updateAssistantMessage(assistantId, (message) => ({
@@ -377,7 +397,7 @@ function MessageBubble({ message }: { message: ChatMessage }): ReactElement {
       <div className="bubble">
         <div className="bubble-content markdown-rendered">
           {message.status === 'streaming' && message.text.length === 0 ? (
-            <span className="thinking">Thinking</span>
+            <span className="thinking">{message.statusMessage ?? 'Thinking'}</span>
           ) : message.role === 'assistant' ? (
             <Markdown text={message.text} />
           ) : (

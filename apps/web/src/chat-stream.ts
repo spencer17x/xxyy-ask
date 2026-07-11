@@ -21,6 +21,11 @@ export async function readChatStream(
       const event = parseSseBlock(block);
       if (event !== undefined) {
         onEvent(event);
+        // Even if multiple SSE frames arrive in one network chunk, yield a paint
+        // frame so answer text appears progressively instead of all at once.
+        if (event.event === 'answer_delta' || event.event === 'status') {
+          await waitForPaint();
+        }
       }
     }
   }
@@ -30,6 +35,16 @@ export async function readChatStream(
   if (finalEvent !== undefined) {
     onEvent(finalEvent);
   }
+}
+
+function waitForPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 16);
+  });
 }
 
 export function parseSseBlock(block: string): ChatStreamEvent | undefined {
@@ -57,6 +72,9 @@ export function parseSseBlock(block: string): ChatStreamEvent | undefined {
   const payload = JSON.parse(data.join('\n')) as unknown;
   if (eventName === 'answer_delta') {
     return { event: 'answer_delta', payload: payload as { delta?: string } };
+  }
+  if (eventName === 'status') {
+    return { event: 'status', payload: payload as { message?: string; phase?: string } };
   }
   if (eventName === 'metadata') {
     return { event: 'metadata', payload: payload as ChatMetadata };

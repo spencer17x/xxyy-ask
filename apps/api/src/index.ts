@@ -60,6 +60,8 @@ export interface ApiResponseLike {
   setHeader(name: string, value: string): void;
   write(body: string): void;
   end(body?: string | Uint8Array): void;
+  flushHeaders?(): void;
+  flush?(): void;
 }
 
 export type ApiRequestHandler = (
@@ -1070,6 +1072,13 @@ function createLazyAnswerProvider(config: ReturnType<typeof loadRagConfig>): Ans
     answer(input) {
       return getProvider().answer(input);
     },
+    stream(input) {
+      const provider = getProvider();
+      if (provider.stream === undefined) {
+        throw new Error('Answer provider does not support streaming.');
+      }
+      return provider.stream(input);
+    },
   };
 }
 
@@ -1276,8 +1285,10 @@ async function sendChatStream(
 ): Promise<ChatStreamSummary> {
   response.statusCode = 200;
   response.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  response.setHeader('Cache-Control', 'no-cache');
+  response.setHeader('Cache-Control', 'no-cache, no-transform');
   response.setHeader('Connection', 'keep-alive');
+  response.setHeader('X-Accel-Buffering', 'no');
+  response.flushHeaders?.();
 
   let metadata: Extract<ChatStreamEvent, { type: 'metadata' }> | undefined;
 
@@ -1313,6 +1324,7 @@ async function sendChatStream(
 function writeSseEvent(response: ApiResponseLike, eventName: string, payload: unknown): void {
   response.write(`event: ${eventName}\n`);
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
+  response.flush?.();
 }
 
 function createApiErrorResponse(error: unknown): {

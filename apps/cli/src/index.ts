@@ -821,6 +821,13 @@ function createLazyAnswerProvider(config: ReturnType<typeof loadRagConfig>): Ans
     answer(input) {
       return getProvider().answer(input);
     },
+    stream(input) {
+      const provider = getProvider();
+      if (provider.stream === undefined) {
+        throw new Error('Answer provider does not support streaming.');
+      }
+      return provider.stream(input);
+    },
   };
 }
 

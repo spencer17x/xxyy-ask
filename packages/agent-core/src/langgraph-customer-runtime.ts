@@ -92,9 +92,65 @@ export function createLangGraphCustomerRuntime(
         return;
       }
 
+      // Stream-only fast path: skip planner tool choice for ordinary product
+      // questions so clients get retrieve/answer status + token deltas instead of
+      // a search-then-dump path that appears as a single paint.
+      const productStream = streamDirectProductAnswer(request, options.registry);
+      if (productStream !== undefined) {
+        yield* productStream;
+        return;
+      }
+
       yield* streamRuntimeRequest(request, options, maxSteps);
     },
   };
+}
+
+function streamDirectProductAnswer(
+  request: ChatRequest,
+  registry: ToolRegistry,
+): AsyncIterable<ChatStreamEvent> | undefined {
+  const classification = classifyQuestion(request.message);
+  if (classification.intent !== 'product_qa' && classification.intent !== 'how_to') {
+    return undefined;
+  }
+
+  const productTool = registry.get('answer_product_question');
+  if (productTool?.stream === undefined) {
+    return undefined;
+  }
+
+  return (async function* (): AsyncIterable<ChatStreamEvent> {
+    yield {
+      type: 'status',
+      phase: 'planning',
+      message: '正在分析问题…',
+    };
+
+    try {
+      const toolStream = registry.stream(
+        'answer_product_question',
+        { question: request.message },
+        toolContextFromRequest(request),
+      );
+      if (toolStream === undefined) {
+        yield* streamChatResponse(
+          withAgentRoute(toolFailureResponse('answer_product_question'), 'clarify'),
+        );
+        return;
+      }
+      for await (const event of toolStream) {
+        yield withStreamAgentRoute(event as ChatStreamEvent, 'product_answer');
+      }
+    } catch (error) {
+      if (isProductConfigurationError(error)) {
+        throw error;
+      }
+      yield* streamChatResponse(
+        withAgentRoute(toolFailureResponse('answer_product_question'), 'clarify'),
+      );
+    }
+  })();
 }
 
 async function* streamRuntimeRequest(
@@ -105,6 +161,11 @@ async function* streamRuntimeRequest(
   let state = createInitialAgentState(request, { maxSteps }) as LangGraphAgentState;
 
   while (state.finalResponse === undefined) {
+    yield {
+      type: 'status',
+      phase: 'planning',
+      message: '正在分析问题…',
+    };
     state = applyStatePatch(state, await plannerNode(state, options));
     if (state.finalResponse !== undefined) {
       break;
@@ -139,6 +200,11 @@ async function* streamRuntimeRequest(
       }
     }
 
+    yield {
+      type: 'status',
+      phase: 'answering',
+      message: '正在生成回答…',
+    };
     state = applyStatePatch(state, await toolExecutorNode(state, options.registry));
     state = applyStatePatch(state, observeNode(state));
   }
@@ -862,26 +928,43 @@ function isProductConfigurationError(error: unknown): boolean {
   );
 }
 
-function streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
-  return toAsyncIterable([
-    ...(response.answer.length > 0
-      ? [{ type: 'answer_delta' as const, delta: response.answer }]
-      : []),
-    {
-      type: 'metadata',
-      ...(response.agentRoute === undefined ? {} : { agentRoute: response.agentRoute }),
-      ...(response.attachments === undefined ? {} : { attachments: response.attachments }),
-      citations: response.citations,
-      confidence: response.confidence,
-      intent: response.intent,
-      ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
-    },
-  ]);
+async function* streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
+  for (const delta of chunkAnswerForStreaming(response.answer)) {
+    yield { type: 'answer_delta', delta };
+    // Small delay so SSE/draft clients receive progressive frames instead of one burst.
+    await delay(STREAM_CHUNK_DELAY_MS);
+  }
+
+  yield {
+    type: 'metadata',
+    ...(response.agentRoute === undefined ? {} : { agentRoute: response.agentRoute }),
+    ...(response.attachments === undefined ? {} : { attachments: response.attachments }),
+    citations: response.citations,
+    confidence: response.confidence,
+    intent: response.intent,
+    ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
+  };
 }
 
-async function* toAsyncIterable<T>(items: Iterable<T>): AsyncIterable<T> {
-  for (const item of items) {
-    await Promise.resolve();
-    yield item;
+const STREAM_CHUNK_DELAY_MS = 20;
+
+function chunkAnswerForStreaming(answer: string, chunkSize = 18): string[] {
+  if (answer.length === 0) {
+    return [];
   }
+  if (answer.length <= chunkSize) {
+    return [answer];
+  }
+
+  const chunks: string[] = [];
+  for (let index = 0; index < answer.length; index += chunkSize) {
+    chunks.push(answer.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

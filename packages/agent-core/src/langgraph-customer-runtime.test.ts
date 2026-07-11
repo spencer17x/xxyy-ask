@@ -1499,6 +1499,16 @@ describe('createLangGraphCustomerRuntime', () => {
 
     expect(events).toEqual([
       {
+        message: '正在分析问题…',
+        phase: 'planning',
+        type: 'status',
+      },
+      {
+        message: '正在生成回答…',
+        phase: 'answering',
+        type: 'status',
+      },
+      {
         delta: '带附件回答',
         type: 'answer_delta',
       },
@@ -1559,6 +1569,11 @@ describe('createLangGraphCustomerRuntime', () => {
     }
 
     expect(events).toEqual([
+      {
+        message: '正在分析问题…',
+        phase: 'planning',
+        type: 'status',
+      },
       { type: 'answer_delta', delta: 'streamed ' },
       {
         agentRoute: 'product_answer',

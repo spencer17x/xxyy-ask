@@ -390,20 +390,43 @@ function withOptionalMetadataAttachments(
   return { ...event, attachments };
 }
 
-function streamStaticAnswer(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
-  return toAsyncIterable([
-    ...(response.answer.length > 0
-      ? [{ type: 'answer_delta' as const, delta: response.answer }]
-      : []),
-    {
-      type: 'metadata',
-      ...(response.attachments === undefined ? {} : { attachments: response.attachments }),
-      citations: response.citations,
-      confidence: response.confidence,
-      intent: response.intent,
-      ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
-    },
-  ]);
+async function* streamStaticAnswer(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
+  for (const delta of chunkAnswerForStreaming(response.answer)) {
+    yield { type: 'answer_delta', delta };
+    await delay(STREAM_CHUNK_DELAY_MS);
+  }
+
+  yield {
+    type: 'metadata',
+    ...(response.attachments === undefined ? {} : { attachments: response.attachments }),
+    citations: response.citations,
+    confidence: response.confidence,
+    intent: response.intent,
+    ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
+  };
+}
+
+const STREAM_CHUNK_DELAY_MS = 20;
+
+function chunkAnswerForStreaming(answer: string, chunkSize = 18): string[] {
+  if (answer.length === 0) {
+    return [];
+  }
+  if (answer.length <= chunkSize) {
+    return [answer];
+  }
+
+  const chunks: string[] = [];
+  for (let index = 0; index < answer.length; index += chunkSize) {
+    chunks.push(answer.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function parseChatTokenUsage(

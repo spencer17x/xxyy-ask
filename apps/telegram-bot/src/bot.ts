@@ -248,10 +248,28 @@ async function trySendStreamingChatResponse(options: {
   let answer = '';
   let draftFailed = false;
   let lastDraftLength = 0;
+  let lastStatusMessage: string | undefined;
   let metadata: Extract<ChatStreamEvent, { type: 'metadata' }> | undefined;
 
   try {
     for await (const event of options.stream(options.request)) {
+      if (event.type === 'status') {
+        if (answer.length > 0 || draftFailed || event.message === lastStatusMessage) {
+          continue;
+        }
+        lastStatusMessage = event.message;
+        try {
+          await options.api.sendMessageDraft({
+            chatId: options.chatId,
+            draftId: options.draftId,
+            text: formatTelegramStatusDraft(event.message),
+          });
+        } catch {
+          draftFailed = true;
+        }
+        continue;
+      }
+
       if (event.type === 'answer_delta') {
         answer += event.delta;
         if (!draftFailed && shouldSendTelegramDraft(answer, lastDraftLength)) {
@@ -269,7 +287,9 @@ async function trySendStreamingChatResponse(options: {
         continue;
       }
 
-      metadata = event;
+      if (event.type === 'metadata') {
+        metadata = event;
+      }
     }
   } catch {
     return false;
@@ -337,6 +357,10 @@ function shouldSendTelegramDraft(answer: string, lastDraftLength: number): boole
     answer.length > 0 &&
     (lastDraftLength === 0 || answer.length - lastDraftLength >= TELEGRAM_DRAFT_UPDATE_MIN_CHARS)
   );
+}
+
+function formatTelegramStatusDraft(message: string): string {
+  return `⏳ ${message}`;
 }
 
 function createTelegramDraftId(updateId: number): number {

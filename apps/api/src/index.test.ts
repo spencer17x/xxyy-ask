@@ -1163,6 +1163,8 @@ describe('createRequestHandler', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['Content-Type']).toBe('text/event-stream; charset=utf-8');
+    expect(response.headers['Cache-Control']).toBe('no-cache, no-transform');
+    expect(response.headers['X-Accel-Buffering']).toBe('no');
     expect(response.body).toContain('event: answer_delta\n');
     expect(response.body).toContain('data: {"type":"answer_delta","delta":"XXYY Pro"}\n\n');
     expect(response.body).toContain('event: metadata\n');

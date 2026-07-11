@@ -173,6 +173,11 @@ export function createProductTools(
         throw new Error('answer_product_question requires an answerProvider.');
       }
 
+      yield {
+        type: 'status',
+        phase: 'retrieving',
+        message: '正在检索知识库…',
+      };
       const retrievedChunks = await retriever.retrieve(input.question, {
         topK: normalizeTopK(config.topK),
       });
@@ -180,6 +185,11 @@ export function createProductTools(
         classification,
         question: input.question,
         retrievedChunks,
+      };
+      yield {
+        type: 'status',
+        phase: 'answering',
+        message: '正在生成回答…',
       };
       if (options.answerProvider.stream !== undefined) {
         yield* options.answerProvider.stream(answerInput);
@@ -278,27 +288,43 @@ function normalizeTopK(topK: number): number {
   return Math.min(topK, MAX_TOP_K);
 }
 
-function streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
-  return toAsyncIterable([
-    ...(response.answer.length > 0
-      ? [{ type: 'answer_delta' as const, delta: response.answer }]
-      : []),
-    {
-      type: 'metadata',
-      ...(response.attachments === undefined ? {} : { attachments: response.attachments }),
-      citations: response.citations,
-      confidence: response.confidence,
-      intent: response.intent,
-      ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
-    },
-  ]);
+async function* streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
+  for (const delta of chunkAnswerForStreaming(response.answer)) {
+    yield { type: 'answer_delta', delta };
+    await delay(STREAM_CHUNK_DELAY_MS);
+  }
+
+  yield {
+    type: 'metadata',
+    ...(response.attachments === undefined ? {} : { attachments: response.attachments }),
+    citations: response.citations,
+    confidence: response.confidence,
+    intent: response.intent,
+    ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
+  };
 }
 
-async function* toAsyncIterable<T>(items: Iterable<T>): AsyncIterable<T> {
-  for (const item of items) {
-    await Promise.resolve();
-    yield item;
+const STREAM_CHUNK_DELAY_MS = 20;
+
+function chunkAnswerForStreaming(answer: string, chunkSize = 18): string[] {
+  if (answer.length === 0) {
+    return [];
   }
+  if (answer.length <= chunkSize) {
+    return [answer];
+  }
+
+  const chunks: string[] = [];
+  for (let index = 0; index < answer.length; index += chunkSize) {
+    chunks.push(answer.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 export type AnswerProductQuestionToolOutput = ChatResponse;

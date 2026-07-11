@@ -28,11 +28,13 @@ export interface ChatMessage {
   rawAnswer: string;
   role: 'assistant' | 'user';
   status?: 'error' | 'streaming' | undefined;
+  statusMessage?: string;
   text: string;
 }
 
 export type ChatStreamEvent =
   | { event: 'answer_delta'; payload: { delta?: string } }
+  | { event: 'status'; payload: { message?: string; phase?: string } }
   | { event: 'metadata'; payload: ChatMetadata }
   | { event: 'error'; payload: { message?: string } }
   | { event: 'unknown'; eventName: string; payload: unknown };

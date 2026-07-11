@@ -102,6 +102,8 @@ describe('createTelegramBot', () => {
     const ask = vi.fn(() => Promise.resolve(createResponse()));
     const stream = vi.fn(() =>
       streamEvents([
+        { type: 'status', phase: 'planning', message: '正在分析问题…' },
+        { type: 'status', phase: 'retrieving', message: '正在检索知识库…' },
         { type: 'answer_delta', delta: 'A'.repeat(90) },
         { type: 'answer_delta', delta: 'B'.repeat(90) },
         {
@@ -147,9 +149,19 @@ describe('createTelegramBot', () => {
     expect(sendMessageDraft).toHaveBeenNthCalledWith(1, {
       chatId: 123,
       draftId: 10,
-      text: 'A'.repeat(90),
+      text: '⏳ 正在分析问题…',
     });
     expect(sendMessageDraft).toHaveBeenNthCalledWith(2, {
+      chatId: 123,
+      draftId: 10,
+      text: '⏳ 正在检索知识库…',
+    });
+    expect(sendMessageDraft).toHaveBeenNthCalledWith(3, {
+      chatId: 123,
+      draftId: 10,
+      text: 'A'.repeat(90),
+    });
+    expect(sendMessageDraft).toHaveBeenNthCalledWith(4, {
       chatId: 123,
       draftId: 10,
       text: `${'A'.repeat(90)}${'B'.repeat(90)}`,

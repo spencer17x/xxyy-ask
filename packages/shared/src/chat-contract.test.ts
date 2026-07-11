@@ -96,6 +96,18 @@ describe('chat contract', () => {
 
     expect(
       chatStreamEventSchema.parse({
+        type: 'status',
+        phase: 'retrieving',
+        message: '正在检索知识库…',
+      }),
+    ).toEqual({
+      type: 'status',
+      phase: 'retrieving',
+      message: '正在检索知识库…',
+    });
+
+    expect(
+      chatStreamEventSchema.parse({
         type: 'metadata',
         citations: [],
         confidence: 0.8,
