@@ -461,13 +461,6 @@ function parseTokenCount(value: unknown): number | undefined {
     : undefined;
 }
 
-async function* toAsyncIterable<T>(items: Iterable<T>): AsyncIterable<T> {
-  for (const item of items) {
-    await Promise.resolve();
-    yield item;
-  }
-}
-
 async function* parseChatCompletionStream(body: ReadableStream<Uint8Array>): AsyncIterable<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
