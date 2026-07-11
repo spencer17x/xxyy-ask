@@ -27,11 +27,18 @@ describe('parseCliArgs', () => {
   it('parses ask questions with or without a separator', () => {
     expect(parseCliArgs(['ask', '--', 'XXYY Pro 有哪些权益？'])).toEqual({
       command: 'ask',
+      debugRetrieve: false,
       question: 'XXYY Pro 有哪些权益？',
     });
     expect(parseCliArgs(['ask', 'XXYY Pro', '有哪些权益？'])).toEqual({
       command: 'ask',
+      debugRetrieve: false,
       question: 'XXYY Pro 有哪些权益？',
+    });
+    expect(parseCliArgs(['ask', '--', '--debug-retrieve', '当前支持robinhood么'])).toEqual({
+      command: 'ask',
+      debugRetrieve: true,
+      question: '当前支持robinhood么',
     });
   });
 

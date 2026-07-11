@@ -1,6 +1,8 @@
 import { createLocalHashEmbedding, tokenize } from '@xxyy/knowledge';
 import type { IndexEntry, RagIndex, SourceType } from '@xxyy/shared';
 
+import { extractSupportEntityTokens, supportEntityEvidenceBoost } from './support-entity.js';
+
 export interface RetrieveOptions {
   topK?: number;
 }
@@ -35,6 +37,7 @@ export function retrieve(
   options: RetrieveOptions = {},
 ): RetrievedChunk[] {
   const queryTokens = createRetrieveQueryTokens(question);
+  const supportEntities = extractSupportEntityTokens(question);
   const topK = normalizeTopK(options.topK);
 
   if (queryTokens.length === 0 || index.entries.length === 0 || topK <= 0) {
@@ -58,12 +61,22 @@ export function retrieve(
       const contextScore = calculateContextScore(question, entry);
       const sourceBoost = calculateSourceBoost(entry.metadata.sourceType);
       const freshnessBoost = calculateFreshnessBoost(question, entry);
+      const entityBoost = supportEntityEvidenceBoost(
+        [
+          entry.metadata.title,
+          entry.metadata.module,
+          ...entry.metadata.headingPath,
+          entry.text,
+        ].join(' '),
+        supportEntities,
+      );
       const score = roundScore(
         LEXICAL_WEIGHT * lexicalScore +
           VECTOR_WEIGHT * vectorScore +
           contextScore +
           sourceBoost +
-          freshnessBoost,
+          freshnessBoost +
+          entityBoost,
       );
 
       return {

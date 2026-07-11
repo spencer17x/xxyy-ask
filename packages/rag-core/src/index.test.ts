@@ -28,6 +28,9 @@ describe('rag-core public exports', () => {
     expect(ragCore.createMetadataReranker).toBeTypeOf('function');
     expect(ragCore.createRerankingRetriever).toBeTypeOf('function');
     expect(ragCore.redactSensitiveSupportText).toBeTypeOf('function');
+    expect(ragCore.extractSupportEntityTokens).toBeTypeOf('function');
+    expect(ragCore.formatRetrievedChunksDebug).toBeTypeOf('function');
+    expect(ragCore.isSupportQuestionText).toBeTypeOf('function');
 
     expect(Object.keys(ragCore).sort()).toEqual([
       'LlmConfigurationError',
@@ -50,7 +53,10 @@ describe('rag-core public exports', () => {
       'createRerankingRetriever',
       'createSupportConclusionFromEvidence',
       'evaluateCases',
+      'extractSupportEntityTokens',
+      'formatRetrievedChunksDebug',
       'hasProductDomainSignal',
+      'isSupportQuestionText',
       'loadRagConfig',
       'loadWorkspaceEnv',
       'redactSensitiveSupportText',

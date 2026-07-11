@@ -2,6 +2,7 @@ import type { RagIndex } from '@xxyy/shared';
 import { tokenize } from '@xxyy/knowledge';
 
 import { retrieve, type RetrieveOptions, type RetrievedChunk } from './retrieve.js';
+import { extractSupportEntityTokens, supportEntityEvidenceBoost } from './support-entity.js';
 
 export interface Retriever {
   retrieve(
@@ -164,6 +165,11 @@ function contentShapeScore(chunk: RetrievedChunk, question: string): number {
 
   if (isBaseB20SupportQuestion(normalizedQuestion)) {
     return baseB20SupportEvidenceScore(normalizedEvidence);
+  }
+
+  const supportEntities = extractSupportEntityTokens(question);
+  if (supportEntities.length > 0) {
+    return supportEntityEvidenceBoost(normalizedEvidence, supportEntities);
   }
 
   if (!isSupportedChainCoverageQuestion(normalizedQuestion)) {

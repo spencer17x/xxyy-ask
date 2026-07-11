@@ -2,6 +2,12 @@ import type { ChatAttachment, ChatResponse, Citation, Classification, Intent } f
 import { tokenize } from '@xxyy/knowledge';
 
 import type { RetrievedChunk } from './retrieve.js';
+import {
+  extractSupportEntityTokens,
+  isSupportEntityToken,
+  isSupportQuestionText,
+  textMatchesAllSupportEntities,
+} from './support-entity.js';
 
 const GROUNDED_INTENTS = new Set<Intent>(['product_qa', 'how_to']);
 const MAX_CITATIONS = 3;
@@ -77,11 +83,13 @@ export function selectGroundingChunks(
     return [];
   }
 
-  const supportEntityTokens = supportEntityEvidenceTokens(question);
+  const supportEntityTokens = extractSupportEntityTokens(question);
   if (supportEntityTokens.length > 0) {
-    return highRankedChunks.filter((chunk) =>
-      containsAllEvidenceTokens(toEvidenceText(chunk), supportEntityTokens),
-    );
+    // Scan the full retrieved candidate list so rare entities are not lost to
+    // generic "支持" hits that crowd the top citation window.
+    return retrievedChunks
+      .filter((chunk) => textMatchesAllSupportEntities(toEvidenceText(chunk), supportEntityTokens))
+      .slice(0, MAX_CITATIONS);
   }
 
   const standardAnswerChunk = highRankedChunks.find((chunk) => /标准客服回答：/u.test(chunk.text));
@@ -102,7 +110,7 @@ export function createInsufficientKnowledgeAnswer(question: string, intent: Inte
 }
 
 export function shouldUseDeterministicSupportAnswer(question: string): boolean {
-  return isSupportQuestion(normalizeForEvidenceMatch(question));
+  return isSupportQuestionText(question);
 }
 
 function withOptionalAttachments(
@@ -249,55 +257,8 @@ function requiresStrongTopicalEvidence(question: string): boolean {
   );
 }
 
-function supportEntityEvidenceTokens(question: string): string[] {
-  const normalizedQuestion = normalizeForEvidenceMatch(question);
-  if (!isSupportQuestion(normalizedQuestion)) {
-    return [];
-  }
-
-  return Array.from(new Set(tokenize(normalizedQuestion))).filter(isSupportEntityToken);
-}
-
-function isSupportQuestion(normalizedQuestion: string): boolean {
-  return /是否支持|当前支持|现在支持|支持.*(?:吗|么|不)|(?:does|do|can|is|are).*\bsupport\b|\bsupport(?:s|ed)?\b/u.test(
-    normalizedQuestion,
-  );
-}
-
-function isSupportEntityToken(token: string): boolean {
-  return (
-    /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/u.test(token) &&
-    token.length > 1 &&
-    !supportEntityStopTokens.has(token)
-  );
-}
-
-const supportEntityStopTokens = new Set([
-  'are',
-  'can',
-  'current',
-  'currently',
-  'do',
-  'does',
-  'i',
-  'is',
-  'me',
-  'my',
-  'now',
-  'please',
-  'pro',
-  'support',
-  'supported',
-  'supports',
-  'the',
-  'this',
-  'xxyy',
-  'you',
-]);
-
 function containsAllEvidenceTokens(text: string, tokens: string[]): boolean {
-  const evidenceTokens = new Set(tokenize(normalizeForEvidenceMatch(text)));
-  return tokens.every((token) => evidenceTokens.has(token));
+  return textMatchesAllSupportEntities(text, tokens);
 }
 
 function createSupportConclusion(
@@ -315,7 +276,7 @@ export function createSupportConclusionFromEvidence(
   evidenceTexts: string[],
 ): string | undefined {
   const normalizedQuestion = normalizeForEvidenceMatch(question);
-  if (!isSupportQuestion(normalizedQuestion)) {
+  if (!isSupportQuestionText(normalizedQuestion)) {
     return undefined;
   }
 
@@ -357,7 +318,7 @@ function selectSupportEvidenceSentence(
 
 function supportEvidenceKeywords(question: string): string[] {
   const normalizedQuestion = normalizeForEvidenceMatch(question);
-  const keywords = supportEntityEvidenceTokens(question);
+  const keywords = extractSupportEntityTokens(question);
 
   if (isCopyTradingSupportText(normalizedQuestion)) {
     keywords.push('跟单');
@@ -566,7 +527,7 @@ function supportEntityDisplayName(question: string): string | undefined {
     return entity;
   }
 
-  return supportEntityEvidenceTokens(question)[0];
+  return extractSupportEntityTokens(question)[0];
 }
 
 function calculateGroundedConfidence(classificationConfidence: number, topScore: number): number {

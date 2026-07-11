@@ -24,6 +24,7 @@ import {
   createGroundedAnswer,
   createMetadataReranker,
   evaluateCases,
+  formatRetrievedChunksDebug,
   LlmConfigurationError,
   loadRagConfig,
   loadWorkspaceEnv,
@@ -38,6 +39,7 @@ import type {
   FeedbackRecord,
   KnowledgeStats,
   RagEnv,
+  Retriever,
 } from '@xxyy/rag-core';
 import type { ChatRequest, ChatResponse, RagIndex } from '@xxyy/shared';
 
@@ -46,7 +48,7 @@ export { resolveWorkspaceCwd } from '@xxyy/rag-core';
 type CliEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
 
 type CliCommand =
-  | { command: 'ask'; question: string }
+  | { command: 'ask'; debugRetrieve: boolean; question: string }
   | { command: 'evaluate'; providerBacked: boolean }
   | { command: 'feedback:backlog' }
   | { command: 'ingest'; rebuildEmbeddingSchema: boolean }
@@ -87,6 +89,7 @@ interface DefaultCliIoOptions {
 
 interface CliChatRuntime {
   service: ChatService;
+  retriever: Retriever;
   close(): Promise<void>;
 }
 
@@ -99,6 +102,7 @@ const HELP_TEXT = [
   '  pnpm rag:evaluate [--provider]',
   '  pnpm rag:feedback:backlog',
   '  pnpm rag:ask -- "question"',
+  '  pnpm rag:ask -- --debug-retrieve "question"',
 ].join('\n');
 
 const EMBEDDING_BATCH_SIZE = 64;
@@ -148,13 +152,18 @@ function parseIngestArgs(rawArgs: readonly string[]): CliCommand {
 
 function parseAskArgs(rawArgs: readonly string[]): CliCommand {
   const args = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs;
-  const question = args.join(' ').trim();
+  const debugRetrieve = args.includes('--debug-retrieve');
+  const question = args
+    .filter((arg) => arg !== '--debug-retrieve')
+    .join(' ')
+    .trim();
   if (question.length === 0) {
     return { command: 'help', error: 'Missing question for rag:ask.' };
   }
 
   return {
     command: 'ask',
+    debugRetrieve,
     question,
   };
 }
@@ -458,6 +467,19 @@ export async function runCli(
   try {
     const runtime = createCliChatRuntime(config);
     try {
+      if (parsed.debugRetrieve) {
+        const chunks = await runtime.retriever.retrieve(parsed.question, {
+          topK: config.topK,
+        });
+        writeLine(
+          io.stdout,
+          formatRetrievedChunksDebug(chunks, {
+            question: parsed.question,
+          }),
+        );
+        writeLine(io.stdout, '');
+      }
+
       const request: ChatRequest = {
         channel: 'cli',
         message: parsed.question,
@@ -767,6 +789,7 @@ function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChat
   });
 
   return {
+    retriever,
     service: createCustomerAgentChatService({
       answerProvider: createLazyAnswerProvider(config),
       config,

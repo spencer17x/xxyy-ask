@@ -16,6 +16,7 @@ import {
   type RetrievedChunk,
 } from './retrieve.js';
 import type { Retriever } from './retriever.js';
+import { extractSupportEntityTokens, supportEntityEvidenceBoost } from './support-entity.js';
 
 export interface PgClientLike {
   connect?(): Promise<PgTransactionClientLike>;
@@ -547,6 +548,10 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
 
       const topK = normalizeTopK(retrieveOptions.topK);
       const queryTokens = createRetrieveQueryTokens(question);
+      const supportEntities = extractSupportEntityTokens(question);
+      const entityPrefixPatterns = supportEntities
+        .filter((entity) => entity.length >= 6)
+        .map((entity) => `%${entity.slice(0, 6)}%`);
       const candidateLimit = Math.max(topK * 4, topK);
       const response = await queryDatabase<KnowledgeChunkRow>(
         options.client,
@@ -578,10 +583,36 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           order by token_overlap desc, embedding_distance asc
           limit $2
         ),
+        entity_candidates as (
+          select
+            id, document_id, title, module, source_type, source_url, file,
+            heading_path, order_index, retrieved_at::text as retrieved_at,
+            effective_at::text as effective_at, status, supersedes, content, tokens,
+            embedding <=> $1::vector as embedding_distance,
+            (
+              select count(*)::integer
+              from unnest(tokens) as token(value)
+              where token.value = any($4::text[])
+            ) as token_overlap
+          from knowledge_chunks
+          where
+            cardinality($4::text[]) > 0
+            and (
+              tokens && $4::text[]
+              or (
+                cardinality($5::text[]) > 0
+                and lower(content) like any ($5::text[])
+              )
+            )
+          order by token_overlap desc, embedding_distance asc
+          limit $2
+        ),
         combined_candidates as (
           select * from vector_candidates
           union all
           select * from lexical_candidates
+          union all
+          select * from entity_candidates
         )
         select distinct on (id)
           id, document_id, title, module, source_type, source_url, file,
@@ -591,11 +622,17 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         from combined_candidates
         order by id, token_overlap desc, embedding_distance asc
         `,
-        [toPgVectorLiteral(queryEmbedding), candidateLimit, queryTokens],
+        [
+          toPgVectorLiteral(queryEmbedding),
+          candidateLimit,
+          queryTokens,
+          supportEntities,
+          entityPrefixPatterns,
+        ],
       );
 
       return response.rows
-        .map((row) => mapRow(row, question, queryTokens))
+        .map((row) => mapRow(row, question, queryTokens, supportEntities))
         .filter(hasMinimumRetrievalEvidence)
         .sort(compareRetrievedChunks)
         .slice(0, topK)
@@ -1017,7 +1054,12 @@ function normalizeFeedbackLimit(limit: number | undefined): number {
   return Math.min(limit, 100);
 }
 
-function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[]): RetrievedChunk {
+function mapRow(
+  row: KnowledgeChunkRow,
+  question: string,
+  queryTokens: string[],
+  supportEntities: string[] = [],
+): RetrievedChunk {
   const lexicalScore = queryTokens.filter((token) => row.tokens.includes(token)).length;
   const vectorScore = Math.max(0, 1 - row.embedding_distance);
   const rowSourceBoost = sourceBoost(row.source_type) + directXPostSourceBoost(question, row);
@@ -1028,10 +1070,18 @@ function mapRow(row: KnowledgeChunkRow, question: string, queryTokens: string[])
     status,
     row.effective_at ?? undefined,
   );
+  const entityBoost = supportEntityEvidenceBoost(
+    [row.title, row.module, ...(row.heading_path ?? []), row.content].join(' '),
+    supportEntities,
+  );
   const score = Number(
-    (vectorScore + lexicalScore * LEXICAL_SCORE_WEIGHT + rowSourceBoost + freshnessBoost).toFixed(
-      8,
-    ),
+    (
+      vectorScore +
+      lexicalScore * LEXICAL_SCORE_WEIGHT +
+      rowSourceBoost +
+      freshnessBoost +
+      entityBoost
+    ).toFixed(8),
   );
   const entry: IndexEntry = {
     documentId: row.document_id,

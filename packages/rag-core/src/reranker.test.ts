@@ -104,6 +104,35 @@ describe('createRerankingRetriever', () => {
     expect(results.map((chunk) => chunk.id)).toEqual(['six-chain-copy-trading']);
   });
 
+  it('prefers support-entity evidence over generic 支持 noise', async () => {
+    const baseRetriever = createBaseRetriever([
+      createChunk({
+        id: 'generic-holder-support',
+        score: 3.8,
+        text: 'Holder页面会展示当前代币持有者的所有地址汇总情况，支持查看持仓量前100的所有地址。',
+        title: 'Holder',
+      }),
+      createChunk({
+        id: 'generic-wallet-support',
+        score: 3.6,
+        text: '钱包监控支持全链开关，开启后支持全链交易推送。',
+        title: '钱包监控',
+      }),
+      createChunk({
+        id: 'robinhood-x-post',
+        score: 1.1,
+        sourceType: 'x_updates',
+        text: 'Robinbood 链更新 支持扫链、NOXA 内盘交易、钱包监控地址自动同步。',
+        title: 'X Post robinhood',
+      }),
+    ]);
+    const retriever = createRerankingRetriever(baseRetriever, createMetadataReranker());
+
+    const results = await retriever.retrieve('当前支持robinhood么', { topK: 1 });
+
+    expect(results.map((chunk) => chunk.id)).toEqual(['robinhood-x-post']);
+  });
+
   it('prefers direct copy-trading launch evidence for short support questions', async () => {
     const baseRetriever = createBaseRetriever([
       createChunk({

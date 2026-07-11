@@ -31,6 +31,11 @@ export {
   createMetadataReranker,
   createRerankingRetriever,
 } from './retriever.js';
+export {
+  extractSupportEntityTokens,
+  formatRetrievedChunksDebug,
+  isSupportQuestionText,
+} from './support-entity.js';
 export { createChatService } from './chat-service.js';
 
 export type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';

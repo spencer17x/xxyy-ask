@@ -387,6 +387,50 @@ describe('createGroundedAnswer', () => {
     expect(response.citations[0]?.title).toBe('Robinhood 支持范围');
   });
 
+  it('accepts one-character entity typos and entity hits outside the top citation window', () => {
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'generic-holder',
+        rank: 1,
+        score: 4,
+        text: 'Holder页面会展示当前代币持有者的所有地址汇总情况，支持查看持仓量前100的所有地址。',
+        title: 'Holder',
+      }),
+      createRetrievedChunk({
+        id: 'generic-wallet',
+        rank: 2,
+        score: 3.8,
+        text: '钱包监控支持全链开关，开启后支持全链交易推送。',
+        title: '钱包监控',
+      }),
+      createRetrievedChunk({
+        id: 'generic-base',
+        rank: 3,
+        score: 3.5,
+        text: '支持 #Base 链交易，目前已支持四大公链。',
+        title: 'Base 更新',
+      }),
+      createRetrievedChunk({
+        id: 'robinbood-typo-post',
+        rank: 4,
+        score: 1.1,
+        text: 'Robinbood 链更新 支持扫链、NOXA 内盘交易、钱包监控地址自动同步。',
+        title: 'X Post robinbood',
+      }),
+    ];
+
+    const response = createGroundedAnswer(
+      '当前支持robinhood么',
+      productClassification,
+      retrieved,
+    );
+
+    expect(response.answer).toContain('支持');
+    expect(response.answer.toLowerCase()).toMatch(/robinb[ho]od/);
+    expect(response.citations).toHaveLength(1);
+    expect(response.citations[0]?.title).toBe('X Post robinbood');
+  });
+
   it.each([
     ['realtime_account_query', '我不能直接查询你的钱包余额、订单、账户或交易记录'],
     ['investment_advice', '我不能提供买卖建议、喊单或收益承诺'],
@@ -423,6 +467,8 @@ describe('createGroundedAnswer', () => {
 
 function createRetrievedChunk(input: {
   id: string;
+  rank?: number;
+  score?: number;
   sourceType?: RetrievedChunk['metadata']['sourceType'];
   sourceUrl?: string;
   text: string;
@@ -441,8 +487,8 @@ function createRetrievedChunk(input: {
       title: input.title,
       ...(input.sourceUrl === undefined ? {} : { sourceUrl: input.sourceUrl }),
     },
-    rank: 1,
-    score: 1,
+    rank: input.rank ?? 1,
+    score: input.score ?? 1,
     sourceBoost: 0,
     text: input.text,
     tokens: [],

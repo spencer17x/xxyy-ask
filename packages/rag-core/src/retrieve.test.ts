@@ -68,6 +68,28 @@ describe('retrieve', () => {
     expect(retrieve('Pro', createFixtureIndex([]))).toEqual([]);
   });
 
+  it('boosts rare support-entity evidence above generic support phrasing', () => {
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:holder:chunk:0001',
+        title: 'Holder',
+        sourceType: 'official_docs',
+        text: 'Holder页面会展示当前代币持有者的所有地址汇总情况，支持查看持仓量前100的所有地址。',
+      },
+      {
+        id: 'x_updates:robinhood:chunk:0001',
+        title: 'X Post robinhood',
+        sourceType: 'x_updates',
+        text: 'Robinbood 链更新 支持扫链、NOXA 内盘交易、钱包监控地址自动同步。',
+      },
+    ]);
+
+    const results = retrieve('当前支持robinhood么', index, { topK: 1 });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.id).toBe('x_updates:robinhood:chunk:0001');
+  });
+
   it('does not return vector-only hash matches without lexical evidence', () => {
     const index = createFixtureIndex([
       {
