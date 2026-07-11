@@ -9,16 +9,18 @@
   },
   "coverage": {
     "endpoint": "X web GraphQL UserTweets",
-    "fetchedPosts": 1,
+    "fetchedPosts": 2,
     "mode": "incremental",
     "note": "Covers public profile timeline posts visible to the anonymous X web client. Replies not shown in UserTweets are not included unless X exposes them in the profile timeline.",
     "pageSize": 40,
-    "cutoffCreatedAtIso": "2026-06-26T15:55:02.000Z",
-    "cutoffPostId": "2070536322838831188",
-    "totalPosts": 283
+    "traversalCompleted": true,
+    "traversalStoppedAtPageCap": false,
+    "cutoffCreatedAtIso": "2026-07-02T10:21:44.000Z",
+    "cutoffPostId": "2072626771422535771",
+    "totalPosts": 285
   },
-  "fetchedAt": "2026-07-09T01:55:39.297Z",
-  "configAssetUrl": "https://abs.twimg.com/x-web/x-web/assets/guest-token-CIXyEBrw.js",
+  "fetchedAt": "2026-07-11T02:11:26.655Z",
+  "configAssetUrl": "https://abs.twimg.com/x-web/x-web/assets/guest-token-CIIhzU49.js",
   "operations": {
     "userByScreenName": {
       "queryId": "_kuJi4oIDFMUU-N285gZWg",
@@ -31,7 +33,7 @@
       "variableStyle": "screenName"
     },
     "userTweets": {
-      "queryId": "jw4IEnNR4W7zb8xlwZ6tNw",
+      "queryId": "ILmWLnyuW_UWFmEUrPKq9g",
       "operationName": "UserTweets",
       "features": {},
       "fieldToggles": {},
