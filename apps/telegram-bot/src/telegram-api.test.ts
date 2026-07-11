@@ -85,15 +85,11 @@ describe('createTelegramApiClient', () => {
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     });
-    expect(fetch).toHaveBeenNthCalledWith(
-      3,
-      'https://telegram.test/bot123:abc/sendMessageDraft',
-      {
-        body: JSON.stringify({ chat_id: -100, draft_id: 7, text: 'partial answer' }),
-        headers: { 'content-type': 'application/json' },
-        method: 'POST',
-      },
-    );
+    expect(fetch).toHaveBeenNthCalledWith(3, 'https://telegram.test/bot123:abc/sendMessageDraft', {
+      body: JSON.stringify({ chat_id: -100, draft_id: 7, text: 'partial answer' }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
     expect(fetch).toHaveBeenNthCalledWith(4, 'https://telegram.test/bot123:abc/sendPhoto', {
       body: JSON.stringify({
         caption: '截图',
