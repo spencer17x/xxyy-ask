@@ -282,6 +282,7 @@ describe('evaluateCases', () => {
     const service: ChatService = {
       ask: () => Promise.resolve(response),
       async *stream() {
+        await Promise.resolve();
         yield {
           type: 'metadata' as const,
           citations: [],

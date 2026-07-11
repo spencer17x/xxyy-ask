@@ -20,16 +20,16 @@ describe('createQualityTracerFromEnv', () => {
     } satisfies Partial<LangSmithQualityTracerDependencies>;
 
     expect(createQualityTracerFromEnv({}, dependencies)).toBe(noopQualityTracer);
-    expect(
-      createQualityTracerFromEnv({ LANGSMITH_TRACING: 'false' }, dependencies),
-    ).toBe(noopQualityTracer);
+    expect(createQualityTracerFromEnv({ LANGSMITH_TRACING: 'false' }, dependencies)).toBe(
+      noopQualityTracer,
+    );
     expect(clients).toBe(0);
   });
 
   it('validates required secrets and sample rate without echoing values', () => {
-    expect(() =>
-      createQualityTracerFromEnv({ LANGSMITH_TRACING: 'true' }),
-    ).toThrow(QualityTracingConfigurationError);
+    expect(() => createQualityTracerFromEnv({ LANGSMITH_TRACING: 'true' })).toThrow(
+      QualityTracingConfigurationError,
+    );
     expect(() =>
       createQualityTracerFromEnv({
         LANGSMITH_API_KEY: 'lsv2_secret-value',
@@ -137,6 +137,7 @@ describe('createQualityTracerFromEnv', () => {
         runType: 'chain',
       },
       async function* () {
+        await Promise.resolve();
         yield { delta: 'first-secret-delta', type: 'answer_delta' };
         yield { delta: 'second-secret-delta', type: 'answer_delta' };
       },
@@ -162,8 +163,12 @@ interface TraceableConfigHarness {
   aggregator?(items: unknown[]): unknown;
   metadata?: Record<string, unknown>;
   name?: string;
-  processInputs?(inputs: Record<string, unknown>): Record<string, unknown> | Promise<Record<string, unknown>>;
-  processOutputs?(outputs: Record<string, unknown>): Record<string, unknown> | Promise<Record<string, unknown>>;
+  processInputs?(
+    inputs: Record<string, unknown>,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  processOutputs?(
+    outputs: Record<string, unknown>,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
   project_name?: string;
   run_type?: string;
   tracingEnabled?: boolean;

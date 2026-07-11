@@ -1685,6 +1685,7 @@ describe('createLangGraphCustomerRuntime', () => {
           intent: 'product_qa',
         }) satisfies ChatResponse,
       async *stream() {
+        await Promise.resolve();
         yield { type: 'answer_delta', delta: 'secret product delta' };
         yield { type: 'metadata', citations: [], confidence: 0.8, intent: 'product_qa' };
       },

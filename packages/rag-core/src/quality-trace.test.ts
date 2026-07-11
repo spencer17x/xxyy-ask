@@ -34,6 +34,7 @@ describe('noopQualityTracer', () => {
         runType: 'chain',
       },
       async function* () {
+        await Promise.resolve();
         yield 'a';
         yield 'b';
       },
@@ -70,9 +71,8 @@ describe('createInMemoryQualityTracer', () => {
             runType: 'chain',
           },
           () =>
-            tracer.run(
-              { metadata: { requestId }, name: 'llm.planner', runType: 'llm' },
-              () => Promise.resolve(requestId),
+            tracer.run({ metadata: { requestId }, name: 'llm.planner', runType: 'llm' }, () =>
+              Promise.resolve(requestId),
             ),
         ),
       ),
@@ -83,9 +83,7 @@ describe('createInMemoryQualityTracer', () => {
     expect(roots).toHaveLength(2);
     expect(children).toHaveLength(2);
     for (const child of children) {
-      const parent = roots.find(
-        (root) => root.inputs?.requestId === child.metadata?.requestId,
-      );
+      const parent = roots.find((root) => root.inputs?.requestId === child.metadata?.requestId);
       expect(child.parentId).toBe(parent?.id);
     }
     expect(JSON.stringify(records)).not.toContain('secret-key');
@@ -115,6 +113,7 @@ describe('createInMemoryQualityTracer', () => {
         runType: 'chain',
       },
       async function* () {
+        await Promise.resolve();
         yield { delta: 'raw-secret-delta', type: 'answer_delta' };
         yield { delta: 'another-delta', type: 'answer_delta' };
       },
@@ -144,6 +143,7 @@ describe('createInMemoryQualityTracer', () => {
       for await (const _event of tracer.stream(
         { name: 'failed.stream', runType: 'chain' },
         async function* () {
+          await Promise.resolve();
           yield 'first';
           throw new SyntaxError('bad stream');
         },

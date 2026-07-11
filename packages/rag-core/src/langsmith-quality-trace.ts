@@ -16,8 +16,12 @@ interface TraceableAdapterConfig {
   client?: unknown;
   metadata?: Record<string, unknown>;
   name?: string;
-  processInputs?(inputs: Record<string, unknown>): Record<string, unknown> | Promise<Record<string, unknown>>;
-  processOutputs?(outputs: Record<string, unknown>): Record<string, unknown> | Promise<Record<string, unknown>>;
+  processInputs?(
+    inputs: Record<string, unknown>,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  processOutputs?(
+    outputs: Record<string, unknown>,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
   project_name?: string;
   run_type?: string;
   tracingEnabled?: boolean;
@@ -86,49 +90,50 @@ export function createQualityTracerFromEnv(
 
   return {
     async run<T>(span: QualitySpanInput<T>, task: () => Promise<T>): Promise<T> {
-      const execute = dependencies.wrapTraceable(async (): Promise<PrivateRunResult<T>> => {
-        const privateValue = await task();
-        return {
-          privateValue,
-          summary: safeOutput(span.output, privateValue),
-        };
-      }, createTraceableConfig(span, client, projectName, appRevision, {
-        processOutputs(outputs) {
-          return sanitizeQualityRecord(readRunSummary(outputs));
+      const execute = dependencies.wrapTraceable(
+        async (): Promise<PrivateRunResult<T>> => {
+          const privateValue = await task();
+          return {
+            privateValue,
+            summary: safeOutput(span.output, privateValue),
+          };
         },
-      }));
+        createTraceableConfig(span, client, projectName, appRevision, {
+          processOutputs(outputs) {
+            return sanitizeQualityRecord(readRunSummary(outputs));
+          },
+        }),
+      );
       const result = await execute();
       return result.privateValue;
     },
 
-    stream<T>(
-      span: QualityStreamSpanInput<T>,
-      task: () => AsyncIterable<T>,
-    ): AsyncIterable<T> {
-      const execute = dependencies.wrapTraceable(async function* (): AsyncIterable<
-        PrivateStreamEvent<T>
-      > {
-        for await (const privateValue of task()) {
-          const eventSummary = safeEvent(span.event, privateValue);
-          yield {
-            ...(eventSummary === undefined ? {} : { eventSummary }),
-            privateValue,
-          };
-        }
-      }, createTraceableConfig(span, client, projectName, appRevision, {
-        aggregator(items) {
-          const summaries = items.flatMap((item) => {
-            const summary = readEventSummary(item);
-            return summary === undefined ? [] : [summary];
-          });
-          return span.output === undefined
-            ? { eventCount: summaries.length, summaries }
-            : safeOutput(span.output, summaries);
+    stream<T>(span: QualityStreamSpanInput<T>, task: () => AsyncIterable<T>): AsyncIterable<T> {
+      const execute = dependencies.wrapTraceable(
+        async function* (): AsyncIterable<PrivateStreamEvent<T>> {
+          for await (const privateValue of task()) {
+            const eventSummary = safeEvent(span.event, privateValue);
+            yield {
+              ...(eventSummary === undefined ? {} : { eventSummary }),
+              privateValue,
+            };
+          }
         },
-        processOutputs(outputs) {
-          return sanitizeQualityRecord(outputs);
-        },
-      }));
+        createTraceableConfig(span, client, projectName, appRevision, {
+          aggregator(items) {
+            const summaries = items.flatMap((item) => {
+              const summary = readEventSummary(item);
+              return summary === undefined ? [] : [summary];
+            });
+            return span.output === undefined
+              ? { eventCount: summaries.length, summaries }
+              : safeOutput(span.output, summaries);
+          },
+          processOutputs(outputs) {
+            return sanitizeQualityRecord(outputs);
+          },
+        }),
+      );
 
       return unwrapStream(execute());
     },
@@ -157,9 +162,7 @@ function createTraceableConfig(
   };
 }
 
-async function* unwrapStream<T>(
-  iterable: AsyncIterable<PrivateStreamEvent<T>>,
-): AsyncIterable<T> {
+async function* unwrapStream<T>(iterable: AsyncIterable<PrivateStreamEvent<T>>): AsyncIterable<T> {
   for await (const event of iterable) {
     yield event.privateValue;
   }

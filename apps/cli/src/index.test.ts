@@ -579,8 +579,14 @@ describe('CLI output formatting', () => {
           }),
         ],
         expect.anything(),
-        expect.objectContaining({ observe: expect.any(Function) }),
+        expect.anything(),
       );
+      const evaluationCall = evaluateCases.mock.calls[0] as unknown as [
+        unknown,
+        unknown,
+        { observe?: unknown },
+      ];
+      expect(typeof evaluationCall[2].observe).toBe('function');
       await expect(
         readFile(path.join(workspaceRoot, '.rag', 'failures.jsonl'), 'utf8'),
       ).resolves.toBe('');

@@ -35,10 +35,14 @@ describe('createOpenAiAnswerQualityJudge', () => {
   it('sends a deterministic redacted request and parses strict scores', async () => {
     const requests: Array<{ body: Record<string, unknown>; headers: Headers; url: string }> = [];
     const fetchImpl: typeof fetch = (input, init) => {
+      if (typeof init?.body !== 'string') {
+        throw new Error('Expected a string request body.');
+      }
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       requests.push({
-        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        body: JSON.parse(init.body) as Record<string, unknown>,
         headers: new Headers(init?.headers),
-        url: String(input),
+        url,
       });
       return Promise.resolve(
         jsonResponse({
@@ -140,7 +144,9 @@ describe('createOpenAiAnswerQualityJudge', () => {
     try {
       const fetchImpl: typeof fetch = (_input, init) =>
         new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          );
         });
       const judge = createOpenAiAnswerQualityJudge({
         apiKey: 'test-key',

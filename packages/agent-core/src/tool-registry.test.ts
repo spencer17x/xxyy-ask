@@ -134,6 +134,7 @@ describe('createToolRegistry', () => {
       policy: { requiresOpsAuth: false },
       execute: () => ({}),
       async *stream() {
+        await Promise.resolve();
         yield { type: 'answer_delta', delta: 'secret stream delta' };
         yield { type: 'metadata', citations: [], confidence: 0.9, intent: 'product_qa' };
       },

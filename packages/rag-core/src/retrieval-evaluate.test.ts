@@ -14,15 +14,15 @@ describe('evaluateRetrievalRanking', () => {
     expect(result).toMatchObject({
       annotated: true,
       forbiddenHitCount: 1,
-      ndcgAtK: expect.closeTo(
-        (1 / Math.log2(3) + 1 / Math.log2(5)) / (1 + 1 / Math.log2(3)),
-      ),
       precisionAtK: 0.5,
       recallAtK: 1,
       reciprocalRank: 0.5,
       retrievedChunkIds: ['a', 'b', 'legacy', 'd'],
       topK: 4,
     });
+    expect(result.ndcgAtK).toBeCloseTo(
+      (1 / Math.log2(3) + 1 / Math.log2(5)) / (1 + 1 / Math.log2(3)),
+    );
   });
 
   it('normalizes duplicate annotations and bounds K to the ranked list', () => {
@@ -103,9 +103,7 @@ describe('aggregateRetrievalResults', () => {
 
   it('omits averages when no case is annotated', () => {
     expect(
-      aggregateRetrievalResults([
-        evaluateRetrievalRanking({ retrievedChunkIds: [], topK: 4 }),
-      ]),
+      aggregateRetrievalResults([evaluateRetrievalRanking({ retrievedChunkIds: [], topK: 4 })]),
     ).toEqual({ annotatedCaseCount: 0, totalForbiddenHits: 0 });
   });
 });

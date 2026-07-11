@@ -31,39 +31,56 @@ describe('rag-core public exports', () => {
     expect(ragCore.extractSupportEntityTokens).toBeTypeOf('function');
     expect(ragCore.formatRetrievedChunksDebug).toBeTypeOf('function');
     expect(ragCore.isSupportQuestionText).toBeTypeOf('function');
+    expect(ragCore.evaluateRetrievalRanking).toBeTypeOf('function');
+    expect(ragCore.createOpenAiAnswerQualityJudge).toBeTypeOf('function');
+    expect(ragCore.formatEvaluationFailureJsonl).toBeTypeOf('function');
+    expect(ragCore.createQualityTracerFromEnv).toBeTypeOf('function');
 
     expect(Object.keys(ragCore).sort()).toEqual([
+      'AnswerJudgeConfigurationError',
+      'AnswerJudgeResponseError',
       'LlmConfigurationError',
+      'QualityTracingConfigurationError',
       'VectorStoreConfigurationError',
       'VectorStoreUnavailableError',
+      'aggregateRetrievalResults',
       'classifyQuestion',
+      'composeQualityTracers',
       'createAttachmentsFromChunks',
       'createBoundaryAnswer',
       'createChatService',
       'createCitationsFromChunks',
       'createGroundedAnswer',
+      'createInMemoryQualityTracer',
       'createInsufficientKnowledgeAnswer',
       'createLazyRetriever',
       'createLocalRetriever',
       'createMetadataReranker',
       'createOpenAiAnswerProvider',
+      'createOpenAiAnswerQualityJudge',
       'createPgFeedbackStore',
       'createPgPool',
       'createPgVectorStore',
+      'createQualityTracerFromEnv',
       'createRerankingRetriever',
       'createSupportConclusionFromEvidence',
       'evaluateCases',
+      'evaluateRetrievalRanking',
       'extractSupportEntityTokens',
+      'formatEvaluationFailureJsonl',
       'formatRetrievedChunksDebug',
       'hasProductDomainSignal',
       'isSupportQuestionText',
       'loadRagConfig',
       'loadWorkspaceEnv',
+      'noopQualityTracer',
       'redactSensitiveSupportText',
       'resolveWorkspaceCwd',
       'retrieve',
+      'sanitizeQualityRecord',
       'selectGroundingChunks',
       'shouldUseDeterministicSupportAnswer',
+      'summarizeRetrievedChunks',
       'toPgVectorLiteral',
       'workspacePackageName',
     ]);
