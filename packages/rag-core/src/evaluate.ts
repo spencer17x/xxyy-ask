@@ -1,6 +1,20 @@
 import type { AgentRoute, ChatRequest, ChatResponse, Intent } from '@xxyy/shared';
 
 import type { ChatService } from './chat-service.js';
+import type { AnswerQualityScores } from './answer-quality-judge.js';
+import type {
+  RetrievalEvaluationResult,
+  RetrievalEvaluationSummary,
+} from './retrieval-evaluate.js';
+
+export interface AnswerQualityEvaluationSummary {
+  averageCompleteness: number;
+  averageCorrectness: number;
+  averageGroundedness: number;
+  averageRelevance: number;
+  averageSafeRefusal: number;
+  judgedCaseCount: number;
+}
 
 export interface EvaluationCase {
   name: string;
@@ -35,16 +49,20 @@ export interface EvaluationResult {
   question: string;
   citationCount: number;
   failureReasons: string[];
+  judgeScores?: AnswerQualityScores;
   referenceFacts: string[];
   relevantChunkIds: string[];
   response: ChatResponse;
   retrievedChunkIds: string[];
+  retrievalEvaluation?: RetrievalEvaluationResult;
   toolNames: string[];
 }
 
 export interface EvaluationReport {
+  judgeSummary?: AnswerQualityEvaluationSummary;
   total: number;
   passed: number;
+  retrievalSummary?: RetrievalEvaluationSummary;
   results: EvaluationResult[];
 }
 
@@ -222,7 +240,9 @@ function collectFailureReasons(input: {
 }
 
 function sameOrderedValues(actual: readonly string[], expected: readonly string[]): boolean {
-  return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+  return (
+    actual.length === expected.length && actual.every((value, index) => value === expected[index])
+  );
 }
 
 function formatTrajectory(values: readonly string[]): string {

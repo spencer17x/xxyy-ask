@@ -30,10 +30,7 @@ export {
   VectorStoreUnavailableError,
 } from './pgvector-store.js';
 export { retrieve } from './retrieve.js';
-export {
-  aggregateRetrievalResults,
-  evaluateRetrievalRanking,
-} from './retrieval-evaluate.js';
+export { aggregateRetrievalResults, evaluateRetrievalRanking } from './retrieval-evaluate.js';
 export { redactSensitiveSupportText } from './redaction.js';
 export {
   createLazyRetriever,
@@ -59,6 +56,7 @@ export type { ChatService, CreateChatServiceOptions } from './chat-service.js';
 export type { RagConfig, RagEnv } from './config.js';
 export type { EnvRecord, LoadWorkspaceEnvOptions, WorkspaceEnv } from './env.js';
 export type {
+  AnswerQualityEvaluationSummary,
   EvaluateCasesOptions,
   EvaluationCase,
   EvaluationObservation,

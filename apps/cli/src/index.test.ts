@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -55,10 +55,42 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['stats'])).toEqual({ command: 'stats' });
     expect(parseCliArgs(['sync:x'])).toEqual({ command: 'sync:x' });
     expect(parseCliArgs(['feedback:backlog'])).toEqual({ command: 'feedback:backlog' });
-    expect(parseCliArgs(['evaluate'])).toEqual({ command: 'evaluate', providerBacked: false });
+    expect(parseCliArgs(['evaluate'])).toEqual({
+      command: 'evaluate',
+      judge: false,
+      providerBacked: false,
+    });
     expect(parseCliArgs(['evaluate', '--provider'])).toEqual({
       command: 'evaluate',
+      judge: false,
       providerBacked: true,
+    });
+    expect(
+      parseCliArgs(['evaluate', '--provider', '--judge', '--failures-out', '.rag/failures.jsonl']),
+    ).toEqual({
+      command: 'evaluate',
+      failuresOut: '.rag/failures.jsonl',
+      judge: true,
+      providerBacked: true,
+    });
+  });
+
+  it('rejects unsafe or inconsistent evaluation options', () => {
+    expect(parseCliArgs(['evaluate', '--judge'])).toMatchObject({
+      command: 'help',
+      error: '--judge requires --provider.',
+    });
+    expect(parseCliArgs(['evaluate', '--failures-out'])).toMatchObject({
+      command: 'help',
+      error: 'Missing path for --failures-out.',
+    });
+    expect(parseCliArgs(['evaluate', '--failures-out', '../failures.jsonl'])).toMatchObject({
+      command: 'help',
+      error: '--failures-out must be a file under .rag/.',
+    });
+    expect(parseCliArgs(['evaluate', '--unknown'])).toMatchObject({
+      command: 'help',
+      error: 'Unknown rag:evaluate option: --unknown',
     });
   });
 
@@ -347,6 +379,38 @@ describe('CLI output formatting', () => {
     });
   });
 
+  it('formats retrieval and judge summaries only when present', () => {
+    const output = formatEvaluationReport({
+      judgeSummary: {
+        averageCompleteness: 0.8,
+        averageCorrectness: 0.9,
+        averageGroundedness: 1,
+        averageRelevance: 0.95,
+        averageSafeRefusal: 1,
+        judgedCaseCount: 1,
+      },
+      passed: 1,
+      results: [],
+      retrievalSummary: {
+        annotatedCaseCount: 2,
+        averageNdcgAtK: 0.75,
+        averagePrecisionAtK: 0.5,
+        averageRecallAtK: 1,
+        meanReciprocalRank: 0.75,
+        totalForbiddenHits: 0,
+      },
+      total: 1,
+    });
+
+    expect(output).toContain(
+      'Retrieval (2 annotated): Recall@K 1.000000, Precision@K 0.500000, MRR 0.750000, nDCG@K 0.750000, forbidden hits 0',
+    );
+    expect(output).toContain(
+      'Judge (1 cases): correctness 0.900000, groundedness 1.000000, completeness 0.800000, relevance 0.950000, safe refusal 1.000000',
+    );
+    expect(formatEvaluationReport({ passed: 0, results: [], total: 0 })).not.toContain('Retrieval');
+  });
+
   it('formats knowledge stats for retained stats command', () => {
     const stats: KnowledgeStats = {
       chunkCount: 64,
@@ -395,12 +459,17 @@ describe('CLI output formatting', () => {
         name: 'tweet-source',
         question: '钱包备注支持最多 1 万条是哪条推文？',
         expectedIntent: 'product_qa',
+        expectedAgentRoute: 'product_answer',
+        expectedToolNames: ['answer_product_question'],
+        forbiddenChunkIds: ['chunk-old'],
         forbiddenCitationFiles: [
           'docs/product-features/pages/59-getting-started__xxyy-pro-quan-yi.md',
         ],
         forbiddenSourceUrls: ['https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi'],
         expectedSourceUrls: ['https://x.com/useXXYYio/status/2030954722350575916'],
         requireCitationSupport: true,
+        referenceFacts: ['钱包备注支持最多 1 万条'],
+        relevantChunkIds: ['chunk-current'],
       })}\n`,
     );
     const evaluateCases = vi.fn(() =>
@@ -415,6 +484,9 @@ describe('CLI output formatting', () => {
             failureReasons: [],
             minCitations: 0,
             name: 'tweet-source',
+            expectedAgentRoute: 'product_answer',
+            expectedToolNames: ['answer_product_question'],
+            forbiddenChunkIds: ['chunk-old'],
             passed: true,
           },
         ],
@@ -442,12 +514,15 @@ describe('CLI output formatting', () => {
     try {
       const { runCli: runCliWithMocks } = await import('./index.js');
 
-      const exitCode = await runCliWithMocks(['evaluate'], {
-        cwd: workspaceRoot,
-        env: {},
-        stderr: { write: () => true },
-        stdout: { write: () => true },
-      });
+      const exitCode = await runCliWithMocks(
+        ['evaluate', '--failures-out', '.rag/failures.jsonl'],
+        {
+          cwd: workspaceRoot,
+          env: {},
+          stderr: { write: () => true },
+          stdout: { write: () => true },
+        },
+      );
 
       expect(exitCode).toBe(0);
       expect(evaluateCases).toHaveBeenCalledWith(
@@ -459,11 +534,17 @@ describe('CLI output formatting', () => {
             ],
             forbiddenSourceUrls: ['https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi'],
             requireCitationSupport: true,
+            referenceFacts: ['钱包备注支持最多 1 万条'],
+            relevantChunkIds: ['chunk-current'],
             requiredSourceUrls: ['https://x.com/useXXYYio/status/2030954722350575916'],
           }),
         ],
         expect.anything(),
+        expect.objectContaining({ observe: expect.any(Function) }),
       );
+      await expect(
+        readFile(path.join(workspaceRoot, '.rag', 'failures.jsonl'), 'utf8'),
+      ).resolves.toBe('');
     } finally {
       vi.doUnmock('@xxyy/knowledge');
       vi.doUnmock('@xxyy/rag-core');

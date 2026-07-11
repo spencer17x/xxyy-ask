@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,7 +15,11 @@ import {
 import {
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
+  AnswerJudgeConfigurationError,
+  aggregateRetrievalResults,
   createLazyRetriever,
+  createLocalRetriever,
+  createOpenAiAnswerQualityJudge,
   createOpenAiAnswerProvider,
   createPgFeedbackStore,
   createPgPool,
@@ -23,7 +27,10 @@ import {
   createChatService,
   createGroundedAnswer,
   createMetadataReranker,
+  createRerankingRetriever,
+  evaluateRetrievalRanking,
   evaluateCases,
+  formatEvaluationFailureJsonl,
   formatRetrievedChunksDebug,
   LlmConfigurationError,
   loadRagConfig,
@@ -32,10 +39,12 @@ import {
 } from '@xxyy/rag-core';
 import type {
   AnswerProvider,
+  AnswerQualityJudge,
   ChatService,
   EmbeddedKnowledgeChunk,
   EvaluationCase,
   EvaluationReport,
+  EvaluationResult,
   FeedbackRecord,
   KnowledgeStats,
   RagEnv,
@@ -45,11 +54,16 @@ import type { ChatRequest, ChatResponse, RagIndex } from '@xxyy/shared';
 
 export { resolveWorkspaceCwd } from '@xxyy/rag-core';
 
-type CliEnv = RagEnv & Partial<Record<'INIT_CWD', string>>;
+type CliEnv = RagEnv & Partial<Record<'EVAL_JUDGE_MODEL' | 'INIT_CWD', string>>;
 
 type CliCommand =
   | { command: 'ask'; debugRetrieve: boolean; question: string }
-  | { command: 'evaluate'; providerBacked: boolean }
+  | {
+      command: 'evaluate';
+      failuresOut?: string;
+      judge: boolean;
+      providerBacked: boolean;
+    }
   | { command: 'feedback:backlog' }
   | { command: 'ingest'; rebuildEmbeddingSchema: boolean }
   | { command: 'migrate' }
@@ -99,7 +113,7 @@ const HELP_TEXT = [
   '  pnpm rag:sync:x',
   '  pnpm rag:migrate',
   '  pnpm rag:stats',
-  '  pnpm rag:evaluate [--provider]',
+  '  pnpm rag:evaluate [--provider] [--judge] [--failures-out .rag/failures.jsonl]',
   '  pnpm rag:feedback:backlog',
   '  pnpm rag:ask -- "question"',
   '  pnpm rag:ask -- --debug-retrieve "question"',
@@ -122,7 +136,7 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     command === 'sync:x'
   ) {
     if (command === 'evaluate') {
-      return { command, providerBacked: rawRest.includes('--provider') };
+      return parseEvaluateArgs(rawRest);
     }
     return { command };
   }
@@ -136,6 +150,57 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
   }
 
   return { command: 'help', error: `Unknown command: ${command}` };
+}
+
+function parseEvaluateArgs(rawArgs: readonly string[]): CliCommand {
+  const args = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs;
+  let failuresOut: string | undefined;
+  let judge = false;
+  let providerBacked = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--provider') {
+      providerBacked = true;
+      continue;
+    }
+    if (arg === '--judge') {
+      judge = true;
+      continue;
+    }
+    if (arg === '--failures-out') {
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith('--')) {
+        return { command: 'help', error: 'Missing path for --failures-out.' };
+      }
+      if (!isSafeEvaluationOutputPath(value)) {
+        return { command: 'help', error: '--failures-out must be a file under .rag/.' };
+      }
+      failuresOut = value;
+      index += 1;
+      continue;
+    }
+    return { command: 'help', error: `Unknown rag:evaluate option: ${arg}` };
+  }
+
+  if (judge && !providerBacked) {
+    return { command: 'help', error: '--judge requires --provider.' };
+  }
+
+  return {
+    command: 'evaluate',
+    ...(failuresOut === undefined ? {} : { failuresOut }),
+    judge,
+    providerBacked,
+  };
+}
+
+function isSafeEvaluationOutputPath(value: string): boolean {
+  if (path.isAbsolute(value)) {
+    return false;
+  }
+  const normalized = path.normalize(value);
+  return normalized.startsWith(`.rag${path.sep}`) && path.basename(normalized).length > 0;
 }
 
 function parseIngestArgs(rawArgs: readonly string[]): CliCommand {
@@ -279,13 +344,45 @@ export interface FormatEvaluationReportOptions {
   providerBacked?: boolean;
 }
 
+type EvaluationReportView = Pick<
+  EvaluationReport,
+  'judgeSummary' | 'passed' | 'retrievalSummary' | 'total'
+> & {
+  results: ReadonlyArray<
+    Pick<
+      EvaluationResult,
+      | 'actualIntent'
+      | 'citationCount'
+      | 'expectedIntent'
+      | 'failureReasons'
+      | 'minCitations'
+      | 'name'
+      | 'passed'
+    >
+  >;
+};
+
 export function formatEvaluationReport(
-  report: EvaluationReport,
+  report: EvaluationReportView,
   options: FormatEvaluationReportOptions = {},
 ): string {
   const lines = [
     `Evaluation${options.providerBacked === true ? ' (provider-backed)' : ''}: ${report.passed}/${report.total} passed`,
   ];
+
+  if (report.retrievalSummary !== undefined) {
+    const summary = report.retrievalSummary;
+    lines.push(
+      `Retrieval (${summary.annotatedCaseCount} annotated): Recall@K ${formatMetric(summary.averageRecallAtK)}, Precision@K ${formatMetric(summary.averagePrecisionAtK)}, MRR ${formatMetric(summary.meanReciprocalRank)}, nDCG@K ${formatMetric(summary.averageNdcgAtK)}, forbidden hits ${summary.totalForbiddenHits}`,
+    );
+  }
+
+  if (report.judgeSummary !== undefined) {
+    const summary = report.judgeSummary;
+    lines.push(
+      `Judge (${summary.judgedCaseCount} cases): correctness ${formatMetric(summary.averageCorrectness)}, groundedness ${formatMetric(summary.averageGroundedness)}, completeness ${formatMetric(summary.averageCompleteness)}, relevance ${formatMetric(summary.averageRelevance)}, safe refusal ${formatMetric(summary.averageSafeRefusal)}`,
+    );
+  }
 
   for (const result of report.results) {
     const status = `[${result.passed ? 'PASS' : 'FAIL'}] ${result.name}`;
@@ -300,6 +397,10 @@ export function formatEvaluationReport(
   }
 
   return lines.join('\n');
+}
+
+function formatMetric(value: number | undefined): string {
+  return value === undefined ? 'n/a' : value.toFixed(6);
 }
 
 export function formatFeedbackEvalBacklog(feedbackRecords: FeedbackRecord[]): string {
@@ -409,7 +510,7 @@ export async function runCli(
 
   if (parsed.command === 'evaluate') {
     try {
-      const report = await evaluate({ ...io, cwd: workspaceCwd }, parsed.providerBacked);
+      const report = await evaluate({ ...io, cwd: workspaceCwd }, parsed);
       writeLine(
         io.stdout,
         formatEvaluationReport(report, { providerBacked: parsed.providerBacked }),
@@ -596,43 +697,141 @@ async function syncXUpdates(io: CliIo): Promise<SyncXUpdatesSummary> {
   }
 }
 
-async function evaluate(io: CliIo, providerBacked: boolean): Promise<EvaluationReport> {
+async function evaluate(
+  io: CliIo,
+  options: Extract<CliCommand, { command: 'evaluate' }>,
+): Promise<EvaluationReport> {
   const config = loadRagConfig(io.env);
   const cases = await loadEvaluationCases(io.cwd);
+  let report: EvaluationReport;
 
-  if (providerBacked) {
+  if (options.providerBacked) {
     const runtime = createCliChatRuntime(config);
     try {
-      return await evaluateCases(cases, runtime.service);
+      const evaluationRetriever = createRerankingRetriever(
+        runtime.retriever,
+        createMetadataReranker(),
+        { candidateMultiplier: 4 },
+      );
+      report = await evaluateCases(cases, runtime.service, {
+        observe: createRetrievalObserver(evaluationRetriever, config.topK),
+      });
     } finally {
       await runtime.close();
     }
+  } else {
+    const documents = await loadProductDocuments({ cwd: io.cwd });
+    const chunks = prepareKnowledgeChunks(documents);
+    const index: RagIndex = {
+      builtAt: new Date(0).toISOString(),
+      entries: chunks.map((chunk) => ({
+        ...chunk,
+        embedding: createLocalHashEmbedding(chunk.searchableText),
+      })),
+      version: 1,
+    };
+    const evaluationRetriever = createRerankingRetriever(
+      createLocalRetriever(index),
+      createMetadataReranker(),
+      { candidateMultiplier: 4 },
+    );
+    const service = createChatService({
+      answerProvider: {
+        answer(input) {
+          return Promise.resolve(
+            createGroundedAnswer(input.question, input.classification, input.retrievedChunks),
+          );
+        },
+      },
+      config,
+      index,
+      reranker: createMetadataReranker(),
+    });
+
+    report = await evaluateCases(cases, service, {
+      observe: createRetrievalObserver(evaluationRetriever, config.topK),
+    });
   }
 
-  const documents = await loadProductDocuments({ cwd: io.cwd });
-  const chunks = prepareKnowledgeChunks(documents);
-  const index: RagIndex = {
-    builtAt: new Date(0).toISOString(),
-    entries: chunks.map((chunk) => ({
-      ...chunk,
-      embedding: createLocalHashEmbedding(chunk.searchableText),
-    })),
-    version: 1,
-  };
-  const service = createChatService({
-    answerProvider: {
-      answer(input) {
-        return Promise.resolve(
-          createGroundedAnswer(input.question, input.classification, input.retrievedChunks),
-        );
-      },
-    },
-    config,
-    index,
-    reranker: createMetadataReranker(),
-  });
+  attachRetrievalEvaluation(report, config.topK);
+  if (options.judge) {
+    await attachJudgeEvaluation(
+      report,
+      createOpenAiAnswerQualityJudge({
+        apiKey: config.openAiApiKey,
+        baseUrl: config.openAiBaseUrl,
+        model: io.env.EVAL_JUDGE_MODEL,
+        requestTimeoutMs: config.openAiRequestTimeoutMs,
+      }),
+    );
+  }
+  if (options.failuresOut !== undefined) {
+    const outputPath = path.resolve(io.cwd, options.failuresOut);
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, formatEvaluationFailureJsonl(report), 'utf8');
+  }
 
-  return evaluateCases(cases, service);
+  return report;
+}
+
+function createRetrievalObserver(retriever: Retriever, topK: number) {
+  return async (testCase: EvaluationCase): Promise<{ retrievedChunkIds?: string[] }> => {
+    if ((testCase.relevantChunkIds?.length ?? 0) === 0) {
+      return {};
+    }
+    const chunks = await retriever.retrieve(testCase.request.message, { topK });
+    return { retrievedChunkIds: chunks.map((chunk) => chunk.id) };
+  };
+}
+
+function attachRetrievalEvaluation(report: EvaluationReport, topK: number): void {
+  const evaluations = report.results.map((result) => {
+    const evaluation = evaluateRetrievalRanking({
+      forbiddenChunkIds: result.forbiddenChunkIds ?? [],
+      relevantChunkIds: result.relevantChunkIds ?? [],
+      retrievedChunkIds: result.retrievedChunkIds ?? [],
+      topK,
+    });
+    result.retrievalEvaluation = evaluation;
+    return evaluation;
+  });
+  report.retrievalSummary = aggregateRetrievalResults(evaluations);
+}
+
+async function attachJudgeEvaluation(
+  report: EvaluationReport,
+  judge: AnswerQualityJudge,
+): Promise<void> {
+  for (const result of report.results) {
+    result.judgeScores = await judge.judge({
+      actualIntent: result.actualIntent,
+      answer: result.response.answer,
+      boundaryExpected: !['product_qa', 'how_to'].includes(result.expectedIntent),
+      citations: result.response.citations,
+      expectedIntent: result.expectedIntent,
+      question: result.question,
+      referenceFacts: result.referenceFacts ?? [],
+    });
+  }
+
+  const scores = report.results.flatMap((result) =>
+    result.judgeScores === undefined ? [] : [result.judgeScores],
+  );
+  if (scores.length === 0) {
+    return;
+  }
+  const average = (select: (score: (typeof scores)[number]) => number): number =>
+    Math.round(
+      (scores.reduce((total, score) => total + select(score), 0) / scores.length) * 1_000_000,
+    ) / 1_000_000;
+  report.judgeSummary = {
+    averageCompleteness: average((score) => score.completeness),
+    averageCorrectness: average((score) => score.correctness),
+    averageGroundedness: average((score) => score.groundedness),
+    averageRelevance: average((score) => score.relevance),
+    averageSafeRefusal: average((score) => score.safeRefusal),
+    judgedCaseCount: scores.length,
+  };
 }
 
 interface GoldenQaRecord {
@@ -641,12 +840,17 @@ interface GoldenQaRecord {
   expectedCitationTitles?: string[];
   expectedSourceUrls?: string[];
   expectedIntent: EvaluationCase['expectedIntent'];
+  expectedAgentRoute?: EvaluationCase['expectedAgentRoute'];
+  expectedToolNames?: string[];
+  forbiddenChunkIds?: string[];
   forbiddenCitationFiles?: string[];
   forbiddenSourceUrls?: string[];
   mustContain?: string[];
   mustNotContain?: string[];
   name?: string;
   question: string;
+  referenceFacts?: string[];
+  relevantChunkIds?: string[];
   requireCitationSupport?: boolean;
 }
 
@@ -662,7 +866,16 @@ async function loadEvaluationCases(cwd: string): Promise<EvaluationCase[]> {
 
 function toEvaluationCase(record: GoldenQaRecord, index: number): EvaluationCase {
   return {
+    ...(record.expectedAgentRoute === undefined
+      ? {}
+      : { expectedAgentRoute: record.expectedAgentRoute }),
     expectedIntent: record.expectedIntent,
+    ...(record.expectedToolNames === undefined
+      ? {}
+      : { expectedToolNames: record.expectedToolNames }),
+    ...(record.forbiddenChunkIds === undefined
+      ? {}
+      : { forbiddenChunkIds: record.forbiddenChunkIds }),
     ...(record.mustNotContain === undefined
       ? {}
       : { forbiddenAnswerIncludes: record.mustNotContain }),
@@ -672,6 +885,8 @@ function toEvaluationCase(record: GoldenQaRecord, index: number): EvaluationCase
       channel: 'cli',
       message: record.question,
     },
+    ...(record.referenceFacts === undefined ? {} : { referenceFacts: record.referenceFacts }),
+    ...(record.relevantChunkIds === undefined ? {} : { relevantChunkIds: record.relevantChunkIds }),
     ...(record.mustContain === undefined ? {} : { requiredAnswerIncludes: record.mustContain }),
     ...(record.expectedCitationFiles === undefined
       ? {}
@@ -891,6 +1106,10 @@ function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): 
 }
 
 function writeConfigurationError(io: CliIo, error: unknown): boolean {
+  if (error instanceof AnswerJudgeConfigurationError) {
+    writeLine(io.stderr, error.message);
+    return true;
+  }
   if (error instanceof LlmConfigurationError) {
     writeLine(io.stderr, error.message);
     return true;
