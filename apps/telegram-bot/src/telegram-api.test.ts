@@ -59,7 +59,10 @@ describe('createTelegramApiClient', () => {
       throw new Error('Expected sendChatAction to be implemented.');
     }
     await api.sendChatAction({ action: 'typing', chatId: -100 });
-    expect(api).not.toHaveProperty('sendMessageDraft');
+    if (api.sendMessageDraft === undefined) {
+      throw new Error('Expected sendMessageDraft to be implemented.');
+    }
+    await api.sendMessageDraft({ chatId: -100, draftId: 7, text: 'partial answer' });
     await api.sendPhoto({
       caption: '截图',
       chatId: -100,
@@ -82,7 +85,16 @@ describe('createTelegramApiClient', () => {
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     });
-    expect(fetch).toHaveBeenNthCalledWith(3, 'https://telegram.test/bot123:abc/sendPhoto', {
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      'https://telegram.test/bot123:abc/sendMessageDraft',
+      {
+        body: JSON.stringify({ chat_id: -100, draft_id: 7, text: 'partial answer' }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      },
+    );
+    expect(fetch).toHaveBeenNthCalledWith(4, 'https://telegram.test/bot123:abc/sendPhoto', {
       body: JSON.stringify({
         caption: '截图',
         chat_id: -100,
