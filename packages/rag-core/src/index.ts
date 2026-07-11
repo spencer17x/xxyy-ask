@@ -22,6 +22,11 @@ export { evaluateCases } from './evaluate.js';
 export { formatEvaluationFailureJsonl } from './evaluation-failures.js';
 export { createOpenAiAnswerProvider, LlmConfigurationError } from './openai-answer-provider.js';
 export {
+  composeQualityTracers,
+  createInMemoryQualityTracer,
+  noopQualityTracer,
+} from './quality-trace.js';
+export {
   createPgFeedbackStore,
   createPgPool,
   createPgVectorStore,
@@ -64,6 +69,14 @@ export type {
   EvaluationResult,
 } from './evaluate.js';
 export type { OpenAiAnswerProviderOptions } from './openai-answer-provider.js';
+export type {
+  QualityRunType,
+  QualitySpanInput,
+  QualityStreamSpanInput,
+  QualityTraceRecord,
+  QualityTraceStatus,
+  QualityTracer,
+} from './quality-trace.js';
 export type {
   EmbeddedKnowledgeChunk,
   FeedbackRecord,
