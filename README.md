@@ -136,6 +136,8 @@ pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 - `pnpm rag:migrate` 只执行非破坏性数据库迁移，不调用 embedding 或 LLM；若检测到现有向量维度不匹配会明确失败，不会自动删列。
 - `pnpm rag:stats` 查看文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 - `pnpm rag:evaluate` 运行便宜的 deterministic golden QA 子集；`pnpm rag:evaluate -- --provider` 使用正式 Agent/pgvector/OpenAI-compatible provider 做人工全链路评估。
+- `pnpm rag:evaluate -- --provider --judge` 在人工验收时额外使用 `EVAL_JUDGE_MODEL` 评分；judge 不进入默认 CI，也不会回退复用 `OPENAI_MODEL`。
+- `pnpm rag:evaluate -- --failures-out .rag/eval-failures.jsonl` 把失败项写成已脱敏、必须人工审核的 JSONL，不会直接修改 golden QA。
 - `pnpm rag:ask` 从命令行调用客服 Agent。
 
 检索质量：
@@ -143,6 +145,30 @@ pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 - 默认产品问答仍使用 hybrid recall 和 source/debug scores。`rag-core` 另外提供可选 `Reranker` 扩展点，可在 retrieval 后对候选证据做二阶段排序。
 - 内置 `createMetadataReranker()` 是本地 deterministic reranker，基于标题、模块和 heading 与问题的 token 匹配做轻量重排，不调用外部模型。它适合 golden eval 或需要更稳定证据选择的本地路径。
 - LLM relevance judge 或外部 reranker provider 可以按同一接口接入，但应默认关闭，并在有评估用例证明收益后再启用，以避免额外成本和延迟。
+
+## 回答质量闭环
+
+默认 `pnpm rag:evaluate` 同时输出答案断言和已标注样本的 Recall@K、Precision@K、MRR、nDCG@K、forbidden hit；没有 retrieval 标注的案例不会被当作零分。发布或模型/检索变更时再显式运行 provider-backed 路径：
+
+```bash
+pnpm rag:evaluate -- --provider
+EVAL_JUDGE_MODEL=your-judge-model pnpm rag:evaluate -- --provider --judge
+pnpm rag:evaluate -- --provider --failures-out .rag/provider-failures.jsonl
+```
+
+LLM judge 只是辅助信号，不能替代 deterministic gate 和人工核验。失败 JSONL 与 `pnpm rag:feedback:backlog` 一样属于 review queue；审核者应核对官方来源、补齐精确 facts/chunk IDs/引用要求，再把去隐私后的稳定案例加入 `docs/eval/golden-qa.jsonl`。完整规则见 [docs/eval/README.md](docs/eval/README.md)。
+
+可选 LangSmith tracing 默认关闭。启用时需要：
+
+```bash
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=...
+LANGSMITH_PROJECT=xxyy-ask
+QUALITY_TRACE_SAMPLE_RATE=0.1
+APP_REVISION=$(git rev-parse --short HEAD)
+```
+
+未设置采样率时，显式启用 tracing 默认采样 100%；显式设置 `0` 可作为停发开关。trace 只包含脱敏后的问题摘要、route/tool、chunk ID/分数、模型与 prompt 版本、耗时和 token usage，不上传完整 prompt、chunk、答案 delta、session ID、user ID 或密钥。
 
 服务验收：
 

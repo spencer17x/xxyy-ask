@@ -18,6 +18,9 @@ Each line is one JSON object:
   "expectedCitationTitles": ["X Post 2031333475010355227"],
   "expectedSourceUrls": ["https://x.com/useXXYYio/status/2031333475010355227"],
   "forbiddenCitationFiles": ["docs/product-features/pages/59-getting-started__xxyy-pro-quan-yi.md"],
+  "referenceFacts": ["钱包监控最多支持5000个地址"],
+  "relevantChunkIds": ["x_updates:sources/usexxyyio-x-posts/2031333475010355227:chunk:0004"],
+  "forbiddenChunkIds": ["official_docs:pages/59-getting-started__xxyy-pro-quan-yi:chunk:0002"],
   "requireCitationSupport": true,
   "boundaryExpected": false
 }
@@ -35,6 +38,22 @@ Supported checks:
 - `forbiddenSourceUrls`: exact source URLs that must not appear.
 - `requireCitationSupport`: when true, each `mustContain` phrase that appears in the answer must also appear in citation excerpts, ignoring whitespace.
 - `boundaryExpected`: marks boundary cases that should not require citations.
+- `referenceFacts`: short source-verified facts used by the optional judge and human review.
+- `relevantChunkIds`: exact chunk IDs that should be recalled. Only cases with this field contribute retrieval metrics.
+- `forbiddenChunkIds`: stale, conflicting, or unsafe chunks that must not enter the evaluated ranking.
+- `expectedAgentRoute` and `expectedToolNames`: optional exact route and ordered tool trajectory checks for provider-backed cases with trace observations.
+
+Chunk IDs must come from `prepareKnowledgeChunks`, not from hand-written guesses. Keep annotations small: list the chunks required to answer the question, not every vaguely related chunk.
+
+## Layered metrics
+
+- Recall@K: retrieved relevant chunks divided by all annotated relevant chunks.
+- Precision@K: relevant chunks divided by returned chunks within K.
+- MRR: reciprocal rank of the first relevant chunk.
+- nDCG@K: binary relevance with `1 / log2(rank + 1)` discount.
+- forbidden hits: count of annotated stale/conflicting chunks returned within K.
+
+Unannotated cases are excluded from retrieval averages. The deterministic answer checks remain the merge gate; retrieval metrics explain why an answer may be weak, and an LLM judge supplies an additional review signal only when explicitly requested.
 
 ## When to add cases
 
@@ -57,6 +76,13 @@ pnpm check
 ```
 
 Use `pnpm rag:evaluate -- --provider` only for human review before releases or model/retriever changes; it may call configured external providers.
+To add the optional judge, configure a separate model and use:
+
+```bash
+EVAL_JUDGE_MODEL=your-judge-model pnpm rag:evaluate -- --provider --judge
+```
+
+`--judge` requires `--provider`. Scores cover correctness, groundedness, completeness, relevance, and safe refusal. They do not change deterministic pass/fail and must not be promoted without source review.
 Provider-backed reports include per-case expected intent, actual intent, and citation counts so reviewers can quickly inspect weak answers:
 
 ```text
@@ -75,3 +101,19 @@ pnpm rag:feedback:backlog
 ```
 
 The command reads `rag_feedback` and prints JSONL records with `_review` metadata. Treat these as a triage queue: a reviewer must fill in precise `mustContain`, `mustNotContain`, expected citations, and source URLs before moving a draft into `golden-qa.jsonl`.
+
+Failed evals can be exported through an explicit repository-local path:
+
+```bash
+pnpm rag:evaluate -- --provider --failures-out .rag/provider-failures.jsonl
+```
+
+The file contains only failing cases and bounded observations, is redacted, and is never written by the default command. Review checklist:
+
+1. Reproduce the failure and verify the intended answer against official docs or official X updates.
+2. Decide whether the defect is classification, retrieval, freshness/conflict handling, grounding, answer generation, or a safety boundary.
+3. Replace user identifiers and private details with synthetic wording.
+4. Add exact facts, relevant/forbidden chunk IDs, answer phrases, and citations.
+5. Run `pnpm rag:evaluate` and `pnpm check`; only then promote the case to golden QA.
+
+Postgres + pgvector remains the default retrieval backend. Elasticsearch should be considered only after measured lexical/hybrid recall failures cannot be corrected with the existing hybrid query/reranker. Neo4j should be considered only when the product requires multi-hop relationship queries with a maintained graph schema. Neither is justified merely to add observability or improve answer prose.

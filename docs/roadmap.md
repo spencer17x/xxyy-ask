@@ -46,10 +46,10 @@
 目标：把评测从基础 golden QA 扩展为持续回归、线上反馈沉淀和发布前验收体系。
 
 - [ ] 扩展 golden QA 到 30+ realistic support cases，覆盖产品 FAQ、how-to、套餐限制、链支持、历史更新、边界拒答。
-- [ ] 加入 citation grounding eval、answer completeness eval、context recall / precision 指标。
-- [ ] Provider-backed evaluation report：让 `pnpm rag:evaluate -- --provider` 输出更适合人工验收的报告。
-- [ ] Feedback-to-eval backlog：将负反馈、低置信度、无引用、异常回答沉淀为待审核 eval case。
-- [ ] Regression workflow：每次修复线上错误时必须新增或更新 golden QA。
+- [x] 加入 citation grounding eval、answer completeness 辅助 judge、Recall@K / Precision@K / MRR / nDCG / forbidden-hit 指标。
+- [x] Provider-backed evaluation report：`pnpm rag:evaluate -- --provider` 输出分层报告，可显式启用独立 judge。
+- [x] Feedback-to-eval backlog：负反馈和 failed eval 都能输出脱敏、待审核 JSONL。
+- [x] Regression workflow：文档定义失败样本人工审核、去隐私、补来源后升级 golden QA 的流程。
 
 成功标准：常规 CI 能跑便宜稳定的 deterministic eval；发布前可以跑 provider-backed eval；线上失败可以持续回流为测试资产。
 
@@ -58,6 +58,7 @@
 目标：让服务具备更强的生产安全、观测、配额、部署与运维能力。
 
 - [x] Request tracing：通过 `requestId`、客服 runtime 传递和 API 结构化日志串联 route、intent、fallback/error、citation count 和耗时。
+- [x] 可选 nested tracing：vendor-neutral tracer 覆盖 planner、tool、retrieval、rerank、grounding 和 answer，LangSmith adapter 默认关闭并强制脱敏与采样。
 - [x] API abuse control：基础请求体限制、IP 限流、API key rotation、网关级配额要求和异常监控建议已落地。
 - [x] ToolPolicy authorization：受保护工具会强制要求 ops auth context，避免权限字段只停留在声明层。
 - [x] Data privacy：日志、feedback、用户输入和 LLM prompt 的脱敏、保留和删除策略已记录。
