@@ -419,11 +419,7 @@ describe('createGroundedAnswer', () => {
       }),
     ];
 
-    const response = createGroundedAnswer(
-      '当前支持robinhood么',
-      productClassification,
-      retrieved,
-    );
+    const response = createGroundedAnswer('当前支持robinhood么', productClassification, retrieved);
 
     expect(response.answer).toContain('支持');
     expect(response.answer.toLowerCase()).toMatch(/robinb[ho]od/);
