@@ -18,6 +18,15 @@ const QUICK_PROMPTS = [
 const SESSION_STORAGE_KEY = 'xxyy.ask.sessionId';
 const AI_CHECK_IDLE_STATUS = 'AI 未测试';
 
+export function appendAssistantAnswerDelta(message: ChatMessage, delta: string): ChatMessage {
+  const { meta: _meta, statusMessage: _statusMessage, ...rest } = message;
+  return {
+    ...rest,
+    rawAnswer: message.rawAnswer + delta,
+    text: message.text + delta,
+  };
+}
+
 export function App(): ReactElement {
   const [authToken, setAuthToken] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([createWelcomeMessage()]);
@@ -96,14 +105,9 @@ export function App(): ReactElement {
 
         if (streamEvent.event === 'answer_delta') {
           const delta = streamEvent.payload.delta ?? '';
-          updateAssistantMessage(assistantId, (message) => {
-            const { statusMessage: _statusMessage, ...rest } = message;
-            return {
-              ...rest,
-              rawAnswer: message.rawAnswer + delta,
-              text: message.text + delta,
-            };
-          });
+          updateAssistantMessage(assistantId, (message) =>
+            appendAssistantAnswerDelta(message, delta),
+          );
           setStatus('Receiving');
           return;
         }
