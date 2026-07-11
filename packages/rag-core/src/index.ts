@@ -22,9 +22,14 @@ export { evaluateCases } from './evaluate.js';
 export { formatEvaluationFailureJsonl } from './evaluation-failures.js';
 export { createOpenAiAnswerProvider, LlmConfigurationError } from './openai-answer-provider.js';
 export {
+  createQualityTracerFromEnv,
+  QualityTracingConfigurationError,
+} from './langsmith-quality-trace.js';
+export {
   composeQualityTracers,
   createInMemoryQualityTracer,
   noopQualityTracer,
+  sanitizeQualityRecord,
 } from './quality-trace.js';
 export {
   createPgFeedbackStore,
@@ -69,6 +74,10 @@ export type {
   EvaluationResult,
 } from './evaluate.js';
 export type { OpenAiAnswerProviderOptions } from './openai-answer-provider.js';
+export type {
+  LangSmithQualityTracerDependencies,
+  QualityTraceEnv,
+} from './langsmith-quality-trace.js';
 export type {
   QualityRunType,
   QualitySpanInput,

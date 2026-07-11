@@ -171,8 +171,8 @@ function startRecord(
   return {
     durationMs: 0,
     id: `quality_${++nextTraceId}`,
-    ...(span.inputs === undefined ? {} : { inputs: sanitizeRecord(span.inputs) }),
-    ...(span.metadata === undefined ? {} : { metadata: sanitizeRecord(span.metadata) }),
+    ...(span.inputs === undefined ? {} : { inputs: sanitizeQualityRecord(span.inputs) }),
+    ...(span.metadata === undefined ? {} : { metadata: sanitizeQualityRecord(span.metadata) }),
     name: span.name,
     ...(parentId === undefined ? {} : { parentId }),
     runType: span.runType,
@@ -192,13 +192,13 @@ function summarize(
 ): Record<string, unknown> | undefined {
   try {
     const summary = createSummary();
-    return summary === undefined ? undefined : sanitizeRecord(summary);
+    return summary === undefined ? undefined : sanitizeQualityRecord(summary);
   } catch (error) {
     return { summaryError: error instanceof Error ? error.name : 'UnknownError' };
   }
 }
 
-function sanitizeRecord(value: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeQualityRecord(value: Record<string, unknown>): Record<string, unknown> {
   return sanitizeValue(value, 0) as Record<string, unknown>;
 }
 
