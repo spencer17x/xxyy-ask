@@ -32,6 +32,7 @@ export interface EvaluationResult {
   forbiddenChunkIds: string[];
   actualIntent: Intent;
   minCitations: number;
+  question: string;
   citationCount: number;
   failureReasons: string[];
   referenceFacts: string[];
@@ -102,6 +103,7 @@ export async function evaluateCases(
       forbiddenChunkIds: [...(testCase.forbiddenChunkIds ?? [])],
       actualIntent: response.intent,
       minCitations,
+      question: testCase.request.message,
       citationCount,
       failureReasons,
       referenceFacts: [...(testCase.referenceFacts ?? [])],

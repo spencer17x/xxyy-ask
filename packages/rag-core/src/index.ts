@@ -19,6 +19,7 @@ export { classifyQuestion, hasProductDomainSignal } from './classify.js';
 export { loadRagConfig } from './config.js';
 export { loadWorkspaceEnv, resolveWorkspaceCwd } from './env.js';
 export { evaluateCases } from './evaluate.js';
+export { formatEvaluationFailureJsonl } from './evaluation-failures.js';
 export { createOpenAiAnswerProvider, LlmConfigurationError } from './openai-answer-provider.js';
 export {
   createPgFeedbackStore,
