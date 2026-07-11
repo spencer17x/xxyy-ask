@@ -17,6 +17,8 @@ import {
   VectorStoreUnavailableError,
   AnswerJudgeConfigurationError,
   aggregateRetrievalResults,
+  composeQualityTracers,
+  createInMemoryQualityTracer,
   createLazyRetriever,
   createLocalRetriever,
   createOpenAiAnswerQualityJudge,
@@ -51,6 +53,7 @@ import type {
   KnowledgeStats,
   RagEnv,
   QualityTracer,
+  QualityTraceRecord,
   Retriever,
 } from '@xxyy/rag-core';
 import type { ChatRequest, ChatResponse, RagIndex } from '@xxyy/shared';
@@ -720,19 +723,23 @@ async function evaluate(
 ): Promise<EvaluationReport> {
   const config = loadRagConfig(io.env);
   const cases = await loadEvaluationCases(io.cwd);
-  const tracer = createQualityTracerFromEnv({ ...io.env });
+  const configuredTracer = createQualityTracerFromEnv({ ...io.env });
+  const inMemoryTrace = options.providerBacked ? createInMemoryQualityTracer() : undefined;
+  const tracer =
+    inMemoryTrace === undefined
+      ? configuredTracer
+      : composeQualityTracers([configuredTracer, inMemoryTrace.tracer]);
   let report: EvaluationReport;
 
   if (options.providerBacked) {
     const runtime = createCliChatRuntime(config, tracer);
     try {
-      const evaluationRetriever = createRerankingRetriever(
-        runtime.retriever,
-        createMetadataReranker(),
-        { candidateMultiplier: 4, tracer },
-      );
       report = await evaluateCases(cases, runtime.service, {
-        observe: createRetrievalObserver(evaluationRetriever, config.topK),
+        observe: (testCase) =>
+          collectEvaluationTraceObservation(
+            inMemoryTrace?.records ?? [],
+            testCase.request.requestId ?? `eval:${testCase.name}`,
+          ),
       });
     } finally {
       await runtime.close();
@@ -790,6 +797,52 @@ async function evaluate(
   }
 
   return report;
+}
+
+export function collectEvaluationTraceObservation(
+  records: readonly QualityTraceRecord[],
+  requestId: string,
+): { retrievedChunkIds: string[]; toolNames: string[] } {
+  const root = records.find(
+    (record) => record.name === 'chat.request' && record.metadata?.requestId === requestId,
+  );
+  if (root === undefined) {
+    return { retrievedChunkIds: [], toolNames: [] };
+  }
+
+  const descendantIds = new Set([root.id]);
+  const descendants: QualityTraceRecord[] = [];
+  for (const record of records) {
+    if (record.parentId !== undefined && descendantIds.has(record.parentId)) {
+      descendantIds.add(record.id);
+      descendants.push(record);
+    }
+  }
+  const toolNames = descendants.flatMap((record) => {
+    const toolName = record.name === 'agent.tool' ? record.metadata?.toolName : undefined;
+    return typeof toolName === 'string' ? [toolName] : [];
+  });
+  const retrieval = descendants
+    .filter((record) => ['rag.metadata_rerank', 'rag.pgvector_candidates'].includes(record.name))
+    .at(-1);
+
+  return {
+    retrievedChunkIds: readTraceChunkIds(retrieval?.outputs?.chunks),
+    toolNames,
+  };
+}
+
+function readTraceChunkIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((chunk) => {
+    if (typeof chunk !== 'object' || chunk === null || Array.isArray(chunk)) {
+      return [];
+    }
+    const id = (chunk as Record<string, unknown>).id;
+    return typeof id === 'string' ? [id] : [];
+  });
 }
 
 function createRetrievalObserver(retriever: Retriever, topK: number) {
@@ -883,6 +936,7 @@ async function loadEvaluationCases(cwd: string): Promise<EvaluationCase[]> {
 }
 
 function toEvaluationCase(record: GoldenQaRecord, index: number): EvaluationCase {
+  const name = record.name ?? `golden-${index + 1}`;
   return {
     ...(record.expectedAgentRoute === undefined
       ? {}
@@ -898,10 +952,11 @@ function toEvaluationCase(record: GoldenQaRecord, index: number): EvaluationCase
       ? {}
       : { forbiddenAnswerIncludes: record.mustNotContain }),
     ...(record.boundaryExpected === true ? { minCitations: 0 } : {}),
-    name: record.name ?? `golden-${index + 1}`,
+    name,
     request: {
       channel: 'cli',
       message: record.question,
+      requestId: `eval:${name}`,
     },
     ...(record.referenceFacts === undefined ? {} : { referenceFacts: record.referenceFacts }),
     ...(record.relevantChunkIds === undefined ? {} : { relevantChunkIds: record.relevantChunkIds }),

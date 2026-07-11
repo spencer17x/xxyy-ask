@@ -7,10 +7,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CreateCustomerAgentChatServiceOptions } from '@xxyy/agent-core';
 import type { PreparedKnowledgeChunk } from '@xxyy/knowledge';
 import type { EmbeddedKnowledgeChunk, KnowledgeStats } from '@xxyy/rag-core';
+import { createInMemoryQualityTracer } from '@xxyy/rag-core';
 import type { SourceDocument } from '@xxyy/shared';
 
 import {
   createDefaultCliIo,
+  collectEvaluationTraceObservation,
   formatChatResponse,
   formatEvaluationReport,
   formatFeedbackEvalBacklog,
@@ -164,6 +166,43 @@ describe('createDefaultCliIo', () => {
 });
 
 describe('CLI output formatting', () => {
+  it('collects ordered tool and retrieval observations from one request trace tree', async () => {
+    const { records, tracer } = createInMemoryQualityTracer();
+    await tracer.run(
+      {
+        metadata: { requestId: 'eval:case-1' },
+        name: 'chat.request',
+        runType: 'chain',
+      },
+      () =>
+        tracer.run(
+          {
+            metadata: { toolName: 'answer_product_question' },
+            name: 'agent.tool',
+            runType: 'tool',
+          },
+          () =>
+            tracer.run(
+              {
+                name: 'rag.metadata_rerank',
+                output: () => ({ chunks: [{ id: 'chunk-current' }] }),
+                runType: 'retriever',
+              },
+              () => Promise.resolve([]),
+            ),
+        ),
+    );
+
+    expect(collectEvaluationTraceObservation(records, 'eval:case-1')).toEqual({
+      retrievedChunkIds: ['chunk-current'],
+      toolNames: ['answer_product_question'],
+    });
+    expect(collectEvaluationTraceObservation(records, 'eval:missing')).toEqual({
+      retrievedChunkIds: [],
+      toolNames: [],
+    });
+  });
+
   it('formats chat responses with readable citations and attachments', () => {
     expect(
       formatChatResponse({
