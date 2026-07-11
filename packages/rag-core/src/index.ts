@@ -24,6 +24,10 @@ export {
   VectorStoreUnavailableError,
 } from './pgvector-store.js';
 export { retrieve } from './retrieve.js';
+export {
+  aggregateRetrievalResults,
+  evaluateRetrievalRanking,
+} from './retrieval-evaluate.js';
 export { redactSensitiveSupportText } from './redaction.js';
 export {
   createLazyRetriever,
@@ -70,4 +74,9 @@ export type {
   ReplaceChunksOptions,
 } from './pgvector-store.js';
 export type { RetrieveOptions, RetrievedChunk } from './retrieve.js';
+export type {
+  RetrievalEvaluationInput,
+  RetrievalEvaluationResult,
+  RetrievalEvaluationSummary,
+} from './retrieval-evaluate.js';
 export type { Reranker, RerankingRetrieverOptions, Retriever } from './retriever.js';
