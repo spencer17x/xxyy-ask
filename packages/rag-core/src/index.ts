@@ -1,6 +1,11 @@
 export const workspacePackageName = '@xxyy/rag-core';
 
 export {
+  AnswerJudgeConfigurationError,
+  AnswerJudgeResponseError,
+  createOpenAiAnswerQualityJudge,
+} from './answer-quality-judge.js';
+export {
   createAttachmentsFromChunks,
   createBoundaryAnswer,
   createCitationsFromChunks,
@@ -43,6 +48,12 @@ export {
 export { createChatService } from './chat-service.js';
 
 export type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
+export type {
+  AnswerQualityJudge,
+  AnswerQualityJudgeInput,
+  AnswerQualityScores,
+  OpenAiAnswerQualityJudgeOptions,
+} from './answer-quality-judge.js';
 export type { ChatService, CreateChatServiceOptions } from './chat-service.js';
 export type { RagConfig, RagEnv } from './config.js';
 export type { EnvRecord, LoadWorkspaceEnvOptions, WorkspaceEnv } from './env.js';
