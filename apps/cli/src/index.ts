@@ -24,6 +24,7 @@ import {
   createPgFeedbackStore,
   createPgPool,
   createPgVectorStore,
+  createQualityTracerFromEnv,
   createChatService,
   createGroundedAnswer,
   createMetadataReranker,
@@ -33,6 +34,7 @@ import {
   formatEvaluationFailureJsonl,
   formatRetrievedChunksDebug,
   LlmConfigurationError,
+  QualityTracingConfigurationError,
   loadRagConfig,
   loadWorkspaceEnv,
   resolveWorkspaceCwd,
@@ -48,13 +50,27 @@ import type {
   FeedbackRecord,
   KnowledgeStats,
   RagEnv,
+  QualityTracer,
   Retriever,
 } from '@xxyy/rag-core';
 import type { ChatRequest, ChatResponse, RagIndex } from '@xxyy/shared';
 
 export { resolveWorkspaceCwd } from '@xxyy/rag-core';
 
-type CliEnv = RagEnv & Partial<Record<'EVAL_JUDGE_MODEL' | 'INIT_CWD', string>>;
+type CliEnv = RagEnv &
+  Partial<
+    Record<
+      | 'APP_REVISION'
+      | 'EVAL_JUDGE_MODEL'
+      | 'INIT_CWD'
+      | 'LANGSMITH_API_KEY'
+      | 'LANGSMITH_ENDPOINT'
+      | 'LANGSMITH_PROJECT'
+      | 'LANGSMITH_TRACING'
+      | 'QUALITY_TRACE_SAMPLE_RATE',
+      string
+    >
+  >;
 
 type CliCommand =
   | { command: 'ask'; debugRetrieve: boolean; question: string }
@@ -566,7 +582,8 @@ export async function runCli(
   }
 
   try {
-    const runtime = createCliChatRuntime(config);
+    const tracer = createQualityTracerFromEnv({ ...io.env });
+    const runtime = createCliChatRuntime(config, tracer);
     try {
       if (parsed.debugRetrieve) {
         const chunks = await runtime.retriever.retrieve(parsed.question, {
@@ -703,15 +720,16 @@ async function evaluate(
 ): Promise<EvaluationReport> {
   const config = loadRagConfig(io.env);
   const cases = await loadEvaluationCases(io.cwd);
+  const tracer = createQualityTracerFromEnv({ ...io.env });
   let report: EvaluationReport;
 
   if (options.providerBacked) {
-    const runtime = createCliChatRuntime(config);
+    const runtime = createCliChatRuntime(config, tracer);
     try {
       const evaluationRetriever = createRerankingRetriever(
         runtime.retriever,
         createMetadataReranker(),
-        { candidateMultiplier: 4 },
+        { candidateMultiplier: 4, tracer },
       );
       report = await evaluateCases(cases, runtime.service, {
         observe: createRetrievalObserver(evaluationRetriever, config.topK),
@@ -733,7 +751,7 @@ async function evaluate(
     const evaluationRetriever = createRerankingRetriever(
       createLocalRetriever(index),
       createMetadataReranker(),
-      { candidateMultiplier: 4 },
+      { candidateMultiplier: 4, tracer },
     );
     const service = createChatService({
       answerProvider: {
@@ -978,7 +996,10 @@ async function embedPreparedChunks(
   return embeddedChunks;
 }
 
-function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChatRuntime {
+function createCliChatRuntime(
+  config: ReturnType<typeof loadRagConfig>,
+  tracer: QualityTracer,
+): CliChatRuntime {
   let pool: ReturnType<typeof createPgPool> | undefined;
   const retriever = createLazyRetriever(async () => {
     const nextPool = createPgPool(config.databaseUrl);
@@ -996,6 +1017,7 @@ function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChat
         client: nextPool,
         embeddingDimension: config.embeddingDimension,
         embeddingProvider,
+        tracer,
       });
     } catch (error) {
       await nextPool.end();
@@ -1006,9 +1028,10 @@ function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChat
   return {
     retriever,
     service: createCustomerAgentChatService({
-      answerProvider: createLazyAnswerProvider(config),
+      answerProvider: createLazyAnswerProvider(config, tracer),
       config,
       retriever,
+      tracer,
     }),
     close: async () => {
       const currentPool = pool;
@@ -1018,7 +1041,10 @@ function createCliChatRuntime(config: ReturnType<typeof loadRagConfig>): CliChat
   };
 }
 
-function createLazyAnswerProvider(config: ReturnType<typeof loadRagConfig>): AnswerProvider {
+function createLazyAnswerProvider(
+  config: ReturnType<typeof loadRagConfig>,
+  tracer: QualityTracer,
+): AnswerProvider {
   let cachedProvider: AnswerProvider | undefined;
 
   function getProvider(): AnswerProvider {
@@ -1028,6 +1054,7 @@ function createLazyAnswerProvider(config: ReturnType<typeof loadRagConfig>): Ans
       maxRetries: config.openAiMaxRetries,
       model: config.openAiModel,
       requestTimeoutMs: config.openAiRequestTimeoutMs,
+      tracer,
     });
     return cachedProvider;
   }
@@ -1107,6 +1134,11 @@ function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): 
 
 function writeConfigurationError(io: CliIo, error: unknown): boolean {
   if (error instanceof AnswerJudgeConfigurationError) {
+    writeLine(io.stderr, error.message);
+    return true;
+  }
+
+  if (error instanceof QualityTracingConfigurationError) {
     writeLine(io.stderr, error.message);
     return true;
   }

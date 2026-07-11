@@ -12,6 +12,7 @@ import { EmbeddingConfigurationError } from '@xxyy/knowledge';
 import type { ChatRequest, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import {
   LlmConfigurationError,
+  QualityTracingConfigurationError,
   VectorStoreConfigurationError,
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
@@ -958,7 +959,12 @@ describe('createRequestHandler', () => {
       if (serviceOptions === undefined) {
         throw new Error('Expected Customer Agent service options to be captured.');
       }
-      expect(Object.keys(serviceOptions).sort()).toEqual(['answerProvider', 'config', 'retriever']);
+      expect(Object.keys(serviceOptions).sort()).toEqual([
+        'answerProvider',
+        'config',
+        'retriever',
+        'tracer',
+      ]);
       expect(serviceOptions.retriever).toBe(retriever);
       expect(typeof serviceOptions.answerProvider.answer).toBe('function');
       expect(createLazyRetriever).toHaveBeenCalledTimes(1);
@@ -1406,6 +1412,12 @@ describe('createRequestHandler', () => {
       error: 'llm_configuration_missing',
       message: 'OPENAI_API_KEY is required for agent planning.',
     });
+  });
+
+  it('fails fast when explicitly enabled tracing is missing its API key', () => {
+    expect(() => createRequestHandler({ env: { LANGSMITH_TRACING: 'true' } })).toThrow(
+      QualityTracingConfigurationError,
+    );
   });
 
   it('returns a useful 503 when vector store runtime is unavailable', async () => {

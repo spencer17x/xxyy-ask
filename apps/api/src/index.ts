@@ -9,6 +9,7 @@ import { createCustomerAgentChatService } from '@xxyy/agent-core';
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
   createOpenAiAnswerProvider,
+  createQualityTracerFromEnv,
   createLazyRetriever,
   createPgPool,
   createPgVectorStore,
@@ -21,7 +22,7 @@ import {
 } from '@xxyy/rag-core';
 import type { ChatRequest, ChatChannel, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import { supportedChannels } from '@xxyy/shared';
-import type { AnswerProvider, ChatService, RagEnv } from '@xxyy/rag-core';
+import type { AnswerProvider, ChatService, QualityTracer, RagEnv } from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
 
 const PRODUCT_ASSET_NAMES: ReadonlySet<string> = new Set(['xxyy-add-to-home.mp4']);
@@ -39,7 +40,13 @@ type ApiEnv = RagEnv &
       | 'API_RATE_LIMIT_WINDOW_MS'
       | 'API_REQUIRE_CHAT_AUTH'
       | 'NODE_ENV'
+      | 'APP_REVISION'
+      | 'LANGSMITH_API_KEY'
+      | 'LANGSMITH_ENDPOINT'
+      | 'LANGSMITH_PROJECT'
+      | 'LANGSMITH_TRACING'
       | 'PORT'
+      | 'QUALITY_TRACE_SAMPLE_RATE'
       | 'TRUST_PROXY',
       string
     >
@@ -155,8 +162,9 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const env = options.env ?? createDefaultApiEnv(options);
   const config = loadRagConfig(env);
   const apiConfig = loadApiRuntimeConfig(env);
+  const tracer = createQualityTracerFromEnv({ ...env });
   const renderHtml = options.renderHtml ?? renderChatPage;
-  const getChatService = options.getChatService ?? createCachedChatServiceLoader(config);
+  const getChatService = options.getChatService ?? createCachedChatServiceLoader(config, tracer);
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
   const logger = options.logger ?? noopLogger;
   const now = options.now ?? Date.now;
@@ -1016,6 +1024,7 @@ function normalizePortRetryLimit(retryLimit: number): number {
 
 function createCachedChatServiceLoader(
   config: ReturnType<typeof loadRagConfig>,
+  tracer: QualityTracer,
 ): () => Promise<ChatService> {
   let cachedService: ChatService | undefined;
 
@@ -1039,6 +1048,7 @@ function createCachedChatServiceLoader(
           client: pool,
           embeddingDimension: config.embeddingDimension,
           embeddingProvider,
+          tracer,
         });
       } catch (error) {
         await pool.end();
@@ -1046,15 +1056,19 @@ function createCachedChatServiceLoader(
       }
     });
     cachedService = createCustomerAgentChatService({
-      answerProvider: createLazyAnswerProvider(config),
+      answerProvider: createLazyAnswerProvider(config, tracer),
       config,
       retriever,
+      tracer,
     });
     return Promise.resolve(cachedService);
   };
 }
 
-function createLazyAnswerProvider(config: ReturnType<typeof loadRagConfig>): AnswerProvider {
+function createLazyAnswerProvider(
+  config: ReturnType<typeof loadRagConfig>,
+  tracer: QualityTracer,
+): AnswerProvider {
   let cachedProvider: AnswerProvider | undefined;
 
   function getProvider(): AnswerProvider {
@@ -1064,6 +1078,7 @@ function createLazyAnswerProvider(config: ReturnType<typeof loadRagConfig>): Ans
       maxRetries: config.openAiMaxRetries,
       model: config.openAiModel,
       requestTimeoutMs: config.openAiRequestTimeoutMs,
+      tracer,
     });
     return cachedProvider;
   }

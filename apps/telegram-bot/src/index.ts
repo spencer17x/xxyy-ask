@@ -1,4 +1,10 @@
-import { loadRagConfig, loadWorkspaceEnv, resolveWorkspaceCwd, type RagEnv } from '@xxyy/rag-core';
+import {
+  createQualityTracerFromEnv,
+  loadRagConfig,
+  loadWorkspaceEnv,
+  resolveWorkspaceCwd,
+  type RagEnv,
+} from '@xxyy/rag-core';
 
 import {
   TelegramBotConfigurationError,
@@ -26,7 +32,10 @@ async function main(env: TelegramEnv = process.env): Promise<void> {
   const workspaceEnv = loadWorkspaceEnv({ cwd: workspaceCwd, env });
   const config = loadRagConfig(workspaceEnv);
   const botConfig = loadTelegramBotConfig(workspaceEnv);
-  const runtime = createTelegramChatRuntime(config);
+  const runtime = createTelegramChatRuntime(
+    config,
+    createQualityTracerFromEnv({ ...workspaceEnv }),
+  );
   const api = createTelegramApiClient({ botToken: botConfig.botToken });
   const bot = createTelegramBot({
     api,

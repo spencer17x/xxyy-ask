@@ -553,6 +553,24 @@ describe('CLI output formatting', () => {
 });
 
 describe('runCli', () => {
+  it('prints tracing configuration errors without exposing secrets', async () => {
+    const stderr: string[] = [];
+    const exitCode = await runCli(['ask', '帮我查一下钱包余额'], {
+      cwd: process.cwd(),
+      env: { LANGSMITH_TRACING: 'true' },
+      stderr: {
+        write: (message: string) => {
+          stderr.push(message);
+          return true;
+        },
+      },
+      stdout: { write: () => true },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('')).toContain('LANGSMITH_API_KEY is required');
+  });
+
   it('returns boundary answers without planner configuration for obvious private lookups', async () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
@@ -618,7 +636,12 @@ describe('runCli', () => {
     });
     const createCustomerAgentChatService = vi.fn(
       (options: CreateCustomerAgentChatServiceOptions) => {
-        expect(Object.keys(options).sort()).toEqual(['answerProvider', 'config', 'retriever']);
+        expect(Object.keys(options).sort()).toEqual([
+          'answerProvider',
+          'config',
+          'retriever',
+          'tracer',
+        ]);
         return {
           ask,
           stream: vi.fn(),

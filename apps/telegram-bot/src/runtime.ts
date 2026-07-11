@@ -5,9 +5,11 @@ import {
   createOpenAiAnswerProvider,
   createPgPool,
   createPgVectorStore,
+  noopQualityTracer,
   type AnswerProvider,
   type ChatService,
   type RagConfig,
+  type QualityTracer,
 } from '@xxyy/rag-core';
 
 export interface TelegramChatRuntime {
@@ -15,7 +17,10 @@ export interface TelegramChatRuntime {
   service: ChatService;
 }
 
-export function createTelegramChatRuntime(config: RagConfig): TelegramChatRuntime {
+export function createTelegramChatRuntime(
+  config: RagConfig,
+  tracer: QualityTracer = noopQualityTracer,
+): TelegramChatRuntime {
   let vectorPool: ReturnType<typeof createPgPool> | undefined;
 
   const retriever = createLazyRetriever(async () => {
@@ -34,6 +39,7 @@ export function createTelegramChatRuntime(config: RagConfig): TelegramChatRuntim
         client: nextPool,
         embeddingDimension: config.embeddingDimension,
         embeddingProvider,
+        tracer,
       });
     } catch (error) {
       await nextPool.end();
@@ -48,14 +54,15 @@ export function createTelegramChatRuntime(config: RagConfig): TelegramChatRuntim
       await pool?.end();
     },
     service: createCustomerAgentChatService({
-      answerProvider: createLazyAnswerProvider(config),
+      answerProvider: createLazyAnswerProvider(config, tracer),
       config,
       retriever,
+      tracer,
     }),
   };
 }
 
-function createLazyAnswerProvider(config: RagConfig): AnswerProvider {
+function createLazyAnswerProvider(config: RagConfig, tracer: QualityTracer): AnswerProvider {
   let cachedProvider: AnswerProvider | undefined;
 
   function getProvider(): AnswerProvider {
@@ -65,6 +72,7 @@ function createLazyAnswerProvider(config: RagConfig): AnswerProvider {
       maxRetries: config.openAiMaxRetries,
       model: config.openAiModel,
       requestTimeoutMs: config.openAiRequestTimeoutMs,
+      tracer,
     });
     return cachedProvider;
   }
