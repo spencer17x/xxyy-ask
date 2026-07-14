@@ -264,6 +264,37 @@ describe('createRerankingRetriever', () => {
 
     expect(results.map((chunk) => chunk.id)).toEqual(['base-b20-support']);
   });
+
+  it('prefers actionable instructions over generic launch mentions for how-to questions', async () => {
+    const baseRetriever = createBaseRetriever([
+      createChunk({
+        id: 'generic-stop-loss-summary',
+        score: 12,
+        sourceType: 'x_updates',
+        text: '快速设置挂单，轻松止盈止损。',
+        title: 'X Post summary',
+      }),
+      createChunk({
+        id: 'stop-loss-launch',
+        score: 11,
+        sourceType: 'x_updates',
+        text: '自动止盈止损上线啦！',
+        title: 'X Post launch',
+      }),
+      createChunk({
+        id: 'stop-loss-instructions',
+        score: 8,
+        sourceType: 'x_updates',
+        text: '提前设置好条件，勾选自动止盈止损，每笔交易都能自动创建挂单。',
+        title: 'X Post instructions',
+      }),
+    ]);
+    const retriever = createRerankingRetriever(baseRetriever, createMetadataReranker());
+
+    const results = await retriever.retrieve('我的钱包怎么设置止盈止损？', { topK: 1 });
+
+    expect(results.map((chunk) => chunk.id)).toEqual(['stop-loss-instructions']);
+  });
 });
 
 function createBaseRetriever(chunks: RetrievedChunk[]): Retriever {

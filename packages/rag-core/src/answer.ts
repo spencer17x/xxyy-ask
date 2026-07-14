@@ -63,7 +63,8 @@ export function selectGroundingChunks(
   question: string,
   retrievedChunks: RetrievedChunk[],
 ): RetrievedChunk[] {
-  const highRankedChunks = retrievedChunks.slice(0, MAX_CITATIONS);
+  const deduplicatedChunks = deduplicateGroundingChunks(retrievedChunks);
+  const highRankedChunks = deduplicatedChunks.slice(0, MAX_CITATIONS);
 
   if (isDirectSourceQuestion(question)) {
     const directXPostChunk = selectBestDirectXPostChunk(
@@ -87,7 +88,7 @@ export function selectGroundingChunks(
   if (supportEntityTokens.length > 0) {
     // Scan the full retrieved candidate list so rare entities are not lost to
     // generic "支持" hits that crowd the top citation window.
-    return retrievedChunks
+    return deduplicatedChunks
       .filter((chunk) => textMatchesAllSupportEntities(toEvidenceText(chunk), supportEntityTokens))
       .slice(0, MAX_CITATIONS);
   }
@@ -98,6 +99,20 @@ export function selectGroundingChunks(
   }
 
   return highRankedChunks;
+}
+
+function deduplicateGroundingChunks(chunks: RetrievedChunk[]): RetrievedChunk[] {
+  const seen = new Set<string>();
+  return chunks.filter((chunk) => {
+    const key = isDirectXPostChunk(chunk)
+      ? `direct-x:${chunk.id}`
+      : `${chunk.metadata.sourceType}:${chunk.text.normalize('NFKC').replace(/\s+/gu, ' ').trim()}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 export function createInsufficientKnowledgeAnswer(question: string, intent: Intent): ChatResponse {

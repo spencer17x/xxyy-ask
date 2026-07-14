@@ -15,12 +15,12 @@
     "pageSize": 40,
     "traversalCompleted": true,
     "traversalStoppedAtPageCap": false,
-    "cutoffCreatedAtIso": "2026-07-02T10:21:44.000Z",
-    "cutoffPostId": "2072626771422535771",
-    "totalPosts": 285
+    "cutoffCreatedAtIso": "2026-07-10T11:49:11.000Z",
+    "cutoffPostId": "2075547879876554811",
+    "totalPosts": 287
   },
-  "fetchedAt": "2026-07-11T02:11:26.655Z",
-  "configAssetUrl": "https://abs.twimg.com/x-web/x-web/assets/guest-token-CIIhzU49.js",
+  "fetchedAt": "2026-07-14T03:49:28.301Z",
+  "configAssetUrl": "https://abs.twimg.com/x-web/x-web/assets/guest-token-Cwg9pGqh.js",
   "operations": {
     "userByScreenName": {
       "queryId": "_kuJi4oIDFMUU-N285gZWg",

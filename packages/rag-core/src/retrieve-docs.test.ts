@@ -36,7 +36,7 @@ describe('retrieve over product docs', () => {
     const results = retrieve('XXYY Pro 有哪些权益？', index, { topK: 3 });
 
     expect(results[0]?.text).toContain('独享服务器和节点');
-    expect(results[0]?.text).toContain('监控2000个钱包');
+    expect(results[0]?.text).toContain('每条链最多监控5000个钱包');
     expect(results[0]?.text).toContain('收藏1000个代币');
   });
 

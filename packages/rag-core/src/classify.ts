@@ -159,18 +159,6 @@ export function classifyQuestion(question: string): Classification {
     return createClassification('unknown', 0.7, 'unsupported transaction or mev analysis request');
   }
 
-  const realtimeRule = rules.find((rule) => rule.intent === 'realtime_account_query');
-  if (realtimeRule !== undefined && matchesRule(realtimeRule, normalized)) {
-    const isUserSpecific = userSpecificLookupPatterns.some((pattern) => pattern.test(normalized));
-    if (isUserSpecific) {
-      return createClassification(
-        realtimeRule.intent,
-        realtimeRule.confidence,
-        realtimeRule.reason,
-      );
-    }
-  }
-
   if (productOperationPatterns.some((pattern) => pattern.test(normalized))) {
     return createClassification('how_to', 0.84, 'asks for product operation instructions');
   }
@@ -181,6 +169,18 @@ export function classifyQuestion(question: string): Classification {
       0.72,
       'asks whether a product capability is supported',
     );
+  }
+
+  const realtimeRule = rules.find((rule) => rule.intent === 'realtime_account_query');
+  if (realtimeRule !== undefined && matchesRule(realtimeRule, normalized)) {
+    const isUserSpecific = userSpecificLookupPatterns.some((pattern) => pattern.test(normalized));
+    if (isUserSpecific) {
+      return createClassification(
+        realtimeRule.intent,
+        realtimeRule.confidence,
+        realtimeRule.reason,
+      );
+    }
   }
 
   for (const rule of rules) {

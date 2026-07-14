@@ -45,6 +45,14 @@ Supported checks:
 
 Chunk IDs must come from `prepareKnowledgeChunks`, not from hand-written guesses. Keep annotations small: list the chunks required to answer the question, not every vaguely related chunk.
 
+## Current and historical facts
+
+- For questions about the current product, use the latest explicit official update as the expected fact.
+- A newer update only supersedes the scope it names, such as a specific chain, plan, or user tier.
+- Put older conflicting chunks in `forbiddenChunkIds` for current-product cases.
+- Historical questions may cite older chunks, but the expected answer must make the historical timeframe clear.
+- If official sources do not uniquely identify the applicable scope, keep the case in review instead of inventing a golden answer.
+
 ## Layered metrics
 
 - Recall@K: retrieved relevant chunks divided by all annotated relevant chunks.

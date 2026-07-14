@@ -116,6 +116,10 @@ function expandQueryTokens(tokens: string[], question: string): string[] {
     expanded.push(...tokenize('Pro 权益'));
   }
 
+  if (/升级.*\bpro\b|\bpro\b.*升级/u.test(normalizedQuestion)) {
+    expanded.push(...tokenize('会员积分 交易积分'));
+  }
+
   if (/基础套餐|基础版|免费版|\bbasic\b/u.test(normalizedQuestion)) {
     expanded.push(...tokenize('Basic 基础'));
   }

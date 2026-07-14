@@ -35,6 +35,7 @@ const BROAD_CHAIN_COVERAGE_BONUS = 5;
 const COPY_TRADING_DIRECT_EVIDENCE_BONUS = 6;
 const TRADE_SETTING_PRESET_DIRECT_EVIDENCE_BONUS = 8;
 const SHORT_ENTITY_DIRECT_EVIDENCE_BONUS = 8;
+const HOW_TO_DIRECT_EVIDENCE_BONUS = 8;
 
 export function createLazyRetriever(
   createRetriever: () => Promise<Retriever> | Retriever,
@@ -156,8 +157,23 @@ function rerankScore(chunk: RetrievedChunk, queryTokens: Set<string>, question: 
   return (
     chunk.score +
     metadataMatchScore(chunk, queryTokens) * METADATA_RERANK_WEIGHT +
-    contentShapeScore(chunk, question)
+    contentShapeScore(chunk, question) +
+    howToEvidenceScore(chunk, question)
   );
+}
+
+function howToEvidenceScore(chunk: RetrievedChunk, question: string): number {
+  const normalizedQuestion = question.normalize('NFKC').toLowerCase();
+  if (!/如何|怎么|怎样|how\s+to/u.test(normalizedQuestion)) {
+    return 0;
+  }
+
+  const normalizedEvidence = chunk.text.normalize('NFKC').toLowerCase();
+  return /点击|选择|输入|填写|下载|上传|勾选|提前设置|设置.{0,8}(?:条件|金额|比例|模式)/u.test(
+    normalizedEvidence,
+  )
+    ? HOW_TO_DIRECT_EVIDENCE_BONUS
+    : 0;
 }
 
 function contentShapeScore(chunk: RetrievedChunk, question: string): number {

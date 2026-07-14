@@ -6,6 +6,7 @@ import {
   createBoundaryAnswer,
   createGroundedAnswer,
   createSupportConclusionFromEvidence,
+  selectGroundingChunks,
 } from './answer.js';
 import { retrieve, type RetrievedChunk } from './retrieve.js';
 import { createFixtureIndex } from './test-fixtures.js';
@@ -141,6 +142,39 @@ describe('createGroundedAnswer', () => {
     expect(response.citations).toHaveLength(2);
     expect(response.answer).toContain('独享服务器和节点');
     expect(response.answer).toContain('每个用户每条链最多创建100个交易钱包');
+  });
+
+  it('deduplicates mirrored official content before selecting the citation window', () => {
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'member-points-page',
+        text: '点击右上角个人中心的会员积分，可查看当前地址积分数量。',
+        title: '如何升级为 Pro',
+      }),
+      createRetrievedChunk({
+        id: 'member-points-rollup',
+        text: '点击右上角个人中心的会员积分，可查看当前地址积分数量。',
+        title: 'XXYY 产品功能整理文档',
+      }),
+      createRetrievedChunk({
+        id: 'airdrop-page',
+        text: '积分会在每天 UTC 0 点准时空投到地址账户内。',
+        title: '如何升级为 Pro',
+      }),
+      createRetrievedChunk({
+        id: 'trade-points-page',
+        text: '交易积分根据当前地址下所有交易地址的买入卖出笔数和金额综合计算。',
+        title: '如何升级为 Pro',
+      }),
+    ];
+
+    const selected = selectGroundingChunks('我的账户怎么升级 Pro？', retrieved);
+
+    expect(selected.map((chunk) => chunk.id)).toEqual([
+      'member-points-page',
+      'airdrop-page',
+      'trade-points-page',
+    ]);
   });
 
   it('uses only the direct X post chunk for tweet source questions', () => {

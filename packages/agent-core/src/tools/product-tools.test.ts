@@ -331,7 +331,7 @@ describe('createProductTools', () => {
       Array.from({ length: 4 }, (_, index) =>
         createRetrievedChunk({
           id: `chunk-${index + 1}`,
-          text: longText,
+          text: `${longText}\n${index + 1}`,
         }),
       ),
     );

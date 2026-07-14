@@ -161,6 +161,41 @@ describe('retrieve', () => {
     expect(results[0]?.lexicalScore).toBeGreaterThan(0);
   });
 
+  it('expands Pro upgrade questions with the membership-point concepts needed for instructions', () => {
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:pro-upgrade:member-points',
+        title: '如何升级为 Pro',
+        sourceType: 'official_docs',
+        text: '点击右上角个人中心的会员积分，可查看当前地址积分数量。',
+      },
+      {
+        id: 'official_docs:pro-upgrade:trade-points',
+        title: '如何升级为 Pro',
+        sourceType: 'official_docs',
+        text: '交易积分根据当前地址下所有交易地址的买入卖出笔数和金额综合计算。',
+      },
+      {
+        id: 'official_docs:pro-upgrade:airdrop',
+        title: '如何升级为 Pro',
+        sourceType: 'official_docs',
+        text: '积分会在每天 UTC 0 点准时空投到地址账户内。',
+      },
+    ]);
+
+    const resultIds = retrieve('我的账户怎么升级 Pro？', index, { topK: 2 }).map(
+      (chunk) => chunk.id,
+    );
+
+    expect(resultIds).toHaveLength(2);
+    expect(resultIds).toEqual(
+      expect.arrayContaining([
+        'official_docs:pro-upgrade:member-points',
+        'official_docs:pro-upgrade:trade-points',
+      ]),
+    );
+  });
+
   it('keeps both sides of Basic and Pro comparison questions in top results', () => {
     const index = createFixtureIndex([
       {
