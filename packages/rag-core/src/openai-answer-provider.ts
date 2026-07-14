@@ -7,6 +7,7 @@ import {
   createGroundedAnswer,
   createInsufficientKnowledgeAnswer,
   selectGroundingChunks,
+  shouldUseDeterministicSupportAnswer,
 } from './answer.js';
 import type { AnswerProvider, AnswerProviderInput } from './answer-provider.js';
 import {
@@ -132,6 +133,9 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
       if (groundingChunks.length === 0) {
         return createInsufficientKnowledgeAnswer(input.question, input.classification.intent);
       }
+      if (shouldUseDeterministicSupportAnswer(input.question)) {
+        return createGroundedAnswer(input.question, input.classification, groundingChunks);
+      }
 
       const groundedInput = { ...input, retrievedChunks: groundingChunks };
       const citations = createCitationsFromChunks(groundingChunks);
@@ -232,6 +236,12 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
       if (groundingChunks.length === 0) {
         yield* streamStaticAnswer(
           createInsufficientKnowledgeAnswer(input.question, input.classification.intent),
+        );
+        return;
+      }
+      if (shouldUseDeterministicSupportAnswer(input.question)) {
+        yield* streamStaticAnswer(
+          createGroundedAnswer(input.question, input.classification, groundingChunks),
         );
         return;
       }

@@ -224,12 +224,13 @@ async function readDocument(args: {
     args.fallbackModule;
   const sourceUrl = manifestEntry?.source_url ?? metadata.sourceUrl;
   const retrievedAt = manifestEntry?.retrieved_at ?? metadata.retrievedAt;
-  const effectiveAt =
-    manifestEntry?.effective_at ??
-    metadata.effectiveAt ??
-    manifestEntry?.lastmod ??
-    metadata.lastmod ??
-    retrievedAt;
+  const effectiveAt = firstNonEmptyString(
+    manifestEntry?.effective_at,
+    metadata.effectiveAt,
+    manifestEntry?.lastmod,
+    metadata.lastmod,
+    retrievedAt,
+  );
   const status = manifestEntry?.status ?? metadata.status ?? defaultStatus(args.sourceType);
   const supersedes = manifestEntry?.supersedes ?? metadata.supersedes;
   const id = `${args.sourceType}:${withoutMarkdownExtension(args.relativeFile)}`;
@@ -264,6 +265,12 @@ async function readDocument(args: {
 
 function defaultStatus(sourceType: SourceType): KnowledgeStatus {
   return sourceType === 'official_docs' ? 'current' : 'historical';
+}
+
+function firstNonEmptyString(...values: Array<string | null | undefined>): string | undefined {
+  return values.find(
+    (value): value is string => value !== null && value !== undefined && value.trim().length > 0,
+  );
 }
 
 async function readManifest(manifestPath: string): Promise<Map<string, ManifestEntry>> {

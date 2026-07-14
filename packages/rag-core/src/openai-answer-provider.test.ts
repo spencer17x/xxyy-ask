@@ -639,7 +639,7 @@ describe('createOpenAiAnswerProvider', () => {
     expect(response.confidence).toBeLessThan(0.5);
   });
 
-  it('grounds support questions on direct entity evidence before asking the LLM', async () => {
+  it('answers support questions deterministically when direct entity evidence exists', async () => {
     const requests: Array<{ messages?: Array<{ content?: string }> }> = [];
     const fetchImpl: typeof fetch = (_input, init) => {
       if (typeof init?.body === 'string') {
@@ -686,15 +686,12 @@ describe('createOpenAiAnswerProvider', () => {
       retrievedChunks: retrieved,
     });
 
-    expect(requests).toHaveLength(1);
-    const prompt = requests[0]?.messages?.map((message) => message.content).join('\n') ?? '';
-    expect(prompt).toContain('XXYY 当前支持 Robinhood。');
-    expect(prompt).not.toContain('可以添加到桌面');
+    expect(requests).toEqual([]);
     expect(response.answer).toBe('支持。XXYY 当前支持 Robinhood。');
     expect(response.citations[0]?.title).toBe('Robinhood 支持范围');
   });
 
-  it('asks the LLM to answer grounded support questions instead of pasting evidence sentences', async () => {
+  it('uses deterministic evidence sentences for grounded support questions', async () => {
     const requests: Array<{ messages?: Array<{ content?: string }> }> = [];
     const fetchImpl: typeof fetch = (_input, init) => {
       if (typeof init?.body === 'string') {
@@ -745,13 +742,64 @@ describe('createOpenAiAnswerProvider', () => {
       retrievedChunks: retrieved,
     });
 
-    expect(requests).toHaveLength(1);
-    const prompt = requests[0]?.messages?.map((message) => message.content).join('\n') ?? '';
-    expect(prompt).toContain('跟单功能上线');
+    expect(requests).toEqual([]);
     expect(response.answer).toBe(
-      '支持。XXYY 跟单已上线，覆盖 SOL、BSC、Base、ETH、X Layer、Plasma，并可自定义金额、卖出比例、gas、滑点与过滤条件。',
+      '支持。跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。',
     );
     expect(response.citations).toHaveLength(2);
+  });
+
+  it('streams the same scoped standard answer without calling the LLM', async () => {
+    let requestCount = 0;
+    const fetchImpl: typeof fetch = () => {
+      requestCount += 1;
+      return Promise.resolve(jsonResponse({}));
+    };
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'gpt-test',
+    });
+    const standardAnswer =
+      '如果你指 Robinhood Chain（Robinhood 链），XXYY 当前已支持扫链、NOXA 内盘交易和钱包监控地址自动同步。当前资料仅说明 Robinhood Chain 的产品能力，不表示支持 Robinhood 券商账户、订单或其他私有服务。';
+
+    if (provider.stream === undefined) {
+      throw new Error('Expected provider to support streaming');
+    }
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of provider.stream({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: '支持robinhood么?',
+      retrievedChunks: [
+        createRetrievedChunk({
+          id: 'robinhood-chain-support',
+          text: `标准客服回答：${standardAnswer}`,
+          title: 'Robinhood Chain 支持范围',
+        }),
+      ],
+    })) {
+      events.push(event);
+    }
+
+    const answer = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: 'answer_delta' }> => {
+        return event.type === 'answer_delta';
+      })
+      .map((event) => event.delta)
+      .join('');
+
+    expect(requestCount).toBe(0);
+    expect(answer).toBe(standardAnswer);
+    expect(events.at(-1)).toMatchObject({
+      citations: [expect.objectContaining({ title: 'Robinhood Chain 支持范围' })],
+      type: 'metadata',
+    });
   });
 
   it('falls back to grounded context when the LLM returns only a safety label', async () => {

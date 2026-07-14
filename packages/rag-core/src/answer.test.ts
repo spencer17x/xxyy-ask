@@ -119,6 +119,23 @@ describe('createGroundedAnswer', () => {
     ]);
   });
 
+  it('returns a scoped standard customer answer verbatim for support questions', () => {
+    const standardAnswer =
+      '如果你指 Robinhood Chain（Robinhood 链），XXYY 当前已支持扫链、NOXA 内盘交易和钱包监控地址自动同步。当前资料仅说明 Robinhood Chain 的产品能力，不表示支持 Robinhood 券商账户、订单或其他私有服务。';
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'robinhood-chain-support',
+        text: `标准客服回答：${standardAnswer}`,
+        title: 'Robinhood Chain 支持范围',
+      }),
+    ];
+
+    const response = createGroundedAnswer('支持robinhood么?', productClassification, retrieved);
+
+    expect(response.answer).toBe(standardAnswer);
+    expect(response.citations[0]?.excerpt).toBe(standardAnswer);
+  });
+
   it('does not let a standard customer answer hide another source for comparison questions', () => {
     const retrieved = [
       createRetrievedChunk({

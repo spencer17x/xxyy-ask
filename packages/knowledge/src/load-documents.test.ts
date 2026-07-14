@@ -146,4 +146,37 @@ describe('loadProductDocuments', () => {
     expect(documents[3]?.file).toBe(path.join(fixtureDir, 'pages', '02-readme__quickstart.md'));
     expect(documents[3]?.content).toContain('生成交易钱包后即可开始交易。');
   });
+
+  it('falls back to retrieved_at when lastmod metadata is empty', async () => {
+    const fixtureDir = await createProductDocsFixture();
+    await writeFile(
+      path.join(fixtureDir, 'pages', '02-readme__quickstart.md'),
+      [
+        '---',
+        'title: "Frontmatter Title"',
+        'section: "Frontmatter Module"',
+        'lastmod: ""',
+        '---',
+        '# 新手必看',
+        '',
+        '生成交易钱包后即可开始交易。',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      path.join(fixtureDir, 'manifest.jsonl'),
+      `${JSON.stringify({
+        file: '02-readme__quickstart.md',
+        lastmod: null,
+        retrieved_at: '2026-05-24T06:41:04.265Z',
+      })}\n`,
+    );
+
+    const documents = await loadProductDocuments({ productFeaturesDir: fixtureDir });
+    const page = documents.find(
+      (document) => document.id === 'official_docs:pages/02-readme__quickstart',
+    );
+
+    expect(page?.effectiveAt).toBe('2026-05-24T06:41:04.265Z');
+  });
 });

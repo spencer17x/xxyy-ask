@@ -41,7 +41,13 @@ export function createGroundedAnswer(
 
   const citations = createCitationsFromChunks(groundingChunks);
   const excerpts = citations.map((citation) => citation.excerpt);
-  const supportConclusion = createSupportConclusion(question, groundingChunks);
+  const standardSupportAnswer = isSupportQuestionText(question)
+    ? groundingChunks
+        .map((chunk) => extractStandardCustomerAnswer(chunk.text))
+        .find((answer) => answer !== undefined)
+    : undefined;
+  const supportConclusion =
+    standardSupportAnswer ?? createSupportConclusion(question, groundingChunks);
   const answerPrefix =
     classification.intent === 'how_to' ? '根据知识库，可以按这些信息操作：' : '根据知识库，';
 
