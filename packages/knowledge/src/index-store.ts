@@ -173,7 +173,9 @@ function isChunkMetadata(value: unknown): boolean {
   return (
     typeof value.title === 'string' &&
     typeof value.module === 'string' &&
-    (value.sourceType === 'official_docs' || value.sourceType === 'x_updates') &&
+    (value.sourceType === 'admin_verified' ||
+      value.sourceType === 'official_docs' ||
+      value.sourceType === 'x_updates') &&
     typeof value.file === 'string' &&
     Array.isArray(value.headingPath) &&
     value.headingPath.every((heading) => typeof heading === 'string') &&

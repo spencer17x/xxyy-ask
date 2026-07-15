@@ -20,6 +20,7 @@ export { loadRagConfig } from './config.js';
 export { loadWorkspaceEnv, resolveWorkspaceCwd } from './env.js';
 export { evaluateCases } from './evaluate.js';
 export { formatEvaluationFailureJsonl } from './evaluation-failures.js';
+export { createPgKnowledgeCandidateStore } from './knowledge-candidates.js';
 export { createOpenAiAnswerProvider, LlmConfigurationError } from './openai-answer-provider.js';
 export {
   createQualityTracerFromEnv,
@@ -75,6 +76,18 @@ export type {
   EvaluationResult,
 } from './evaluate.js';
 export type { OpenAiAnswerProviderOptions } from './openai-answer-provider.js';
+export type {
+  CreateKnowledgeCandidateInput,
+  CreateKnowledgeCandidatesResult,
+  KnowledgeCandidate,
+  KnowledgeCandidateSourceChannel,
+  KnowledgeCandidateStatus,
+  ListKnowledgeCandidatesOptions,
+  MarkKnowledgeCandidatePublishedInput,
+  PgKnowledgeCandidateStore,
+  PgKnowledgeCandidateStoreOptions,
+  ReviewKnowledgeCandidateInput,
+} from './knowledge-candidates.js';
 export type {
   LangSmithQualityTracerDependencies,
   QualityTraceEnv,

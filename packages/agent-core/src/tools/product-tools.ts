@@ -62,7 +62,7 @@ const retrievedChunkSchema = z.object({
       module: z.string(),
       order: z.number().optional(),
       retrievedAt: z.string().optional(),
-      sourceType: z.enum(['official_docs', 'x_updates']),
+      sourceType: z.enum(['admin_verified', 'official_docs', 'x_updates']),
       sourceUrl: z.string().optional(),
       title: z.string(),
     })

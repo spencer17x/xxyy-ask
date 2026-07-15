@@ -9,6 +9,7 @@
 - [x] 官方 X / Twitter 同步：`pnpm run app:dev -- --sync` 做增量抓取和入库后启动服务，`pnpm run app:dev -- --full-sync` 做低频全量重建后启动服务。
 - [x] 服务基础面：Web UI、health/deep health、chat/stream、static assets、请求体限制、基础限流和 CORS 配置已保留。
 - [x] Telegram Bot：long polling 入口复用同一套客服 Agent runtime。
+- [x] 受控知识演进第一阶段：Telegram JSON 导入、候选知识库、管理员审核、发布门禁和 `admin_verified` 知识源已具备。
 - [x] 基础可信度建设：deterministic guard、planner route、tool registry、stream schema 校验、golden QA、基础 reranker extension point 已具备。
 
 ## Paused / Out of Scope
@@ -21,7 +22,7 @@
 
 目标：让产品知识库回答更可信、可追溯，并能处理官方文档与 X / Twitter 更新之间的新旧冲突。
 
-- [ ] 知识新旧与冲突策略：为 official docs / X updates 增加 freshness、effective time、current / historical / deprecated 状态与冲突解决规则。
+- [x] 知识新旧与冲突策略：official docs / X updates / admin verified 支持 freshness、effective time、current / historical / deprecated 和 `supersedes`；当前问题使用更新规则，历史问题保留旧版本回溯。
 - [ ] Citation grounding：验证答案中的关键 claim 是否被引用片段支持，避免“有引用但引用不支撑答案”。
 - [ ] Chunk-aware context packing：替代固定字符截断，按 chunk / 句子 / 限制条件保留关键上下文。
 - [ ] Prompt injection 防护：把知识库内容当作资料而不是指令，检测并清洗外部来源中的指令注入文本。

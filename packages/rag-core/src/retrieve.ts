@@ -44,17 +44,22 @@ export function retrieve(
     return [];
   }
 
-  const documentFrequency = createDocumentFrequency(index.entries);
-  const averageDocumentLength = averageTokenLength(index.entries);
+  const eligibleEntries = selectEligibleEntries(question, index.entries);
+  if (eligibleEntries.length === 0) {
+    return [];
+  }
+
+  const documentFrequency = createDocumentFrequency(eligibleEntries);
+  const averageDocumentLength = averageTokenLength(eligibleEntries);
   const queryEmbedding = createLocalHashEmbedding(question);
 
-  const scored = index.entries
+  const scored = eligibleEntries
     .map((entry) => {
       const lexicalScore = calculateBm25(
         queryTokens,
         entry,
         documentFrequency,
-        index.entries.length,
+        eligibleEntries.length,
         averageDocumentLength,
       );
       const vectorScore = Math.max(0, cosineSimilarity(queryEmbedding, entry.embedding));
@@ -100,6 +105,26 @@ export function retrieve(
     ...entry,
     rank: indexOfEntry + 1,
   }));
+}
+
+function selectEligibleEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
+  if (isHistoricalOrTweetQuestion(question)) {
+    return entries;
+  }
+
+  const supersededIds = new Set(
+    entries
+      .filter((entry) => entry.metadata.status === 'current')
+      .flatMap((entry) => entry.metadata.supersedes ?? []),
+  );
+
+  if (supersededIds.size === 0) {
+    return entries;
+  }
+
+  return entries.filter(
+    (entry) => !supersededIds.has(entry.id) && !supersededIds.has(entry.documentId),
+  );
 }
 
 export function createRetrieveQueryTokens(question: string): string[] {
@@ -160,7 +185,7 @@ function calculateBm25(
 }
 
 function calculateSourceBoost(sourceType: SourceType): number {
-  return sourceType === 'official_docs' ? 0.05 : 0;
+  return sourceType === 'x_updates' ? 0 : 0.05;
 }
 
 function calculateFreshnessBoost(question: string, entry: IndexEntry): number {
@@ -322,7 +347,7 @@ function compareScoredEntries(
 }
 
 function sourceRank(sourceType: SourceType): number {
-  return sourceType === 'official_docs' ? 0 : 1;
+  return sourceType === 'x_updates' ? 1 : 0;
 }
 
 function statusRank(status: IndexEntry['metadata']['status']): number {

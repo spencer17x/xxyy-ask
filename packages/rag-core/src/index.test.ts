@@ -20,6 +20,7 @@ describe('rag-core public exports', () => {
     expect(ragCore.createOpenAiAnswerProvider).toBeTypeOf('function');
     expect(ragCore.LlmConfigurationError).toBeTypeOf('function');
     expect(ragCore.createPgPool).toBeTypeOf('function');
+    expect(ragCore.createPgKnowledgeCandidateStore).toBeTypeOf('function');
     expect(ragCore.createPgVectorStore).toBeTypeOf('function');
     expect(ragCore.toPgVectorLiteral).toBeTypeOf('function');
     expect(ragCore.VectorStoreConfigurationError).toBeTypeOf('function');
@@ -59,6 +60,7 @@ describe('rag-core public exports', () => {
       'createOpenAiAnswerProvider',
       'createOpenAiAnswerQualityJudge',
       'createPgFeedbackStore',
+      'createPgKnowledgeCandidateStore',
       'createPgPool',
       'createPgVectorStore',
       'createQualityTracerFromEnv',

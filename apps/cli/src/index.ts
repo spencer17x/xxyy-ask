@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,6 +17,7 @@ import {
   VectorStoreUnavailableError,
   AnswerJudgeConfigurationError,
   aggregateRetrievalResults,
+  classifyQuestion,
   composeQualityTracers,
   createInMemoryQualityTracer,
   createLazyRetriever,
@@ -24,6 +25,7 @@ import {
   createOpenAiAnswerQualityJudge,
   createOpenAiAnswerProvider,
   createPgFeedbackStore,
+  createPgKnowledgeCandidateStore,
   createPgPool,
   createPgVectorStore,
   createQualityTracerFromEnv,
@@ -50,13 +52,19 @@ import type {
   EvaluationReport,
   EvaluationResult,
   FeedbackRecord,
+  KnowledgeCandidate,
+  KnowledgeCandidateStatus,
   KnowledgeStats,
   RagEnv,
   QualityTracer,
   QualityTraceRecord,
+  PgClientLike,
+  ReplaceChunksOptions,
   Retriever,
 } from '@xxyy/rag-core';
 import type { ChatRequest, ChatResponse, RagIndex } from '@xxyy/shared';
+
+import { extractTelegramKnowledgeCandidates } from './telegram-export.js';
 
 export { resolveWorkspaceCwd } from '@xxyy/rag-core';
 
@@ -85,6 +93,32 @@ type CliCommand =
     }
   | { command: 'feedback:backlog' }
   | { command: 'ingest'; rebuildEmbeddingSchema: boolean }
+  | {
+      adminUserIds: string[];
+      command: 'knowledge:import:telegram';
+      file: string;
+    }
+  | {
+      command: 'knowledge:list';
+      limit: number;
+      status?: KnowledgeCandidateStatus;
+    }
+  | {
+      command: 'knowledge:approve';
+      effectiveAt?: string;
+      id: string;
+      note?: string;
+      reviewedBy: string;
+      sourceUrl?: string;
+      supersedes?: string[];
+    }
+  | {
+      command: 'knowledge:reject';
+      id: string;
+      note?: string;
+      reviewedBy: string;
+    }
+  | { command: 'knowledge:publish'; id: string }
   | { command: 'migrate' }
   | { command: 'stats' }
   | { command: 'sync:x' }
@@ -103,6 +137,24 @@ interface SyncXUpdatesSummary {
   documentCount: number;
   indexPath: string;
   skippedChunkCount: number;
+  runId?: string;
+}
+
+interface TelegramKnowledgeImportSummary {
+  adminReplyCount: number;
+  candidateCount: number;
+  createdCount: number;
+  duplicateCount: number;
+  messageCount: number;
+  skippedBoundaryCount: number;
+  skippedMissingReplyCount: number;
+}
+
+interface KnowledgePublicationSummary {
+  alreadyPublished: boolean;
+  candidateId: string;
+  documentId: string;
+  file: string;
   runId?: string;
 }
 
@@ -134,6 +186,11 @@ const HELP_TEXT = [
   '  pnpm rag:stats',
   '  pnpm rag:evaluate [--provider] [--judge] [--failures-out .rag/failures.jsonl]',
   '  pnpm rag:feedback:backlog',
+  '  pnpm rag:knowledge:import:telegram -- export.json --admin-id 123456789',
+  '  pnpm rag:knowledge:list -- --status pending --limit 20',
+  '  pnpm rag:knowledge:approve -- <id> --reviewer <id> [--effective-at <date>] [--source-url <url>]',
+  '  pnpm rag:knowledge:reject -- <id> --reviewer <id> [--note <reason>]',
+  '  pnpm rag:knowledge:publish -- <id>',
   '  pnpm rag:ask -- "question"',
   '  pnpm rag:ask -- --debug-retrieve "question"',
 ].join('\n');
@@ -164,11 +221,163 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     return parseIngestArgs(rawRest);
   }
 
+  if (command === 'knowledge:import:telegram') {
+    return parseKnowledgeImportTelegramArgs(rawRest);
+  }
+
+  if (command === 'knowledge:list') {
+    return parseKnowledgeListArgs(rawRest);
+  }
+
+  if (command === 'knowledge:approve' || command === 'knowledge:reject') {
+    return parseKnowledgeReviewArgs(command, rawRest);
+  }
+
+  if (command === 'knowledge:publish') {
+    return parseKnowledgePublishArgs(rawRest);
+  }
+
   if (command === 'ask') {
     return parseAskArgs(rawRest);
   }
 
   return { command: 'help', error: `Unknown command: ${command}` };
+}
+
+function parseKnowledgeImportTelegramArgs(rawArgs: readonly string[]): CliCommand {
+  const args = stripPnpmSeparator(rawArgs);
+  const file = args[0];
+  const adminUserIds: string[] = [];
+  if (file === undefined || file.startsWith('--')) {
+    return { command: 'help', error: 'Missing Telegram export JSON path.' };
+  }
+
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg !== '--admin-id') {
+      return { command: 'help', error: `Unknown Telegram import option: ${arg}` };
+    }
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith('--')) {
+      return { command: 'help', error: 'Missing value for --admin-id.' };
+    }
+    adminUserIds.push(value);
+    index += 1;
+  }
+
+  if (adminUserIds.length === 0) {
+    return { command: 'help', error: 'At least one --admin-id is required.' };
+  }
+  return { adminUserIds, command: 'knowledge:import:telegram', file };
+}
+
+function parseKnowledgeListArgs(rawArgs: readonly string[]): CliCommand {
+  const args = stripPnpmSeparator(rawArgs);
+  let limit = 20;
+  let status: KnowledgeCandidateStatus | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const value = args[index + 1];
+    if (arg === '--limit') {
+      if (value === undefined || !/^\d+$/u.test(value) || Number(value) <= 0) {
+        return { command: 'help', error: '--limit must be a positive integer.' };
+      }
+      limit = Math.min(Number(value), 100);
+      index += 1;
+      continue;
+    }
+    if (arg === '--status') {
+      if (!isKnowledgeCandidateStatus(value)) {
+        return { command: 'help', error: 'Invalid knowledge candidate status.' };
+      }
+      status = value;
+      index += 1;
+      continue;
+    }
+    return { command: 'help', error: `Unknown knowledge:list option: ${arg}` };
+  }
+
+  return {
+    command: 'knowledge:list',
+    limit,
+    ...(status === undefined ? {} : { status }),
+  };
+}
+
+function parseKnowledgeReviewArgs(
+  command: 'knowledge:approve' | 'knowledge:reject',
+  rawArgs: readonly string[],
+): CliCommand {
+  const args = stripPnpmSeparator(rawArgs);
+  const id = args[0];
+  if (id === undefined || id.startsWith('--')) {
+    return { command: 'help', error: `Missing candidate id for ${command}.` };
+  }
+
+  const options = new Map<string, string>();
+  const allowed =
+    command === 'knowledge:approve'
+      ? new Set(['--effective-at', '--note', '--reviewer', '--source-url', '--supersedes'])
+      : new Set(['--note', '--reviewer']);
+  for (let index = 1; index < args.length; index += 2) {
+    const option = args[index];
+    const value = args[index + 1];
+    if (option === undefined || !allowed.has(option)) {
+      return { command: 'help', error: `Unknown ${command} option: ${option ?? ''}` };
+    }
+    if (value === undefined || value.startsWith('--')) {
+      return { command: 'help', error: `Missing value for ${option}.` };
+    }
+    options.set(option, value);
+  }
+
+  const reviewedBy = options.get('--reviewer');
+  if (reviewedBy === undefined) {
+    return { command: 'help', error: '--reviewer is required.' };
+  }
+  const note = options.get('--note');
+  if (command === 'knowledge:reject') {
+    return {
+      command,
+      id,
+      reviewedBy,
+      ...(note === undefined ? {} : { note }),
+    };
+  }
+
+  const effectiveAt = options.get('--effective-at');
+  const sourceUrl = options.get('--source-url');
+  const supersedesValue = options.get('--supersedes');
+  const supersedes = supersedesValue
+    ?.split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return {
+    command,
+    id,
+    reviewedBy,
+    ...(effectiveAt === undefined ? {} : { effectiveAt }),
+    ...(note === undefined ? {} : { note }),
+    ...(sourceUrl === undefined ? {} : { sourceUrl }),
+    ...(supersedes === undefined ? {} : { supersedes }),
+  };
+}
+
+function parseKnowledgePublishArgs(rawArgs: readonly string[]): CliCommand {
+  const args = stripPnpmSeparator(rawArgs);
+  if (args.length !== 1 || args[0] === undefined || args[0].startsWith('--')) {
+    return { command: 'help', error: 'knowledge:publish requires exactly one candidate id.' };
+  }
+  return { command: 'knowledge:publish', id: args[0] };
+}
+
+function stripPnpmSeparator(args: readonly string[]): readonly string[] {
+  return args[0] === '--' ? args.slice(1) : args;
+}
+
+function isKnowledgeCandidateStatus(value: string | undefined): value is KnowledgeCandidateStatus {
+  return ['approved', 'pending', 'published', 'rejected'].includes(value ?? '');
 }
 
 function parseEvaluateArgs(rawArgs: readonly string[]): CliCommand {
@@ -281,6 +490,72 @@ export function formatSyncXUpdatesSummary(summary: SyncXUpdatesSummary): string 
 
 export function formatMigrationSummary(): string {
   return 'Database migrations applied.';
+}
+
+export function formatTelegramKnowledgeImportSummary(
+  summary: TelegramKnowledgeImportSummary,
+): string {
+  return [
+    `Scanned ${summary.messageCount} Telegram messages and ${summary.adminReplyCount} administrator messages.`,
+    `Extracted ${summary.candidateCount} candidates: ${summary.createdCount} created, ${summary.duplicateCount} duplicates.`,
+    `Skipped ${summary.skippedBoundaryCount} boundary replies and ${summary.skippedMissingReplyCount} messages without a direct user reply.`,
+  ].join('\n');
+}
+
+export function formatKnowledgeCandidateList(candidates: KnowledgeCandidate[]): string {
+  if (candidates.length === 0) {
+    return 'No knowledge candidates.';
+  }
+  return candidates.map((candidate) => JSON.stringify(candidate)).join('\n');
+}
+
+export function formatKnowledgePublicationSummary(summary: KnowledgePublicationSummary): string {
+  if (summary.alreadyPublished) {
+    return `Knowledge candidate ${summary.candidateId} is already published as ${summary.documentId}.`;
+  }
+  return [
+    `Published ${summary.candidateId} as ${summary.documentId}.`,
+    `Document: ${summary.file}`,
+    ...(summary.runId === undefined ? [] : [`Ingestion run: ${summary.runId}`]),
+  ].join('\n');
+}
+
+export function formatAdminVerifiedKnowledgeDocument(candidate: KnowledgeCandidate): string {
+  if (candidate.status !== 'approved') {
+    throw new Error(`Knowledge candidate ${candidate.id} must be approved before publication.`);
+  }
+  if (candidate.effectiveAt === undefined) {
+    throw new Error(`Knowledge candidate ${candidate.id} requires effectiveAt before publication.`);
+  }
+
+  const title = candidate.question.replace(/\s+/gu, ' ').trim().slice(0, 120);
+  const frontmatter = [
+    '---',
+    'section: "管理员审核知识"',
+    `effective_at: ${JSON.stringify(candidate.effectiveAt)}`,
+    ...(candidate.sourceUrl === undefined
+      ? []
+      : [`source_url: ${JSON.stringify(candidate.sourceUrl)}`]),
+    'status: current',
+    ...(candidate.supersedes === undefined || candidate.supersedes.length === 0
+      ? []
+      : [`supersedes: ${JSON.stringify(candidate.supersedes)}`]),
+    '---',
+  ];
+
+  return [
+    ...frontmatter,
+    `# ${title}`,
+    '',
+    '## 用户问题',
+    '',
+    candidate.question,
+    '',
+    '## 标准答案',
+    '',
+    candidate.canonicalAnswer,
+    '',
+  ].join('\n');
 }
 
 export function formatChatResponse(response: ChatResponse): string {
@@ -584,6 +859,62 @@ export async function runCli(
     }
   }
 
+  if (parsed.command === 'knowledge:import:telegram') {
+    try {
+      const summary = await importTelegramKnowledgeCandidates(
+        { ...io, cwd: workspaceCwd },
+        config,
+        parsed,
+      );
+      writeLine(io.stdout, formatTelegramKnowledgeImportSummary(summary));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'knowledge:list') {
+    try {
+      const candidates = await listKnowledgeCandidates(config, parsed);
+      writeLine(io.stdout, formatKnowledgeCandidateList(candidates));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'knowledge:approve' || parsed.command === 'knowledge:reject') {
+    try {
+      const candidate = await reviewKnowledgeCandidate(config, parsed);
+      writeLine(io.stdout, JSON.stringify(candidate));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'knowledge:publish') {
+    try {
+      const summary = await publishKnowledgeCandidate({ ...io, cwd: workspaceCwd }, config, parsed);
+      writeLine(io.stdout, formatKnowledgePublicationSummary(summary));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
   try {
     const tracer = createQualityTracerFromEnv({ ...io.env });
     const runtime = createCliChatRuntime(config, tracer);
@@ -619,7 +950,11 @@ export async function runCli(
   }
 }
 
-async function ingest(io: CliIo, rebuildEmbeddingSchema: boolean): Promise<IngestSummary> {
+async function ingest(
+  io: CliIo,
+  rebuildEmbeddingSchema: boolean,
+  afterReplace?: NonNullable<ReplaceChunksOptions['afterReplace']>,
+): Promise<IngestSummary> {
   const config = loadRagConfig(io.env);
   const documents = await loadProductDocuments({ cwd: io.cwd });
   const chunks = prepareKnowledgeChunks(documents);
@@ -648,12 +983,14 @@ async function ingest(io: CliIo, rebuildEmbeddingSchema: boolean): Promise<Inges
       chunks: embeddedChunks,
       documentCount: documents.length,
     });
-    if (rebuildEmbeddingSchema) {
-      await store.replaceChunks(embeddedChunks, ingestionRun, {
-        rebuildEmbeddingSchema: true,
-      });
-    } else {
+    if (afterReplace === undefined && !rebuildEmbeddingSchema) {
       await store.replaceChunks(embeddedChunks, ingestionRun);
+    } else {
+      const replaceOptions: ReplaceChunksOptions = {
+        ...(afterReplace === undefined ? {} : { afterReplace }),
+        ...(rebuildEmbeddingSchema ? { rebuildEmbeddingSchema: true } : {}),
+      };
+      await store.replaceChunks(embeddedChunks, ingestionRun, replaceOptions);
     }
     return {
       documentCount: documents.length,
@@ -1028,6 +1365,216 @@ async function feedbackBacklog(config: ReturnType<typeof loadRagConfig>): Promis
   }
 }
 
+async function importTelegramKnowledgeCandidates(
+  io: CliIo,
+  config: ReturnType<typeof loadRagConfig>,
+  command: Extract<CliCommand, { command: 'knowledge:import:telegram' }>,
+): Promise<TelegramKnowledgeImportSummary> {
+  const filePath = path.resolve(io.cwd, command.file);
+  if (path.extname(filePath).toLowerCase() !== '.json') {
+    throw new Error('Telegram export must be a .json file.');
+  }
+  const rawExport = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
+  const extracted = extractTelegramKnowledgeCandidates(rawExport, {
+    adminUserIds: new Set(command.adminUserIds),
+  });
+  const pool = createPgPool(config.databaseUrl);
+
+  try {
+    const store = createPgKnowledgeCandidateStore({ client: pool });
+    await store.migrate();
+    const result = await store.createMany(extracted.candidates);
+    return {
+      adminReplyCount: extracted.adminReplyCount,
+      candidateCount: extracted.candidates.length,
+      createdCount: result.created.length,
+      duplicateCount: result.duplicateCount,
+      messageCount: extracted.messageCount,
+      skippedBoundaryCount: extracted.skippedBoundaryCount,
+      skippedMissingReplyCount: extracted.skippedMissingReplyCount,
+    };
+  } finally {
+    await pool.end();
+  }
+}
+
+async function listKnowledgeCandidates(
+  config: ReturnType<typeof loadRagConfig>,
+  command: Extract<CliCommand, { command: 'knowledge:list' }>,
+): Promise<KnowledgeCandidate[]> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgKnowledgeCandidateStore({ client: pool });
+    await store.migrate();
+    return await store.list({
+      limit: command.limit,
+      ...(command.status === undefined ? {} : { status: command.status }),
+    });
+  } finally {
+    await pool.end();
+  }
+}
+
+async function reviewKnowledgeCandidate(
+  config: ReturnType<typeof loadRagConfig>,
+  command: Extract<CliCommand, { command: 'knowledge:approve' | 'knowledge:reject' }>,
+): Promise<KnowledgeCandidate> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgKnowledgeCandidateStore({ client: pool });
+    await store.migrate();
+    if (command.command === 'knowledge:reject') {
+      return await store.review({
+        decision: 'reject',
+        id: command.id,
+        reviewedBy: command.reviewedBy,
+        ...(command.note === undefined ? {} : { note: command.note }),
+      });
+    }
+    return await store.review({
+      decision: 'approve',
+      id: command.id,
+      reviewedBy: command.reviewedBy,
+      ...(command.effectiveAt === undefined ? {} : { effectiveAt: command.effectiveAt }),
+      ...(command.note === undefined ? {} : { note: command.note }),
+      ...(command.sourceUrl === undefined ? {} : { sourceUrl: command.sourceUrl }),
+      ...(command.supersedes === undefined ? {} : { supersedes: command.supersedes }),
+    });
+  } finally {
+    await pool.end();
+  }
+}
+
+async function publishKnowledgeCandidate(
+  io: CliIo,
+  config: ReturnType<typeof loadRagConfig>,
+  command: Extract<CliCommand, { command: 'knowledge:publish' }>,
+): Promise<KnowledgePublicationSummary> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgKnowledgeCandidateStore({ client: pool });
+    await store.migrate();
+    const candidate = await store.get(command.id);
+    if (candidate === undefined) {
+      throw new Error(`Knowledge candidate ${command.id} was not found.`);
+    }
+    const documentId = adminVerifiedDocumentId(candidate.id);
+    const relativeFile = path.join(
+      'docs',
+      'product-features',
+      'admin-verified',
+      `${candidate.id}.md`,
+    );
+    const file = path.resolve(io.cwd, relativeFile);
+    if (candidate.status === 'published') {
+      return {
+        alreadyPublished: true,
+        candidateId: candidate.id,
+        documentId: candidate.publishedDocumentId ?? documentId,
+        file,
+      };
+    }
+
+    const content = formatAdminVerifiedKnowledgeDocument(candidate);
+    const createdFile = await writeKnowledgeDocumentIfAbsent(file, content);
+    try {
+      await runKnowledgePublicationGate(io, candidate, documentId);
+      const ingestSummary = await ingest(io, false, async (client: PgClientLike) => {
+        const transactionalCandidateStore = createPgKnowledgeCandidateStore({ client });
+        await transactionalCandidateStore.markPublished({
+          id: candidate.id,
+          publishedDocumentId: documentId,
+        });
+      });
+      return {
+        alreadyPublished: false,
+        candidateId: candidate.id,
+        documentId,
+        file,
+        ...(ingestSummary.runId === undefined ? {} : { runId: ingestSummary.runId }),
+      };
+    } catch (error) {
+      if (createdFile) {
+        await unlink(file).catch(() => undefined);
+      }
+      throw error;
+    }
+  } finally {
+    await pool.end();
+  }
+}
+
+async function writeKnowledgeDocumentIfAbsent(file: string, content: string): Promise<boolean> {
+  try {
+    const existing = await readFile(file, 'utf8');
+    if (existing !== content) {
+      throw new Error(`Knowledge document already exists with different content: ${file}`);
+    }
+    return false;
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw error;
+    }
+  }
+
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, content, { encoding: 'utf8', flag: 'wx' });
+  return true;
+}
+
+async function runKnowledgePublicationGate(
+  io: CliIo,
+  candidate: KnowledgeCandidate,
+  documentId: string,
+): Promise<void> {
+  const classification = classifyQuestion(candidate.question);
+  if (classification.intent !== 'product_qa' && classification.intent !== 'how_to') {
+    throw new Error(
+      `Knowledge candidate ${candidate.id} is outside product support boundaries (${classification.intent}).`,
+    );
+  }
+
+  const config = loadRagConfig(io.env);
+  const documents = await loadProductDocuments({ cwd: io.cwd });
+  const chunks = prepareKnowledgeChunks(documents);
+  const index: RagIndex = {
+    builtAt: new Date(0).toISOString(),
+    entries: chunks.map((chunk) => ({
+      ...chunk,
+      embedding: createLocalHashEmbedding(chunk.searchableText),
+    })),
+    version: 1,
+  };
+  const retriever = createRerankingRetriever(
+    createLocalRetriever(index),
+    createMetadataReranker(),
+    { candidateMultiplier: 4 },
+  );
+  const retrieved = await retriever.retrieve(candidate.question, { topK: config.topK });
+  if (!retrieved.some((chunk) => chunk.documentId === documentId)) {
+    throw new Error(
+      `Knowledge candidate ${candidate.id} failed retrieval gate: published document was not retrieved.`,
+    );
+  }
+
+  const report = await evaluate(io, {
+    command: 'evaluate',
+    judge: false,
+    providerBacked: false,
+  });
+  if (report.passed !== report.total) {
+    const failures = report.results
+      .filter((result) => !result.passed)
+      .map((result) => result.name)
+      .join(', ');
+    throw new Error(`Knowledge candidate ${candidate.id} failed golden QA: ${failures}.`);
+  }
+}
+
+function adminVerifiedDocumentId(candidateId: string): string {
+  return `admin_verified:admin-verified/${candidateId}`;
+}
+
 async function embedPreparedChunks(
   chunks: PreparedKnowledgeChunk[],
   embeddingProvider: { embedTexts(texts: string[]): Promise<number[][]> },
@@ -1185,6 +1732,10 @@ function countChunksBySource(
 
 function writeLine(stream: Pick<NodeJS.WriteStream, 'write'>, message: string): void {
   stream.write(`${message}\n`);
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 }
 
 function writeConfigurationError(io: CliIo, error: unknown): boolean {

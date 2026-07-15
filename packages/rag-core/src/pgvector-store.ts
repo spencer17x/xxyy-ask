@@ -22,6 +22,7 @@ import {
   type QualityTracer,
 } from './quality-trace.js';
 import { extractSupportEntityTokens, supportEntityEvidenceBoost } from './support-entity.js';
+import { migrateKnowledgeCandidates } from './knowledge-candidates.js';
 
 export interface PgClientLike {
   connect?(): Promise<PgTransactionClientLike>;
@@ -62,6 +63,7 @@ export interface PgVectorMigrationOptions {
 }
 
 export interface ReplaceChunksOptions {
+  afterReplace?: (client: PgClientLike) => Promise<void>;
   rebuildEmbeddingSchema?: boolean;
 }
 
@@ -376,7 +378,9 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           document_id text not null,
           title text not null,
           module text not null,
-          source_type text not null check (source_type in ('official_docs', 'x_updates')),
+          source_type text not null check (
+            source_type in ('admin_verified', 'official_docs', 'x_updates')
+          ),
           source_url text,
           file text not null,
           heading_path jsonb not null,
@@ -399,6 +403,22 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         options.client,
         embeddingDimension,
         migrationOptions.allowEmbeddingDimensionMismatch === true,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        alter table knowledge_chunks
+          drop constraint if exists knowledge_chunks_source_type_check
+        `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        alter table knowledge_chunks
+          add constraint knowledge_chunks_source_type_check check (
+            source_type in ('admin_verified', 'official_docs', 'x_updates')
+          )
+        `,
       );
       await queryDatabase(
         options.client,
@@ -510,8 +530,9 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         create index if not exists rag_feedback_session_id_idx
           on rag_feedback (session_id)
           where session_id is not null
-      `,
+        `,
       );
+      await migrateKnowledgeCandidates(options.client);
     },
 
     async recordFeedback(input: RecordFeedbackInput): Promise<void> {
@@ -540,6 +561,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           );
         }
         await recordIngestionRun(client, ingestionRun);
+        await replaceOptions.afterReplace?.(client);
       });
     },
 
@@ -584,14 +606,32 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           const response = await queryDatabase<KnowledgeChunkRow>(
             options.client,
             `
-        with vector_candidates as (
+        with active_supersedes as (
+          select distinct jsonb_array_elements_text(supersedes) as knowledge_id
+          from knowledge_chunks
+          where status = 'current' and jsonb_array_length(supersedes) > 0
+        ),
+        eligible_knowledge_chunks as (
+          select knowledge_chunks.*
+          from knowledge_chunks
+          where
+            $6::boolean
+            or not exists (
+              select 1
+              from active_supersedes
+              where
+                active_supersedes.knowledge_id = knowledge_chunks.id
+                or active_supersedes.knowledge_id = knowledge_chunks.document_id
+            )
+        ),
+        vector_candidates as (
           select
             id, document_id, title, module, source_type, source_url, file,
             heading_path, order_index, retrieved_at::text as retrieved_at,
             effective_at::text as effective_at, status, supersedes, content, tokens,
             embedding <=> $1::vector as embedding_distance,
             0::integer as token_overlap
-          from knowledge_chunks
+          from eligible_knowledge_chunks
           order by embedding <=> $1::vector
           limit $2
         ),
@@ -606,7 +646,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
               from unnest(tokens) as token(value)
               where token.value = any($3::text[])
             ) as token_overlap
-          from knowledge_chunks
+          from eligible_knowledge_chunks
           where tokens && $3::text[]
           order by token_overlap desc, embedding_distance asc
           limit $2
@@ -622,7 +662,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
               from unnest(tokens) as token(value)
               where token.value = any($4::text[])
             ) as token_overlap
-          from knowledge_chunks
+          from eligible_knowledge_chunks
           where
             cardinality($4::text[]) > 0
             and (
@@ -656,6 +696,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
               queryTokens,
               supportEntities,
               entityPrefixPatterns,
+              isHistoricalOrTweetQuestion(question),
             ],
           );
 
@@ -1154,11 +1195,11 @@ function hasMinimumRetrievalEvidence(chunk: RetrievedChunk): boolean {
 }
 
 function sourceBoost(sourceType: SourceType): number {
-  return sourceType === 'official_docs' ? 0.05 : 0;
+  return sourceType === 'x_updates' ? 0 : 0.05;
 }
 
 function defaultKnowledgeStatus(sourceType: SourceType): KnowledgeStatus {
-  return sourceType === 'official_docs' ? 'current' : 'historical';
+  return sourceType === 'x_updates' ? 'historical' : 'current';
 }
 
 function freshnessScore(

@@ -24,7 +24,7 @@ export const supportedStreamStatusPhases = ['planning', 'retrieving', 'answering
 
 export type StreamStatusPhase = (typeof supportedStreamStatusPhases)[number];
 
-export type SourceType = 'official_docs' | 'x_updates';
+export type SourceType = 'admin_verified' | 'official_docs' | 'x_updates';
 export type KnowledgeStatus = 'current' | 'historical' | 'deprecated';
 
 export interface ChatRequest {

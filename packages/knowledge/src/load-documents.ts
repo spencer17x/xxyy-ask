@@ -7,6 +7,7 @@ const PRODUCT_FUNCTIONS_FILE = 'xxyy-product-functions.md';
 const X_UPDATES_FILE = 'xxyy-x-updates.md';
 const X_POSTS_FILE = path.posix.join('sources', 'usexxyyio-x-posts.jsonl');
 const MANIFEST_FILE = 'manifest.jsonl';
+const ADMIN_VERIFIED_DIR = 'admin-verified';
 
 export interface LoadProductDocumentsOptions {
   productFeaturesDir?: string;
@@ -80,6 +81,21 @@ export async function loadProductDocuments(
   );
   documents.push(...(await readXPostDocuments(productFeaturesDir)));
 
+  for (const adminVerifiedFile of await listOptionalMarkdownFiles(
+    path.join(productFeaturesDir, ADMIN_VERIFIED_DIR),
+  )) {
+    documents.push(
+      await readDocument({
+        productFeaturesDir,
+        relativeFile: path.posix.join(ADMIN_VERIFIED_DIR, adminVerifiedFile),
+        sourceType: 'admin_verified',
+        fallbackTitle: titleFromFilename(adminVerifiedFile),
+        fallbackModule: '管理员审核知识',
+        manifest,
+      }),
+    );
+  }
+
   for (const pageFile of await listPageFiles(productFeaturesDir)) {
     documents.push(
       await readDocument({
@@ -94,6 +110,21 @@ export async function loadProductDocuments(
   }
 
   return documents;
+}
+
+async function listOptionalMarkdownFiles(directory: string): Promise<string[]> {
+  try {
+    const entries = await readdir(directory, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+      .map((entry) => entry.name)
+      .sort(compareStrings);
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 async function readXPostDocuments(productFeaturesDir: string): Promise<SourceDocument[]> {
@@ -264,7 +295,7 @@ async function readDocument(args: {
 }
 
 function defaultStatus(sourceType: SourceType): KnowledgeStatus {
-  return sourceType === 'official_docs' ? 'current' : 'historical';
+  return sourceType === 'x_updates' ? 'historical' : 'current';
 }
 
 function firstNonEmptyString(...values: Array<string | null | undefined>): string | undefined {

@@ -465,6 +465,25 @@ describe('createPgVectorStore', () => {
     },
   );
 
+  it('rolls back replacement when its transactional finalizer fails', async () => {
+    const client = new FakePgClient();
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: { embedTexts: () => Promise.resolve([]) },
+    });
+
+    await expect(
+      store.replaceChunks([createChunk()], createIngestionRunInput(), {
+        afterReplace: () => Promise.reject(new Error('candidate state changed')),
+      }),
+    ).rejects.toThrow('candidate state changed');
+
+    const sql = client.queries.map((query) => query.sql.trim().toLowerCase());
+    expect(sql).toContain('rollback');
+    expect(sql).not.toContain('commit');
+    expect(client.releaseCount).toBe(1);
+  });
+
   it('rebuilds the embedding column inside the atomic replacement transaction', async () => {
     const client = new FakePgClient();
     const store = createPgVectorStore({
@@ -565,6 +584,8 @@ describe('createPgVectorStore', () => {
 
     expect(embeddedTexts).toEqual([['XXYY Pro 支持什么？']]);
     expect(client.queries.at(-1)?.sql).toContain('embedding <=> $1::vector');
+    expect(client.queries.at(-1)?.sql).toContain('active_supersedes');
+    expect(client.queries.at(-1)?.values[5]).toBe(false);
     expect(results[0]).toMatchObject({
       id: 'official_docs:pro:chunk:0001',
       rank: 1,
@@ -579,6 +600,21 @@ describe('createPgVectorStore', () => {
       },
       text: 'XXYY Pro 支持 Telegram 钱包监控。',
     });
+  });
+
+  it('allows superseded knowledge candidates for historical questions', async () => {
+    const client = new FakePgClient();
+    client.rows = [createKnowledgeRow({ tokens: ['以前', '钱包'] })];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1 })]),
+      },
+    });
+
+    await store.retrieve('以前钱包监控支持多少地址？', { topK: 1 });
+
+    expect(client.queries.at(-1)?.values[5]).toBe(true);
   });
 
   it('traces embedding and pgvector candidates without raw query, vectors, or content', async () => {

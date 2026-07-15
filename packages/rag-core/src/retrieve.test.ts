@@ -335,13 +335,51 @@ describe('retrieve', () => {
       'x_updates:wallet-limit-old:chunk:0001',
     ]);
   });
+
+  it('hides superseded knowledge by default but keeps it for historical questions', () => {
+    const oldDocument = createScoredEntry({
+      effectiveAt: '2025-01-01T00:00:00.000Z',
+      id: 'official_docs:wallet-limit-old:chunk:0001',
+      sourceType: 'official_docs',
+      status: 'current',
+      text: '钱包监控每条链最多支持 2000 个地址。',
+      title: '钱包监控旧上限',
+    });
+    const reviewedUpdate = createScoredEntry({
+      effectiveAt: '2026-07-01T00:00:00.000Z',
+      id: 'admin_verified:wallet-limit-new:chunk:0001',
+      sourceType: 'admin_verified',
+      status: 'current',
+      supersedes: [oldDocument.documentId],
+      text: '钱包监控每条链最多支持 5000 个地址。',
+      title: '钱包监控当前上限',
+    });
+    const index: RagIndex = {
+      builtAt: '2026-07-01T00:00:00.000Z',
+      entries: [oldDocument, reviewedUpdate],
+      version: 1,
+    };
+
+    expect(
+      retrieve('现在钱包监控每条链最多支持多少地址？', index, { topK: 2 }).map((chunk) => chunk.id),
+    ).toEqual(['admin_verified:wallet-limit-new:chunk:0001']);
+    expect(
+      retrieve('以前钱包监控每条链最多支持多少地址？', index, { topK: 2 }).map((chunk) => chunk.id),
+    ).toEqual(
+      expect.arrayContaining([
+        'admin_verified:wallet-limit-new:chunk:0001',
+        'official_docs:wallet-limit-old:chunk:0001',
+      ]),
+    );
+  });
 });
 
 function createScoredEntry(input: {
   effectiveAt: string;
   id: string;
-  sourceType: 'official_docs' | 'x_updates';
+  sourceType: 'admin_verified' | 'official_docs' | 'x_updates';
   status: 'current' | 'historical' | 'deprecated';
+  supersedes?: string[];
   text: string;
   title: string;
 }): IndexEntry {
@@ -358,6 +396,7 @@ function createScoredEntry(input: {
       module: 'XXYY',
       sourceType: input.sourceType,
       status: input.status,
+      ...(input.supersedes === undefined ? {} : { supersedes: input.supersedes }),
       title: input.title,
     },
     text: input.text,

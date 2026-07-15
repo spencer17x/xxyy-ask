@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { CreateCustomerAgentChatServiceOptions } from '@xxyy/agent-core';
 import type { PreparedKnowledgeChunk } from '@xxyy/knowledge';
-import type { EmbeddedKnowledgeChunk, KnowledgeStats } from '@xxyy/rag-core';
+import type { EmbeddedKnowledgeChunk, KnowledgeCandidate, KnowledgeStats } from '@xxyy/rag-core';
 import { createInMemoryQualityTracer } from '@xxyy/rag-core';
 import type { SourceDocument } from '@xxyy/shared';
 
@@ -14,12 +14,16 @@ import {
   createDefaultCliIo,
   collectEvaluationTraceObservation,
   formatChatResponse,
+  formatAdminVerifiedKnowledgeDocument,
   formatEvaluationReport,
   formatFeedbackEvalBacklog,
   formatIngestSummary,
+  formatKnowledgeCandidateList,
+  formatKnowledgePublicationSummary,
   formatKnowledgeStats,
   formatMigrationSummary,
   formatSyncXUpdatesSummary,
+  formatTelegramKnowledgeImportSummary,
   parseCliArgs,
   resolveWorkspaceCwd,
   runCli,
@@ -74,6 +78,80 @@ describe('parseCliArgs', () => {
       failuresOut: '.rag/failures.jsonl',
       judge: true,
       providerBacked: true,
+    });
+  });
+
+  it('parses controlled knowledge evolution commands', () => {
+    expect(
+      parseCliArgs([
+        'knowledge:import:telegram',
+        '--',
+        'group.json',
+        '--admin-id',
+        '123',
+        '--admin-id',
+        '456',
+      ]),
+    ).toEqual({
+      adminUserIds: ['123', '456'],
+      command: 'knowledge:import:telegram',
+      file: 'group.json',
+    });
+    expect(parseCliArgs(['knowledge:list', '--status', 'pending', '--limit', '10'])).toEqual({
+      command: 'knowledge:list',
+      limit: 10,
+      status: 'pending',
+    });
+    expect(
+      parseCliArgs([
+        'knowledge:approve',
+        'knowledge_candidate_1',
+        '--reviewer',
+        'telegram:123',
+        '--effective-at',
+        '2026-07-15',
+        '--source-url',
+        'https://docs.example.com/feature',
+        '--supersedes',
+        'official_docs:old,official_docs:older',
+      ]),
+    ).toEqual({
+      command: 'knowledge:approve',
+      effectiveAt: '2026-07-15',
+      id: 'knowledge_candidate_1',
+      reviewedBy: 'telegram:123',
+      sourceUrl: 'https://docs.example.com/feature',
+      supersedes: ['official_docs:old', 'official_docs:older'],
+    });
+    expect(
+      parseCliArgs([
+        'knowledge:reject',
+        'knowledge_candidate_1',
+        '--reviewer',
+        'telegram:123',
+        '--note',
+        '证据不足',
+      ]),
+    ).toEqual({
+      command: 'knowledge:reject',
+      id: 'knowledge_candidate_1',
+      note: '证据不足',
+      reviewedBy: 'telegram:123',
+    });
+    expect(parseCliArgs(['knowledge:publish', 'knowledge_candidate_1'])).toEqual({
+      command: 'knowledge:publish',
+      id: 'knowledge_candidate_1',
+    });
+  });
+
+  it('requires explicit administrator and reviewer identities', () => {
+    expect(parseCliArgs(['knowledge:import:telegram', 'group.json'])).toMatchObject({
+      command: 'help',
+      error: 'At least one --admin-id is required.',
+    });
+    expect(parseCliArgs(['knowledge:approve', 'knowledge_candidate_1'])).toMatchObject({
+      command: 'help',
+      error: '--reviewer is required.',
     });
   });
 
@@ -166,6 +244,39 @@ describe('createDefaultCliIo', () => {
 });
 
 describe('CLI output formatting', () => {
+  it('formats candidate import, review lists, and publication summaries', () => {
+    const candidate = createKnowledgeCandidate();
+
+    expect(
+      formatTelegramKnowledgeImportSummary({
+        adminReplyCount: 4,
+        candidateCount: 2,
+        createdCount: 1,
+        duplicateCount: 1,
+        messageCount: 12,
+        skippedBoundaryCount: 1,
+        skippedMissingReplyCount: 1,
+      }),
+    ).toContain('Extracted 2 candidates: 1 created, 1 duplicates.');
+    expect(formatKnowledgeCandidateList([candidate])).toContain(candidate.id);
+    expect(
+      formatKnowledgePublicationSummary({
+        alreadyPublished: false,
+        candidateId: candidate.id,
+        documentId: `admin_verified:admin-verified/${candidate.id}`,
+        file: `/tmp/${candidate.id}.md`,
+        runId: 'ingest_run_1',
+      }),
+    ).toContain('Ingestion run: ingest_run_1');
+
+    const document = formatAdminVerifiedKnowledgeDocument(candidate);
+    expect(document).toContain('section: "管理员审核知识"');
+    expect(document).toContain('effective_at: "2026-07-15T00:00:00.000Z"');
+    expect(document).toContain('source_url: "https://docs.example.com/robinhood"');
+    expect(document).toContain('supersedes: ["official_docs:old-robinhood"]');
+    expect(document).toContain('## 标准答案\n\n是的，XXYY 已支持 Robinhood。');
+  });
+
   it('collects ordered tool and retrieval observations from one request trace tree', async () => {
     const { records, tracer } = createInMemoryQualityTracer();
     await tracer.run(
@@ -596,6 +707,25 @@ describe('CLI output formatting', () => {
     }
   });
 });
+
+function createKnowledgeCandidate(overrides: Partial<KnowledgeCandidate> = {}): KnowledgeCandidate {
+  return {
+    canonicalAnswer: '是的，XXYY 已支持 Robinhood。',
+    contentHash: 'content-hash',
+    createdAt: '2026-07-15T00:00:00.000Z',
+    effectiveAt: '2026-07-15T00:00:00.000Z',
+    id: 'knowledge_candidate_1234567890abcdef',
+    question: 'XXYY 支持 Robinhood 吗？',
+    reviewedAt: '2026-07-15T00:01:00.000Z',
+    reviewedBy: 'telegram:123',
+    sourceChannel: 'telegram_export',
+    sourceUrl: 'https://docs.example.com/robinhood',
+    status: 'approved',
+    supersedes: ['official_docs:old-robinhood'],
+    updatedAt: '2026-07-15T00:01:00.000Z',
+    ...overrides,
+  };
+}
 
 describe('runCli', () => {
   it('prints tracing configuration errors without exposing secrets', async () => {

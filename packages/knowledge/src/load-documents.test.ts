@@ -147,6 +147,46 @@ describe('loadProductDocuments', () => {
     expect(documents[3]?.content).toContain('生成交易钱包后即可开始交易。');
   });
 
+  it('loads reviewed administrator knowledge from its isolated directory', async () => {
+    const fixtureDir = await createProductDocsFixture();
+    const adminVerifiedDir = path.join(fixtureDir, 'admin-verified');
+    await mkdir(adminVerifiedDir);
+    await writeFile(
+      path.join(adminVerifiedDir, 'candidate-1.md'),
+      [
+        '---',
+        'title: "Robinhood 支持情况"',
+        'section: "管理员审核知识"',
+        'effective_at: "2026-07-15T00:00:00.000Z"',
+        'status: current',
+        '---',
+        '# Robinhood 支持情况',
+        '',
+        '## 用户问题',
+        '',
+        '支持 Robinhood 吗？',
+        '',
+        '## 标准答案',
+        '',
+        '是的，XXYY 已支持 Robinhood。',
+        '',
+      ].join('\n'),
+    );
+
+    const documents = await loadProductDocuments({ productFeaturesDir: fixtureDir });
+    const reviewed = documents.find(
+      (document) => document.id === 'admin_verified:admin-verified/candidate-1',
+    );
+
+    expect(reviewed).toMatchObject({
+      effectiveAt: '2026-07-15T00:00:00.000Z',
+      module: '管理员审核知识',
+      sourceType: 'admin_verified',
+      status: 'current',
+      title: 'Robinhood 支持情况',
+    });
+  });
+
   it('falls back to retrieved_at when lastmod metadata is empty', async () => {
     const fixtureDir = await createProductDocsFixture();
     await writeFile(
