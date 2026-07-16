@@ -253,6 +253,7 @@ describe('createRequestHandler', () => {
 
   it('returns deep health status with dependency details', async () => {
     const handler = createRequestHandler({
+      env: {},
       getHealthStatus: () =>
         Promise.resolve({
           checks: {

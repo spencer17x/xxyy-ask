@@ -304,6 +304,43 @@ export async function migrateKnowledgeCandidates(client: PgClientLike): Promise<
   await queryDatabase(
     client,
     `
+    do $$
+    begin
+      if to_regclass('public.knowledge_candidates') is not null
+        and not exists (
+          select 1
+          from information_schema.columns
+          where
+            table_schema = 'public'
+            and table_name = 'knowledge_candidates'
+            and column_name = 'content_hash'
+        )
+      then
+        if to_regclass('public.knowledge_candidates_legacy') is not null then
+          raise exception 'Cannot preserve legacy knowledge_candidates: knowledge_candidates_legacy already exists.';
+        end if;
+
+        alter table knowledge_candidates rename to knowledge_candidates_legacy;
+
+        if exists (
+          select 1
+          from pg_constraint
+          where
+            conrelid = 'public.knowledge_candidates_legacy'::regclass
+            and conname = 'knowledge_candidates_pkey'
+        )
+        then
+          alter table knowledge_candidates_legacy
+            rename constraint knowledge_candidates_pkey to knowledge_candidates_legacy_pkey;
+        end if;
+      end if;
+    end
+    $$
+    `,
+  );
+  await queryDatabase(
+    client,
+    `
     create table if not exists knowledge_candidates (
       id text primary key,
       content_hash text not null unique,
@@ -336,14 +373,14 @@ export async function migrateKnowledgeCandidates(client: PgClientLike): Promise<
   await queryDatabase(
     client,
     `
-    create index if not exists knowledge_candidates_status_created_at_idx
+    create index if not exists knowledge_candidates_review_status_created_at_idx
       on knowledge_candidates (status, created_at desc)
     `,
   );
   await queryDatabase(
     client,
     `
-    create index if not exists knowledge_candidates_source_message_idx
+    create index if not exists knowledge_candidates_review_source_message_idx
       on knowledge_candidates (
         source_channel, source_chat_id, source_answer_message_id
       )

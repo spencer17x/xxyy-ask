@@ -23,9 +23,13 @@ describe('createPgKnowledgeCandidateStore', () => {
     await store.migrate();
 
     const sql = client.queries.map((query) => query.sql).join('\n');
+    expect(sql).toContain('alter table knowledge_candidates rename to knowledge_candidates_legacy');
+    expect(sql).toContain(
+      'rename constraint knowledge_candidates_pkey to knowledge_candidates_legacy_pkey',
+    );
     expect(sql).toContain('create table if not exists knowledge_candidates');
     expect(sql).toContain("status in ('pending', 'approved', 'rejected', 'published')");
-    expect(sql).toContain('knowledge_candidates_status_created_at_idx');
+    expect(sql).toContain('knowledge_candidates_review_status_created_at_idx');
   });
 
   it('creates redacted candidates idempotently', async () => {
