@@ -497,6 +497,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           answer text not null,
           intent text not null check (
             intent in (
+              'agent_capabilities',
               'product_qa',
               'how_to',
               'realtime_account_query',
@@ -508,6 +509,29 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           comment text,
           created_at timestamptz not null default now()
         )
+      `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        alter table rag_feedback
+          drop constraint if exists rag_feedback_intent_check
+      `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        alter table rag_feedback
+          add constraint rag_feedback_intent_check check (
+            intent in (
+              'agent_capabilities',
+              'product_qa',
+              'how_to',
+              'realtime_account_query',
+              'investment_advice',
+              'unknown'
+            )
+          )
       `,
       );
       await queryDatabase(

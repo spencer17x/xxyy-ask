@@ -44,9 +44,10 @@ interface ChatCompletionResponse {
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-export const PLANNER_PROMPT_VERSION = 'planner-v1';
+export const PLANNER_PROMPT_VERSION = 'planner-v2';
 
 const plannerRoutes = [
+  'agent_answer',
   'boundary',
   'clarify',
   'product_answer',
@@ -92,6 +93,7 @@ const chatResponseSchema = z
     citations: z.array(citationSchema).default([]),
     confidence: z.number(),
     intent: z.enum([
+      'agent_capabilities',
       'product_qa',
       'how_to',
       'realtime_account_query',
@@ -248,13 +250,22 @@ function createPlannerRequestBody(
         content: [
           'You are the XXYY customer support agent planner.',
           'Return only a JSON object matching one of these shapes:',
+          '{"kind":"tool","route":"agent_answer","toolName":"describe_agent_capabilities","input":{},"reason":"..."}',
           '{"kind":"tool","route":"product_answer","toolName":"answer_product_question","input":{"question":"..."},"reason":"..."}',
           '{"kind":"final","route":"boundary","response":{"answer":"...","intent":"unknown","citations":[],"confidence":0.3},"reason":"..."}',
           '{"kind":"final","route":"clarify","response":{"answer":"...","intent":"unknown","citations":[],"confidence":0.3},"reason":"..."}',
           '{"kind":"final","route":"unsupported","response":{"answer":"...","intent":"unknown","citations":[],"confidence":0.3},"reason":"..."}',
-          'Valid route values are exactly: boundary, clarify, product_answer, unsupported.',
+          'Valid route values are exactly: agent_answer, boundary, clarify, product_answer, unsupported.',
           'Valid toolName values are exactly the names in the provided tools list.',
           'XXYY support context:',
+          'Semantic subject resolution (perform this before intent or tool selection):',
+          '- First identify the entity that owns the requested capabilities, responsibilities, limits, knowledge sources, or actions. Do not route from isolated feature/function/support vocabulary.',
+          '- Classify that subject as current_assistant, xxyy_product, unavailable_operation, or unresolved.',
+          "- A reference to the listener/current helper is current_assistant unless the request explicitly assigns the requested property to another entity. A broad or hypothetical assessment of this assistant's support role is already concrete enough; it does not require a product module or a specific support case.",
+          '- For current_assistant, call describe_agent_capabilities. Do not return clarification merely because the user asks for a broad scope or a division between in-scope and out-of-scope work.',
+          '- For xxyy_product, including the app, platform, product, or a named XXYY module, use product tools.',
+          '- When both the Agent and XXYY appear, follow the grammatical subject and explicit contrast in the request. The domain being XXYY does not make the XXYY product the subject.',
+          '- Clarification is valid only when the subject or requested outcome remains unresolved after the rules above; it must not override an identified current_assistant subject.',
           '- You can answer public XXYY product questions, configuration steps, benefits, and official updates by calling product tools.',
           '- Transaction analysis, chain forensics, wallet/account lookup, and trading operations are not available in this runtime.',
           '- You do not have private account, order, wallet balance, private transaction, credential recovery, or trading authority.',

@@ -34,6 +34,8 @@ export {
   createOpenAiCompatiblePlannerModel,
   createScriptedPlannerModel,
 } from './planner-model.js';
+export { AGENT_TOOL_NAMES, createAgentTools } from './tools/agent-tools.js';
+export type { AgentToolName } from './tools/agent-tools.js';
 export type {
   OpenAiCompatiblePlannerModelOptions,
   PlannerModel,

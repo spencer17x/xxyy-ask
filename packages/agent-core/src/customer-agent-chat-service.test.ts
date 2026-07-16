@@ -17,6 +17,73 @@ const originalOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
 const originalOpenAiModel = process.env.OPENAI_MODEL;
 
 describe('createCustomerAgentChatService', () => {
+  it('lets the planner route semantic self-description requests to the Agent tool', async () => {
+    process.env.OPENAI_API_KEY = 'env-key';
+    process.env.OPENAI_BASE_URL = 'https://env.example/v1';
+    process.env.OPENAI_MODEL = 'env-model';
+    let plannerTools: Array<{ name?: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>((_input, init) => {
+        if (typeof init?.body !== 'string') {
+          throw new Error('Expected planner JSON request body.');
+        }
+        const body = JSON.parse(init.body) as {
+          messages?: Array<{ content?: string; role?: string }>;
+        };
+        const userMessage = body.messages?.find((message) => message.role === 'user');
+        const plannerInput = JSON.parse(userMessage?.content ?? '{}') as {
+          tools?: Array<{ name?: unknown }>;
+        };
+        plannerTools = plannerInput.tools ?? [];
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      input: {},
+                      kind: 'tool',
+                      reason: 'The subject is the assistant itself.',
+                      route: 'agent_answer',
+                      toolName: 'describe_agent_capabilities',
+                    }),
+                  },
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        );
+      }),
+    );
+    const service = createCustomerAgentChatService({
+      answerProvider: {
+        answer: () => Promise.reject(new Error('product answer should not be called')),
+      },
+      retriever: {
+        retrieve: () => Promise.reject(new Error('product retrieval should not be called')),
+      },
+    });
+
+    const response = await service.ask({
+      channel: 'telegram',
+      message: '如果把你当成客服助手，你的职责边界和可调用能力是什么？',
+    });
+
+    expect(plannerTools.map((tool) => tool.name)).toEqual([
+      'describe_agent_capabilities',
+      'search_product_docs',
+      'answer_product_question',
+    ]);
+    expect(response).toMatchObject({
+      agentRoute: 'agent_answer',
+      citations: [],
+      intent: 'agent_capabilities',
+    });
+  });
+
   afterEach(() => {
     restoreEnvValue('OPENAI_API_KEY', originalOpenAiApiKey);
     restoreEnvValue('OPENAI_BASE_URL', originalOpenAiBaseUrl);
@@ -92,7 +159,15 @@ describe('createCustomerAgentChatService', () => {
         },
       },
       config: { topK: 1 },
-      planner: createScriptedPlannerModel([]),
+      planner: createScriptedPlannerModel([
+        {
+          input: { question: 'XXYY Pro 有哪些权益？' },
+          kind: 'tool',
+          reason: 'Use product knowledge.',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
+        },
+      ]),
       retriever: {
         retrieve: () => [createRetrievedChunk()],
       },
@@ -302,13 +377,32 @@ describe('createCustomerAgentChatService', () => {
     expect(requestBody.model).toBe('config-model');
   });
 
-  it('bypasses the LLM planner for short support questions', async () => {
+  it('uses the LLM planner to route short support questions', async () => {
     process.env.OPENAI_API_KEY = 'env-key';
     process.env.OPENAI_BASE_URL = 'https://env.example/v1';
     process.env.OPENAI_MODEL = 'env-model';
-    const fetchImpl = vi.fn<typeof fetch>(() => {
-      throw new Error('planner should not be called for deterministic support questions');
-    });
+    const fetchImpl = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    input: { question: '支持跟单么' },
+                    kind: 'tool',
+                    reason: 'The request concerns an XXYY product capability.',
+                    route: 'product_answer',
+                    toolName: 'answer_product_question',
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
     vi.stubGlobal('fetch', fetchImpl);
     const retrieve = vi.fn<Retriever['retrieve']>(() => [
       createRetrievedChunk({
@@ -341,7 +435,7 @@ describe('createCustomerAgentChatService', () => {
       confidence: 0.81,
       intent: 'product_qa',
     });
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 4 });
     const answerInput = answer.mock.calls[0]?.[0];
     expect(answerInput).toBeDefined();

@@ -93,15 +93,6 @@ export function createLangGraphCustomerRuntime(
       return;
     }
 
-    // Stream-only fast path: skip planner tool choice for ordinary product
-    // questions so clients get retrieve/answer status + token deltas instead of
-    // a search-then-dump path that appears as a single paint.
-    const productStream = streamDirectProductAnswer(request, options.registry);
-    if (productStream !== undefined) {
-      yield* productStream;
-      return;
-    }
-
     yield* streamRuntimeRequest(request, options, maxSteps);
   }
 
@@ -202,53 +193,6 @@ async function tracePreGuard(
     },
     () => Promise.resolve(deterministicPreGuard(request, classification)),
   );
-}
-
-function streamDirectProductAnswer(
-  request: ChatRequest,
-  registry: ToolRegistry,
-): AsyncIterable<ChatStreamEvent> | undefined {
-  const classification = classifyQuestion(request.message);
-  if (classification.intent !== 'product_qa' && classification.intent !== 'how_to') {
-    return undefined;
-  }
-
-  const productTool = registry.get('answer_product_question');
-  if (productTool?.stream === undefined) {
-    return undefined;
-  }
-
-  return (async function* (): AsyncIterable<ChatStreamEvent> {
-    yield {
-      type: 'status',
-      phase: 'planning',
-      message: '正在分析问题…',
-    };
-
-    try {
-      const toolStream = registry.stream(
-        'answer_product_question',
-        { question: request.message },
-        toolContextFromRequest(request),
-      );
-      if (toolStream === undefined) {
-        yield* streamChatResponse(
-          withAgentRoute(toolFailureResponse('answer_product_question'), 'clarify'),
-        );
-        return;
-      }
-      for await (const event of toolStream) {
-        yield withStreamAgentRoute(event as ChatStreamEvent, 'product_answer');
-      }
-    } catch (error) {
-      if (isProductConfigurationError(error)) {
-        throw error;
-      }
-      yield* streamChatResponse(
-        withAgentRoute(toolFailureResponse('answer_product_question'), 'clarify'),
-      );
-    }
-  })();
 }
 
 async function* streamRuntimeRequest(
@@ -393,19 +337,6 @@ async function plannerNode(
     };
   }
 
-  const deterministicSupportPlan = deterministicSupportProductAnswerPlan(
-    state.request,
-    options.registry,
-    state,
-  );
-  if (deterministicSupportPlan !== undefined) {
-    return {
-      currentStep: state.currentStep + 1,
-      plan: deterministicSupportPlan,
-      route: 'product_answer',
-    };
-  }
-
   let plan: AgentPlan;
   const plannerInput = {
     request: state.request,
@@ -431,35 +362,12 @@ async function plannerNode(
         throw retryError;
       }
 
-      const fallbackPlan = fallbackProductAnswerPlan(state.request, options.registry);
-      if (fallbackPlan !== undefined) {
-        return {
-          currentStep: state.currentStep + 1,
-          errors: [...planningErrors, `Planner retry failed: ${errorMessageFrom(retryError)}`],
-          plan: fallbackPlan,
-          route: 'product_answer',
-        };
-      }
-
       return {
         errors: [...planningErrors, `Planner retry failed: ${errorMessageFrom(retryError)}`],
         finalResponse: createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION),
         route: 'clarify',
       };
     }
-  }
-
-  const productFallbackPlan = fallbackProductAnswerPlan(state.request, options.registry);
-  if (
-    productFallbackPlan !== undefined &&
-    shouldOverridePlannerFinalWithProductTool(plan, state.request)
-  ) {
-    return {
-      currentStep: state.currentStep + 1,
-      ...(planningErrors.length > 0 ? { errors: planningErrors } : {}),
-      plan: productFallbackPlan,
-      route: 'product_answer',
-    };
   }
 
   if (plan.kind === 'tool' && isRepeatedToolInput(plan, state)) {
@@ -489,60 +397,6 @@ async function plannerNode(
     plan,
     route: normalizeAgentRoute(plan.route),
   };
-}
-
-function shouldOverridePlannerFinalWithProductTool(plan: AgentPlan, request: ChatRequest): boolean {
-  if (plan.kind !== 'final') {
-    return false;
-  }
-
-  const classification = classifyQuestion(request.message);
-  if (classification.intent !== 'product_qa' && classification.intent !== 'how_to') {
-    return false;
-  }
-
-  return (
-    plan.response.citations.length === 0 ||
-    plan.response.intent === 'unknown' ||
-    normalizeAgentRoute(plan.route) === 'clarify'
-  );
-}
-
-function fallbackProductAnswerPlan(
-  request: ChatRequest,
-  registry: ToolRegistry,
-): Extract<AgentPlan, { kind: 'tool' }> | undefined {
-  const classification = classifyQuestion(request.message);
-  if (classification.intent !== 'product_qa' && classification.intent !== 'how_to') {
-    return undefined;
-  }
-
-  const hasProductAnswerTool = registry
-    .list()
-    .some((tool) => tool.name === 'answer_product_question');
-  if (!hasProductAnswerTool) {
-    return undefined;
-  }
-
-  return {
-    input: { question: request.message },
-    kind: 'tool',
-    reason: 'deterministic product classification fallback after planner failure',
-    route: 'product_answer',
-    toolName: 'answer_product_question',
-  };
-}
-
-function deterministicSupportProductAnswerPlan(
-  request: ChatRequest,
-  registry: ToolRegistry,
-  state: LangGraphAgentState,
-): Extract<AgentPlan, { kind: 'tool' }> | undefined {
-  if (state.currentStep > 0 || !shouldUseDeterministicSupportAnswer(request.message)) {
-    return undefined;
-  }
-
-  return fallbackProductAnswerPlan(request, registry);
 }
 
 function routeAfterPlanner(state: LangGraphAgentState): CustomerRuntimeNode {
@@ -795,8 +649,8 @@ function withStreamAgentRoute(event: ChatStreamEvent, route: AgentRoute): ChatSt
   };
 }
 
-function routeForToolName(_toolName: string): AgentRoute {
-  return 'product_answer';
+function routeForToolName(toolName: string): AgentRoute {
+  return toolName === 'describe_agent_capabilities' ? 'agent_answer' : 'product_answer';
 }
 
 type AgentEvidenceForSearch = Extract<AgentEvidence, { kind: 'search_results' }>['output'];

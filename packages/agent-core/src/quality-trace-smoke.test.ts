@@ -41,7 +41,15 @@ describe('quality trace end-to-end smoke', () => {
         tracer,
       }),
       config: { topK: 1 },
-      planner: createScriptedPlannerModel([]),
+      planner: createScriptedPlannerModel([
+        {
+          input: { question: 'XXYY Pro 有哪些权益？' },
+          kind: 'tool',
+          reason: 'Use product knowledge.',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
+        },
+      ]),
       retriever,
       tracer,
     });

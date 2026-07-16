@@ -98,6 +98,7 @@ export const answerProductQuestionOutputSchema = z.object({
   citations: z.array(citationSchema),
   confidence: z.number(),
   intent: z.enum([
+    'agent_capabilities',
     'product_qa',
     'how_to',
     'realtime_account_query',

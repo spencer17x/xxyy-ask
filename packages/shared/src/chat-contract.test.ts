@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   chatStreamEventSchema,
+  supportedAgentRoutes,
   supportedChannels,
   supportedIntents,
   type ChatRequest,
@@ -15,12 +16,17 @@ describe('chat contract', () => {
 
   it('defines stable product support and boundary intents', () => {
     expect(supportedIntents).toEqual([
+      'agent_capabilities',
       'product_qa',
       'how_to',
       'realtime_account_query',
       'investment_advice',
       'unknown',
     ]);
+  });
+
+  it('defines the direct agent answer route separately from product answers', () => {
+    expect(supportedAgentRoutes).toEqual(['agent_answer', 'boundary', 'clarify', 'product_answer']);
   });
 
   it('allows channel-neutral chat responses with citations', () => {

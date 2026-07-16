@@ -11,6 +11,7 @@ import {
   createScriptedPlannerModel,
 } from './planner-model.js';
 import { createToolRegistry } from './tool-registry.js';
+import { createAgentTools } from './tools/agent-tools.js';
 
 const toolPolicy = {
   requiresOpsAuth: false,
@@ -129,7 +130,7 @@ describe('createLangGraphCustomerRuntime', () => {
     );
   });
 
-  it('overrides unsupported planner finals for deterministic product questions', async () => {
+  it('respects planner clarification instead of overriding it with keyword routing', async () => {
     const registry = createToolRegistry();
     const response: ChatResponse = {
       answer: 'P1/P2/P3 是交易设置档位，可为买卖/挂单配置不同 gas 与滑点。',
@@ -180,16 +181,16 @@ describe('createLangGraphCustomerRuntime', () => {
         message: 'P1/P2/P3 是什么交易设置？',
       }),
     ).resolves.toEqual({
-      ...response,
-      agentRoute: 'product_answer',
+      agentRoute: 'clarify',
+      answer: '当前无法回答该交易设置问题。',
+      citations: [],
+      confidence: 0.3,
+      intent: 'unknown',
     });
-    expect(execute).toHaveBeenCalledWith(
-      { question: 'P1/P2/P3 是什么交易设置？' },
-      { channel: 'web', sessionId: undefined, userIdPresent: false },
-    );
+    expect(execute).not.toHaveBeenCalled();
   });
 
-  it('falls back to the product answer tool when planner parsing fails for a deterministic product question', async () => {
+  it('clarifies instead of guessing a tool when planner parsing repeatedly fails', async () => {
     const registry = createToolRegistry();
     const response: ChatResponse = {
       answer: 'XXYY 支持跟单功能。',
@@ -224,15 +225,13 @@ describe('createLangGraphCustomerRuntime', () => {
         channel: 'web',
         message: 'XXYY Pro 有哪些权益？',
       }),
-    ).resolves.toEqual({
-      ...response,
-      agentRoute: 'product_answer',
+    ).resolves.toMatchObject({
+      agentRoute: 'clarify',
+      citations: [],
+      intent: 'unknown',
     });
     expect(planner.plan).toHaveBeenCalledTimes(2);
-    expect(execute).toHaveBeenCalledWith(
-      { question: 'XXYY Pro 有哪些权益？' },
-      { channel: 'web', sessionId: undefined, userIdPresent: false },
-    );
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('returns boundary answers before planner execution for obvious private lookup requests', async () => {
@@ -256,6 +255,34 @@ describe('createLangGraphCustomerRuntime', () => {
     });
     expect(response.answer).toContain('我不能直接查询你的钱包余额');
     expect(planner.plan).not.toHaveBeenCalled();
+  });
+
+  it('answers agent capability questions through the planner-selected Agent tool', async () => {
+    const registry = createToolRegistry();
+    for (const tool of createAgentTools()) {
+      registry.register(tool);
+    }
+    const planner = createScriptedPlannerModel([
+      {
+        input: {},
+        kind: 'tool',
+        reason: 'The user asks about the Agent itself.',
+        route: 'agent_answer',
+        toolName: 'describe_agent_capabilities',
+      },
+    ]);
+
+    const response = await createLangGraphCustomerRuntime({ planner, registry }).ask({
+      channel: 'telegram',
+      message: '你支持哪些功能？',
+    });
+
+    expect(response).toMatchObject({
+      agentRoute: 'agent_answer',
+      citations: [],
+      intent: 'agent_capabilities',
+    });
+    expect(response.answer).toContain('我是 XXYY 产品客服 Agent');
   });
 
   it('does not block product capability questions that mention wallet balances', async () => {
@@ -1626,7 +1653,15 @@ describe('createLangGraphCustomerRuntime', () => {
   it('traces root classification and deterministic guard for boundary requests', async () => {
     const { records, tracer } = createInMemoryQualityTracer();
     const runtime = createLangGraphCustomerRuntime({
-      planner: createScriptedPlannerModel([]),
+      planner: createScriptedPlannerModel([
+        {
+          input: { question: 'XXYY Pro 有哪些权益？' },
+          kind: 'tool',
+          reason: 'Use product knowledge.',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
+        },
+      ]),
       registry: createToolRegistry({ tracer }),
       tracer,
     });
@@ -1691,7 +1726,15 @@ describe('createLangGraphCustomerRuntime', () => {
       },
     });
     const runtime = createLangGraphCustomerRuntime({
-      planner: createScriptedPlannerModel([]),
+      planner: createScriptedPlannerModel([
+        {
+          input: { question: 'XXYY Pro 有哪些权益？' },
+          kind: 'tool',
+          reason: 'Use product knowledge.',
+          route: 'product_answer',
+          toolName: 'answer_product_question',
+        },
+      ]),
       registry,
       tracer,
     });

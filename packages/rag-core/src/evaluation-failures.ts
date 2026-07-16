@@ -23,7 +23,9 @@ export function formatEvaluationFailureJsonl(report: EvaluationReport): string {
           source: 'rag_evaluate',
           toolNames: result.toolNames.map(safe),
         },
-        boundaryExpected: !['product_qa', 'how_to'].includes(result.expectedIntent),
+        boundaryExpected: !['agent_capabilities', 'product_qa', 'how_to'].includes(
+          result.expectedIntent,
+        ),
         ...(result.expectedAgentRoute === undefined
           ? {}
           : { expectedAgentRoute: result.expectedAgentRoute }),

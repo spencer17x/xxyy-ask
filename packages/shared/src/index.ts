@@ -7,6 +7,7 @@ export const workspacePackageName = '@xxyy/shared';
 export type ChatChannel = (typeof supportedChannels)[number];
 
 export const supportedIntents = [
+  'agent_capabilities',
   'product_qa',
   'how_to',
   'realtime_account_query',
@@ -16,7 +17,12 @@ export const supportedIntents = [
 
 export type Intent = (typeof supportedIntents)[number];
 
-export const supportedAgentRoutes = ['boundary', 'clarify', 'product_answer'] as const;
+export const supportedAgentRoutes = [
+  'agent_answer',
+  'boundary',
+  'clarify',
+  'product_answer',
+] as const;
 
 export type AgentRoute = (typeof supportedAgentRoutes)[number];
 

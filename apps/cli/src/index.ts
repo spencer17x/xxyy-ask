@@ -735,7 +735,7 @@ function toFeedbackEvalBacklogRecord(record: FeedbackRecord): Record<string, unk
       ...(record.sessionId === undefined ? {} : { sessionId: record.sessionId }),
       source: 'rag_feedback',
     },
-    boundaryExpected: record.intent !== 'product_qa' && record.intent !== 'how_to',
+    boundaryExpected: !['agent_capabilities', 'product_qa', 'how_to'].includes(record.intent),
     expectedIntent: record.intent,
     name: createFeedbackEvalCaseName(record),
     question: record.question,
@@ -1214,7 +1214,9 @@ async function attachJudgeEvaluation(
     result.judgeScores = await judge.judge({
       actualIntent: result.actualIntent,
       answer: result.response.answer,
-      boundaryExpected: !['product_qa', 'how_to'].includes(result.expectedIntent),
+      boundaryExpected: !['agent_capabilities', 'product_qa', 'how_to'].includes(
+        result.expectedIntent,
+      ),
       citations: result.response.citations,
       expectedIntent: result.expectedIntent,
       question: result.question,

@@ -13,6 +13,7 @@ import {
   type CustomerAgentRuntime,
 } from './langgraph-customer-runtime.js';
 import { createOpenAiCompatiblePlannerModel, type PlannerModel } from './planner-model.js';
+import { createAgentTools } from './tools/agent-tools.js';
 import { createProductTools } from './tools/product-tools.js';
 import { createToolRegistry } from './tool-registry.js';
 
@@ -39,6 +40,10 @@ export function createCustomerAgentChatService(
   const registry = createToolRegistry(
     options.tracer === undefined ? {} : { tracer: options.tracer },
   );
+
+  for (const tool of createAgentTools()) {
+    registry.register(tool);
+  }
 
   for (const tool of createProductTools({
     answerProvider: options.answerProvider,

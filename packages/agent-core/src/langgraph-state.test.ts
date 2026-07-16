@@ -32,6 +32,7 @@ describe('langgraph agent state helpers', () => {
   });
 
   it('allows only knowledge-base customer support tools', () => {
+    expect(isAllowedAgentToolName('describe_agent_capabilities')).toBe(true);
     expect(isAllowedAgentToolName('answer_product_question')).toBe(true);
     expect(isAllowedAgentToolName('unsupported_tool')).toBe(false);
     expect(isAllowedAgentToolName('boundary_reply')).toBe(false);
@@ -41,6 +42,7 @@ describe('langgraph agent state helpers', () => {
   });
 
   it('normalizes planner routes into shared agent routes', () => {
+    expect(normalizeAgentRoute('agent_answer')).toBe('agent_answer');
     expect(normalizeAgentRoute('product_answer')).toBe('product_answer');
     expect(normalizeAgentRoute('boundary')).toBe('boundary');
     expect(normalizeAgentRoute('clarify')).toBe('clarify');

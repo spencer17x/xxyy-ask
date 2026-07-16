@@ -4,7 +4,11 @@ import type { AgentRoute, ChatAttachment, ChatRequest, ChatResponse, Citation } 
 
 export const AGENT_MAX_STEPS_DEFAULT = 4;
 
-export const ALLOWED_AGENT_TOOL_NAMES = ['answer_product_question', 'search_product_docs'] as const;
+export const ALLOWED_AGENT_TOOL_NAMES = [
+  'describe_agent_capabilities',
+  'answer_product_question',
+  'search_product_docs',
+] as const;
 
 export type AllowedAgentToolName = (typeof ALLOWED_AGENT_TOOL_NAMES)[number];
 
@@ -13,7 +17,12 @@ export type AgentMessage = {
   content: string;
 };
 
-export type PlannerRoute = 'boundary' | 'clarify' | 'product_answer' | 'unsupported';
+export type PlannerRoute =
+  | 'agent_answer'
+  | 'boundary'
+  | 'clarify'
+  | 'product_answer'
+  | 'unsupported';
 
 export type FinalPlannerRoute = 'boundary' | 'clarify' | 'unsupported';
 

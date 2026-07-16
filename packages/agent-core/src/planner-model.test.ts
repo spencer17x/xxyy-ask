@@ -433,6 +433,13 @@ describe('planner model', () => {
     expect(systemMessage?.content).toEqual(expect.stringContaining('Query rewrite policy'));
     expect(systemMessage?.content).toEqual(expect.stringContaining('Do not repeat the same tool'));
     expect(systemMessage?.content).toEqual(expect.stringContaining('search_product_docs'));
+    expect(systemMessage?.content).toEqual(expect.stringContaining('Semantic subject resolution'));
+    expect(systemMessage?.content).toEqual(expect.stringContaining('current_assistant'));
+    expect(systemMessage?.content).toEqual(expect.stringContaining('grammatical subject'));
+    expect(systemMessage?.content).toEqual(expect.stringContaining('describe_agent_capabilities'));
+    expect(systemMessage?.content).toEqual(
+      expect.stringContaining('must not override an identified current_assistant subject'),
+    );
   });
 
   it('redacts sensitive request text and sends presence flags instead of private ids', async () => {
