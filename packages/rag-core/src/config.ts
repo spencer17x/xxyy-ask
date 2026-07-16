@@ -46,7 +46,7 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
   const config: RagConfig = {
     topK: parseTopK(env.RAG_TOP_K),
     answerProvider: env.RAG_ANSWER_PROVIDER ?? 'openai',
-    databaseUrl: env.DATABASE_URL ?? buildPostgresUrl(env),
+    databaseUrl: normalizeOptionalText(env.DATABASE_URL) ?? buildPostgresUrl(env),
     embeddingDimension: parsePositiveInteger(env.EMBEDDING_DIMENSION, DEFAULT_EMBEDDING_DIMENSION),
     openAiApiKey: env.OPENAI_API_KEY,
     openAiApiKeyPresent: Boolean(env.OPENAI_API_KEY),
@@ -61,6 +61,11 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
   };
 
   return config;
+}
+
+function normalizeOptionalText(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized === undefined || normalized.length === 0 ? undefined : normalized;
 }
 
 function buildPostgresUrl(env: RagEnv): string | undefined {

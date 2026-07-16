@@ -75,6 +75,34 @@ TELEGRAM_BOT_TOKEN=
 
 ## 启动
 
+### 后台一键试运行（推荐）
+
+安装 Docker Desktop，并在根目录 `.env` 填好数据库、OpenAI-compatible、API 鉴权和 Telegram 配置后运行：
+
+```bash
+pnpm run app:up
+```
+
+该命令会构建统一应用镜像，在后台启动 PostgreSQL + pgvector，等待数据库健康，执行迁移，只在知识库为空时执行首次 `rag:ingest`，然后启动 API/Web 和 Telegram long polling。容器使用 `restart: unless-stopped`，终端关闭后仍会运行，Docker 重启后也会恢复。
+
+常用运维命令：
+
+```bash
+pnpm run app:status   # 查看容器和健康状态
+pnpm run app:logs     # 跟随 API 与 Telegram 日志，Ctrl+C 只退出日志
+pnpm run app:restart  # 重启 API 与 Telegram
+pnpm run app:stop     # 停止 API 与 Telegram，保留数据库运行
+pnpm run app:down     # 停止并移除容器，保留数据库 volume
+```
+
+默认只监听本机 `127.0.0.1:3000`，访问 `http://localhost:3000` 后在 Web 密码框输入 `API_CHAT_AUTH_TOKEN`。不要运行 `docker compose down -v`，该命令会删除本地数据库 volume。
+
+以后迁移到普通 Linux 服务器时可以使用相同的 `pnpm run app:up`。推荐让 Caddy/Nginx 代理本机 `127.0.0.1:3000` 并负责 HTTPS；只有明确配置防火墙或反向代理时才把 `APP_BIND_HOST` 改为 `0.0.0.0`。使用外部托管数据库时设置容器可访问的 `COMPOSE_DATABASE_URL`。
+
+`rag:knowledge:publish` 应在保存 Git 工作区的主机上执行；发布生成的 `docs/product-features/admin-verified/*.md` 需要提交到 Git，不能只留在一次性容器中。
+
+### 前台开发运行
+
 本地启动完整问答服务：
 
 ```bash
@@ -110,6 +138,9 @@ http://localhost:3000
 
 ```bash
 pnpm run app:dev                 # 启动 API + Web，默认不刷新知识库
+pnpm run app:up                  # Docker Compose 后台启动 API + Web + Telegram + pgvector
+pnpm run app:status              # 查看后台服务状态
+pnpm run app:logs                # 查看后台服务日志
 pnpm run app:dev -- --sync       # 启动前增量更新知识库
 pnpm run app:dev -- --full-sync  # 启动前全量抓取并重建知识库
 pnpm run api:dev                 # 只启动 API + Web 服务入口

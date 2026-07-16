@@ -112,6 +112,8 @@ Docker / container 要求：
 - 容器启动命令只启动 API / Web 服务；迁移、ingest 和 sync 使用独立 release job 或一次性任务执行。
 - liveness probe 使用 `/health`，readiness 或发布自检可以使用带 token 的 `/health/deep`。
 
+单机 Docker Compose 试运行可使用 `pnpm run app:up`。它会后台启动 pgvector、执行迁移、在空库时首次 ingest，并启动 API/Web 与 Telegram；`app:status`、`app:logs`、`app:restart`、`app:stop` 和 `app:down` 用于日常管理。默认端口仅绑定 `127.0.0.1`，服务器应通过 Caddy/Nginx 提供 HTTPS。`app:down` 保留数据库 volume，禁止在没有已验证备份时执行 `docker compose down -v`。
+
 推荐发布流程：
 
 1. 准备生产环境变量，使用密钥管理系统注入，不把 `.env` 打包进镜像。
@@ -123,7 +125,7 @@ Docker / container 要求：
 
 备份要求：
 
-- 对 Postgres 做定期 `pg_dump` 或托管快照，并覆盖 `knowledge_chunks`、`rag_ingestion_runs` 和 `rag_feedback`。
+- 对 Postgres 做定期 `pg_dump` 或托管快照，并覆盖 `knowledge_chunks`、`knowledge_candidates`、`rag_ingestion_runs` 和 `rag_feedback`。
 - 每次 embedding 模型、`EMBEDDING_DIMENSION` 或正式文档结构变化前先备份。
 - 定期在临时库恢复备份，并运行 `pnpm rag:stats` 和 `pnpm rag:evaluate` 验证可用性。
 

@@ -1,0 +1,15 @@
+.git
+.github
+.env
+.env.*
+.rag
+.superpowers
+.worktrees
+**/node_modules
+**/dist
+coverage
+logs
+*.log
+*.sqlite
+*.sqlite3
+.DS_Store

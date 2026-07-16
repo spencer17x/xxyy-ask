@@ -80,6 +80,18 @@ describe('loadRagConfig', () => {
     );
   });
 
+  it('derives database URL from Postgres parts when DATABASE_URL is blank', () => {
+    const config = loadRagConfig({
+      DATABASE_URL: '   ',
+      POSTGRES_DB: 'xxyy_ask',
+      POSTGRES_HOST: 'postgres',
+      POSTGRES_PASSWORD: 'secret',
+      POSTGRES_USER: 'xxyy',
+    });
+
+    expect(config.databaseUrl).toBe('postgres://xxyy:secret@postgres:5432/xxyy_ask');
+  });
+
   it('keeps a safe topK default for invalid numeric overrides', () => {
     expect(loadRagConfig({ RAG_TOP_K: 'not-a-number' }).topK).toBe(6);
     expect(loadRagConfig({ RAG_TOP_K: '0' }).topK).toBe(6);

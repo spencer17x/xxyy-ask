@@ -1,14 +1,104 @@
+name: xxyy-ask
+
+x-app-base: &app-base
+  image: xxyy-ask:local
+  build:
+    context: .
+  env_file:
+    - .env
+  environment:
+    DATABASE_URL: ${COMPOSE_DATABASE_URL:-}
+    NODE_ENV: production
+    OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+    OPENAI_MODEL: ${OPENAI_MODEL:?Set OPENAI_MODEL in .env}
+    POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+    POSTGRES_HOST: postgres
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    POSTGRES_PORT: 5432
+    POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+  init: true
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
     ports:
-      - '5432:5432'
+      - '${POSTGRES_BIND_HOST:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - xxyy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  knowledge-init:
+    <<: *app-base
+    command: ['node', 'scripts/bootstrap-knowledge.mjs']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    <<: *app-base
+    command: ['pnpm', 'run', 'api:dev']
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-}
+      NODE_ENV: production
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+      OPENAI_MODEL: ${OPENAI_MODEL:?Set OPENAI_MODEL in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      PORT: 3000
+      API_CHAT_AUTH_TOKEN: ${API_CHAT_AUTH_TOKEN:?Set API_CHAT_AUTH_TOKEN in .env}
+      API_DEEP_HEALTH_TOKEN: ${API_DEEP_HEALTH_TOKEN:?Set API_DEEP_HEALTH_TOKEN in .env}
+      API_ENABLE_DEEP_HEALTH: ${API_ENABLE_DEEP_HEALTH:-true}
+      API_REQUIRE_CHAT_AUTH: ${API_REQUIRE_CHAT_AUTH:-true}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+    depends_on:
+      knowledge-init:
+        condition: service_completed_successfully
+    ports:
+      - '${APP_BIND_HOST:-127.0.0.1}:${APP_PORT:-3000}:3000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  telegram:
+    <<: *app-base
+    command: ['pnpm', 'run', 'telegram:dev']
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-}
+      NODE_ENV: production
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+      OPENAI_MODEL: ${OPENAI_MODEL:?Set OPENAI_MODEL in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
+    depends_on:
+      knowledge-init:
+        condition: service_completed_successfully
 
 volumes:
   xxyy_pgdata:
