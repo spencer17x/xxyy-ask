@@ -37,8 +37,6 @@
 新增和保留配置：
 
 ```bash
-RAG_VECTOR_STORE=local|pgvector
-RAG_INDEX_PATH=.rag/index.json
 RAG_TOP_K=6
 
 DATABASE_URL=postgres://user:password@localhost:5432/xxyy_ask
@@ -51,8 +49,6 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 
 默认策略：
 
-- `RAG_VECTOR_STORE` 默认 `local`，避免开发环境没有数据库就无法启动。
-- 正式部署设置 `RAG_VECTOR_STORE=pgvector`。
 - `OPENAI_EMBEDDING_MODEL` 默认 `text-embedding-3-small`。
 - `pgvector` 模式下，ingest 必须有 `DATABASE_URL`、`OPENAI_API_KEY`、`OPENAI_EMBEDDING_MODEL`。
 - 产品问答生成仍必须有 `OPENAI_API_KEY` 和 `OPENAI_MODEL`。
@@ -218,7 +214,7 @@ POST /api/chat
 ```json
 {
   "error": "vector_store_configuration_missing",
-  "message": "DATABASE_URL is required when RAG_VECTOR_STORE=pgvector."
+  "message": "DATABASE_URL is required for pgvector retrieval."
 }
 ```
 
@@ -235,7 +231,7 @@ POST /api/chat
 
 单元测试：
 
-- config 正确解析 `RAG_VECTOR_STORE`、`DATABASE_URL`、`OPENAI_EMBEDDING_MODEL`。
+- config 正确解析 `DATABASE_URL`、`OPENAI_EMBEDDING_MODEL`。
 - OpenAI embedding provider 正确调用 `/embeddings`，并校验缺失配置。
 - VectorStore 接口消费者可以用 fake store 测试 `ChatService`。
 - `pgvector` 模式的产品问题会异步检索并调用 answer provider。
@@ -249,8 +245,7 @@ POST /api/chat
 运行验证：
 
 - `pnpm check`
-- `pnpm rag:ingest` 在 local 模式可用。
-- `RAG_VECTOR_STORE=pgvector pnpm rag:ingest` 在配置数据库和 embedding 后可用。
+- `pnpm rag:ingest` 在配置数据库和 embedding 后可用。
 - `pnpm rag:ask -- "帮我查一下钱包余额"` 不需要 LLM/embedding，仍返回边界回复。
 
 ## 后续扩展
@@ -273,7 +268,7 @@ POST /api/chat
 3. 存储接口：新增 `VectorStore` 和 fake store 测试。
 4. pgvector schema/upsert：实现数据库写入。
 5. pgvector retrieve：实现向量候选与简单 rerank。
-6. CLI ingest/ask：根据 `RAG_VECTOR_STORE` 选择 local 或 pgvector。
+6. CLI ingest/ask：使用 pgvector 执行写入和检索。
 7. API loader：根据配置选择 local 或 pgvector ChatService。
 8. 文档：补 Docker Postgres + pgvector 运行方式。
 

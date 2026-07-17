@@ -13,7 +13,7 @@
 ## File Structure
 
 - Modify `package.json`: root scripts for optional Docker database commands if a compose file is added.
-- Modify `.env.example`: add `RAG_VECTOR_STORE`, `DATABASE_URL`, and `OPENAI_EMBEDDING_MODEL`.
+- Modify `.env.example`: add `DATABASE_URL` and `OPENAI_EMBEDDING_MODEL`.
 - Modify `packages/knowledge/src/index-store.ts`: expose reusable prepared chunks and content hashing.
 - Modify `packages/knowledge/src/index.ts`: export prepared chunk types and helpers.
 - Create `packages/knowledge/src/openai-embedding-provider.ts`: OpenAI-compatible batch embedding provider and configuration error.
@@ -63,18 +63,11 @@ it('loads pgvector and embedding configuration from env', () => {
   const config = loadRagConfig({
     DATABASE_URL: 'postgres://xxyy:secret@localhost:5432/xxyy_ask',
     OPENAI_EMBEDDING_MODEL: 'text-embedding-3-large',
-    RAG_VECTOR_STORE: 'pgvector',
   });
 
   expect(config.vectorStore).toBe('pgvector');
   expect(config.databaseUrl).toBe('postgres://xxyy:secret@localhost:5432/xxyy_ask');
   expect(config.openAiEmbeddingModel).toBe('text-embedding-3-large');
-});
-
-it('rejects unsupported vector store configuration', () => {
-  expect(() => loadRagConfig({ RAG_VECTOR_STORE: 'pinecone' })).toThrow(
-    'Unsupported RAG_VECTOR_STORE: pinecone',
-  );
 });
 ```
 
@@ -117,10 +110,7 @@ export type RagEnv = Partial<
     | 'OPENAI_EMBEDDING_MODEL'
     | 'OPENAI_MODEL'
     | 'RAG_ANSWER_PROVIDER'
-    | 'RAG_EMBEDDING_PROVIDER'
-    | 'RAG_INDEX_PATH'
-    | 'RAG_TOP_K'
-    | 'RAG_VECTOR_STORE',
+    | 'RAG_TOP_K',
     string
   >
 >;
@@ -131,9 +121,9 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
   const config: RagConfig = {
     topK: parseTopK(env.RAG_TOP_K),
     answerProvider: env.RAG_ANSWER_PROVIDER ?? 'openai',
-    embeddingProvider: env.RAG_EMBEDDING_PROVIDER ?? 'local',
-    indexPath: env.RAG_INDEX_PATH ?? '.rag/index.json',
-    vectorStore: parseVectorStore(env.RAG_VECTOR_STORE),
+    embeddingProvider: 'openai',
+    indexPath: 'pgvector',
+    vectorStore: 'pgvector',
     databaseUrl: env.DATABASE_URL,
     openAiApiKey: env.OPENAI_API_KEY,
     openAiApiKeyPresent: Boolean(env.OPENAI_API_KEY),
@@ -143,14 +133,6 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
   };
 
   return config;
-}
-
-function parseVectorStore(value: string | undefined): VectorStoreKind {
-  if (value === undefined || value === 'local' || value === 'pgvector') {
-    return value ?? 'local';
-  }
-
-  throw new Error(`Unsupported RAG_VECTOR_STORE: ${value}`);
 }
 ```
 
@@ -166,11 +148,8 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 
 DATABASE_URL=postgres://xxyy:password@localhost:5432/xxyy_ask
 
-RAG_VECTOR_STORE=local
 RAG_TOP_K=6
-RAG_INDEX_PATH=.rag/index.json
 RAG_ANSWER_PROVIDER=openai
-RAG_EMBEDDING_PROVIDER=local
 ```
 
 - [ ] **Step 5: Run tests and commit**
@@ -940,9 +919,7 @@ export class VectorStoreConfigurationError extends Error {}
 
 export function createPgPool(databaseUrl: string | undefined): Pool {
   if (databaseUrl === undefined || databaseUrl.trim().length === 0) {
-    throw new VectorStoreConfigurationError(
-      'DATABASE_URL is required when RAG_VECTOR_STORE=pgvector.',
-    );
+    throw new VectorStoreConfigurationError('DATABASE_URL is required for pgvector retrieval.');
   }
 
   return new Pool({ connectionString: databaseUrl });
@@ -1179,14 +1156,13 @@ it('prints database configuration errors from pgvector mode', async () => {
     env: {
       OPENAI_API_KEY: 'test-key',
       OPENAI_MODEL: 'test-model',
-      RAG_VECTOR_STORE: 'pgvector',
     },
     stderr: { write: (message: string) => void stderr.push(message) },
     stdout: { write: () => undefined },
   });
 
   expect(exitCode).toBe(1);
-  expect(stderr.join('')).toContain('DATABASE_URL is required when RAG_VECTOR_STORE=pgvector');
+  expect(stderr.join('')).toContain('DATABASE_URL is required for pgvector retrieval');
 });
 ```
 
@@ -1405,7 +1381,6 @@ it('returns a useful 503 when pgvector configuration is missing', async () => {
     env: {
       OPENAI_API_KEY: 'test-key',
       OPENAI_MODEL: 'test-model',
-      RAG_VECTOR_STORE: 'pgvector',
     },
   });
 
@@ -1418,7 +1393,7 @@ it('returns a useful 503 when pgvector configuration is missing', async () => {
   expect(response.statusCode).toBe(503);
   expect(JSON.parse(response.body)).toEqual({
     error: 'vector_store_configuration_missing',
-    message: 'DATABASE_URL is required when RAG_VECTOR_STORE=pgvector.',
+    message: 'DATABASE_URL is required for pgvector retrieval.',
   });
 });
 
@@ -1427,7 +1402,6 @@ it('returns a useful 503 when embedding configuration is missing', async () => {
     env: {
       DATABASE_URL: 'postgres://xxyy:password@localhost:5432/xxyy_ask',
       OPENAI_MODEL: 'test-model',
-      RAG_VECTOR_STORE: 'pgvector',
     },
   });
 
@@ -1590,7 +1564,6 @@ docker compose up -d postgres
 配置：
 
 ```bash
-export RAG_VECTOR_STORE=pgvector
 export DATABASE_URL="postgres://xxyy:password@localhost:5432/xxyy_ask"
 export OPENAI_API_KEY="你的 API Key"
 export OPENAI_MODEL="你的回答模型"
@@ -1608,14 +1581,6 @@ pnpm rag:ingest
 ```bash
 pnpm start
 ```
-
-本地 fallback 仍可使用：
-
-```bash
-export RAG_VECTOR_STORE=local
-pnpm rag:ingest
-pnpm rag:ask -- "XXYY Pro 有哪些权益？"
-```
 ````
 
 - [ ] **Step 3: Run final verification**
@@ -1626,7 +1591,7 @@ Run:
 pnpm check
 pnpm rag:ingest
 env -u OPENAI_API_KEY -u OPENAI_MODEL pnpm rag:ask -- "帮我查一下钱包余额"
-env -u DATABASE_URL RAG_VECTOR_STORE=pgvector OPENAI_API_KEY=test-key OPENAI_MODEL=test-model OPENAI_EMBEDDING_MODEL=text-embedding-3-small pnpm rag:ask -- "XXYY Pro 有哪些权益？"
+env -u DATABASE_URL OPENAI_API_KEY=test-key OPENAI_MODEL=test-model OPENAI_EMBEDDING_MODEL=text-embedding-3-small pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 ```
 
 Expected:
@@ -1634,7 +1599,7 @@ Expected:
 - `pnpm check`: PASS.
 - `pnpm rag:ingest`: local mode indexes documents into `.rag/index.json`.
 - boundary ask: exit 0 with `Intent: realtime_account_query`.
-- pgvector missing database ask: exit 1 with `DATABASE_URL is required when RAG_VECTOR_STORE=pgvector`.
+- pgvector missing database ask: exit 1 with `DATABASE_URL is required for pgvector retrieval`.
 
 - [ ] **Step 4: Commit docs and final state**
 

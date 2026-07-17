@@ -148,7 +148,6 @@ describe('loadConfig', () => {
   it('accepts OpenAI providers from env', () => {
     const config = loadConfig({
       OPENAI_API_KEY: 'test-key',
-      RAG_EMBEDDING_PROVIDER: 'openai',
       RAG_ANSWER_PROVIDER: 'openai',
       RAG_TOP_K: '4',
     });
@@ -276,11 +275,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): RagConfig {
   const hasOpenAiKey = Boolean(env.OPENAI_API_KEY);
-  const embeddingProvider = parseProvider(
-    env.RAG_EMBEDDING_PROVIDER,
-    ['local', 'openai'],
-    hasOpenAiKey ? 'openai' : 'local',
-  ) as RagConfig['embeddingProvider'];
+  const embeddingProvider = hasOpenAiKey ? 'openai' : 'local';
   const answerProvider = parseProvider(
     env.RAG_ANSWER_PROVIDER,
     ['extractive', 'openai'],
@@ -292,7 +287,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RagConfig {
     answerProvider,
     openaiApiKey: env.OPENAI_API_KEY,
     openaiEmbeddingModel: env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small',
-    openaiAnswerModel: env.OPENAI_ANSWER_MODEL ?? 'gpt-4o-mini',
+    openaiAnswerModel: env.OPENAI_MODEL ?? 'gpt-4o-mini',
     topK: parsePositiveInt(env.RAG_TOP_K, 6),
   };
 }
