@@ -59,7 +59,7 @@ const MAX_CONTEXT_CHARS = 4000;
 const MAX_CONTEXT_CHUNK_CONTENT_CHARS = 900;
 const DEFAULT_MAX_RETRIES = 1;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-export const OPENAI_ANSWER_PROMPT_VERSION = 'answer-v1';
+const OPENAI_ANSWER_PROMPT_VERSION = 'answer-v1';
 
 export class LlmConfigurationError extends Error {}
 

@@ -15,7 +15,7 @@ export interface PlannerToolDescriptor {
   description: string;
 }
 
-export interface PlannerModelInput {
+interface PlannerModelInput {
   request: ChatRequest;
   stateSummary: string;
   tools: PlannerToolDescriptor[];
@@ -44,7 +44,7 @@ interface ChatCompletionResponse {
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-export const PLANNER_PROMPT_VERSION = 'planner-v2';
+const PLANNER_PROMPT_VERSION = 'planner-v2';
 
 const plannerRoutes = [
   'agent_answer',

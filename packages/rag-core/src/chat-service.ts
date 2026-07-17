@@ -91,10 +91,6 @@ function shouldRetrieve(intent: ChatResponse['intent']): boolean {
 }
 
 function createConfiguredAnswerProvider(config: RagConfig): AnswerProvider {
-  if (config.answerProvider !== 'openai') {
-    throw new Error(`Unsupported RAG_ANSWER_PROVIDER: ${config.answerProvider}`);
-  }
-
   return createOpenAiAnswerProvider({
     apiKey: config.openAiApiKey,
     baseUrl: config.openAiBaseUrl,

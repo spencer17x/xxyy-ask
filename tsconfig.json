@@ -4,7 +4,7 @@
     "composite": false,
     "noEmit": true
   },
-  "include": ["src/**/*.ts"],
+  "files": [],
   "references": [
     {
       "path": "./packages/shared"
@@ -26,6 +26,9 @@
     },
     {
       "path": "./apps/web"
+    },
+    {
+      "path": "./apps/telegram-bot"
     }
   ]
 }

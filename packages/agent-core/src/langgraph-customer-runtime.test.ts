@@ -13,10 +13,6 @@ import {
 import { createToolRegistry } from './tool-registry.js';
 import { createAgentTools } from './tools/agent-tools.js';
 
-const toolPolicy = {
-  requiresOpsAuth: false,
-};
-
 describe('createLangGraphCustomerRuntime', () => {
   it('answers product questions through the planner-selected product tool', async () => {
     const registry = createToolRegistry();
@@ -41,7 +37,6 @@ describe('createLangGraphCustomerRuntime', () => {
         question: z.string(),
       }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute,
     });
 
@@ -98,7 +93,6 @@ describe('createLangGraphCustomerRuntime', () => {
         question: z.string(),
       }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute,
     });
 
@@ -154,7 +148,6 @@ describe('createLangGraphCustomerRuntime', () => {
         question: z.string(),
       }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute,
     });
 
@@ -216,7 +209,6 @@ describe('createLangGraphCustomerRuntime', () => {
         question: z.string(),
       }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute,
     });
 
@@ -302,7 +294,6 @@ describe('createLangGraphCustomerRuntime', () => {
         question: z.string(),
       }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute,
     });
 
@@ -355,7 +346,6 @@ describe('createLangGraphCustomerRuntime', () => {
       description: 'Answer a product question.',
       inputSchema: z.object({}),
       outputSchema: z.object({}),
-      policy: toolPolicy,
       execute,
     });
 
@@ -404,7 +394,6 @@ describe('createLangGraphCustomerRuntime', () => {
       description: 'Answer a product question.',
       inputSchema: z.object({}),
       outputSchema: z.object({}),
-      policy: toolPolicy,
       execute,
     });
 
@@ -456,7 +445,6 @@ describe('createLangGraphCustomerRuntime', () => {
         description: 'Answer a product question.',
         inputSchema: z.object({}),
         outputSchema: z.object({}),
-        policy: toolPolicy,
         execute,
       });
 
@@ -487,7 +475,6 @@ describe('createLangGraphCustomerRuntime', () => {
       description: 'Answer a product question.',
       inputSchema: z.object({}),
       outputSchema: z.object({}),
-      policy: toolPolicy,
       execute,
     });
 
@@ -576,7 +563,6 @@ describe('createLangGraphCustomerRuntime', () => {
         ),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -663,7 +649,6 @@ describe('createLangGraphCustomerRuntime', () => {
         ),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -737,7 +722,6 @@ describe('createLangGraphCustomerRuntime', () => {
         ),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -800,7 +784,6 @@ describe('createLangGraphCustomerRuntime', () => {
         ),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -882,7 +865,6 @@ describe('createLangGraphCustomerRuntime', () => {
         ),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -964,7 +946,6 @@ describe('createLangGraphCustomerRuntime', () => {
         citations: z.array(z.object({ excerpt: z.string(), file: z.string(), title: z.string() })),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -1034,7 +1015,6 @@ describe('createLangGraphCustomerRuntime', () => {
         citations: z.array(z.unknown()),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -1083,7 +1063,6 @@ describe('createLangGraphCustomerRuntime', () => {
         citations: z.array(z.unknown()),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -1142,7 +1121,6 @@ describe('createLangGraphCustomerRuntime', () => {
         citations: z.array(z.unknown()),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -1197,7 +1175,6 @@ describe('createLangGraphCustomerRuntime', () => {
         citations: z.array(z.unknown()),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -1246,7 +1223,6 @@ describe('createLangGraphCustomerRuntime', () => {
         citations: z.array(z.unknown()),
         confidence: z.number(),
       }),
-      policy: toolPolicy,
       execute,
     });
 
@@ -1338,7 +1314,6 @@ describe('createLangGraphCustomerRuntime', () => {
       description: 'Answer a product question.',
       inputSchema: z.object({ question: z.string() }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute,
     });
 
@@ -1369,7 +1344,6 @@ describe('createLangGraphCustomerRuntime', () => {
       description: 'Answer a product question.',
       inputSchema: z.object({ question: z.string() }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute,
     });
 
@@ -1413,7 +1387,6 @@ describe('createLangGraphCustomerRuntime', () => {
       description: 'Answer a product question.',
       inputSchema: z.object({ question: z.string() }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute: () => Promise.resolve(response),
     });
 
@@ -1501,7 +1474,6 @@ describe('createLangGraphCustomerRuntime', () => {
       description: 'Answer a product question.',
       inputSchema: z.object({ question: z.string() }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute: () => Promise.resolve(response),
     });
 
@@ -1562,7 +1534,6 @@ describe('createLangGraphCustomerRuntime', () => {
       description: 'Answer a product question.',
       inputSchema: z.object({ question: z.string() }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute,
       async *stream() {
         await Promise.resolve();
@@ -1629,7 +1600,6 @@ describe('createLangGraphCustomerRuntime', () => {
       description: 'Answer a product question.',
       inputSchema: z.object({}),
       outputSchema: z.object({}),
-      policy: toolPolicy,
       execute,
     });
 
@@ -1711,7 +1681,6 @@ describe('createLangGraphCustomerRuntime', () => {
       description: 'Answer products.',
       inputSchema: z.object({ question: z.string() }),
       outputSchema: z.custom<ChatResponse>(() => true),
-      policy: toolPolicy,
       execute: () =>
         ({
           answer: '',

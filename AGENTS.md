@@ -28,7 +28,7 @@
 ## 目录职责
 
 - `packages/shared`：共享类型和聊天契约。
-- `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、本地索引、OpenAI embedding provider。
+- `packages/knowledge`：产品文档加载、Markdown chunk、tokenize 和 OpenAI embedding provider。
 - `packages/rag-core`：意图分类、检索接口、pgvector store、LLM answer provider、边界回复和配置错误类型。
 - `packages/agent-core`：LangGraph 客服 Agent runtime、planner、tool registry 和产品问答工具定义。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:evaluate`、`rag:ask`。
@@ -57,7 +57,6 @@ EMBEDDING_DIMENSION=1536
 OPENAI_REQUEST_TIMEOUT_MS=30000
 OPENAI_MAX_RETRIES=1
 RAG_TOP_K=6
-RAG_ANSWER_PROVIDER=openai
 API_CORS_ORIGIN=
 API_ENABLE_DEEP_HEALTH=
 API_MAX_BODY_BYTES=65536

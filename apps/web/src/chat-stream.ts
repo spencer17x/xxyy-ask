@@ -47,7 +47,7 @@ function waitForPaint(): Promise<void> {
   });
 }
 
-export function parseSseBlock(block: string): ChatStreamEvent | undefined {
+function parseSseBlock(block: string): ChatStreamEvent | undefined {
   const trimmed = block.trim();
   if (trimmed.length === 0) {
     return undefined;

@@ -3,13 +3,8 @@ import type { z } from 'zod';
 import { chatStreamEventSchema, type ChatStreamEvent } from '@xxyy/shared';
 import { noopQualityTracer, type QualityTracer } from '@xxyy/rag-core';
 
-export interface ToolPolicy {
-  requiresOpsAuth: boolean;
-}
-
 export interface ToolContext {
   channel?: string | undefined;
-  opsAuthPresent?: boolean | undefined;
   requestId?: string | undefined;
   sessionId?: string | undefined;
   userIdPresent?: boolean | undefined;
@@ -24,7 +19,6 @@ export interface ToolDefinition<
   description: string;
   inputSchema: InputSchema;
   outputSchema: OutputSchema;
-  policy: ToolPolicy;
   execute: (
     input: z.output<InputSchema>,
     context: ToolContext,
@@ -48,13 +42,6 @@ export class ToolRegistryToolNotFoundError extends Error {
   constructor(name: string) {
     super(`Tool not found: ${name}`);
     this.name = 'ToolRegistryToolNotFoundError';
-  }
-}
-
-export class ToolRegistryOpsAuthRequiredError extends Error {
-  constructor(name: string) {
-    super(`Tool requires ops authorization: ${name}`);
-    this.name = 'ToolRegistryOpsAuthRequiredError';
   }
 }
 
@@ -83,7 +70,6 @@ export function createToolRegistry(options: CreateToolRegistryOptions = {}): Too
         throw new ToolRegistryToolNotFoundError(name);
       }
 
-      assertToolPolicyAllowsExecution(definition, context);
       const parsedInput = definition.inputSchema.parse(input);
       return tracer.run(
         createToolSpan(name, parsedInput, context, summarizeToolOutput),
@@ -116,7 +102,6 @@ export function createToolRegistry(options: CreateToolRegistryOptions = {}): Too
         throw new ToolRegistryToolNotFoundError(name);
       }
 
-      assertToolPolicyAllowsExecution(definition, context);
       const parsedInput = definition.inputSchema.parse(input);
       const stream = definition.stream?.(parsedInput, context);
       if (stream === undefined) {
@@ -201,15 +186,6 @@ function objectKeys(value: unknown): string[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function assertToolPolicyAllowsExecution(
-  definition: RegisteredToolDefinition,
-  context: ToolContext,
-): void {
-  if (definition.policy.requiresOpsAuth && context.opsAuthPresent !== true) {
-    throw new ToolRegistryOpsAuthRequiredError(definition.name);
-  }
 }
 
 async function* validateChatStreamEvents(stream: AsyncIterable<unknown>): AsyncIterable<unknown> {

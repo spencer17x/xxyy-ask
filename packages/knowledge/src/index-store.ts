@@ -1,19 +1,11 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 
-import type { IndexEntry, RagChunk, RagIndex, SourceDocument } from '@xxyy/shared';
+import type { RagChunk, SourceDocument } from '@xxyy/shared';
 
 import { chunkMarkdownDocuments } from './chunk-markdown.js';
 import { tokenize } from './tokenize.js';
 
-const INDEX_VERSION = 1;
-const DETERMINISTIC_BUILT_AT = '1970-01-01T00:00:00.000Z';
 const DEFAULT_EMBEDDING_DIMENSIONS = 32;
-
-export interface EmbeddingProvider {
-  embed(text: string, chunk: RagChunk): number[] | Promise<number[]>;
-}
 
 export interface PreparedKnowledgeChunk extends RagChunk {
   searchableText: string;
@@ -36,54 +28,6 @@ export function prepareKnowledgeChunks(documents: SourceDocument[]): PreparedKno
     };
   });
 }
-
-export async function buildKnowledgeIndex(
-  documents: SourceDocument[],
-  embeddingProvider: EmbeddingProvider = localHashEmbeddingProvider,
-): Promise<RagIndex> {
-  const chunks = prepareKnowledgeChunks(documents);
-  const entries: IndexEntry[] = [];
-
-  for (const chunk of chunks) {
-    const entry = {
-      id: chunk.id,
-      documentId: chunk.documentId,
-      text: chunk.text,
-      metadata: chunk.metadata,
-      tokens: chunk.tokens,
-    };
-    entries.push({
-      ...entry,
-      embedding: await embeddingProvider.embed(chunk.searchableText, entry),
-    });
-  }
-
-  return {
-    version: INDEX_VERSION,
-    builtAt: DETERMINISTIC_BUILT_AT,
-    entries,
-  };
-}
-
-export async function saveKnowledgeIndex(filePath: string, index: RagIndex): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(index, null, 2)}\n`, 'utf8');
-}
-
-export async function loadKnowledgeIndex(filePath: string): Promise<RagIndex> {
-  const parsed = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
-  if (!isRagIndex(parsed)) {
-    throw new Error('Invalid knowledge index');
-  }
-
-  return parsed;
-}
-
-export const localHashEmbeddingProvider: EmbeddingProvider = {
-  embed(text: string): number[] {
-    return createLocalHashEmbedding(text);
-  },
-};
 
 function createSearchableText(chunk: RagChunk): string {
   return [
@@ -134,60 +78,4 @@ function hashString(value: string): number {
     }
   }
   return hash >>> 0;
-}
-
-function isRagIndex(value: unknown): value is RagIndex {
-  if (!isObject(value)) {
-    return false;
-  }
-
-  return (
-    value.version === INDEX_VERSION &&
-    typeof value.builtAt === 'string' &&
-    Array.isArray(value.entries) &&
-    value.entries.every(isIndexEntry)
-  );
-}
-
-function isIndexEntry(value: unknown): value is IndexEntry {
-  if (!isObject(value) || !isChunkMetadata(value.metadata)) {
-    return false;
-  }
-
-  return (
-    typeof value.id === 'string' &&
-    typeof value.documentId === 'string' &&
-    typeof value.text === 'string' &&
-    Array.isArray(value.tokens) &&
-    value.tokens.every((token) => typeof token === 'string') &&
-    Array.isArray(value.embedding) &&
-    value.embedding.every((dimension) => typeof dimension === 'number')
-  );
-}
-
-function isChunkMetadata(value: unknown): boolean {
-  if (!isObject(value)) {
-    return false;
-  }
-
-  return (
-    typeof value.title === 'string' &&
-    typeof value.module === 'string' &&
-    (value.sourceType === 'admin_verified' ||
-      value.sourceType === 'official_docs' ||
-      value.sourceType === 'x_updates') &&
-    typeof value.file === 'string' &&
-    Array.isArray(value.headingPath) &&
-    value.headingPath.every((heading) => typeof heading === 'string') &&
-    isOptionalString(value.sourceUrl) &&
-    (value.order === undefined || typeof value.order === 'number')
-  );
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function isOptionalString(value: unknown): boolean {
-  return value === undefined || typeof value === 'string';
 }

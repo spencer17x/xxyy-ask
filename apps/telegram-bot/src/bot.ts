@@ -14,7 +14,7 @@ export interface TelegramUpdate {
   message?: TelegramMessage;
 }
 
-export interface TelegramMessage {
+interface TelegramMessage {
   chat: {
     id: number;
     type?: 'channel' | 'group' | 'private' | 'supergroup';
@@ -385,7 +385,7 @@ export async function runTelegramBot(
   }
 }
 
-export async function sendChatResponse(
+async function sendChatResponse(
   api: Pick<TelegramApi, 'sendMessage' | 'sendPhoto'>,
   chatId: number,
   response: ChatResponse,

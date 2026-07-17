@@ -60,8 +60,7 @@
 
 - [x] Request tracing：通过 `requestId`、客服 runtime 传递和 API 结构化日志串联 route、intent、fallback/error、citation count 和耗时。
 - [x] 可选 nested tracing：vendor-neutral tracer 覆盖 planner、tool、retrieval、rerank、grounding 和 answer，LangSmith adapter 默认关闭并强制脱敏与采样。
-- [x] API abuse control：基础请求体限制、IP 限流、API key rotation、网关级配额要求和异常监控建议已落地。
-- [x] ToolPolicy authorization：受保护工具会强制要求 ops auth context，避免权限字段只停留在声明层。
+- [x] API abuse control：基础请求体限制、IP 限流、网关级配额要求和异常监控建议已落地。
 - [x] Data privacy：日志、feedback、用户输入和 LLM prompt 的脱敏、保留和删除策略已记录。
 - [x] Deployment docs：已补齐 production migration、backup、pgvector index tuning 和 multi-instance rate limit 方案。
 - [x] Human handoff / ticketing readiness：未来工单或人工客服接入前的权限、审计和人工确认边界已定义。

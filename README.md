@@ -57,7 +57,6 @@ OPENAI_REQUEST_TIMEOUT_MS=30000
 OPENAI_MAX_RETRIES=1
 
 RAG_TOP_K=6
-RAG_ANSWER_PROVIDER=openai
 
 API_CORS_ORIGIN=
 API_ENABLE_DEEP_HEALTH=
@@ -90,7 +89,7 @@ EMBEDDING_DIMENSION=1536
 
 ### 后台一键试运行（推荐）
 
-安装 Docker Desktop，并在根目录 `.env` 填好数据库、OpenAI-compatible、API 鉴权和 Telegram 配置后运行：
+安装 Docker Desktop，并在根目录 `.env` 填好数据库、OpenAI-compatible 模型和 Telegram 配置后运行：
 
 ```bash
 pnpm run app:up

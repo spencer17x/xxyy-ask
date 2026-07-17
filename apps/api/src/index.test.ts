@@ -97,13 +97,11 @@ async function callHandler(
 
 function createRuntimeConfigForTest(): Record<string, unknown> {
   return {
-    answerProvider: 'openai',
     databaseUrl: 'postgres://xxyy:secret@example.test/xxyy_ask',
     embeddingApiKey: 'embedding-test-key',
     embeddingBaseUrl: 'https://embedding.test/v1',
     embeddingDimension: 1536,
     openAiApiKey: 'test-key',
-    openAiApiKeyPresent: true,
     openAiBaseUrl: 'https://api.openai.test/v1',
     openAiEmbeddingModel: 'text-embedding-3-small',
     openAiMaxRetries: 1,

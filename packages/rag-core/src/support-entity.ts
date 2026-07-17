@@ -86,7 +86,7 @@ export function supportEntityEvidenceBoost(text: string, entities: string[]): nu
   return SUPPORT_ENTITY_EVIDENCE_BOOST * entities.length;
 }
 
-export function chunkMatchesSupportEntities(chunk: RetrievedChunk, entities: string[]): boolean {
+function chunkMatchesSupportEntities(chunk: RetrievedChunk, entities: string[]): boolean {
   if (entities.length === 0) {
     return false;
   }

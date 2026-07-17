@@ -29,7 +29,7 @@ export interface PgClientLike {
   query<T>(sql: string, values?: readonly unknown[]): Promise<{ rows: T[] }>;
 }
 
-export interface PgTransactionClientLike {
+interface PgTransactionClientLike {
   query<T>(sql: string, values?: readonly unknown[]): Promise<{ rows: T[] }>;
   release(): void;
 }
@@ -58,7 +58,7 @@ export interface PgVectorStore extends Retriever {
   upsertChunks(chunks: EmbeddedKnowledgeChunk[]): Promise<void>;
 }
 
-export interface PgVectorMigrationOptions {
+interface PgVectorMigrationOptions {
   allowEmbeddingDimensionMismatch?: boolean;
 }
 
@@ -107,7 +107,7 @@ interface KnowledgeChunkHashRow {
   id: string;
 }
 
-export interface RecordIngestionRunInput {
+interface RecordIngestionRunInput {
   runId: string;
   source: string;
   documentCount: number;
@@ -116,9 +116,9 @@ export interface RecordIngestionRunInput {
   contentHash: string;
 }
 
-export type FeedbackRating = 'positive' | 'negative';
+type FeedbackRating = 'positive' | 'negative';
 
-export interface RecordFeedbackInput {
+interface RecordFeedbackInput {
   answer: string;
   channel: ChatChannel;
   citationCount: number;
@@ -129,12 +129,12 @@ export interface RecordFeedbackInput {
   sessionId?: string;
 }
 
-export interface GetFeedbackStatsOptions {
+interface GetFeedbackStatsOptions {
   limit?: number;
   rating?: FeedbackRating;
 }
 
-export interface FeedbackStats {
+interface FeedbackStats {
   totalCount: number;
   positiveCount: number;
   negativeCount: number;
@@ -153,13 +153,13 @@ export interface FeedbackRecord {
   sessionId?: string;
 }
 
-export interface KnowledgeSourceStats {
+interface KnowledgeSourceStats {
   sourceType: SourceType;
   documentCount: number;
   chunkCount: number;
 }
 
-export interface KnowledgeIngestionRun {
+interface KnowledgeIngestionRun {
   runId: string;
   source: string;
   documentCount: number;

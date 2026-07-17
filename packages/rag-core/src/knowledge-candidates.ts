@@ -3,10 +3,8 @@ import { createHash } from 'node:crypto';
 import type { PgClientLike } from './pgvector-store.js';
 import { redactSensitiveSupportText } from './redaction.js';
 
-export const knowledgeCandidateStatuses = ['pending', 'approved', 'rejected', 'published'] as const;
-
-export type KnowledgeCandidateStatus = (typeof knowledgeCandidateStatuses)[number];
-export type KnowledgeCandidateSourceChannel = 'telegram' | 'telegram_export' | 'web';
+export type KnowledgeCandidateStatus = 'approved' | 'pending' | 'published' | 'rejected';
+type KnowledgeCandidateSourceChannel = 'telegram' | 'telegram_export' | 'web';
 
 export interface CreateKnowledgeCandidateInput {
   canonicalAnswer: string;
@@ -46,17 +44,17 @@ export interface KnowledgeCandidate {
   supersedes?: string[];
 }
 
-export interface CreateKnowledgeCandidatesResult {
+interface CreateKnowledgeCandidatesResult {
   created: KnowledgeCandidate[];
   duplicateCount: number;
 }
 
-export interface ListKnowledgeCandidatesOptions {
+interface ListKnowledgeCandidatesOptions {
   limit?: number;
   status?: KnowledgeCandidateStatus;
 }
 
-export interface ReviewKnowledgeCandidateInput {
+interface ReviewKnowledgeCandidateInput {
   decision: 'approve' | 'reject';
   id: string;
   reviewedBy: string;
@@ -66,7 +64,7 @@ export interface ReviewKnowledgeCandidateInput {
   supersedes?: string[];
 }
 
-export interface MarkKnowledgeCandidatePublishedInput {
+interface MarkKnowledgeCandidatePublishedInput {
   id: string;
   publishedDocumentId: string;
 }

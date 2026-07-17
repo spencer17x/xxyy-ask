@@ -246,8 +246,6 @@ describe('createChatService', () => {
   it('requires LLM configuration for grounded product questions when no provider is injected', async () => {
     const service = createChatService({
       config: {
-        answerProvider: 'openai',
-        openAiApiKeyPresent: false,
         openAiModel: undefined,
       },
       index: createFixtureIndex([
@@ -271,8 +269,6 @@ describe('createChatService', () => {
   it('still returns fixed boundary responses without LLM configuration', async () => {
     const service = createChatService({
       config: {
-        answerProvider: 'openai',
-        openAiApiKeyPresent: false,
         openAiModel: undefined,
       },
       index: createFixtureIndex([]),

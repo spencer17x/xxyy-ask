@@ -6,13 +6,11 @@ describe('loadRagConfig', () => {
   it('returns deterministic defaults when no environment is provided', () => {
     expect(loadRagConfig({})).toEqual({
       topK: 6,
-      answerProvider: 'openai',
       databaseUrl: undefined,
       embeddingApiKey: undefined,
       embeddingBaseUrl: 'https://api.openai.com/v1',
       openAiApiKey: undefined,
       openAiBaseUrl: 'https://api.openai.com/v1',
-      openAiApiKeyPresent: false,
       openAiModel: undefined,
       openAiEmbeddingModel: 'text-embedding-3-small',
       embeddingDimension: 1536,
@@ -35,7 +33,6 @@ describe('loadRagConfig', () => {
     expect(
       loadRagConfig({
         OPENAI_API_KEY: 'sk-future-only',
-        RAG_ANSWER_PROVIDER: 'future-provider',
         RAG_TOP_K: '3',
         OPENAI_BASE_URL: 'https://llm.example/v1',
         EMBEDDING_DIMENSION: '768',
@@ -45,13 +42,11 @@ describe('loadRagConfig', () => {
       }),
     ).toEqual({
       topK: 3,
-      answerProvider: 'future-provider',
       databaseUrl: undefined,
       embeddingApiKey: 'sk-future-only',
       embeddingBaseUrl: 'https://llm.example/v1',
       openAiApiKey: 'sk-future-only',
       openAiBaseUrl: 'https://llm.example/v1',
-      openAiApiKeyPresent: true,
       openAiModel: 'gpt-test',
       openAiEmbeddingModel: 'text-embedding-3-small',
       embeddingDimension: 768,

@@ -1,17 +1,37 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildKnowledgeIndex, loadProductDocuments } from '@xxyy/knowledge';
+import {
+  createLocalHashEmbedding,
+  loadProductDocuments,
+  prepareKnowledgeChunks,
+} from '@xxyy/knowledge';
+import type { RagIndex } from '@xxyy/shared';
 import { describe, expect, it } from 'vitest';
 
 import { retrieve } from './retrieve.js';
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
+async function loadProductIndex(): Promise<RagIndex> {
+  const documents = await loadProductDocuments({ cwd: workspaceRoot });
+  return {
+    builtAt: '1970-01-01T00:00:00.000Z',
+    entries: prepareKnowledgeChunks(documents).map((chunk) => ({
+      documentId: chunk.documentId,
+      embedding: createLocalHashEmbedding(chunk.searchableText),
+      id: chunk.id,
+      metadata: chunk.metadata,
+      text: chunk.text,
+      tokens: chunk.tokens,
+    })),
+    version: 1,
+  };
+}
+
 describe('retrieve over product docs', () => {
   it('prioritizes Swap trading docs for buy-token how-to questions', async () => {
-    const documents = await loadProductDocuments({ cwd: workspaceRoot });
-    const index = await buildKnowledgeIndex(documents);
+    const index = await loadProductIndex();
 
     const results = retrieve('如何在 XXYY 买入代币？', index, { topK: 3 });
 
@@ -19,8 +39,7 @@ describe('retrieve over product docs', () => {
   });
 
   it('retrieves the mobile app desktop shortcut FAQ', async () => {
-    const documents = await loadProductDocuments({ cwd: workspaceRoot });
-    const index = await buildKnowledgeIndex(documents);
+    const index = await loadProductIndex();
 
     const results = retrieve('XXYY 有 APP 吗？', index, { topK: 3 });
 
@@ -30,8 +49,7 @@ describe('retrieve over product docs', () => {
   });
 
   it('retrieves a complete XXYY Pro benefits FAQ', async () => {
-    const documents = await loadProductDocuments({ cwd: workspaceRoot });
-    const index = await buildKnowledgeIndex(documents);
+    const index = await loadProductIndex();
 
     const results = retrieve('XXYY Pro 有哪些权益？', index, { topK: 3 });
 
@@ -41,8 +59,7 @@ describe('retrieve over product docs', () => {
   });
 
   it('retrieves individual X posts with direct tweet source URLs', async () => {
-    const documents = await loadProductDocuments({ cwd: workspaceRoot });
-    const index = await buildKnowledgeIndex(documents);
+    const index = await loadProductIndex();
 
     const results = retrieve('钱包备注支持最多 1 万条是哪条推文？', index, { topK: 3 });
 

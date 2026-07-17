@@ -1,10 +1,8 @@
 {
   "name": "xxyy-ask",
   "version": "1.0.0",
-  "description": "",
   "private": true,
   "type": "module",
-  "main": "index.js",
   "scripts": {
     "agent:smoke": "node scripts/agent-smoke.mjs",
     "app:down": "docker compose down",
@@ -34,14 +32,11 @@
     "rag:sync:x": "pnpm --filter @xxyy/cli rag:sync:x",
     "telegram:dev": "pnpm --filter @xxyy/telegram-bot start",
     "test": "vitest run",
-    "typecheck": "pnpm typecheck:root && pnpm -r --if-present --filter \"@xxyy/*\" typecheck",
-    "typecheck:root": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "pnpm -r --if-present --filter \"@xxyy/*\" typecheck",
     "web:dev": "pnpm --filter @xxyy/web dev",
     "x:scrape": "node scripts/fetch-usexxyy-posts.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "packageManager": "pnpm@10.33.0",
   "devDependencies": {
     "@eslint/js": "^10.0.1",

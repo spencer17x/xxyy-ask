@@ -19,19 +19,11 @@ import { createToolRegistry } from './tool-registry.js';
 
 export interface CreateCustomerAgentChatServiceOptions {
   answerProvider: AnswerProvider;
-  /** @deprecated Compatibility field retained during LangGraph migration. */
-  audit?: unknown;
   config?: Partial<RagConfig>;
   index?: RagIndex;
   planner?: PlannerModel;
-  /** @deprecated Compatibility field retained during LangGraph migration. */
-  qualityConfidenceThreshold?: number;
-  /** @deprecated Compatibility field retained during LangGraph migration. */
-  qualitySignals?: unknown;
   retriever?: Retriever;
   tracer?: QualityTracer;
-  /** @deprecated Compatibility field retained during LangGraph migration. */
-  sessionContext?: unknown;
 }
 
 export function createCustomerAgentChatService(

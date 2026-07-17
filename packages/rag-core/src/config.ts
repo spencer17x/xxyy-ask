@@ -1,12 +1,10 @@
 export interface RagConfig {
   topK: number;
-  answerProvider: string;
   databaseUrl: string | undefined;
   embeddingApiKey: string | undefined;
   embeddingBaseUrl: string;
   embeddingDimension: number;
   openAiApiKey: string | undefined;
-  openAiApiKeyPresent: boolean;
   openAiBaseUrl: string;
   openAiModel: string | undefined;
   openAiEmbeddingModel: string;
@@ -31,7 +29,6 @@ export type RagEnv = Partial<
     | 'POSTGRES_PASSWORD'
     | 'POSTGRES_PORT'
     | 'POSTGRES_USER'
-    | 'RAG_ANSWER_PROVIDER'
     | 'RAG_TOP_K',
     string
   >
@@ -51,13 +48,11 @@ export function loadRagConfig(env: RagEnv = process.env): RagConfig {
   const openAiBaseUrl = env.OPENAI_BASE_URL ?? DEFAULT_OPENAI_BASE_URL;
   const config: RagConfig = {
     topK: parseTopK(env.RAG_TOP_K),
-    answerProvider: env.RAG_ANSWER_PROVIDER ?? 'openai',
     databaseUrl: normalizeOptionalText(env.DATABASE_URL) ?? buildPostgresUrl(env),
     embeddingApiKey: normalizeOptionalText(env.EMBEDDING_API_KEY) ?? openAiApiKey,
     embeddingBaseUrl: normalizeOptionalText(env.EMBEDDING_BASE_URL) ?? openAiBaseUrl,
     embeddingDimension: parsePositiveInteger(env.EMBEDDING_DIMENSION, DEFAULT_EMBEDDING_DIMENSION),
     openAiApiKey,
-    openAiApiKeyPresent: Boolean(openAiApiKey),
     openAiBaseUrl,
     openAiModel: env.OPENAI_MODEL,
     openAiEmbeddingModel: env.OPENAI_EMBEDDING_MODEL ?? DEFAULT_OPENAI_EMBEDDING_MODEL,

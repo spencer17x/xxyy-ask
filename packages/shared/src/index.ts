@@ -2,8 +2,6 @@ import { z } from 'zod';
 
 export const supportedChannels = ['cli', 'web', 'telegram'] as const;
 
-export const workspacePackageName = '@xxyy/shared';
-
 export type ChatChannel = (typeof supportedChannels)[number];
 
 export const supportedIntents = [
@@ -26,9 +24,9 @@ export const supportedAgentRoutes = [
 
 export type AgentRoute = (typeof supportedAgentRoutes)[number];
 
-export const supportedStreamStatusPhases = ['planning', 'retrieving', 'answering'] as const;
+const supportedStreamStatusPhases = ['planning', 'retrieving', 'answering'] as const;
 
-export type StreamStatusPhase = (typeof supportedStreamStatusPhases)[number];
+type StreamStatusPhase = (typeof supportedStreamStatusPhases)[number];
 
 export type SourceType = 'admin_verified' | 'official_docs' | 'x_updates';
 export type KnowledgeStatus = 'current' | 'historical' | 'deprecated';
@@ -78,14 +76,14 @@ export interface ChatTokenUsage {
   totalTokens: number;
 }
 
-export const citationSchema = z.object({
+const citationSchema = z.object({
   excerpt: z.string(),
   file: z.string(),
   sourceUrl: z.string().optional(),
   title: z.string(),
 });
 
-export const chatAttachmentSchema = z.discriminatedUnion('kind', [
+const chatAttachmentSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('video'),
     mediaType: z.literal('video/mp4'),
@@ -100,7 +98,7 @@ export const chatAttachmentSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
-export const chatTokenUsageSchema = z.object({
+const chatTokenUsageSchema = z.object({
   completionTokens: z.number().int().nonnegative().optional(),
   promptTokens: z.number().int().nonnegative().optional(),
   totalTokens: z.number().int().nonnegative(),

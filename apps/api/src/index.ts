@@ -651,13 +651,6 @@ function checkRequiredConfig(config: ReturnType<typeof loadRagConfig>): HealthCh
     missing.push('OPENAI_MODEL');
   }
 
-  if (config.answerProvider !== 'openai') {
-    return {
-      message: `Unsupported RAG_ANSWER_PROVIDER: ${config.answerProvider}`,
-      missing,
-      status: 'error',
-    };
-  }
   if (missing.length > 0) {
     return { missing, status: 'error' };
   }

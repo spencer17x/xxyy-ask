@@ -3,9 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": "./src/bot.ts"
-  },
   "dependencies": {
     "@xxyy/agent-core": "workspace:*",
     "@xxyy/knowledge": "workspace:*",

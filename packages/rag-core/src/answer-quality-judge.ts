@@ -11,7 +11,7 @@ export interface AnswerQualityScores {
   safeRefusal: number;
 }
 
-export interface AnswerQualityJudgeInput {
+interface AnswerQualityJudgeInput {
   actualIntent: Intent;
   answer: string;
   boundaryExpected: boolean;
@@ -47,7 +47,7 @@ const JUDGE_SYSTEM_PROMPT = [
 ].join(' ');
 
 export class AnswerJudgeConfigurationError extends Error {}
-export class AnswerJudgeResponseError extends Error {}
+class AnswerJudgeResponseError extends Error {}
 
 export function createOpenAiAnswerQualityJudge(
   options: OpenAiAnswerQualityJudgeOptions,

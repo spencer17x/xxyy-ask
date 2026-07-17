@@ -33,10 +33,6 @@ export interface CreateProductToolsOptions {
   tracer?: QualityTracer;
 }
 
-const productToolPolicy = {
-  requiresOpsAuth: false,
-};
-
 const MAX_TOP_K = 20;
 const DEFAULT_TOP_K = 6;
 const RERANK_CANDIDATE_MULTIPLIER = 4;
@@ -80,7 +76,7 @@ export const searchProductDocsInputSchema = z.object({
   topK: z.number().int().positive().optional(),
 });
 
-export const searchProductDocsOutputSchema = z.object({
+const searchProductDocsOutputSchema = z.object({
   attachments: z.array(z.unknown()).optional(),
   chunks: z.array(retrievedChunkSchema),
   citations: z.array(citationSchema),
@@ -92,7 +88,7 @@ export const answerProductQuestionInputSchema = z.object({
   question: nonEmptyStringSchema,
 });
 
-export const answerProductQuestionOutputSchema = z.object({
+const answerProductQuestionOutputSchema = z.object({
   answer: z.string(),
   attachments: z.array(z.unknown()).optional(),
   citations: z.array(citationSchema),
@@ -133,7 +129,6 @@ export function createProductTools(
     description: 'Search XXYY product documentation and return matching chunks with citations.',
     inputSchema: searchProductDocsInputSchema,
     outputSchema: searchProductDocsOutputSchema,
-    policy: productToolPolicy,
     async execute(input) {
       const chunks = await retriever.retrieve(input.query, {
         topK: normalizeTopK(input.topK ?? config.topK),
@@ -147,7 +142,6 @@ export function createProductTools(
     description: 'Answer an XXYY product support question using retrieved product documentation.',
     inputSchema: answerProductQuestionInputSchema,
     outputSchema: answerProductQuestionOutputSchema,
-    policy: productToolPolicy,
     async execute(input) {
       const classification = classificationForPlannerSelectedProductQuestion(input.question);
       if (!shouldRetrieveForPlannerSelectedProductQuestion(classification)) {
@@ -330,5 +324,3 @@ function delay(ms: number): Promise<void> {
     setTimeout(resolve, ms);
   });
 }
-
-export type AnswerProductQuestionToolOutput = ChatResponse;

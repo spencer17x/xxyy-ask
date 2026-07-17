@@ -3,8 +3,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { redactSensitiveSupportText } from './redaction.js';
 import type { RetrievedChunk } from './retrieve.js';
 
-export type QualityRunType = 'chain' | 'embedding' | 'llm' | 'retriever' | 'tool';
-export type QualityTraceStatus = 'cancelled' | 'error' | 'running' | 'success';
+type QualityRunType = 'chain' | 'embedding' | 'llm' | 'retriever' | 'tool';
+type QualityTraceStatus = 'cancelled' | 'error' | 'running' | 'success';
 
 export interface QualitySpanInput<T = unknown> {
   inputs?: Record<string, unknown>;

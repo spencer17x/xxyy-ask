@@ -231,7 +231,7 @@ describe('createCustomerAgentChatService', () => {
     expect(response.answer).toContain('我不能直接查询你的钱包余额');
   });
 
-  it('keeps deprecated session context from affecting single-run planning', async () => {
+  it('plans each request from the current user message', async () => {
     const retrieveCalls: string[] = [];
     const retriever: Retriever = {
       retrieve(question) {
@@ -251,7 +251,6 @@ describe('createCustomerAgentChatService', () => {
     };
     const service = createCustomerAgentChatService({
       answerProvider,
-      audit: {},
       planner: createScriptedPlannerModel([
         {
           input: { question: 'XXYY Pro 有哪些权益？' },
@@ -268,9 +267,7 @@ describe('createCustomerAgentChatService', () => {
           toolName: 'answer_product_question',
         },
       ]),
-      qualitySignals: {},
       retriever,
-      sessionContext: {},
     });
 
     await service.ask({ channel: 'web', message: 'XXYY Pro 有哪些权益？', sessionId: 's1' });

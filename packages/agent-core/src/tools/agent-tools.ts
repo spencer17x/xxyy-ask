@@ -41,7 +41,6 @@ export function createAgentTools(): ToolDefinition<AgentToolName>[] {
         'Describe the current customer-support Agent itself: its responsibilities, available actions, knowledge sources, operating scope, and limitations. Use it for broad or hypothetical assessments of the assistant support role; no product module or concrete support case is required. Do not use it when the grammatical subject is the XXYY product or one of its modules.',
       inputSchema: agentCapabilitiesInputSchema,
       outputSchema: agentCapabilitiesOutputSchema,
-      policy: { requiresOpsAuth: false },
       execute() {
         return createAgentCapabilitiesResponse();
       },

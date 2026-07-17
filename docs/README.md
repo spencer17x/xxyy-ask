@@ -23,7 +23,7 @@
 当前项目是 XXYY 产品客服 Agentic RAG 系统，正式路径为 LangGraph JS + Postgres + pgvector + OpenAI-compatible embeddings/chat completion。当前运行面只保留知识库产品问答，不暴露 MCP server、本地 project skills 或交易分析入口。
 
 - `packages/shared`：共享类型与聊天请求/响应契约。
-- `packages/knowledge`：产品文档加载、Markdown chunk、tokenize、本地索引和 embedding provider。
+- `packages/knowledge`：产品文档加载、Markdown chunk、tokenize 和 embedding provider。
 - `packages/rag-core`：意图分类、检索接口、pgvector store、LLM answer provider、边界回复和配置错误类型。
 - `packages/agent-core`：LangGraph customer runtime、planner/state 合约和产品问答工具。
 - `apps/cli`：`rag:ask`、`rag:ingest`、`rag:migrate`、`rag:stats`、`rag:sync:x`，以及 Telegram 导出候选知识的导入、审核和发布命令。

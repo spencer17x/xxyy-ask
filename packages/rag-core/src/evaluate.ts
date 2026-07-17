@@ -7,7 +7,7 @@ import type {
   RetrievalEvaluationSummary,
 } from './retrieval-evaluate.js';
 
-export interface AnswerQualityEvaluationSummary {
+interface AnswerQualityEvaluationSummary {
   averageCompleteness: number;
   averageCorrectness: number;
   averageGroundedness: number;
@@ -74,7 +74,7 @@ export interface EvaluateCasesOptions {
   onResult?(result: EvaluationResult, index: number, total: number): void;
 }
 
-export interface EvaluationObservation {
+interface EvaluationObservation {
   retrievedChunkIds?: string[];
   toolNames?: string[];
 }

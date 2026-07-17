@@ -5,7 +5,6 @@ import { createInMemoryQualityTracer } from '@xxyy/rag-core';
 
 import {
   ToolRegistryDuplicateNameError,
-  ToolRegistryOpsAuthRequiredError,
   ToolRegistryToolNotFoundError,
   createToolRegistry,
 } from './tool-registry.js';
@@ -19,7 +18,6 @@ describe('createToolRegistry', () => {
       description: 'Echo a count label.',
       inputSchema: z.object({ count: z.number().int().positive() }),
       outputSchema: z.object({ label: z.string() }),
-      policy: { requiresOpsAuth: false },
       execute: ({ count }) => ({ label: `count:${count}` }),
     });
 
@@ -37,7 +35,6 @@ describe('createToolRegistry', () => {
       description: 'Transforms string output into a number.',
       inputSchema: z.object({}),
       outputSchema: z.string().transform((value) => Number(value)),
-      policy: { requiresOpsAuth: false },
       execute: () => '42',
     });
 
@@ -53,7 +50,6 @@ describe('createToolRegistry', () => {
       description: 'Use context.',
       inputSchema: z.object({ value: z.string() }),
       outputSchema: z.object({ ok: z.literal(true) }),
-      policy: { requiresOpsAuth: false },
       execute(input, context) {
         calls.push({ context, input });
         return { ok: true as const };
@@ -84,7 +80,6 @@ describe('createToolRegistry', () => {
         citations: z.array(z.object({ title: z.string() })),
         intent: z.literal('product_qa'),
       }),
-      policy: { requiresOpsAuth: false },
       execute: () => ({
         answer: 'secret raw answer',
         citations: [{ title: 'Pro' }],
@@ -131,7 +126,6 @@ describe('createToolRegistry', () => {
       description: 'Streams.',
       inputSchema: z.object({}),
       outputSchema: z.object({}),
-      policy: { requiresOpsAuth: false },
       execute: () => ({}),
       async *stream() {
         await Promise.resolve();
@@ -153,26 +147,6 @@ describe('createToolRegistry', () => {
     expect(JSON.stringify(records)).not.toContain('secret stream delta');
   });
 
-  it('requires explicit ops auth context for protected execute tools', async () => {
-    const registry = createToolRegistry();
-
-    registry.register({
-      name: 'ops_tool',
-      description: 'Protected tool.',
-      inputSchema: z.object({}),
-      outputSchema: z.object({ ok: z.literal(true) }),
-      policy: { requiresOpsAuth: true },
-      execute: () => ({ ok: true as const }),
-    });
-
-    await expect(registry.execute('ops_tool', {})).rejects.toThrow(
-      ToolRegistryOpsAuthRequiredError,
-    );
-    await expect(registry.execute('ops_tool', {}, { opsAuthPresent: true })).resolves.toEqual({
-      ok: true,
-    });
-  });
-
   it('rejects duplicate tool names with ToolRegistryDuplicateNameError', () => {
     const registry = createToolRegistry();
     const definition = {
@@ -180,7 +154,6 @@ describe('createToolRegistry', () => {
       description: 'A test tool.',
       inputSchema: z.object({}),
       outputSchema: z.object({ ok: z.boolean() }),
-      policy: { requiresOpsAuth: false },
       execute: () => ({ ok: true }),
     };
 
@@ -205,7 +178,6 @@ describe('createToolRegistry', () => {
       description: 'Streams a valid answer.',
       inputSchema: z.object({}),
       outputSchema: z.object({}),
-      policy: { requiresOpsAuth: false },
       execute: () => ({}),
       async *stream() {
         await Promise.resolve();
@@ -225,30 +197,6 @@ describe('createToolRegistry', () => {
     ]);
   });
 
-  it('requires explicit ops auth context for protected stream tools', async () => {
-    const registry = createToolRegistry();
-
-    registry.register({
-      name: 'ops_stream',
-      description: 'Protected stream.',
-      inputSchema: z.object({}),
-      outputSchema: z.object({}),
-      policy: { requiresOpsAuth: true },
-      execute: () => ({}),
-      async *stream() {
-        await Promise.resolve();
-        yield { type: 'answer_delta', delta: 'ok' };
-      },
-    });
-
-    expect(() => registry.stream('ops_stream', {})).toThrow(ToolRegistryOpsAuthRequiredError);
-    const events: unknown[] = [];
-    for await (const event of registry.stream('ops_stream', {}, { opsAuthPresent: true }) ?? []) {
-      events.push(event);
-    }
-    expect(events).toEqual([{ type: 'answer_delta', delta: 'ok' }]);
-  });
-
   it('fails fast when a streamed chat event has an invalid shape', async () => {
     const registry = createToolRegistry();
 
@@ -257,7 +205,6 @@ describe('createToolRegistry', () => {
       description: 'Streams a malformed answer.',
       inputSchema: z.object({}),
       outputSchema: z.object({}),
-      policy: { requiresOpsAuth: false },
       execute: () => ({}),
       async *stream() {
         await Promise.resolve();

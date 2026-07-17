@@ -18,7 +18,7 @@ export function chunkMarkdownDocuments(
   return documents.flatMap((document) => chunkMarkdownDocument(document, options));
 }
 
-export function chunkMarkdownDocument(
+function chunkMarkdownDocument(
   document: SourceDocument,
   options: ChunkMarkdownOptions = {},
 ): RagChunk[] {
