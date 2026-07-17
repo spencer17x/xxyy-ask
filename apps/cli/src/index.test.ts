@@ -938,12 +938,13 @@ describe('runCli', () => {
       events.push('pool.end');
       return Promise.resolve();
     });
+    const createOpenAiEmbeddingProvider = vi.fn(() => ({ embedTexts }));
 
     vi.doMock('@xxyy/knowledge', async (importOriginal) => {
       const actual = await importOriginal<Record<string, unknown>>();
       return {
         ...actual,
-        createOpenAiEmbeddingProvider: vi.fn(() => ({ embedTexts })),
+        createOpenAiEmbeddingProvider,
         loadProductDocuments: vi.fn(() => Promise.resolve(documents)),
         prepareKnowledgeChunks: vi.fn(() => chunks),
       };
@@ -964,6 +965,8 @@ describe('runCli', () => {
         loadRagConfig: vi.fn(() => ({
           answerProvider: 'openai',
           databaseUrl: 'postgres://example.test/db',
+          embeddingApiKey: 'embedding-key',
+          embeddingBaseUrl: 'https://embedding.example/v1',
           embeddingDimension: 1536,
           openAiApiKey: 'test-key',
           openAiApiKeyPresent: true,
@@ -986,6 +989,13 @@ describe('runCli', () => {
       });
 
       expect(exitCode).toBe(0);
+      expect(createOpenAiEmbeddingProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiKey: 'embedding-key',
+          baseUrl: 'https://embedding.example/v1',
+          model: 'text-embedding-3-small',
+        }),
+      );
       expect(events).toEqual(['migrate', 'embed', 'replace', 'pool.end']);
       expect(replaceChunks).toHaveBeenCalledWith(
         [expect.objectContaining({ id: 'chunk-1' })],

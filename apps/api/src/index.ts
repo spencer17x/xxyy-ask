@@ -31,14 +31,10 @@ type ApiEnv = RagEnv &
   Partial<
     Record<
       | 'API_CORS_ORIGIN'
-      | 'API_CHAT_AUTH_TOKEN'
-      | 'API_CHAT_AUTH_TOKENS'
-      | 'API_DEEP_HEALTH_TOKEN'
       | 'API_ENABLE_DEEP_HEALTH'
       | 'API_MAX_BODY_BYTES'
       | 'API_RATE_LIMIT_MAX'
       | 'API_RATE_LIMIT_WINDOW_MS'
-      | 'API_REQUIRE_CHAT_AUTH'
       | 'NODE_ENV'
       | 'APP_REVISION'
       | 'LANGSMITH_API_KEY'
@@ -97,14 +93,11 @@ export interface StartServerOptions extends CreateRequestHandlerOptions {
 const DEFAULT_LOCAL_PORT_RETRY_LIMIT = 20;
 
 interface ApiRuntimeConfig {
-  chatAuthTokens: string[];
   corsOrigins: string[];
-  deepHealthToken: string | undefined;
   enableDeepHealth: boolean;
   maxBodyBytes: number;
   rateLimitMax: number;
   rateLimitWindowMs: number;
-  requireChatAuth: boolean;
   trustProxy: boolean;
 }
 
@@ -180,13 +173,6 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       return;
     }
 
-    if (isApiRoute(requestUrl.pathname) && request.method === 'POST') {
-      const authResult = authorizeChatRequest(request, response, apiConfig);
-      if (authResult === 'handled') {
-        return;
-      }
-    }
-
     if (isRateLimitedPostApiRoute(requestUrl.pathname) && request.method === 'POST') {
       const rateLimitResult = rateLimiter.check(clientAddress(request, apiConfig));
       if (!rateLimitResult.allowed) {
@@ -206,8 +192,8 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       }
 
       if (request.method === 'GET' && requestUrl.pathname === '/health/deep') {
-        const accessResult = authorizeDeepHealthRequest(request, response, apiConfig);
-        if (accessResult === 'handled') {
+        if (!apiConfig.enableDeepHealth) {
+          sendJson(response, 404, { error: 'not_found', message: 'Route not found.' });
           return;
         }
 
@@ -330,39 +316,14 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
 }
 
 function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
-  const chatAuthTokens = parseChatAuthTokens(env);
-  const deepHealthToken = normalizeOptionalSecret(env.API_DEEP_HEALTH_TOKEN);
-  const isProduction = env.NODE_ENV === 'production';
-
   return {
-    chatAuthTokens,
     corsOrigins: parseCsv(env.API_CORS_ORIGIN),
-    deepHealthToken,
-    enableDeepHealth: parseBoolean(
-      env.API_ENABLE_DEEP_HEALTH,
-      !isProduction || deepHealthToken !== undefined,
-    ),
+    enableDeepHealth: parseBoolean(env.API_ENABLE_DEEP_HEALTH, true),
     maxBodyBytes: parsePositiveInteger(env.API_MAX_BODY_BYTES, 64 * 1024),
     rateLimitMax: parsePositiveInteger(env.API_RATE_LIMIT_MAX, 60),
     rateLimitWindowMs: parsePositiveInteger(env.API_RATE_LIMIT_WINDOW_MS, 60_000),
-    requireChatAuth: parseBoolean(env.API_REQUIRE_CHAT_AUTH, isProduction),
     trustProxy: parseBoolean(env.TRUST_PROXY, false),
   };
-}
-
-function parseChatAuthTokens(env: ApiEnv): string[] {
-  const legacyToken = normalizeOptionalSecret(env.API_CHAT_AUTH_TOKEN);
-  const tokens = [
-    ...(legacyToken === undefined ? [] : [legacyToken]),
-    ...parseCsv(env.API_CHAT_AUTH_TOKENS),
-  ];
-
-  return [...new Set(tokens)];
-}
-
-function normalizeOptionalSecret(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
 }
 
 function parseCsv(value: string | undefined): string[] {
@@ -466,75 +427,6 @@ function headerValue(value: string | string[] | undefined): string | undefined {
     return value[0];
   }
   return value;
-}
-
-type AccessResult = 'continue' | 'handled';
-
-function authorizeChatRequest(
-  request: ApiRequestLike,
-  response: ApiResponseLike,
-  config: ApiRuntimeConfig,
-): AccessResult {
-  if (!config.requireChatAuth) {
-    return 'continue';
-  }
-
-  if (config.chatAuthTokens.length === 0) {
-    sendJson(response, 503, {
-      error: 'chat_auth_not_configured',
-      message:
-        'API_CHAT_AUTH_TOKEN or API_CHAT_AUTH_TOKENS is required when chat authentication is enabled.',
-    });
-    return 'handled';
-  }
-
-  return authorizeTokenRequest(request, response, config.chatAuthTokens);
-}
-
-function authorizeDeepHealthRequest(
-  request: ApiRequestLike,
-  response: ApiResponseLike,
-  config: ApiRuntimeConfig,
-): AccessResult {
-  if (!config.enableDeepHealth) {
-    sendJson(response, 404, { error: 'not_found', message: 'Route not found.' });
-    return 'handled';
-  }
-
-  if (config.deepHealthToken === undefined) {
-    return 'continue';
-  }
-
-  return authorizeTokenRequest(request, response, [config.deepHealthToken]);
-}
-
-function authorizeTokenRequest(
-  request: ApiRequestLike,
-  response: ApiResponseLike,
-  tokens: readonly string[],
-): AccessResult {
-  const token = requestToken(request);
-  if (token !== undefined && tokens.includes(token)) {
-    return 'continue';
-  }
-
-  sendJson(response, 401, {
-    error: 'unauthorized',
-    message: 'Missing or invalid authorization token.',
-  });
-  return 'handled';
-}
-
-function requestToken(request: ApiRequestLike): string | undefined {
-  const authorization = headerValue(request.headers.authorization)?.trim();
-  if (authorization !== undefined) {
-    const bearerMatch = /^bearer\s+(.+)$/iu.exec(authorization);
-    if (bearerMatch?.[1] !== undefined) {
-      return bearerMatch[1].trim();
-    }
-  }
-
-  return headerValue(request.headers['x-api-key'])?.trim();
 }
 
 interface RateLimitResult {
@@ -811,8 +703,8 @@ async function checkVectorStore(config: ReturnType<typeof loadRagConfig>): Promi
 async function checkEmbedding(config: ReturnType<typeof loadRagConfig>): Promise<HealthCheck> {
   try {
     const provider = createOpenAiEmbeddingProvider({
-      apiKey: config.openAiApiKey,
-      baseUrl: config.openAiBaseUrl,
+      apiKey: config.embeddingApiKey,
+      baseUrl: config.embeddingBaseUrl,
       maxRetries: config.openAiMaxRetries,
       model: config.openAiEmbeddingModel,
       requestTimeoutMs: config.openAiRequestTimeoutMs,
@@ -1038,8 +930,8 @@ function createCachedChatServiceLoader(
 
       try {
         const embeddingProvider = createOpenAiEmbeddingProvider({
-          apiKey: config.openAiApiKey,
-          baseUrl: config.openAiBaseUrl,
+          apiKey: config.embeddingApiKey,
+          baseUrl: config.embeddingBaseUrl,
           maxRetries: config.openAiMaxRetries,
           model: config.openAiEmbeddingModel,
           requestTimeoutMs: config.openAiRequestTimeoutMs,

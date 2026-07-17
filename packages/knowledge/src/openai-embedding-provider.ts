@@ -40,7 +40,9 @@ export function createOpenAiEmbeddingProvider(
   options: OpenAiEmbeddingProviderOptions,
 ): BatchEmbeddingProvider {
   if (options.apiKey === undefined || options.apiKey.trim().length === 0) {
-    throw new EmbeddingConfigurationError('OPENAI_API_KEY is required for embedding generation.');
+    throw new EmbeddingConfigurationError(
+      'EMBEDDING_API_KEY or OPENAI_API_KEY is required for embedding generation.',
+    );
   }
   if (options.model === undefined || options.model.trim().length === 0) {
     throw new EmbeddingConfigurationError(

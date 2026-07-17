@@ -1,10 +1,9 @@
 import { useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement, RefObject } from 'react';
 
-import { createApiHeaders } from './api-auth.js';
-import { checkAiService } from './ai-service-check.js';
 import { readChatStream } from './chat-stream.js';
 import { Markdown } from './Markdown.js';
+import { checkModelHealth, type ModelHealthCheck, type ModelHealthResult } from './model-health.js';
 import type { Attachment, ChatMessage, Citation } from './types.js';
 
 const QUICK_PROMPTS = [
@@ -16,8 +15,6 @@ const QUICK_PROMPTS = [
 ];
 
 const SESSION_STORAGE_KEY = 'xxyy.ask.sessionId';
-const AI_CHECK_IDLE_STATUS = 'AI 未测试';
-
 export function appendAssistantAnswerDelta(message: ChatMessage, delta: string): ChatMessage {
   const { meta: _meta, statusMessage: _statusMessage, ...rest } = message;
   return {
@@ -28,15 +25,12 @@ export function appendAssistantAnswerDelta(message: ChatMessage, delta: string):
 }
 
 export function App(): ReactElement {
-  const [authToken, setAuthToken] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([createWelcomeMessage()]);
   const [input, setInput] = useState('');
-  const [aiCheckBusy, setAiCheckBusy] = useState(false);
-  const [aiCheckOk, setAiCheckOk] = useState<boolean | undefined>(undefined);
-  const [aiCheckStatus, setAiCheckStatus] = useState(AI_CHECK_IDLE_STATUS);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('Ready');
-  const [intent, setIntent] = useState('intent pending');
+  const [modelTestBusy, setModelTestBusy] = useState(false);
+  const [modelTestOpen, setModelTestOpen] = useState(false);
+  const [modelTestResult, setModelTestResult] = useState<ModelHealthResult | undefined>();
   const [sessionId, setSessionId] = useState(() => getSessionId());
   const messagesRef = useRef<HTMLDivElement>(null);
 
@@ -73,14 +67,12 @@ export function App(): ReactElement {
     ]);
     setInput('');
     setBusy(true);
-    setStatus('Sending');
-    setIntent('retrieving');
     scrollMessagesToBottom();
 
     try {
       const response = await fetch('/api/chat/stream', {
         body: JSON.stringify({ channel: 'web', message: text, sessionId }),
-        headers: createApiHeaders(authToken),
+        headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       });
       if (!response.ok) {
@@ -96,10 +88,8 @@ export function App(): ReactElement {
           const statusMessage = streamEvent.payload.message ?? '处理中…';
           updateAssistantMessage(assistantId, (message) => ({
             ...message,
-            meta: statusMessage,
             statusMessage,
           }));
-          setStatus(statusMessage);
           return;
         }
 
@@ -108,24 +98,20 @@ export function App(): ReactElement {
           updateAssistantMessage(assistantId, (message) =>
             appendAssistantAnswerDelta(message, delta),
           );
-          setStatus('Receiving');
           return;
         }
 
         if (streamEvent.event === 'metadata') {
           const metadata = streamEvent.payload;
           updateAssistantMessage(assistantId, (message) => {
-            const { statusMessage: _statusMessage, ...rest } = message;
+            const { meta: _meta, statusMessage: _statusMessage, ...rest } = message;
             return {
               ...rest,
               attachments: metadata.attachments ?? [],
               citations: metadata.citations ?? [],
               intent: metadata.intent,
-              meta: `${metadata.intent} · confidence ${metadata.confidence.toFixed(2)}`,
             };
           });
-          setStatus(`${metadata.intent} · ${metadata.confidence.toFixed(2)}`);
-          setIntent(metadata.intent);
           return;
         }
 
@@ -135,7 +121,7 @@ export function App(): ReactElement {
       });
 
       updateAssistantMessage(assistantId, (message) => {
-        const { status: _status, statusMessage: _statusMessage, ...rest } = message;
+        const { meta: _meta, status: _status, statusMessage: _statusMessage, ...rest } = message;
         return rest;
       });
     } catch (error) {
@@ -146,30 +132,8 @@ export function App(): ReactElement {
         status: 'error',
         text: errorMessage,
       }));
-      setStatus('Error');
     } finally {
       setBusy(false);
-    }
-  };
-
-  const testAiService = async (): Promise<void> => {
-    if (aiCheckBusy) {
-      return;
-    }
-
-    setAiCheckBusy(true);
-    setAiCheckOk(undefined);
-    setAiCheckStatus('AI 检测中');
-    try {
-      const result = await checkAiService(fetch, sessionId, authToken);
-      setAiCheckOk(result.ok);
-      setAiCheckStatus(result.statusText);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setAiCheckOk(false);
-      setAiCheckStatus(`AI 服务不可用：${message}`);
-    } finally {
-      setAiCheckBusy(false);
     }
   };
 
@@ -190,27 +154,31 @@ export function App(): ReactElement {
     setSessionId(nextSessionId);
     setMessages([]);
     setInput('');
-    setIntent('intent pending');
-    setStatus('Ready');
-    setAiCheckOk(undefined);
-    setAiCheckStatus(AI_CHECK_IDLE_STATUS);
+  };
+
+  const runModelTest = async (): Promise<void> => {
+    if (modelTestBusy) {
+      return;
+    }
+    setModelTestBusy(true);
+    setModelTestResult(undefined);
+    try {
+      setModelTestResult(await checkModelHealth(fetch));
+    } finally {
+      setModelTestBusy(false);
+    }
+  };
+
+  const openModelTest = (): void => {
+    setModelTestOpen(true);
+    void runModelTest();
   };
 
   return (
     <main className="app-shell">
       <Sidebar busy={busy} onPrompt={submitPrompt} />
       <section aria-label="chat" className="chat-workbench">
-        <ChatHeader
-          aiCheckBusy={aiCheckBusy}
-          aiCheckOk={aiCheckOk}
-          aiCheckStatus={aiCheckStatus}
-          authToken={authToken}
-          intent={intent}
-          onAiCheck={testAiService}
-          onAuthTokenChange={setAuthToken}
-          onClear={clearChat}
-          status={status}
-        />
+        <ChatHeader onClear={clearChat} onModelTest={openModelTest} />
         <MessageList messages={messages} messagesRef={messagesRef} />
         <form className="composer-wrap" id="chat-form" onSubmit={onSubmit}>
           <div className="composer">
@@ -232,6 +200,14 @@ export function App(): ReactElement {
           </div>
         </form>
       </section>
+      {modelTestOpen ? (
+        <ModelTestPanel
+          busy={modelTestBusy}
+          onClose={() => setModelTestOpen(false)}
+          onRetry={runModelTest}
+          result={modelTestResult}
+        />
+      ) : undefined}
     </main>
   );
 }
@@ -299,74 +275,106 @@ function Sidebar({
 }
 
 function ChatHeader({
-  aiCheckBusy,
-  aiCheckOk,
-  aiCheckStatus,
-  authToken,
-  intent,
-  onAiCheck,
-  onAuthTokenChange,
   onClear,
-  status,
+  onModelTest,
 }: {
-  aiCheckBusy: boolean;
-  aiCheckOk: boolean | undefined;
-  aiCheckStatus: string;
-  authToken: string;
-  intent: string;
-  onAiCheck: () => Promise<void>;
-  onAuthTokenChange: (token: string) => void;
   onClear: () => void;
-  status: string;
+  onModelTest: () => void;
 }): ReactElement {
-  const aiCheckClassName = [
-    'status-pill',
-    'ai-check-status',
-    aiCheckOk === true ? 'is-ok' : '',
-    aiCheckOk === false ? 'is-error' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
   return (
     <header className="chat-header">
       <div>
-        <h1>产品问答</h1>
-        <div className="header-subtitle">基于 XXYY 文档和更新日志回答</div>
+        <h1>XXYY Agent</h1>
+        <div className="header-subtitle">XXYY 产品问答客服</div>
       </div>
-      <div className="status-group">
-        <label className="api-token-field">
-          <span>API token</span>
-          <input
-            autoComplete="off"
-            onChange={(event) => onAuthTokenChange(event.target.value)}
-            placeholder="Bearer token"
-            type="password"
-            value={authToken}
-          />
-        </label>
-        <button
-          className="ai-check-button"
-          disabled={aiCheckBusy}
-          onClick={() => {
-            void onAiCheck();
-          }}
-          type="button"
-        >
-          {aiCheckBusy ? '检测中' : '测试 AI'}
+      <div className="header-actions">
+        <button className="model-test-button" onClick={onModelTest} type="button">
+          模型测试
         </button>
         <button className="clear-button" onClick={onClear} type="button">
-          New chat
+          新对话
         </button>
-        <div aria-live="polite" className={aiCheckClassName} role="status">
-          {aiCheckStatus}
-        </div>
-        <div className="status-pill">{intent}</div>
-        <div aria-live="polite" className="status-pill strong" role="status">
-          {status}
-        </div>
       </div>
     </header>
+  );
+}
+
+function ModelTestPanel({
+  busy,
+  onClose,
+  onRetry,
+  result,
+}: {
+  busy: boolean;
+  onClose: () => void;
+  onRetry: () => Promise<void>;
+  result: ModelHealthResult | undefined;
+}): ReactElement {
+  return (
+    <div className="model-test-backdrop">
+      <section
+        aria-labelledby="model-test-title"
+        aria-modal="true"
+        className="model-test-panel"
+        role="dialog"
+      >
+        <header className="model-test-header">
+          <div>
+            <h2 id="model-test-title">模型测试</h2>
+            <p>检测当前 LLM 与 Embedding 是否可以正常访问。</p>
+          </div>
+          <button aria-label="关闭模型测试" onClick={onClose} type="button">
+            ×
+          </button>
+        </header>
+
+        <div aria-live="polite" className="model-test-results">
+          {busy || result === undefined ? (
+            <p className="model-test-loading">正在检测…</p>
+          ) : undefined}
+          {!busy && result?.kind === 'error' ? (
+            <p className="model-test-error" role="alert">
+              {result.message}
+            </p>
+          ) : undefined}
+          {!busy && result?.kind === 'report' ? (
+            <div className="model-test-grid">
+              <ModelTestCard check={result.llm} title="LLM" />
+              <ModelTestCard check={result.embedding} title="Embedding" />
+            </div>
+          ) : undefined}
+        </div>
+
+        <footer className="model-test-footer">
+          <span>{result === undefined ? '' : `耗时 ${result.durationMs} ms`}</span>
+          <button
+            disabled={busy}
+            onClick={() => {
+              void onRetry();
+            }}
+            type="button"
+          >
+            重新测试
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function ModelTestCard({ check, title }: { check: ModelHealthCheck; title: string }): ReactElement {
+  return (
+    <article className={`model-test-card ${check.status === 'ok' ? 'is-ok' : 'is-error'}`}>
+      <div>
+        <h3>{title}</h3>
+        <span>{check.status === 'ok' ? '正常' : '异常'}</span>
+      </div>
+      {check.model === undefined ? undefined : <p>模型：{check.model}</p>}
+      {check.dimension === undefined ? undefined : <p>维度：{check.dimension}</p>}
+      {check.message === undefined ? undefined : (
+        <p className="model-test-message">{check.message}</p>
+      )}
+    </article>
   );
 }
 
@@ -410,7 +418,9 @@ function MessageBubble({ message }: { message: ChatMessage }): ReactElement {
         </div>
         {message.role === 'assistant' ? (
           <>
-            <div className="message-meta">{message.meta ?? 'waiting for citations'}</div>
+            {message.meta === undefined ? undefined : (
+              <div className="message-meta">{message.meta}</div>
+            )}
             <CitationList citations={message.citations} />
             <AttachmentList attachments={message.attachments} />
           </>
@@ -466,7 +476,6 @@ function createWelcomeMessage(): ChatMessage {
     attachments: [],
     citations: [],
     id: 'welcome',
-    meta: '客服模式 · RAG 检索 · 流式输出',
     rawAnswer: '你好，我可以回答 XXYY 产品功能、Pro 权益、交易设置、钱包监控和更新日志相关问题。',
     role: 'assistant',
     text: '你好，我可以回答 XXYY 产品功能、Pro 权益、交易设置、钱包监控和更新日志相关问题。',

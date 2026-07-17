@@ -8,6 +8,8 @@ describe('loadRagConfig', () => {
       topK: 6,
       answerProvider: 'openai',
       databaseUrl: undefined,
+      embeddingApiKey: undefined,
+      embeddingBaseUrl: 'https://api.openai.com/v1',
       openAiApiKey: undefined,
       openAiBaseUrl: 'https://api.openai.com/v1',
       openAiApiKeyPresent: false,
@@ -45,6 +47,8 @@ describe('loadRagConfig', () => {
       topK: 3,
       answerProvider: 'future-provider',
       databaseUrl: undefined,
+      embeddingApiKey: 'sk-future-only',
+      embeddingBaseUrl: 'https://llm.example/v1',
       openAiApiKey: 'sk-future-only',
       openAiBaseUrl: 'https://llm.example/v1',
       openAiApiKeyPresent: true,
@@ -59,11 +63,27 @@ describe('loadRagConfig', () => {
   it('loads database and embedding configuration from env', () => {
     const config = loadRagConfig({
       DATABASE_URL: 'postgres://xxyy:secret@localhost:5432/xxyy_ask',
+      EMBEDDING_API_KEY: 'embedding-key',
+      EMBEDDING_BASE_URL: 'https://embedding.example/v1',
       OPENAI_EMBEDDING_MODEL: 'text-embedding-3-large',
     });
 
     expect(config.databaseUrl).toBe('postgres://xxyy:secret@localhost:5432/xxyy_ask');
+    expect(config.embeddingApiKey).toBe('embedding-key');
+    expect(config.embeddingBaseUrl).toBe('https://embedding.example/v1');
     expect(config.openAiEmbeddingModel).toBe('text-embedding-3-large');
+  });
+
+  it('falls back to chat credentials when embedding overrides are blank', () => {
+    const config = loadRagConfig({
+      EMBEDDING_API_KEY: '   ',
+      EMBEDDING_BASE_URL: '   ',
+      OPENAI_API_KEY: 'chat-key',
+      OPENAI_BASE_URL: 'https://chat.example/v1',
+    });
+
+    expect(config.embeddingApiKey).toBe('chat-key');
+    expect(config.embeddingBaseUrl).toBe('https://chat.example/v1');
   });
 
   it('derives database URL from Postgres parts when DATABASE_URL is omitted', () => {

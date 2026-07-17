@@ -962,8 +962,8 @@ async function ingest(
 
   try {
     const embeddingProvider = createOpenAiEmbeddingProvider({
-      apiKey: config.openAiApiKey,
-      baseUrl: config.openAiBaseUrl,
+      apiKey: config.embeddingApiKey,
+      baseUrl: config.embeddingBaseUrl,
       maxRetries: config.openAiMaxRetries,
       model: config.openAiEmbeddingModel,
       requestTimeoutMs: config.openAiRequestTimeoutMs,
@@ -1012,8 +1012,8 @@ async function syncXUpdates(io: CliIo): Promise<SyncXUpdatesSummary> {
 
   try {
     const embeddingProvider = createOpenAiEmbeddingProvider({
-      apiKey: config.openAiApiKey,
-      baseUrl: config.openAiBaseUrl,
+      apiKey: config.embeddingApiKey,
+      baseUrl: config.embeddingBaseUrl,
       maxRetries: config.openAiMaxRetries,
       model: config.openAiEmbeddingModel,
       requestTimeoutMs: config.openAiRequestTimeoutMs,
@@ -1610,8 +1610,8 @@ function createCliChatRuntime(
 
     try {
       const embeddingProvider = createOpenAiEmbeddingProvider({
-        apiKey: config.openAiApiKey,
-        baseUrl: config.openAiBaseUrl,
+        apiKey: config.embeddingApiKey,
+        baseUrl: config.embeddingBaseUrl,
         maxRetries: config.openAiMaxRetries,
         model: config.openAiEmbeddingModel,
         requestTimeoutMs: config.openAiRequestTimeoutMs,

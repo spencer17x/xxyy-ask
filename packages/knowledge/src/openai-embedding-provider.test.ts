@@ -47,12 +47,12 @@ describe('createOpenAiEmbeddingProvider', () => {
   it.each([
     {
       apiKey: undefined,
-      expectedError: 'OPENAI_API_KEY is required for embedding generation',
+      expectedError: 'EMBEDDING_API_KEY or OPENAI_API_KEY is required for embedding generation',
       model: 'text-embedding-3-small',
     },
     {
       apiKey: '   ',
-      expectedError: 'OPENAI_API_KEY is required for embedding generation',
+      expectedError: 'EMBEDDING_API_KEY or OPENAI_API_KEY is required for embedding generation',
       model: 'text-embedding-3-small',
     },
     {

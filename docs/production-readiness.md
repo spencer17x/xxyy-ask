@@ -31,37 +31,6 @@ APP_REVISION=release-sha
 
 隐私约束是代码契约，不依赖平台 UI 设置：client input/output/anonymizer 三层都会再次脱敏；span 只包含长度、存在性、route/tool、chunk ID/分数、模型/prompt 版本、token usage 和 bounded event type。禁止上传完整 system/user prompt、完整 chunk、完整答案或流式 delta、session/user ID、Authorization/API key 和错误堆栈。首次接入和每次修改摘要字段后，应在测试 project 只读抽查一条合成 trace。生产 retention、数据区域、成员权限和删除流程必须由组织管理员确认。
 
-## Auth And Key Rotation
-
-生产模式默认要求 chat 鉴权。调用方可以使用：
-
-```http
-Authorization: Bearer <token>
-```
-
-或：
-
-```http
-x-api-key: <token>
-```
-
-配置项：
-
-- `API_CHAT_AUTH_TOKEN`：兼容旧部署的单个 token。
-- `API_CHAT_AUTH_TOKENS`：逗号分隔的 token 列表，用于 current / next key 并行轮换。
-- `API_REQUIRE_CHAT_AUTH`：生产默认 `true`，本地开发默认 `false`。
-- `API_DEEP_HEALTH_TOKEN`：只保护 `/health/deep`，不要和 chat token 复用。
-
-轮换步骤：
-
-1. 在密钥管理系统中生成 next token，不写入代码、README、issue 或日志。
-2. 设置 `API_CHAT_AUTH_TOKENS=current-token,next-token`，保留 `API_CHAT_AUTH_TOKEN` 兼容旧客户端时也可以同时配置。
-3. 部署服务，确认 current 和 next token 都能访问 `/api/chat`。
-4. 更新调用方使用 next token，并观察 401、请求量和业务错误。
-5. 等待旧客户端切换完成后，从环境变量移除 current token，再部署一次。
-
-审计系统如果需要记录 token 使用情况，应在网关或调用方记录不可逆 token fingerprint，例如 HMAC 或 SHA-256 后的前缀。API 服务本身不记录 token 明文，也不在日志中输出 token fingerprint。
-
 ## Abuse Control
 
 API 内置基础保护：
@@ -72,9 +41,9 @@ API 内置基础保护：
 
 公开部署时仍应在网关层增加共享配额，因为进程内限流不适合多实例全局控制：
 
-- 按 API key、用户、session、channel 和 IP 组合限流。
+- 按 session、channel 和 IP 组合限流。
 - 对匿名 Web 流量设置更低 burst，对 Telegram 或可信服务端调用设置独立配额。
-- 对 401、429、5xx、超大请求体和高成本模型调用做告警。
+- 对 429、5xx、超大请求体和高成本模型调用做告警。
 - 多实例部署时使用网关、Redis 或 API gateway 的共享限流，而不是依赖单个 Node 进程内存。
 
 ## Data Privacy And Retention
@@ -108,9 +77,9 @@ API 内置基础保护：
 Docker / container 要求：
 
 - 镜像只包含构建产物和依赖，不包含 `.env`、`.rag/`、数据库数据或密钥。
-- 运行时通过平台 secret 注入 `OPENAI_API_KEY`、数据库凭据、chat token 和 deep health token。
+- 运行时通过平台 secret 注入 `OPENAI_API_KEY` 和数据库凭据。
 - 容器启动命令只启动 API / Web 服务；迁移、ingest 和 sync 使用独立 release job 或一次性任务执行。
-- liveness probe 使用 `/health`，readiness 或发布自检可以使用带 token 的 `/health/deep`。
+- liveness probe 使用 `/health`，readiness 或发布自检可以使用 `/health/deep`。
 
 单机 Docker Compose 试运行可使用 `pnpm run app:up`。它会后台启动 pgvector、执行迁移、在空库时首次 ingest，并启动 API/Web 与 Telegram；`app:status`、`app:logs`、`app:restart`、`app:stop` 和 `app:down` 用于日常管理。默认端口仅绑定 `127.0.0.1`，服务器应通过 Caddy/Nginx 提供 HTTPS。`app:down` 保留数据库 volume，禁止在没有已验证备份时执行 `docker compose down -v`。
 
@@ -120,7 +89,7 @@ Docker / container 要求：
 2. 运行 `pnpm rag:migrate`，只执行数据库迁移，不调用 embedding 或 LLM。
 3. 首次部署或全量重建时运行 `pnpm rag:ingest`。
 4. 日常同步官方 X / Twitter 更新时运行 `pnpm rag:sync:x`。
-5. 启动服务后用 `/health` 做 liveness，用带 Bearer token 的 `/health/deep` 做发布或值班自检。
+5. 启动服务后用 `/health` 做 liveness，用 `/health/deep` 做发布或值班自检。
 6. 运行 `pnpm agent:smoke` 验证 health、产品问题路线和边界路线。
 
 备份要求：
@@ -140,7 +109,7 @@ pgvector 注意事项：
 
 当前服务不创建工单、不承诺人工接管，也不执行账户、订单或钱包操作。未来如果接入 ticketing / CRM，必须先满足这些边界：
 
-- 工单工具必须有独立权限和审计，不能复用普通 chat token。
+- 工单工具必须有独立权限和审计，不能沿用公开客服入口的访问机制。
 - 自动创建工单前需要用户确认要提交哪些字段。
 - 工单正文不得包含私钥、助记词、API key、密码或完整钱包敏感信息。
 - 工单记录至少包含 `requestId`、channel、用户确认时间、提交字段摘要和操作者来源。

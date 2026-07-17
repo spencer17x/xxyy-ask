@@ -49,6 +49,8 @@ POSTGRES_PASSWORD=replace_me_with_a_strong_password
 OPENAI_API_KEY=...
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=...
+EMBEDDING_API_KEY=...
+EMBEDDING_BASE_URL=https://api.openai.com/v1
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIMENSION=1536
 OPENAI_REQUEST_TIMEOUT_MS=30000
@@ -58,10 +60,6 @@ RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
 
 API_CORS_ORIGIN=
-API_CHAT_AUTH_TOKEN=
-API_CHAT_AUTH_TOKENS=
-API_REQUIRE_CHAT_AUTH=
-API_DEEP_HEALTH_TOKEN=
 API_ENABLE_DEEP_HEALTH=
 API_MAX_BODY_BYTES=65536
 API_RATE_LIMIT_MAX=60
@@ -71,7 +69,22 @@ TRUST_PROXY=false
 TELEGRAM_BOT_TOKEN=
 ```
 
-数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。默认 embedding 维度是 `1536`，匹配 `text-embedding-3-small`；更换 embedding 模型和维度时需要同步调整 `EMBEDDING_DIMENSION`，备份数据库后显式运行 `pnpm rag:ingest -- --rebuild-embedding-schema`。`.env.example` 会列出当前代码支持的环境变量。
+数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。`OPENAI_*` 配置 Chat/Planner；`EMBEDDING_API_KEY` 和 `EMBEDDING_BASE_URL` 可把向量请求发送到独立的 OpenAI-compatible 服务，未配置时回退使用 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL`。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。默认 embedding 维度是 `1536`，匹配 `text-embedding-3-small`；更换 embedding 模型和维度时需要同步调整 `EMBEDDING_DIMENSION`，备份数据库后显式运行 `pnpm rag:ingest -- --rebuild-embedding-schema`。`.env.example` 会列出当前代码支持的环境变量。
+
+例如 Chat/Planner 使用 Sub2API Grok、embedding 使用独立服务：
+
+```bash
+OPENAI_API_KEY=your_sub2api_key
+OPENAI_BASE_URL=https://your-sub2api.example/v1
+OPENAI_MODEL=grok-4.5
+
+EMBEDDING_API_KEY=your_embedding_key
+EMBEDDING_BASE_URL=https://your-embedding-provider.example/v1
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DIMENSION=1536
+```
+
+仅更换 Chat/Planner 模型不需要重建知识库。更换 embedding 供应商时，只有确认新服务实际提供与现有知识库相同的 embedding 模型和维度才能复用现有向量；否则必须执行 embedding schema 重建和全量 ingest。
 
 ## 启动
 
@@ -95,7 +108,7 @@ pnpm run app:stop     # 停止 API 与 Telegram，保留数据库运行
 pnpm run app:down     # 停止并移除容器，保留数据库 volume
 ```
 
-默认只监听本机 `127.0.0.1:3000`，访问 `http://localhost:3000` 后在 Web 密码框输入 `API_CHAT_AUTH_TOKEN`。不要运行 `docker compose down -v`，该命令会删除本地数据库 volume。
+默认只监听本机 `127.0.0.1:3000`，访问 `http://localhost:3000` 后可以直接使用 XXYY Agent 问答。不要运行 `docker compose down -v`，该命令会删除本地数据库 volume。
 
 以后迁移到普通 Linux 服务器时可以使用相同的 `pnpm run app:up`。推荐让 Caddy/Nginx 代理本机 `127.0.0.1:3000` 并负责 HTTPS；只有明确配置防火墙或反向代理时才把 `APP_BIND_HOST` 改为 `0.0.0.0`。使用外部托管数据库时设置容器可访问的 `COMPOSE_DATABASE_URL`。
 
@@ -229,8 +242,6 @@ Web UI：
 GET /
 ```
 
-生产模式启用 chat 鉴权时，在 Web UI 的 `API token` 密码框手动输入 token。该值只保存在当前 React 页面内存中，用于 chat 和 AI 检测请求的 Bearer header；刷新页面即清除，不会写入浏览器 storage 或前端构建产物。
-
 健康检查：
 
 ```http
@@ -238,7 +249,7 @@ GET /health
 GET /health/deep
 ```
 
-`/health` 是轻量存活检查，不会调用外部模型。`/health/deep` 会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM。开发模式默认开放；生产模式默认禁用，配置 `API_DEEP_HEALTH_TOKEN` 后需要用 `Authorization: Bearer <token>` 访问。部署平台的 liveness probe 应使用 `/health`，不要使用 `/health/deep`。
+`/health` 是轻量存活检查，不会调用外部模型。`/health/deep` 会检查必填配置、pgvector 知识库、embedding 模型和 chat LLM，供 Web 的“模型测试”直接调用，不要求鉴权。部署平台的 liveness probe 应使用 `/health`，不要使用 `/health/deep`。
 
 聊天：
 
@@ -266,7 +277,7 @@ GET /assets/*
 
 通过 `pnpm run app:dev` 或 `pnpm run api:dev` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、agentRoute、引用数、耗时、状态码、错误码、消息长度和脱敏截断后的消息预览等字段。日志只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文，并会脱敏密钥、交易哈希、地址、邮箱和手机号等敏感片段。
 
-API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。默认不信任 `x-forwarded-for` / `x-real-ip`；只有服务确实位于可信反向代理后，才设置 `TRUST_PROXY=true`。生产模式默认要求 chat 鉴权，配置 `API_CHAT_AUTH_TOKEN` 或逗号分隔的 `API_CHAT_AUTH_TOKENS` 后，用 `Authorization: Bearer <token>` 或 `x-api-key` 调用；本地开发默认不要求。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。公开部署前请先阅读 [production readiness](docs/production-readiness.md)。
+API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。默认不信任 `x-forwarded-for` / `x-real-ip`；只有服务确实位于可信反向代理后，才设置 `TRUST_PROXY=true`。客服问答接口不要求鉴权。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。公开部署前请先阅读 [production readiness](docs/production-readiness.md)。
 
 ## 边界
 

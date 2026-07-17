@@ -50,6 +50,8 @@ POSTGRES_PASSWORD=replace_me_with_a_strong_password
 OPENAI_API_KEY=...
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=...
+EMBEDDING_API_KEY=
+EMBEDDING_BASE_URL=
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIMENSION=1536
 OPENAI_REQUEST_TIMEOUT_MS=30000
@@ -57,10 +59,6 @@ OPENAI_MAX_RETRIES=1
 RAG_TOP_K=6
 RAG_ANSWER_PROVIDER=openai
 API_CORS_ORIGIN=
-API_CHAT_AUTH_TOKEN=
-API_CHAT_AUTH_TOKENS=
-API_REQUIRE_CHAT_AUTH=
-API_DEEP_HEALTH_TOKEN=
 API_ENABLE_DEEP_HEALTH=
 API_MAX_BODY_BYTES=65536
 API_RATE_LIMIT_MAX=60
@@ -69,6 +67,8 @@ TRUST_PROXY=false
 ```
 
 `pnpm run app:dev`、`pnpm run *:dev` 和 `pnpm rag:*` 会读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
+
+`OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL` 配置 Chat/Planner。可用 `EMBEDDING_API_KEY` 和 `EMBEDDING_BASE_URL` 将 embedding 请求发送到独立的 OpenAI-compatible 服务；未配置时回退使用对应的 `OPENAI_*` 配置。
 
 主入口：
 
@@ -84,12 +84,12 @@ API 保留的公开服务面：
 
 - `GET /`：Web UI。
 - `GET /health`：轻量存活检查。
-- `GET /health/deep`：生产依赖自检，检查必填配置、pgvector 知识库、embedding 模型和 chat LLM；开发模式默认开放，生产模式默认禁用，配置 `API_DEEP_HEALTH_TOKEN` 后需要 Bearer token。
+- `GET /health/deep`：模型连通性检查，检查必填配置、pgvector 知识库、embedding 模型和 chat LLM；Web 的“模型测试”直接调用，不要求鉴权。
 - `POST /api/chat`：非流式客服问答。
 - `POST /api/chat/stream`：流式客服问答。
 - `GET /assets/*`：产品视频、图片等静态资产。
 
-API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。默认不信任 `x-forwarded-for` / `x-real-ip`；仅在可信反向代理后设置 `TRUST_PROXY=true`。生产模式默认要求 chat 鉴权，配置 `API_CHAT_AUTH_TOKEN` 或逗号分隔的 `API_CHAT_AUTH_TOKENS` 后使用 Bearer token 或 `x-api-key`。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
+API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。默认不信任 `x-forwarded-for` / `x-real-ip`；仅在可信反向代理后设置 `TRUST_PROXY=true`。客服问答接口不要求鉴权。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 
 ## 常用验证
 

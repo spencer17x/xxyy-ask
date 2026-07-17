@@ -99,6 +99,8 @@ function createRuntimeConfigForTest(): Record<string, unknown> {
   return {
     answerProvider: 'openai',
     databaseUrl: 'postgres://xxyy:secret@example.test/xxyy_ask',
+    embeddingApiKey: 'embedding-test-key',
+    embeddingBaseUrl: 'https://embedding.test/v1',
     embeddingDimension: 1536,
     openAiApiKey: 'test-key',
     openAiApiKeyPresent: true,
@@ -280,7 +282,7 @@ describe('createRequestHandler', () => {
     });
   });
 
-  it('disables deep health in production unless an internal token is configured', async () => {
+  it('returns deep health in production without authorization', async () => {
     const getHealthStatus = vi.fn(() =>
       Promise.resolve({
         checks: {
@@ -299,47 +301,7 @@ describe('createRequestHandler', () => {
 
     const response = await callHandler(handler, { method: 'GET', url: '/health/deep' });
 
-    expect(response.statusCode).toBe(404);
-    expect(JSON.parse(response.body)).toEqual({
-      error: 'not_found',
-      message: 'Route not found.',
-    });
-    expect(getHealthStatus).not.toHaveBeenCalled();
-  });
-
-  it('requires the deep health token in production when configured', async () => {
-    const getHealthStatus = vi.fn(() =>
-      Promise.resolve({
-        checks: {
-          config: { status: 'ok' as const },
-          embedding: { model: 'text-embedding-3-small', status: 'ok' as const },
-          llm: { model: 'gpt-test', status: 'ok' as const },
-          vectorStore: { chunkCount: 42, status: 'ok' as const, vectorExtension: true },
-        },
-        status: 'ok' as const,
-      }),
-    );
-    const handler = createRequestHandler({
-      env: {
-        API_DEEP_HEALTH_TOKEN: 'deep-secret',
-        NODE_ENV: 'production',
-      },
-      getHealthStatus,
-    });
-
-    const unauthorized = await callHandler(handler, { method: 'GET', url: '/health/deep' });
-    const authorized = await callHandler(handler, {
-      headers: { authorization: 'Bearer deep-secret' },
-      method: 'GET',
-      url: '/health/deep',
-    });
-
-    expect(unauthorized.statusCode).toBe(401);
-    expect(JSON.parse(unauthorized.body)).toEqual({
-      error: 'unauthorized',
-      message: 'Missing or invalid authorization token.',
-    });
-    expect(authorized.statusCode).toBe(200);
+    expect(response.statusCode).toBe(200);
     expect(getHealthStatus).toHaveBeenCalledOnce();
   });
 
@@ -367,7 +329,7 @@ describe('createRequestHandler', () => {
       'DATABASE_URL is required for pgvector retrieval.',
     );
     expect(payload.checks.embedding.message).toBe(
-      'OPENAI_API_KEY is required for embedding generation.',
+      'EMBEDDING_API_KEY or OPENAI_API_KEY is required for embedding generation.',
     );
     expect(payload.checks.llm.message).toBe(
       'OPENAI_API_KEY and OPENAI_MODEL are required for LLM answer generation.',
@@ -519,112 +481,10 @@ describe('createRequestHandler', () => {
     expect(ask).toHaveBeenCalledWith(expect.objectContaining({ message: '你' }));
   });
 
-  it('requires chat authorization in production when a chat token is configured', async () => {
-    const getChatService = vi.fn(() =>
-      Promise.resolve({
-        ask() {
-          return Promise.resolve({
-            answer: '根据知识库，XXYY Pro 提供更多权益。',
-            citations: [],
-            confidence: 0.8,
-            intent: 'product_qa' as const,
-          });
-        },
-        stream() {
-          throw new Error('stream should not be used for non-stream requests');
-        },
-      }),
-    );
+  it('allows chat requests without authorization in production', async () => {
     const handler = createRequestHandler({
       env: {
-        API_CHAT_AUTH_TOKEN: 'chat-secret',
         NODE_ENV: 'production',
-      },
-      getChatService,
-    });
-
-    const unauthorized = await callHandler(handler, {
-      body: { message: 'XXYY Pro 有哪些权益？' },
-      method: 'POST',
-      remoteAddress: '198.51.100.10',
-      url: '/api/chat',
-    });
-    const authorized = await callHandler(handler, {
-      body: { message: 'XXYY Pro 有哪些权益？' },
-      headers: { authorization: 'Bearer chat-secret' },
-      method: 'POST',
-      remoteAddress: '198.51.100.11',
-      url: '/api/chat',
-    });
-
-    expect(unauthorized.statusCode).toBe(401);
-    expect(JSON.parse(unauthorized.body)).toEqual({
-      error: 'unauthorized',
-      message: 'Missing or invalid authorization token.',
-    });
-    expect(authorized.statusCode).toBe(200);
-    expect(getChatService).toHaveBeenCalledOnce();
-  });
-
-  it('accepts multiple chat auth tokens for key rotation', async () => {
-    const getChatService = vi.fn(() =>
-      Promise.resolve({
-        ask() {
-          return Promise.resolve({
-            answer: '根据知识库，XXYY Pro 提供更多权益。',
-            citations: [],
-            confidence: 0.8,
-            intent: 'product_qa' as const,
-          });
-        },
-        stream() {
-          throw new Error('stream should not be used for non-stream requests');
-        },
-      }),
-    );
-    const env = {
-      API_CHAT_AUTH_TOKEN: 'legacy-token',
-      API_CHAT_AUTH_TOKENS: 'current-token, next-token',
-      NODE_ENV: 'production',
-    };
-    const handler = createRequestHandler({ env, getChatService });
-
-    const legacyToken = await callHandler(handler, {
-      body: { message: 'XXYY Pro 有哪些权益？' },
-      headers: { 'x-api-key': 'legacy-token' },
-      method: 'POST',
-      remoteAddress: '198.51.100.12',
-      url: '/api/chat',
-    });
-    const nextToken = await callHandler(handler, {
-      body: { message: 'XXYY Pro 有哪些权益？' },
-      headers: { authorization: 'Bearer next-token' },
-      method: 'POST',
-      remoteAddress: '198.51.100.13',
-      url: '/api/chat',
-    });
-    const invalidToken = await callHandler(handler, {
-      body: { message: 'XXYY Pro 有哪些权益？' },
-      headers: { authorization: 'Bearer revoked-token' },
-      method: 'POST',
-      remoteAddress: '198.51.100.14',
-      url: '/api/chat',
-    });
-
-    expect(legacyToken.statusCode).toBe(200);
-    expect(nextToken.statusCode).toBe(200);
-    expect(invalidToken.statusCode).toBe(401);
-    expect(JSON.parse(invalidToken.body)).toEqual({
-      error: 'unauthorized',
-      message: 'Missing or invalid authorization token.',
-    });
-    expect(getChatService).toHaveBeenCalledTimes(2);
-  });
-
-  it('allows unauthenticated chat requests in development by default', async () => {
-    const handler = createRequestHandler({
-      env: {
-        NODE_ENV: 'development',
       },
       getChatService: () =>
         Promise.resolve({
@@ -1371,7 +1231,7 @@ describe('createRequestHandler', () => {
           ask() {
             return Promise.reject(
               new EmbeddingConfigurationError(
-                'OPENAI_API_KEY is required for embedding generation.',
+                'EMBEDDING_API_KEY or OPENAI_API_KEY is required for embedding generation.',
               ),
             );
           },
@@ -1390,7 +1250,7 @@ describe('createRequestHandler', () => {
     expect(response.statusCode).toBe(503);
     expect(JSON.parse(response.body)).toEqual({
       error: 'embedding_configuration_missing',
-      message: 'OPENAI_API_KEY is required for embedding generation.',
+      message: 'EMBEDDING_API_KEY or OPENAI_API_KEY is required for embedding generation.',
     });
   });
 
