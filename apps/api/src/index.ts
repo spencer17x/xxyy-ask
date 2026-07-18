@@ -9,6 +9,7 @@ import { createCustomerAgentChatService } from '@xxyy/agent-core';
 import { createOpenAiEmbeddingProvider, EmbeddingConfigurationError } from '@xxyy/knowledge';
 import {
   createOpenAiAnswerProvider,
+  createPgFeedbackStore,
   createQualityTracerFromEnv,
   createLazyRetriever,
   createPgPool,
@@ -21,8 +22,14 @@ import {
   VectorStoreUnavailableError,
 } from '@xxyy/rag-core';
 import type { ChatRequest, ChatChannel, ChatResponse, ChatStreamEvent } from '@xxyy/shared';
-import { supportedChannels } from '@xxyy/shared';
-import type { AnswerProvider, ChatService, QualityTracer, RagEnv } from '@xxyy/rag-core';
+import { supportedChannels, supportedIntents } from '@xxyy/shared';
+import type {
+  AnswerProvider,
+  ChatService,
+  QualityTracer,
+  RagEnv,
+  RecordFeedbackInput,
+} from '@xxyy/rag-core';
 import { renderChatPage } from '@xxyy/web';
 
 const PRODUCT_ASSET_NAMES: ReadonlySet<string> = new Set(['xxyy-add-to-home.mp4']);
@@ -80,6 +87,7 @@ export interface CreateRequestHandlerOptions {
   getHealthStatus?: () => Promise<DeepHealthStatus>;
   logger?: ApiLogger;
   now?: () => number;
+  recordFeedback?: FeedbackRecorder;
   renderHtml?: () => string;
   staticAssetsDir?: string;
   webAssetsDir?: string;
@@ -108,6 +116,8 @@ interface ChatPayload {
   sessionId?: string;
   userId?: string;
 }
+
+type FeedbackRecorder = (input: RecordFeedbackInput) => Promise<void>;
 
 export interface ApiLogEntry {
   event: 'chat_request';
@@ -159,6 +169,9 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const renderHtml = options.renderHtml ?? renderChatPage;
   const getChatService = options.getChatService ?? createCachedChatServiceLoader(config, tracer);
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
+  const recordFeedback =
+    options.recordFeedback ??
+    (isTestRuntime(env) ? noopFeedbackRecorder : createCachedFeedbackRecorder(config));
   const logger = options.logger ?? noopLogger;
   const now = options.now ?? Date.now;
   const createRequestId = options.createRequestId ?? randomUUID;
@@ -224,6 +237,7 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
           createRequestId,
           maxBodyBytes: apiConfig.maxBodyBytes,
           now,
+          recordFeedback,
           request,
           response,
           route: '/api/chat',
@@ -238,10 +252,19 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
           createRequestId,
           maxBodyBytes: apiConfig.maxBodyBytes,
           now,
+          recordFeedback,
           request,
           response,
           route: '/api/chat/stream',
         });
+        return;
+      }
+
+      if (request.method === 'POST' && requestUrl.pathname === '/api/feedback') {
+        const payload = parseFeedbackPayload(await readJsonBody(request, apiConfig.maxBodyBytes));
+        await recordFeedback(payload);
+        response.statusCode = 204;
+        response.end();
         return;
       }
 
@@ -259,6 +282,7 @@ interface HandleChatRequestOptions {
   logger: ApiLogger;
   maxBodyBytes: number;
   now: () => number;
+  recordFeedback: FeedbackRecorder;
   request: ApiRequestLike;
   response: ApiResponseLike;
   route: ApiLogEntry['route'];
@@ -279,6 +303,7 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
     if (options.route === '/api/chat') {
       const chatResponse = await service.ask(chatRequest);
       sendJson(options.response, 200, chatResponse);
+      await recordAutomaticLowEvidence(options.recordFeedback, chatRequest, chatResponse);
       options.logger(
         createChatSuccessLogEntry({
           durationMs: options.now() - startedAt,
@@ -292,6 +317,7 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
     }
 
     const summary = await sendChatStream(options.response, service.stream(chatRequest));
+    await recordAutomaticLowEvidenceFromStream(options.recordFeedback, chatRequest, summary);
     options.logger(
       createChatStreamLogEntry({
         durationMs: options.now() - startedAt,
@@ -313,6 +339,59 @@ async function handleChatRequest(options: HandleChatRequestOptions): Promise<voi
     );
     throw error;
   }
+}
+
+async function recordAutomaticLowEvidence(
+  recordFeedback: FeedbackRecorder,
+  request: ChatRequest,
+  response: ChatResponse,
+): Promise<void> {
+  if (!isLowEvidenceProductAnswer(response.intent, response.citations.length)) {
+    return;
+  }
+
+  await recordFeedback({
+    answer: response.answer,
+    channel: request.channel,
+    citationCount: response.citations.length,
+    comment: 'automatic_low_evidence',
+    intent: response.intent,
+    question: request.message,
+    rating: 'negative',
+    ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
+  }).catch(() => undefined);
+}
+
+async function recordAutomaticLowEvidenceFromStream(
+  recordFeedback: FeedbackRecorder,
+  request: ChatRequest,
+  summary: ChatStreamSummary,
+): Promise<void> {
+  if (
+    summary.outcome !== 'success' ||
+    summary.intent === undefined ||
+    !isLowEvidenceProductAnswer(summary.intent, summary.citationCount ?? 0)
+  ) {
+    return;
+  }
+
+  await recordFeedback({
+    answer: summary.answer ?? '',
+    channel: request.channel,
+    citationCount: summary.citationCount ?? 0,
+    comment: 'automatic_low_evidence',
+    intent: summary.intent,
+    question: request.message,
+    rating: 'negative',
+    ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
+  }).catch(() => undefined);
+}
+
+function isLowEvidenceProductAnswer(
+  intent: ChatResponse['intent'],
+  citationCount: number,
+): boolean {
+  return (intent === 'product_qa' || intent === 'how_to') && citationCount === 0;
 }
 
 function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
@@ -415,7 +494,9 @@ function isCorsOriginAllowed(origin: string, allowedOrigins: string[]): boolean 
 }
 
 function isApiRoute(pathname: string): boolean {
-  return pathname === '/api/chat' || pathname === '/api/chat/stream';
+  return (
+    pathname === '/api/chat' || pathname === '/api/chat/stream' || pathname === '/api/feedback'
+  );
 }
 
 function isRateLimitedPostApiRoute(pathname: string): boolean {
@@ -950,6 +1031,27 @@ function createCachedChatServiceLoader(
   };
 }
 
+function createCachedFeedbackRecorder(config: ReturnType<typeof loadRagConfig>): FeedbackRecorder {
+  let recorder: FeedbackRecorder | undefined;
+
+  return async (input) => {
+    if (recorder === undefined) {
+      const pool = createPgPool(config.databaseUrl);
+      const store = createPgFeedbackStore({ client: pool });
+      recorder = (record) => store.recordFeedback(record);
+    }
+    await recorder(input);
+  };
+}
+
+function isTestRuntime(env: ApiEnv): boolean {
+  return (
+    env.NODE_ENV === 'test' || process.env.NODE_ENV === 'test' || process.env.VITEST === 'true'
+  );
+}
+
+const noopFeedbackRecorder: FeedbackRecorder = () => Promise.resolve();
+
 function createLazyAnswerProvider(
   config: ReturnType<typeof loadRagConfig>,
   tracer: QualityTracer,
@@ -1025,6 +1127,53 @@ function parseChatPayload(value: unknown): ChatPayload {
     },
     record,
   );
+}
+
+function parseFeedbackPayload(value: unknown): RecordFeedbackInput {
+  if (typeof value !== 'object' || value === null) {
+    throw new BadRequestError('Request body must be a JSON object.');
+  }
+
+  const record = value as Record<string, unknown>;
+  const question = parseRequiredString(record.question, 'question');
+  const answer = parseRequiredString(record.answer, 'answer');
+  const channel = parseOptionalChannel(record.channel) ?? 'web';
+  if (record.rating !== 'positive' && record.rating !== 'negative') {
+    throw new BadRequestError('rating must be positive or negative.');
+  }
+  if (
+    typeof record.intent !== 'string' ||
+    !supportedIntents.includes(record.intent as (typeof supportedIntents)[number])
+  ) {
+    throw new BadRequestError(`intent must be one of: ${supportedIntents.join(', ')}.`);
+  }
+  if (
+    typeof record.citationCount !== 'number' ||
+    !Number.isInteger(record.citationCount) ||
+    record.citationCount < 0
+  ) {
+    throw new BadRequestError('citationCount must be a non-negative integer.');
+  }
+
+  const comment = parseOptionalString(record.comment, 'comment')?.trim();
+  const sessionId = parseOptionalString(record.sessionId, 'sessionId')?.trim();
+  return {
+    answer,
+    channel,
+    citationCount: record.citationCount,
+    intent: record.intent as RecordFeedbackInput['intent'],
+    question,
+    rating: record.rating,
+    ...(comment === undefined || comment.length === 0 ? {} : { comment }),
+    ...(sessionId === undefined || sessionId.length === 0 ? {} : { sessionId }),
+  };
+}
+
+function parseRequiredString(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new BadRequestError(`${fieldName} must be a non-empty string.`);
+  }
+  return value.trim();
 }
 
 function withOptionalFields(
@@ -1171,6 +1320,7 @@ function isMissingFileError(error: unknown): boolean {
 interface ChatStreamSummary {
   outcome: 'success' | 'error';
   statusCode: number;
+  answer?: string;
   agentRoute?: ChatResponse['agentRoute'];
   attachmentCount?: number;
   citationCount?: number;
@@ -1191,15 +1341,20 @@ async function sendChatStream(
   response.flushHeaders?.();
 
   let metadata: Extract<ChatStreamEvent, { type: 'metadata' }> | undefined;
+  let answer = '';
 
   try {
     for await (const event of events) {
       writeSseEvent(response, event.type, event);
+      if (event.type === 'answer_delta') {
+        answer += event.delta;
+      }
       if (event.type === 'metadata') {
         metadata = event;
       }
     }
     return {
+      answer,
       attachmentCount: metadata?.attachments?.length ?? 0,
       ...(metadata?.agentRoute === undefined ? {} : { agentRoute: metadata.agentRoute }),
       citationCount: metadata?.citations.length ?? 0,

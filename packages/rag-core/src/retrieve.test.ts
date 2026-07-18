@@ -3,10 +3,19 @@ import { describe, expect, it } from 'vitest';
 import { createLocalHashEmbedding, tokenize } from '@xxyy/knowledge';
 import type { IndexEntry, RagIndex } from '@xxyy/shared';
 
-import { retrieve } from './retrieve.js';
+import { createLexicalRetrieveQueryTokens, retrieve } from './retrieve.js';
 import { createFixtureIndex } from './test-fixtures.js';
 
 describe('retrieve', () => {
+  it('keeps informative lexical tokens while removing single characters and question noise', () => {
+    expect(createLexicalRetrieveQueryTokens('XXYY 扫链筛选支持哪些条件？')).toEqual(
+      expect.arrayContaining(['扫链', '筛选', '条件']),
+    );
+    expect(createLexicalRetrieveQueryTokens('XXYY 扫链筛选支持哪些条件？')).not.toEqual(
+      expect.arrayContaining(['xxyy', '扫', '支持', '哪些']),
+    );
+  });
+
   it('combines lexical and local vector scores into ranked chunks', () => {
     const index = createFixtureIndex([
       {

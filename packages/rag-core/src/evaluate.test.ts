@@ -6,6 +6,33 @@ import { evaluateCases } from './evaluate.js';
 import { createFixtureIndex } from './test-fixtures.js';
 
 describe('evaluateCases', () => {
+  it('ignores presentational whitespace and Markdown punctuation in required facts', async () => {
+    const service: ChatService = {
+      ask: () =>
+        Promise.resolve({
+          answer: '最多支持 **5000 个地址**，并提供 P1/P2/P3 档位。',
+          citations: [],
+          confidence: 0.8,
+          intent: 'product_qa',
+        }),
+      async *stream() {},
+    };
+
+    const report = await evaluateCases(
+      [
+        {
+          name: 'format-independent facts',
+          request: { channel: 'web', message: '支持多少地址和哪些档位？' },
+          expectedIntent: 'product_qa',
+          requiredAnswerIncludes: ['5000个地址', 'P1 P2 P3'],
+        },
+      ],
+      service,
+    );
+
+    expect(report.passed).toBe(1);
+  });
+
   it('checks expected intent and minimum citation counts', async () => {
     const answerProvider: AnswerProvider = {
       answer({ classification, retrievedChunks }) {

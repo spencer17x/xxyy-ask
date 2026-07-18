@@ -161,17 +161,43 @@ describe('createGroundedAnswer', () => {
     expect(response.answer).toContain('每个用户每条链最多创建100个交易钱包');
   });
 
-  it('deduplicates mirrored official content before selecting the citation window', () => {
+  it('does not let an unrelated standard answer override direct how-to evidence', () => {
     const retrieved = [
       createRetrievedChunk({
-        id: 'member-points-page',
-        text: '点击右上角个人中心的会员积分，可查看当前地址积分数量。',
+        id: 'upgrade-pro',
+        text: '点击会员积分查看积分，交易积分按买卖笔数和金额计算。',
         title: '如何升级为 Pro',
       }),
       createRetrievedChunk({
+        id: 'pro-benefits',
+        rank: 2,
+        text: '标准客服回答：XXYY Pro 权益包括独享服务器和节点。',
+        title: 'XXYY Pro 权益',
+      }),
+    ];
+
+    const response = createGroundedAnswer(
+      '我的账户怎么升级 Pro？',
+      { ...productClassification, intent: 'how_to' },
+      retrieved,
+    );
+
+    expect(response.answer).toContain('会员积分');
+    expect(response.answer).not.toContain('独享服务器和节点');
+  });
+
+  it('deduplicates mirrored official content before selecting the citation window', () => {
+    const retrieved = [
+      createRetrievedChunk({
         id: 'member-points-rollup',
-        text: '点击右上角个人中心的会员积分，可查看当前地址积分数量。',
+        text: '来源：https://docs.xxyy.io/pro 点击右上角个人中心的会员积分，可查看当前地址积分数量，并可继续查看积分说明与升级要求。',
         title: 'XXYY 产品功能整理文档',
+      }),
+      createRetrievedChunk({
+        id: 'member-points-page',
+        sourceUrl: 'https://docs.xxyy.io/pro',
+        text: '点击右上角个人中心的会员积分，可查看当前地址积分数量，并可继续查看积分说明与升级要求。',
+        title: '如何升级为 Pro',
       }),
       createRetrievedChunk({
         id: 'airdrop-page',
@@ -227,6 +253,23 @@ describe('createGroundedAnswer', () => {
         title: 'X Post 2030954722350575916',
       },
     ]);
+  });
+
+  it('includes source publication dates in citations when available', () => {
+    const response = createGroundedAnswer(
+      '交易 API 和 Agent Skill 是什么时候开放的？',
+      productClassification,
+      [
+        createRetrievedChunk({
+          effectiveAt: '2026-03-06T09:30:00.000Z',
+          id: 'api-agent-skill',
+          text: 'XXYY 开放交易 API，并将其封装为 Agent Skill。',
+          title: 'X Post 123',
+        }),
+      ],
+    );
+
+    expect(response.citations[0]?.excerpt).toContain('发布日期：2026-03-06');
   });
 
   it('selects the direct X post that best matches the source question text', () => {
@@ -399,12 +442,67 @@ describe('createGroundedAnswer', () => {
     expect(response.confidence).toBeLessThan(0.5);
   });
 
+  it('uses complete subject coverage for multi-dimensional support questions', () => {
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'partial-wallet-support',
+        text: '支持自托管钱包交易，私钥只储存在本地设备中。',
+        title: '钱包安全',
+      }),
+      createRetrievedChunk({
+        id: 'complete-wallet-support',
+        rank: 2,
+        text: '支持每个用户创建交易钱包。创建后可在钱包管理列表中查看和管理已经创建的钱包。',
+        title: '钱包管理',
+      }),
+    ];
+
+    const response = createGroundedAnswer(
+      'XXYY 支持创建和管理交易钱包吗？',
+      productClassification,
+      retrieved,
+    );
+
+    expect(response.answer).toContain('创建交易钱包');
+    expect(response.answer).toContain('钱包管理列表');
+    expect(response.answer).not.toContain('私钥只储存在本地设备');
+    expect(response.citations[0]?.title).toBe('钱包管理');
+  });
+
   it('does not treat roadmap language as current support evidence', () => {
     expect(
       createSupportConclusionFromEvidence('Does XXYY support Robinhood?', [
         'XXYY 计划支持 Robinhood，预计下季度上线。',
       ]),
     ).toBeUndefined();
+  });
+
+  it('excludes historical progression summaries from current-state grounding', () => {
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'current-capacity',
+        rank: 1,
+        text: '钱包监控目前最多支持5000个地址。',
+        title: '钱包监控当前容量',
+      }),
+      createRetrievedChunk({
+        id: 'capacity-history',
+        rank: 2,
+        text: '钱包监控容量从早期1000个逐步提高到3000个，再到目前5000个地址。',
+        title: '容量历史汇总',
+      }),
+      createRetrievedChunk({
+        id: 'wallet-monitor',
+        rank: 3,
+        text: '钱包监控支持关注地址并查看交易提醒。',
+        title: '钱包监控',
+      }),
+    ];
+
+    const selected = selectGroundingChunks('现在钱包监控最多支持多少个地址？', retrieved);
+
+    expect(selected.map((chunk) => chunk.id)).toContain('current-capacity');
+    expect(selected.map((chunk) => chunk.id)).not.toContain('capacity-history');
   });
 
   it('matches short support entities as exact tokens instead of substrings', () => {
@@ -513,6 +611,7 @@ describe('createGroundedAnswer', () => {
 });
 
 function createRetrievedChunk(input: {
+  effectiveAt?: string;
   id: string;
   rank?: number;
   score?: number;
@@ -532,6 +631,7 @@ function createRetrievedChunk(input: {
       module: input.title,
       sourceType: input.sourceType ?? 'official_docs',
       title: input.title,
+      ...(input.effectiveAt === undefined ? {} : { effectiveAt: input.effectiveAt }),
       ...(input.sourceUrl === undefined ? {} : { sourceUrl: input.sourceUrl }),
     },
     rank: input.rank ?? 1,

@@ -187,8 +187,17 @@ export function createOpenAiAnswerProvider(options: OpenAiAnswerProviderOptions)
             throw error;
           }
 
-          const payload = (await response.json()) as ChatCompletionResponse;
-          const answer = payload.choices?.[0]?.message?.content?.trim();
+          let payload: ChatCompletionResponse;
+          try {
+            payload = (await response.json()) as ChatCompletionResponse;
+          } catch {
+            return {
+              outcome: 'invalid_output_fallback',
+              response: createGroundedAnswer(input.question, input.classification, groundingChunks),
+            };
+          }
+          const rawAnswer = payload.choices?.[0]?.message?.content;
+          const answer = typeof rawAnswer === 'string' ? rawAnswer.trim() : undefined;
           if (answer === undefined || isUnusableModelAnswer(answer)) {
             return {
               outcome: 'invalid_output_fallback',

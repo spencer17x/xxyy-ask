@@ -74,7 +74,6 @@ describe('createCustomerAgentChatService', () => {
 
     expect(plannerTools.map((tool) => tool.name)).toEqual([
       'describe_agent_capabilities',
-      'search_product_docs',
       'answer_product_question',
     ]);
     expect(response).toMatchObject({
@@ -142,7 +141,7 @@ describe('createCustomerAgentChatService', () => {
       confidence: 0.82,
       intent: 'product_qa',
     });
-    expect(retrieveCalls).toEqual([{ question: 'XXYY Pro 有哪些权益？', topK: 4 }]);
+    expect(retrieveCalls).toEqual([{ question: 'XXYY Pro 有哪些权益？', topK: 8 }]);
   });
 
   it('propagates one tracer through request, tool, and reranking layers', async () => {
@@ -276,7 +275,7 @@ describe('createCustomerAgentChatService', () => {
     expect(retrieveCalls.at(-1)).toBe('怎么升级？');
   });
 
-  it('requires LLM planner config instead of falling back to local product routing', async () => {
+  it('requires LLM planner config for ambiguous requests', async () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_BASE_URL;
     delete process.env.OPENAI_MODEL;
@@ -298,7 +297,7 @@ describe('createCustomerAgentChatService', () => {
     await expect(
       service.ask({
         channel: 'web',
-        message: 'XXYY Pro 有哪些权益？',
+        message: '你好，可以介绍一下吗？',
       }),
     ).rejects.toBeInstanceOf(LlmConfigurationError);
   });
@@ -356,7 +355,7 @@ describe('createCustomerAgentChatService', () => {
     await expect(
       service.ask({
         channel: 'web',
-        message: 'XXYY Pro 有哪些权益？',
+        message: '你好，可以介绍一下吗？',
       }),
     ).resolves.toMatchObject({
       agentRoute: 'clarify',
@@ -374,7 +373,7 @@ describe('createCustomerAgentChatService', () => {
     expect(requestBody.model).toBe('config-model');
   });
 
-  it('uses the LLM planner to route short support questions', async () => {
+  it('routes deterministically classified support questions without an extra planner call', async () => {
     process.env.OPENAI_API_KEY = 'env-key';
     process.env.OPENAI_BASE_URL = 'https://env.example/v1';
     process.env.OPENAI_MODEL = 'env-model';
@@ -432,8 +431,8 @@ describe('createCustomerAgentChatService', () => {
       confidence: 0.81,
       intent: 'product_qa',
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 4 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 8 });
     const answerInput = answer.mock.calls[0]?.[0];
     expect(answerInput).toBeDefined();
     expect(answerInput?.classification).toMatchObject({

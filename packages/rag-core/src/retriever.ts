@@ -1,8 +1,9 @@
 import type { RagIndex } from '@xxyy/shared';
 import { tokenize } from '@xxyy/knowledge';
 
+import { reciprocalRankFusionScore } from './hybrid-rank.js';
 import { retrieve, type RetrieveOptions, type RetrievedChunk } from './retrieve.js';
-import { extractSupportEntityTokens, supportEntityEvidenceBoost } from './support-entity.js';
+import { isSupportQuestionText } from './support-entity.js';
 import {
   noopQualityTracer,
   summarizeRetrievedChunks,
@@ -29,13 +30,27 @@ export interface RerankingRetrieverOptions {
   tracer?: QualityTracer;
 }
 
-const METADATA_RERANK_WEIGHT = 0.2;
-const CHAIN_COVERAGE_BONUS_PER_CHAIN = 1.2;
-const BROAD_CHAIN_COVERAGE_BONUS = 5;
-const COPY_TRADING_DIRECT_EVIDENCE_BONUS = 6;
-const TRADE_SETTING_PRESET_DIRECT_EVIDENCE_BONUS = 8;
-const SHORT_ENTITY_DIRECT_EVIDENCE_BONUS = 8;
-const HOW_TO_DIRECT_EVIDENCE_BONUS = 8;
+const BASE_RANK_WEIGHT = 2;
+const BASE_SCORE_WEIGHT = 7;
+const METADATA_RERANK_WEIGHT = 1;
+const TITLE_CONTAINMENT_WEIGHT = 2;
+const CONTENT_COVERAGE_WEIGHT = 4;
+const HOW_TO_DIRECT_EVIDENCE_BONUS = 3;
+const STRUCTURED_ANSWER_WEIGHT = 3;
+const DIRECT_SUPPORT_EVIDENCE_WEIGHT = 2;
+const DIRECT_SOURCE_WEIGHT = 1;
+const QUERY_STOP_TOKENS = new Set([
+  'xxyy',
+  '什么',
+  '哪些',
+  '可以',
+  '如何',
+  '怎么',
+  '是否',
+  '支持',
+  '当前',
+  '现在',
+]);
 
 export function createLazyRetriever(
   createRetriever: () => Promise<Retriever> | Retriever,
@@ -110,9 +125,10 @@ export function createMetadataReranker(): Reranker {
   return {
     rerank({ chunks, question }) {
       const queryTokens = new Set(tokenize(question));
+      const maximumScore = maximumRetrievedScore(chunks);
       return [...chunks].sort((left, right) => {
-        const rightScore = rerankScore(right, queryTokens, question);
-        const leftScore = rerankScore(left, queryTokens, question);
+        const rightScore = rerankScore(right, queryTokens, question, maximumScore);
+        const leftScore = rerankScore(left, queryTokens, question, maximumScore);
 
         if (rightScore !== leftScore) {
           return rightScore - leftScore;
@@ -142,180 +158,169 @@ function metadataMatchScore(chunk: RetrievedChunk, queryTokens: Set<string>): nu
     chunk.metadata.module,
     ...chunk.metadata.headingPath,
   ].join(' ');
-  let score = 0;
-
-  for (const token of tokenize(metadataText)) {
-    if (queryTokens.has(token)) {
-      score += token.length > 1 ? 2 : 1;
-    }
+  const informativeQueryTokens = Array.from(queryTokens).filter(isInformativeQueryToken);
+  if (informativeQueryTokens.length === 0) {
+    return 0;
   }
 
-  return score;
+  const metadataTokens = new Set(tokenize(metadataText));
+  const matchedTokenCount = informativeQueryTokens.filter((token) =>
+    metadataTokens.has(token),
+  ).length;
+  return matchedTokenCount / informativeQueryTokens.length;
 }
 
-function rerankScore(chunk: RetrievedChunk, queryTokens: Set<string>, question: string): number {
+function rerankScore(
+  chunk: RetrievedChunk,
+  queryTokens: Set<string>,
+  question: string,
+  maximumScore: number,
+): number {
+  const contentCoverage = contentCoverageScore(chunk, queryTokens);
   return (
-    chunk.score +
+    reciprocalRankFusionScore([chunk.rank]) * BASE_RANK_WEIGHT +
+    normalizedRetrievedScore(chunk.score, maximumScore) * BASE_SCORE_WEIGHT +
     metadataMatchScore(chunk, queryTokens) * METADATA_RERANK_WEIGHT +
-    contentShapeScore(chunk, question) +
-    howToEvidenceScore(chunk, question)
+    titleContainmentScore(chunk, question) * TITLE_CONTAINMENT_WEIGHT +
+    contentCoverage * CONTENT_COVERAGE_WEIGHT +
+    directSourceScore(chunk) * DIRECT_SOURCE_WEIGHT +
+    structuredAnswerScore(chunk, question) * contentCoverage * STRUCTURED_ANSWER_WEIGHT +
+    directSupportEvidenceScore(chunk, question) * DIRECT_SUPPORT_EVIDENCE_WEIGHT +
+    howToEvidenceScore(chunk, question) * (0.5 + contentCoverage * 0.5)
   );
+}
+
+function maximumRetrievedScore(chunks: RetrievedChunk[]): number {
+  const scores = chunks.map((chunk) => chunk.score).filter(Number.isFinite);
+  return scores.length === 0 ? 0 : Math.max(...scores);
+}
+
+function normalizedRetrievedScore(score: number, maximumScore: number): number {
+  if (!Number.isFinite(score) || maximumScore <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, score) / maximumScore;
+}
+
+function titleContainmentScore(chunk: RetrievedChunk, question: string): number {
+  const normalizedQuestion = normalizeCompactText(question);
+  const normalizedTitle = normalizeCompactText(chunk.metadata.title).replace(/^xxyy/u, '');
+  if (normalizedTitle.length < 2) {
+    return 0;
+  }
+
+  return normalizedQuestion.includes(normalizedTitle) ? 1 : 0;
+}
+
+function normalizeCompactText(text: string): string {
+  return text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]+/gu, '');
+}
+
+function contentCoverageScore(chunk: RetrievedChunk, queryTokens: Set<string>): number {
+  const informativeQueryTokens = Array.from(queryTokens).filter(isInformativeQueryToken);
+  if (informativeQueryTokens.length === 0) {
+    return 0;
+  }
+
+  const evidenceTokens = new Set(
+    tokenize(
+      [chunk.metadata.title, chunk.metadata.module, ...chunk.metadata.headingPath, chunk.text].join(
+        ' ',
+      ),
+    ),
+  );
+  const matchedTokenCount = informativeQueryTokens.filter((token) =>
+    evidenceTokens.has(token),
+  ).length;
+  return matchedTokenCount / informativeQueryTokens.length;
+}
+
+function isInformativeQueryToken(token: string): boolean {
+  if (QUERY_STOP_TOKENS.has(token)) {
+    return false;
+  }
+
+  return /^[a-z0-9][a-z0-9_-]*$/u.test(token) || token.length === 2;
+}
+
+function structuredAnswerScore(chunk: RetrievedChunk, question: string): number {
+  if (!/哪些|哪几|区别|对比|多少|字段|参数|选项|包括|列表/u.test(question)) {
+    return 0;
+  }
+
+  const separators = chunk.text.match(/[、，,；;]|(?:^|\n)\s*(?:[-*]|\d+[.)、])/gu)?.length ?? 0;
+  const explicitCount = /\d+\s*(?:个|条|种|项|大)/u.test(chunk.text) ? 1 : 0;
+  return Math.min(1, separators / 6 + explicitCount * 0.25);
+}
+
+function directSupportEvidenceScore(chunk: RetrievedChunk, question: string): number {
+  if (!isSupportQuestionText(question)) {
+    return 0;
+  }
+
+  const evidence = normalizeCompactText(chunk.text);
+  const markers = /已支持|支持|上线|开放|适配|可用/u;
+  const supportSubject = directSupportSubject(question);
+  if (supportSubject === undefined) {
+    return 0;
+  }
+
+  let index = evidence.indexOf(supportSubject);
+  while (index >= 0) {
+    const localContext = evidence.slice(
+      Math.max(0, index - 10),
+      index + supportSubject.length + 10,
+    );
+    if (markers.test(localContext)) {
+      return 1;
+    }
+    index = evidence.indexOf(supportSubject, index + supportSubject.length);
+  }
+
+  return 0;
+}
+
+function directSupportSubject(question: string): string | undefined {
+  const normalized = question.normalize('NFKC').toLowerCase();
+  const subject =
+    /支持\s*(?!哪些|什么|哪几)(?<subject>[^吗么嘛呢?？]{2,24})(?:吗|么|嘛|呢|\?|？|$)/u.exec(
+      normalized,
+    )?.groups?.subject ??
+    /\bsupport(?:s|ed)?\s+(?<subject>[a-z0-9._-]{2,32})/u.exec(normalized)?.groups?.subject;
+  if (subject === undefined) {
+    return undefined;
+  }
+
+  const compact = normalizeCompactText(subject).replace(/^xxyy/u, '');
+  if (compact.length < 2) {
+    return undefined;
+  }
+  if (/^[a-z0-9._-]+$/u.test(compact)) {
+    return compact;
+  }
+  return compact.length <= 6 ? compact : undefined;
+}
+
+function directSourceScore(chunk: RetrievedChunk): number {
+  return chunk.metadata.sourceUrl === undefined ? 0 : 1;
 }
 
 function howToEvidenceScore(chunk: RetrievedChunk, question: string): number {
   const normalizedQuestion = question.normalize('NFKC').toLowerCase();
-  if (!/如何|怎么|怎样|how\s+to/u.test(normalizedQuestion)) {
+  if (!/如何|怎么|怎样|从哪里|在哪(?:里)?|入口|how\s+to|where/u.test(normalizedQuestion)) {
     return 0;
   }
 
   const normalizedEvidence = chunk.text.normalize('NFKC').toLowerCase();
-  return /点击|选择|输入|填写|下载|上传|勾选|提前设置|设置.{0,8}(?:条件|金额|比例|模式)/u.test(
+  return /点击|选择|输入|填写|下载|上传|勾选|入口|直达|链接|菜单|网站|提前设置|设置.{0,8}(?:条件|金额|比例|模式|买入|卖出)/u.test(
     normalizedEvidence,
   )
     ? HOW_TO_DIRECT_EVIDENCE_BONUS
     : 0;
-}
-
-function contentShapeScore(chunk: RetrievedChunk, question: string): number {
-  const normalizedQuestion = question.normalize('NFKC').toLowerCase();
-  const normalizedEvidence = [
-    chunk.metadata.title,
-    chunk.metadata.module,
-    ...chunk.metadata.headingPath,
-    chunk.text,
-  ]
-    .join(' ')
-    .normalize('NFKC')
-    .toLowerCase();
-
-  if (isCopyTradingSupportQuestion(normalizedQuestion)) {
-    return copyTradingSupportEvidenceScore(normalizedEvidence);
-  }
-
-  if (isTradeSettingPresetQuestion(normalizedQuestion)) {
-    return tradeSettingPresetEvidenceScore(normalizedEvidence);
-  }
-
-  if (isBaseB20SupportQuestion(normalizedQuestion)) {
-    return baseB20SupportEvidenceScore(normalizedEvidence);
-  }
-
-  const supportEntities = extractSupportEntityTokens(question);
-  if (supportEntities.length > 0) {
-    return supportEntityEvidenceBoost(normalizedEvidence, supportEntities);
-  }
-
-  if (!isSupportedChainCoverageQuestion(normalizedQuestion)) {
-    return 0;
-  }
-
-  const chainCount = countChainMentions(normalizedEvidence);
-  let score = chainCount * CHAIN_COVERAGE_BONUS_PER_CHAIN;
-
-  if (
-    chainCount >= 3 ||
-    /支持\s*(?:\d+|[一二三四五六七八九十]+)\s*大?公链/u.test(normalizedEvidence)
-  ) {
-    score += BROAD_CHAIN_COVERAGE_BONUS;
-  }
-
-  if (normalizedQuestion.includes('跟单') && normalizedEvidence.includes('跟单')) {
-    score += 1;
-  }
-
-  return score;
-}
-
-function isCopyTradingSupportQuestion(normalizedQuestion: string): boolean {
-  return /跟单|copy\s*trading|copy\s*trade|copytrade/u.test(normalizedQuestion);
-}
-
-function isTradeSettingPresetQuestion(normalizedQuestion: string): boolean {
-  return /p\s*1\s*[/｜|]?\s*p\s*2\s*[/｜|]?\s*p\s*3|p1\/p2\/p3/u.test(normalizedQuestion);
-}
-
-function tradeSettingPresetEvidenceScore(normalizedEvidence: string): number {
-  if (!isTradeSettingPresetQuestion(normalizedEvidence)) {
-    return 0;
-  }
-
-  let score = TRADE_SETTING_PRESET_DIRECT_EVIDENCE_BONUS;
-  if (/交易设置|多档位|档位/u.test(normalizedEvidence)) {
-    score += 4;
-  }
-  if (/gas|滑点|买卖|挂单/u.test(normalizedEvidence)) {
-    score += 3;
-  }
-
-  return score;
-}
-
-function isBaseB20SupportQuestion(normalizedQuestion: string): boolean {
-  return /\bb20\b/u.test(normalizedQuestion);
-}
-
-function baseB20SupportEvidenceScore(normalizedEvidence: string): number {
-  if (!/\bb20\b/u.test(normalizedEvidence)) {
-    return 0;
-  }
-
-  let score = SHORT_ENTITY_DIRECT_EVIDENCE_BONUS;
-  if (/全面支持|支持.*交易|代币交易|专属标识/u.test(normalizedEvidence)) {
-    score += 4;
-  }
-  if (/(?:^|[^a-z0-9])base(?:$|[^a-z0-9])|base链/u.test(normalizedEvidence)) {
-    score += 1;
-  }
-
-  return score;
-}
-
-function copyTradingSupportEvidenceScore(normalizedEvidence: string): number {
-  if (!isCopyTradingSupportQuestion(normalizedEvidence)) {
-    return 0;
-  }
-
-  let score = 1;
-  if (/跟单功能上线|跟单.*上线|copy\s*trading.*(?:launch|上线)/u.test(normalizedEvidence)) {
-    score += COPY_TRADING_DIRECT_EVIDENCE_BONUS;
-  }
-
-  const chainCount = countChainMentions(normalizedEvidence);
-  score += chainCount * CHAIN_COVERAGE_BONUS_PER_CHAIN;
-  if (
-    chainCount >= 3 ||
-    /支持\s*(?:\d+|[一二三四五六七八九十]+)\s*大?公链/u.test(normalizedEvidence)
-  ) {
-    score += BROAD_CHAIN_COVERAGE_BONUS;
-  }
-
-  if (/利润|胜率|金额|卖出比例|gas|滑点|过滤条件/u.test(normalizedEvidence)) {
-    score += 2;
-  }
-
-  return score;
-}
-
-function isSupportedChainCoverageQuestion(normalizedQuestion: string): boolean {
-  return /(?:支持|哪些|哪几条|哪几种).*(?:链|公链)|(?:链|公链).*(?:支持|哪些|哪几条|哪几种)/u.test(
-    normalizedQuestion,
-  );
-}
-
-function countChainMentions(normalizedEvidence: string): number {
-  const chainPatterns = [
-    /(?:^|[^a-z0-9])sol(?:$|[^a-z0-9])/u,
-    /solana/u,
-    /(?:^|[^a-z0-9])bsc(?:$|[^a-z0-9])/u,
-    /bnb\s*chain/u,
-    /(?:^|[^a-z0-9])base(?:$|[^a-z0-9])/u,
-    /(?:^|[^a-z0-9])eth(?:$|[^a-z0-9])/u,
-    /ethereum/u,
-    /x\s*layer|xlayer/u,
-    /plasma/u,
-  ];
-
-  return chainPatterns.filter((pattern) => pattern.test(normalizedEvidence)).length;
 }
 
 function normalizeTopK(topK: number | undefined): number {

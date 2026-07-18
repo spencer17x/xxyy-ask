@@ -213,7 +213,7 @@ function createXPostDocument(post: XPostEntry, file: string): SourceDocument {
 }
 
 function inferXPostStatus(text: string): KnowledgeStatus {
-  return /上线|新增|更新|升级|优化|支持|现已|全面支持|已支持|发布|launch|live|now supports|available|released/iu.test(
+  return /上线|新增|更新|升级|优化|支持|现已|全面支持|已支持|发布|入口|直达链接|可在.{0,20}(?:找到|进入)|launch|live|now supports|available|released/iu.test(
     text,
   )
     ? 'current'

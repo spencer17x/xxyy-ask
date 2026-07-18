@@ -8,6 +8,7 @@ breadcrumbs: ["使用XXYY交易"]
 children: [{"title":"Basic","source_url":"https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/basic","source_markdown_url":"https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/basic.md"},{"title":"Pro","source_url":"https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/pro","source_markdown_url":"https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/pro.md"},{"title":"永久PRO","source_url":"https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/yong-jiu-pro","source_markdown_url":"https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/yong-jiu-pro.md"},{"title":"如何升级为 Pro","source_url":"https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/ru-he-sheng-ji-wei-pro","source_markdown_url":"https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/ru-he-sheng-ji-wei-pro.md"}]
 lastmod: ""
 retrieved_at: "2026-05-24T06:41:04.265Z"
+supersedes: ["official_docs:pages/61-getting-started__xxyy-pro-quan-yi__pro", "official_docs:xxyy-product-functions:chunk:0081", "x_updates:sources/usexxyyio-x-posts/1970038306860888460:chunk:0002", "x_updates:sources/usexxyyio-x-posts/1970699261160665169:chunk:0002", "x_updates:sources/usexxyyio-x-posts/1970759400571969680:chunk:0002", "x_updates:sources/usexxyyio-x-posts/1975970962052100319:chunk:0002"]
 ---
 # XXYY Pro 权益
 

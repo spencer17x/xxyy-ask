@@ -49,7 +49,6 @@ describe('chunkMarkdownDocuments', () => {
       'official_docs:pages/telegram:chunk:0001',
       'official_docs:pages/telegram:chunk:0002',
       'official_docs:pages/telegram:chunk:0003',
-      'official_docs:pages/telegram:chunk:0004',
     ]);
 
     expect(chunks[0]?.metadata).toMatchObject({
@@ -66,9 +65,9 @@ describe('chunkMarkdownDocuments', () => {
       headingPath: ['设置 TG通知'],
     });
     expect(chunks[1]?.metadata.headingPath).toEqual(['设置 TG通知', '第一步：创建 Telegram Group']);
-    expect(chunks[2]?.metadata.headingPath).toEqual(['设置 TG通知', '第一步：创建 Telegram Group']);
-    expect(chunks[2]?.text).toContain('点击创建 group');
-    expect(chunks[2]?.text).toContain('将 bot 设置为管理员');
-    expect(chunks[3]?.metadata.headingPath).toEqual(['设置 TG通知', '第二步：创建自己的 Bot']);
+    expect(chunks[1]?.text).toContain('打开 Telegram');
+    expect(chunks[1]?.text).toContain('点击创建 group');
+    expect(chunks[1]?.text).toContain('将 bot 设置为管理员');
+    expect(chunks[2]?.metadata.headingPath).toEqual(['设置 TG通知', '第二步：创建自己的 Bot']);
   });
 });

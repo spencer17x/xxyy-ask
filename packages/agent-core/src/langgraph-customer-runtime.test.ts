@@ -124,7 +124,7 @@ describe('createLangGraphCustomerRuntime', () => {
     );
   });
 
-  it('respects planner clarification instead of overriding it with keyword routing', async () => {
+  it('routes deterministic product questions before an incorrect planner clarification', async () => {
     const registry = createToolRegistry();
     const response: ChatResponse = {
       answer: 'P1/P2/P3 是交易设置档位，可为买卖/挂单配置不同 gas 与滑点。',
@@ -173,14 +173,8 @@ describe('createLangGraphCustomerRuntime', () => {
         channel: 'web',
         message: 'P1/P2/P3 是什么交易设置？',
       }),
-    ).resolves.toEqual({
-      agentRoute: 'clarify',
-      answer: '当前无法回答该交易设置问题。',
-      citations: [],
-      confidence: 0.3,
-      intent: 'unknown',
-    });
-    expect(execute).not.toHaveBeenCalled();
+    ).resolves.toEqual({ ...response, agentRoute: 'product_answer' });
+    expect(execute).toHaveBeenCalledOnce();
   });
 
   it('clarifies instead of guessing a tool when planner parsing repeatedly fails', async () => {
@@ -215,7 +209,7 @@ describe('createLangGraphCustomerRuntime', () => {
     await expect(
       createLangGraphCustomerRuntime({ planner, registry }).ask({
         channel: 'web',
-        message: 'XXYY Pro 有哪些权益？',
+        message: '你好，可以介绍一下吗？',
       }),
     ).resolves.toMatchObject({
       agentRoute: 'clarify',
@@ -491,7 +485,7 @@ describe('createLangGraphCustomerRuntime', () => {
       registry,
     }).ask({
       channel: 'web',
-      message: 'XXYY Pro 有哪些权益？',
+      message: '你好，可以介绍一下吗？',
     });
 
     expect(response).toMatchObject({
@@ -1275,7 +1269,7 @@ describe('createLangGraphCustomerRuntime', () => {
 
       const response = await createLangGraphCustomerRuntime({ planner, registry }).ask({
         channel: 'web',
-        message: 'XXYY Pro 有哪些权益？',
+        message: '你好，可以介绍一下吗？',
       });
 
       expect(response).toMatchObject({
@@ -1320,7 +1314,7 @@ describe('createLangGraphCustomerRuntime', () => {
     await expect(
       createLangGraphCustomerRuntime({ planner, registry }).ask({
         channel: 'cli',
-        message: 'XXYY Pro 有哪些权益？',
+        message: '你好，可以介绍一下吗？',
       }),
     ).resolves.toEqual({
       ...response,
@@ -1328,7 +1322,7 @@ describe('createLangGraphCustomerRuntime', () => {
     });
     expect(planner.plan).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenCalledWith(
-      { question: 'XXYY Pro 有哪些权益？' },
+      { question: '你好，可以介绍一下吗？' },
       { channel: 'cli', sessionId: undefined, userIdPresent: false },
     );
   });

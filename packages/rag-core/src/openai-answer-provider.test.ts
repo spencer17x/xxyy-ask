@@ -983,6 +983,43 @@ describe('createOpenAiAnswerProvider', () => {
     expect(response.answer).toContain('监控2000个钱包');
   });
 
+  it('falls back to grounded context when the LLM response is malformed JSON', async () => {
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(
+        new Response('{not-json', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    const provider = createOpenAiAnswerProvider({
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl,
+      model: 'gpt-test',
+    });
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:pro:chunk:0001',
+        title: 'XXYY Pro 权益',
+        sourceType: 'official_docs',
+        file: '/docs/pro.md',
+        text: 'XXYY Pro 权益包括独享服务器和节点。',
+      },
+    ]);
+
+    const response = await provider.answer({
+      classification: {
+        confidence: 0.78,
+        intent: 'product_qa',
+        reason: 'product question',
+      },
+      question: 'XXYY Pro 有哪些权益？',
+      retrievedChunks: retrieve('XXYY Pro 有哪些权益？', index),
+    });
+
+    expect(response.answer).toContain('独享服务器和节点');
+  });
+
   it('falls back to grounded context when the LLM model route is unavailable', async () => {
     const fetchImpl: typeof fetch = () =>
       Promise.resolve(

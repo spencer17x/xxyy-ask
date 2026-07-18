@@ -176,7 +176,7 @@ describe('createProductTools', () => {
       answer: 'intent product_qa; chunks 1',
       intent: 'product_qa',
     });
-    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 24 });
+    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 48 });
     const answerInput = answer.mock.calls[0]?.[0];
     expect(answerInput).toBeDefined();
     expect(answerInput?.classification).toMatchObject({
@@ -232,7 +232,7 @@ describe('createProductTools', () => {
         '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。',
       intent: 'product_qa',
     });
-    expect(retrieve).toHaveBeenCalledWith('XXYY支持跟单么', { topK: 4 });
+    expect(retrieve).toHaveBeenCalledWith('XXYY支持跟单么', { topK: 8 });
   });
 
   it('keeps realtime account lookups blocked even when planner selects answer_product_question', async () => {
@@ -451,7 +451,7 @@ describe('createProductTools', () => {
       topK: 999,
     });
 
-    expect(retrieve).toHaveBeenCalledWith('XXYY Pro 权益', { topK: 80 });
+    expect(retrieve).toHaveBeenCalledWith('XXYY Pro 权益', { topK: 160 });
   });
 });
 

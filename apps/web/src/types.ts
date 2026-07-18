@@ -23,10 +23,13 @@ export interface ChatMessage {
   attachments: Attachment[];
   citations: Citation[];
   id: string;
+  confidence?: number;
+  feedbackStatus?: 'error' | 'negative' | 'positive' | 'submitting';
   intent?: string;
   meta?: string;
   rawAnswer: string;
   role: 'assistant' | 'user';
+  question?: string;
   status?: 'error' | 'streaming' | undefined;
   statusMessage?: string;
   text: string;

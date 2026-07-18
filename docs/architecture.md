@@ -21,13 +21,15 @@ flowchart LR
 
   subgraph Agent["LangGraph CustomerAgentRuntime"]
     Policy["策略边界"]
-    Planner["Planner"]
+    Intent["确定性产品意图路由"]
+    Planner["模糊问题 / Agent 自述 Planner"]
     ProductTool["answer_product_question"]
     Boundary["边界 / 澄清回复"]
   end
 
   subgraph Rag["Product RAG"]
-    Retriever["pgvector 检索"]
+    Retriever["pgvector 向量 / 关键词 / 实体候选"]
+    Reranker["RRF + 通用元数据 / 时效重排"]
     Llm["OpenAI-compatible LLM"]
     Fallback["Grounded Answer 降级"]
     Response["回答 + 引用 + 产品附件"]
@@ -48,12 +50,15 @@ flowchart LR
 
   ChatApi --> Policy
   StreamApi --> Policy
-  Policy --> Planner
+  Policy --> Intent
+  Intent -->|product_qa / how_to| ProductTool
+  Intent -->|无法确定| Planner
   Planner --> ProductTool
   Planner --> Boundary
   ProductTool --> Retriever
   Retriever --> PgVector
-  Retriever --> Llm
+  Retriever --> Reranker
+  Reranker --> Llm
   Llm --> Response
   Llm -.->|超时 / 限流 / 不可用| Fallback
   Fallback --> Response
@@ -71,10 +76,11 @@ flowchart LR
 
 ## 说明
 
-- `CustomerAgentRuntime` 是当前问答编排核心：先做策略边界，再由 planner 在产品问答、澄清和边界之间选择路线。
+- `CustomerAgentRuntime` 是当前问答编排核心：先做策略边界；确定识别为 `product_qa` / `how_to` 的问题直接调用产品问答工具，避免 Planner 改写或丢失原问题；只有模糊问题和 Agent 自述再交给 Planner。
 - 产品问答和操作步骤会检索 `Postgres + pgvector`，再调用 OpenAI-compatible chat completion 生成回答。
+- 正式检索将向量、全文关键词和实体候选按 rank 融合，再应用标题/模块覆盖、直接来源、时效与冲突元数据做通用重排；不依赖具体产品 case 的固定查询扩展。
 - 当前只注册 `answer_product_question` 业务工具；交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
-- LLM 超时、限流、模型路由不可用或返回不可用答案时，会降级为本地 grounded answer。
+- LLM 超时、限流、模型路由不可用、非 JSON 或不可用答案时，会降级为本地 grounded answer；embedding 对超时、429 和 5xx 做有界重试。
 - 知识库由产品文档和官方 X 更新组成，支持全量入库和 X 增量同步。
 - Web UI 支持流式回答、引用展示、产品知识库附件和基础聊天体验。
 - 当前目标不包含用户侧人工接管或业务动作执行；无法自动回答的问题应返回清晰边界或澄清问题。

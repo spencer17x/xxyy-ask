@@ -90,6 +90,7 @@ type CliCommand =
       failuresOut?: string;
       judge: boolean;
       providerBacked: boolean;
+      retrievalOnly: boolean;
     }
   | { command: 'feedback:backlog' }
   | { command: 'ingest'; rebuildEmbeddingSchema: boolean }
@@ -184,7 +185,7 @@ const HELP_TEXT = [
   '  pnpm rag:sync:x',
   '  pnpm rag:migrate',
   '  pnpm rag:stats',
-  '  pnpm rag:evaluate [--provider] [--judge] [--failures-out .rag/failures.jsonl]',
+  '  pnpm rag:evaluate [--provider] [--retrieval-only] [--judge] [--failures-out .rag/failures.jsonl]',
   '  pnpm rag:feedback:backlog',
   '  pnpm rag:knowledge:import:telegram -- export.json --admin-id 123456789',
   '  pnpm rag:knowledge:list -- --status pending --limit 20',
@@ -385,6 +386,7 @@ function parseEvaluateArgs(rawArgs: readonly string[]): CliCommand {
   let failuresOut: string | undefined;
   let judge = false;
   let providerBacked = false;
+  let retrievalOnly = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -394,6 +396,10 @@ function parseEvaluateArgs(rawArgs: readonly string[]): CliCommand {
     }
     if (arg === '--judge') {
       judge = true;
+      continue;
+    }
+    if (arg === '--retrieval-only') {
+      retrievalOnly = true;
       continue;
     }
     if (arg === '--failures-out') {
@@ -414,12 +420,19 @@ function parseEvaluateArgs(rawArgs: readonly string[]): CliCommand {
   if (judge && !providerBacked) {
     return { command: 'help', error: '--judge requires --provider.' };
   }
+  if (retrievalOnly && !providerBacked) {
+    return { command: 'help', error: '--retrieval-only requires --provider.' };
+  }
+  if (retrievalOnly && judge) {
+    return { command: 'help', error: '--judge cannot be used with --retrieval-only.' };
+  }
 
   return {
     command: 'evaluate',
     ...(failuresOut === undefined ? {} : { failuresOut }),
     judge,
     providerBacked,
+    retrievalOnly,
   };
 }
 
@@ -804,6 +817,14 @@ export async function runCli(
 
   if (parsed.command === 'evaluate') {
     try {
+      if (parsed.retrievalOnly) {
+        const report = await evaluateProviderRetrieval(
+          { ...io, cwd: workspaceCwd },
+          parsed.failuresOut,
+        );
+        writeLine(io.stdout, formatProviderRetrievalReport(report));
+        return report.passed === report.total ? 0 : 1;
+      }
       const report = await evaluate({ ...io, cwd: workspaceCwd }, parsed);
       writeLine(
         io.stdout,
@@ -948,6 +969,96 @@ export async function runCli(
     }
     throw error;
   }
+}
+
+interface ProviderRetrievalCaseResult {
+  forbiddenChunkIds: string[];
+  name: string;
+  passed: boolean;
+  question: string;
+  relevantChunkIds: string[];
+  result: ReturnType<typeof evaluateRetrievalRanking>;
+}
+
+interface ProviderRetrievalReport {
+  passed: number;
+  results: ProviderRetrievalCaseResult[];
+  summary: ReturnType<typeof aggregateRetrievalResults>;
+  total: number;
+}
+
+async function evaluateProviderRetrieval(
+  io: CliIo,
+  failuresOut: string | undefined,
+): Promise<ProviderRetrievalReport> {
+  const config = loadRagConfig(io.env);
+  const cases = (await loadEvaluationCases(io.cwd)).filter(
+    (testCase) => (testCase.relevantChunkIds?.length ?? 0) > 0,
+  );
+  const tracer = createQualityTracerFromEnv({ ...io.env });
+  const runtime = createCliChatRuntime(config, tracer);
+
+  try {
+    const retriever = createRerankingRetriever(runtime.retriever, createMetadataReranker(), {
+      candidateMultiplier: 8,
+      tracer,
+    });
+    const results: ProviderRetrievalCaseResult[] = [];
+    for (const testCase of cases) {
+      const chunks = await retriever.retrieve(testCase.request.message, { topK: config.topK });
+      const result = evaluateRetrievalRanking({
+        forbiddenChunkIds: testCase.forbiddenChunkIds ?? [],
+        relevantChunkIds: testCase.relevantChunkIds ?? [],
+        retrievedChunkIds: chunks.map((chunk) => chunk.id),
+        topK: config.topK,
+      });
+      results.push({
+        forbiddenChunkIds: [...(testCase.forbiddenChunkIds ?? [])],
+        name: testCase.name,
+        passed: result.recallAtK === 1 && result.forbiddenHitCount === 0,
+        question: testCase.request.message,
+        relevantChunkIds: [...(testCase.relevantChunkIds ?? [])],
+        result,
+      });
+    }
+
+    const report: ProviderRetrievalReport = {
+      passed: results.filter((result) => result.passed).length,
+      results,
+      summary: aggregateRetrievalResults(results.map((result) => result.result)),
+      total: results.length,
+    };
+    if (failuresOut !== undefined) {
+      const outputPath = path.resolve(io.cwd, failuresOut);
+      await mkdir(path.dirname(outputPath), { recursive: true });
+      const failures = report.results
+        .filter((result) => !result.passed)
+        .map((result) => JSON.stringify(result))
+        .join('\n');
+      await writeFile(outputPath, failures.length === 0 ? '' : `${failures}\n`, 'utf8');
+    }
+    return report;
+  } finally {
+    await runtime.close();
+  }
+}
+
+export function formatProviderRetrievalReport(report: ProviderRetrievalReport): string {
+  const summary = report.summary;
+  const lines = [
+    `Retrieval evaluation (provider-backed): ${report.passed}/${report.total} cases fully recalled`,
+    `Recall@K ${formatMetric(summary.averageRecallAtK)}, Precision@K ${formatMetric(summary.averagePrecisionAtK)}, MRR ${formatMetric(summary.meanReciprocalRank)}, nDCG@K ${formatMetric(summary.averageNdcgAtK)}, forbidden hits ${summary.totalForbiddenHits}`,
+  ];
+
+  for (const result of report.results.filter((item) => !item.passed)) {
+    lines.push(
+      `[FAIL] ${result.name} (recall ${formatMetric(result.result.recallAtK)}, forbidden ${result.result.forbiddenHitCount ?? 0})`,
+      `  expected: ${result.relevantChunkIds.join(', ')}`,
+      `  retrieved: ${result.result.retrievedChunkIds.join(', ') || '(none)'}`,
+    );
+  }
+
+  return lines.join('\n');
 }
 
 async function ingest(
@@ -1563,6 +1674,7 @@ async function runKnowledgePublicationGate(
     command: 'evaluate',
     judge: false,
     providerBacked: false,
+    retrievalOnly: false,
   });
   if (report.passed !== report.total) {
     const failures = report.results

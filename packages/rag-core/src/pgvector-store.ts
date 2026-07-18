@@ -11,7 +11,7 @@ import type {
 } from '@xxyy/shared';
 
 import {
-  createRetrieveQueryTokens,
+  createLexicalRetrieveQueryTokens,
   type RetrieveOptions,
   type RetrievedChunk,
 } from './retrieve.js';
@@ -23,6 +23,7 @@ import {
 } from './quality-trace.js';
 import { extractSupportEntityTokens, supportEntityEvidenceBoost } from './support-entity.js';
 import { migrateKnowledgeCandidates } from './knowledge-candidates.js';
+import { reciprocalRankFusionScore } from './hybrid-rank.js';
 
 export interface PgClientLike {
   connect?(): Promise<PgTransactionClientLike>;
@@ -100,6 +101,9 @@ interface KnowledgeChunkRow {
   content: string;
   tokens: string[];
   embedding_distance: number;
+  entity_rank?: number | null;
+  lexical_rank?: number | null;
+  vector_rank?: number | null;
 }
 
 interface KnowledgeChunkHashRow {
@@ -116,9 +120,9 @@ interface RecordIngestionRunInput {
   contentHash: string;
 }
 
-type FeedbackRating = 'positive' | 'negative';
+export type FeedbackRating = 'positive' | 'negative';
 
-interface RecordFeedbackInput {
+export interface RecordFeedbackInput {
   answer: string;
   channel: ChatChannel;
   citationCount: number;
@@ -221,7 +225,6 @@ interface FeedbackRecordRow {
 
 const DEFAULT_PGVECTOR_EMBEDDING_DIMENSION = 1536;
 const DEFAULT_TOP_K = 6;
-const LEXICAL_SCORE_WEIGHT = 0.5;
 const MIN_VECTOR_SCORE = 0.25;
 const DIRECT_X_POST_SOURCE_BOOST = 6;
 const CURRENT_STATUS_BOOST = 0.2;
@@ -608,7 +611,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
       validateEmbedding(queryEmbedding, embeddingDimension);
 
       const topK = normalizeTopK(retrieveOptions.topK);
-      const queryTokens = createRetrieveQueryTokens(question);
+      const lexicalQueryTokens = createLexicalRetrieveQueryTokens(question);
       const supportEntities = extractSupportEntityTokens(question);
       const entityPrefixPatterns = supportEntities
         .filter((entity) => entity.length >= 6)
@@ -619,7 +622,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           inputs: {
             candidateLimit,
             entityCount: supportEntities.length,
-            queryTokenCount: queryTokens.length,
+            queryTokenCount: lexicalQueryTokens.length,
             topK,
           },
           name: 'rag.pgvector_candidates',
@@ -654,7 +657,10 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
             heading_path, order_index, retrieved_at::text as retrieved_at,
             effective_at::text as effective_at, status, supersedes, content, tokens,
             embedding <=> $1::vector as embedding_distance,
-            0::integer as token_overlap
+            0::integer as token_overlap,
+            row_number() over (order by embedding <=> $1::vector)::integer as vector_rank,
+            null::integer as lexical_rank,
+            null::integer as entity_rank
           from eligible_knowledge_chunks
           order by embedding <=> $1::vector
           limit $2
@@ -670,6 +676,15 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
               from unnest(tokens) as token(value)
               where token.value = any($3::text[])
             ) as token_overlap
+            ,null::integer as vector_rank
+            ,row_number() over (
+              order by (
+                select count(*)::integer
+                from unnest(tokens) as token(value)
+                where token.value = any($3::text[])
+              ) desc, embedding <=> $1::vector asc
+            )::integer as lexical_rank
+            ,null::integer as entity_rank
           from eligible_knowledge_chunks
           where tokens && $3::text[]
           order by token_overlap desc, embedding_distance asc
@@ -686,6 +701,15 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
               from unnest(tokens) as token(value)
               where token.value = any($4::text[])
             ) as token_overlap
+            ,null::integer as vector_rank
+            ,null::integer as lexical_rank
+            ,row_number() over (
+              order by (
+                select count(*)::integer
+                from unnest(tokens) as token(value)
+                where token.value = any($4::text[])
+              ) desc, embedding <=> $1::vector asc
+            )::integer as entity_rank
           from eligible_knowledge_chunks
           where
             cardinality($4::text[]) > 0
@@ -710,14 +734,17 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           id, document_id, title, module, source_type, source_url, file,
           heading_path, order_index, retrieved_at, effective_at, status, supersedes,
           content, tokens,
-          embedding_distance
+          embedding_distance,
+          min(vector_rank) over (partition by id) as vector_rank,
+          min(lexical_rank) over (partition by id) as lexical_rank,
+          min(entity_rank) over (partition by id) as entity_rank
         from combined_candidates
         order by id, token_overlap desc, embedding_distance asc
         `,
             [
               toPgVectorLiteral(queryEmbedding),
               candidateLimit,
-              queryTokens,
+              lexicalQueryTokens,
               supportEntities,
               entityPrefixPatterns,
               isHistoricalOrTweetQuestion(question),
@@ -725,7 +752,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           );
 
           return response.rows
-            .map((row) => mapRow(row, question, queryTokens, supportEntities))
+            .map((row) => mapRow(row, question, lexicalQueryTokens, supportEntities))
             .filter(hasMinimumRetrievalEvidence)
             .sort(compareRetrievedChunks)
             .slice(0, topK)
@@ -1157,6 +1184,11 @@ function mapRow(
 ): RetrievedChunk {
   const lexicalScore = queryTokens.filter((token) => row.tokens.includes(token)).length;
   const vectorScore = Math.max(0, 1 - row.embedding_distance);
+  const fusionScore = reciprocalRankFusionScore([
+    row.vector_rank,
+    row.lexical_rank,
+    row.entity_rank,
+  ]);
   const rowSourceBoost = sourceBoost(row.source_type) + directXPostSourceBoost(question, row);
   const status = row.status ?? defaultKnowledgeStatus(row.source_type);
   const freshnessBoost = freshnessScore(
@@ -1169,15 +1201,7 @@ function mapRow(
     [row.title, row.module, ...(row.heading_path ?? []), row.content].join(' '),
     supportEntities,
   );
-  const score = Number(
-    (
-      vectorScore +
-      lexicalScore * LEXICAL_SCORE_WEIGHT +
-      rowSourceBoost +
-      freshnessBoost +
-      entityBoost
-    ).toFixed(8),
-  );
+  const score = Number((fusionScore + rowSourceBoost + freshnessBoost + entityBoost).toFixed(8));
   const entry: IndexEntry = {
     documentId: row.document_id,
     embedding: [],
@@ -1207,10 +1231,20 @@ function mapRow(
     ...entry,
     lexicalScore,
     freshnessBoost: Number(freshnessBoost.toFixed(8)),
+    fusionScore,
+    ...(row.entity_rank === null || row.entity_rank === undefined
+      ? {}
+      : { entityRank: row.entity_rank }),
+    ...(row.lexical_rank === null || row.lexical_rank === undefined
+      ? {}
+      : { lexicalRank: row.lexical_rank }),
     rank: 0,
     score,
     sourceBoost: Number(rowSourceBoost.toFixed(8)),
     vectorScore,
+    ...(row.vector_rank === null || row.vector_rank === undefined
+      ? {}
+      : { vectorRank: row.vector_rank }),
   };
 }
 

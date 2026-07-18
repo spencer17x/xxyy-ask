@@ -84,6 +84,14 @@ pnpm check
 ```
 
 Use `pnpm rag:evaluate -- --provider` only for human review before releases or model/retriever changes; it may call configured external providers.
+
+To measure the production pgvector + embedding retrieval path without involving the Agent planner or answer model, run:
+
+```bash
+pnpm rag:evaluate -- --provider --retrieval-only
+```
+
+This evaluates only cases with `relevantChunkIds`, applies the same candidate multiplier and metadata reranker as the product tools, and reports Recall@K, Precision@K, MRR, nDCG@K, and forbidden hits. Use it for before/after retrieval baselines when chat-provider failures would otherwise contaminate retrieval metrics. Retrieval failures can be exported under `.rag/` with `--failures-out`.
 To add the optional judge, configure a separate model and use:
 
 ```bash
@@ -109,6 +117,8 @@ pnpm rag:feedback:backlog
 ```
 
 The command reads `rag_feedback` and prints JSONL records with `_review` metadata. Treat these as a triage queue: a reviewer must fill in precise `mustContain`, `mustNotContain`, expected citations, and source URLs before moving a draft into `golden-qa.jsonl`.
+
+Web 的 👍/👎 通过 `/api/feedback` 写入该表。Web 和 Telegram 的无引用产品回答会以 `automatic_low_evidence` 评论自动写入；这些记录仍然只生成待审核草稿，不会自动进入 golden QA 或知识库。
 
 Failed evals can be exported through an explicit repository-local path:
 

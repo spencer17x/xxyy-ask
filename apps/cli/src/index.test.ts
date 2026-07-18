@@ -22,6 +22,7 @@ import {
   formatKnowledgePublicationSummary,
   formatKnowledgeStats,
   formatMigrationSummary,
+  formatProviderRetrievalReport,
   formatSyncXUpdatesSummary,
   formatTelegramKnowledgeImportSummary,
   parseCliArgs,
@@ -65,11 +66,13 @@ describe('parseCliArgs', () => {
       command: 'evaluate',
       judge: false,
       providerBacked: false,
+      retrievalOnly: false,
     });
     expect(parseCliArgs(['evaluate', '--provider'])).toEqual({
       command: 'evaluate',
       judge: false,
       providerBacked: true,
+      retrievalOnly: false,
     });
     expect(
       parseCliArgs(['evaluate', '--provider', '--judge', '--failures-out', '.rag/failures.jsonl']),
@@ -78,6 +81,13 @@ describe('parseCliArgs', () => {
       failuresOut: '.rag/failures.jsonl',
       judge: true,
       providerBacked: true,
+      retrievalOnly: false,
+    });
+    expect(parseCliArgs(['evaluate', '--provider', '--retrieval-only'])).toEqual({
+      command: 'evaluate',
+      judge: false,
+      providerBacked: true,
+      retrievalOnly: true,
     });
   });
 
@@ -159,6 +169,14 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['evaluate', '--judge'])).toMatchObject({
       command: 'help',
       error: '--judge requires --provider.',
+    });
+    expect(parseCliArgs(['evaluate', '--retrieval-only'])).toMatchObject({
+      command: 'help',
+      error: '--retrieval-only requires --provider.',
+    });
+    expect(parseCliArgs(['evaluate', '--provider', '--retrieval-only', '--judge'])).toMatchObject({
+      command: 'help',
+      error: '--judge cannot be used with --retrieval-only.',
     });
     expect(parseCliArgs(['evaluate', '--failures-out'])).toMatchObject({
       command: 'help',
@@ -561,6 +579,45 @@ describe('CLI output formatting', () => {
     expect(formatEvaluationReport({ passed: 0, results: [], total: 0 })).not.toContain('Retrieval');
   });
 
+  it('formats provider retrieval failures independently from answer generation', () => {
+    const output = formatProviderRetrievalReport({
+      passed: 1,
+      results: [
+        {
+          forbiddenChunkIds: [],
+          name: 'missing evidence',
+          passed: false,
+          question: '问题',
+          relevantChunkIds: ['expected:chunk'],
+          result: {
+            annotated: true,
+            forbiddenHitCount: 0,
+            ndcgAtK: 0,
+            precisionAtK: 0,
+            recallAtK: 0,
+            reciprocalRank: 0,
+            retrievedChunkIds: ['other:chunk'],
+            topK: 1,
+          },
+        },
+      ],
+      summary: {
+        annotatedCaseCount: 1,
+        averageNdcgAtK: 0,
+        averagePrecisionAtK: 0,
+        averageRecallAtK: 0,
+        meanReciprocalRank: 0,
+        totalForbiddenHits: 0,
+      },
+      total: 2,
+    });
+
+    expect(output).toContain('Retrieval evaluation (provider-backed): 1/2 cases fully recalled');
+    expect(output).toContain('[FAIL] missing evidence (recall 0.000000, forbidden 0)');
+    expect(output).toContain('expected: expected:chunk');
+    expect(output).toContain('retrieved: other:chunk');
+  });
+
   it('formats knowledge stats for retained stats command', () => {
     const stats: KnowledgeStats = {
       chunkCount: 64,
@@ -772,9 +829,9 @@ describe('runCli', () => {
     expect(stderr.join('')).toBe('');
   });
 
-  it('prints planner configuration errors from agentic mode', async () => {
+  it('prints planner configuration errors for ambiguous requests', async () => {
     const stderr: string[] = [];
-    const exitCode = await runCli(['ask', 'XXYY Pro 有哪些权益？'], {
+    const exitCode = await runCli(['ask', '你好，可以介绍一下吗？'], {
       cwd: process.cwd(),
       env: {
         DATABASE_URL: 'postgres://xxyy:password@localhost:5432/xxyy_ask',

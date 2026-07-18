@@ -29,7 +29,7 @@ const SUPPORT_ENTITY_STOP_TOKENS = new Set([
 ]);
 
 /** Boost applied when a chunk matches a rare support-entity token. */
-export const SUPPORT_ENTITY_EVIDENCE_BOOST = 8;
+export const SUPPORT_ENTITY_EVIDENCE_BOOST = 3;
 
 /** Minimum latin entity length eligible for edit-distance matching. */
 const FUZZY_ENTITY_MIN_LENGTH = 6;

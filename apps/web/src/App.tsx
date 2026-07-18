@@ -63,7 +63,7 @@ export function App(): ReactElement {
     setMessages((current) => [
       ...current.filter((message) => message.id !== 'welcome'),
       createUserMessage(text),
-      createAssistantMessage(assistantId),
+      createAssistantMessage(assistantId, text),
     ]);
     setInput('');
     setBusy(true);
@@ -109,6 +109,7 @@ export function App(): ReactElement {
               ...rest,
               attachments: metadata.attachments ?? [],
               citations: metadata.citations ?? [],
+              confidence: metadata.confidence,
               intent: metadata.intent,
             };
           });
@@ -156,6 +157,46 @@ export function App(): ReactElement {
     setInput('');
   };
 
+  const submitFeedback = async (
+    message: ChatMessage,
+    rating: 'positive' | 'negative',
+  ): Promise<void> => {
+    if (message.question === undefined || message.intent === undefined) {
+      return;
+    }
+    updateAssistantMessage(message.id, (current) => ({
+      ...current,
+      feedbackStatus: 'submitting',
+    }));
+    try {
+      const response = await fetch('/api/feedback', {
+        body: JSON.stringify({
+          answer: message.rawAnswer,
+          channel: 'web',
+          citationCount: message.citations.length,
+          intent: message.intent,
+          question: message.question,
+          rating,
+          sessionId,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error('Feedback request failed.');
+      }
+      updateAssistantMessage(message.id, (current) => ({
+        ...current,
+        feedbackStatus: rating,
+      }));
+    } catch {
+      updateAssistantMessage(message.id, (current) => ({
+        ...current,
+        feedbackStatus: 'error',
+      }));
+    }
+  };
+
   const runModelTest = async (): Promise<void> => {
     if (modelTestBusy) {
       return;
@@ -179,7 +220,7 @@ export function App(): ReactElement {
       <Sidebar busy={busy} onPrompt={submitPrompt} />
       <section aria-label="chat" className="chat-workbench">
         <ChatHeader onClear={clearChat} onModelTest={openModelTest} />
-        <MessageList messages={messages} messagesRef={messagesRef} />
+        <MessageList messages={messages} messagesRef={messagesRef} onFeedback={submitFeedback} />
         <form className="composer-wrap" id="chat-form" onSubmit={onSubmit}>
           <div className="composer">
             <label className="sr-only" htmlFor="message">
@@ -381,20 +422,28 @@ function ModelTestCard({ check, title }: { check: ModelHealthCheck; title: strin
 function MessageList({
   messages,
   messagesRef,
+  onFeedback,
 }: {
   messages: ChatMessage[];
   messagesRef: RefObject<HTMLDivElement | null>;
+  onFeedback: (message: ChatMessage, rating: 'positive' | 'negative') => Promise<void>;
 }): ReactElement {
   return (
     <div aria-live="polite" className="messages" ref={messagesRef}>
       {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} />
+        <MessageBubble key={message.id} message={message} onFeedback={onFeedback} />
       ))}
     </div>
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }): ReactElement {
+function MessageBubble({
+  message,
+  onFeedback,
+}: {
+  message: ChatMessage;
+  onFeedback: (message: ChatMessage, rating: 'positive' | 'negative') => Promise<void>;
+}): ReactElement {
   const messageClassName = ['message', message.role, message.status === 'error' ? 'is-error' : '']
     .filter(Boolean)
     .join(' ');
@@ -423,10 +472,65 @@ function MessageBubble({ message }: { message: ChatMessage }): ReactElement {
             )}
             <CitationList citations={message.citations} />
             <AttachmentList attachments={message.attachments} />
+            <FeedbackControls message={message} onFeedback={onFeedback} />
           </>
         ) : undefined}
       </div>
     </article>
+  );
+}
+
+function FeedbackControls({
+  message,
+  onFeedback,
+}: {
+  message: ChatMessage;
+  onFeedback: (message: ChatMessage, rating: 'positive' | 'negative') => Promise<void>;
+}): ReactElement | undefined {
+  if (
+    message.id === 'welcome' ||
+    message.status !== undefined ||
+    message.question === undefined ||
+    message.intent === undefined ||
+    message.rawAnswer.length === 0
+  ) {
+    return undefined;
+  }
+
+  const submitted = message.feedbackStatus === 'positive' || message.feedbackStatus === 'negative';
+  const disabled = submitted || message.feedbackStatus === 'submitting';
+  return (
+    <div aria-label="回答反馈" className="feedback-controls">
+      <span>
+        {submitted
+          ? '感谢反馈'
+          : message.feedbackStatus === 'error'
+            ? '提交失败，请重试'
+            : '这个回答有帮助吗？'}
+      </span>
+      <button
+        aria-label="回答有帮助"
+        className={message.feedbackStatus === 'positive' ? 'is-selected' : ''}
+        disabled={disabled}
+        onClick={() => {
+          void onFeedback(message, 'positive');
+        }}
+        type="button"
+      >
+        👍
+      </button>
+      <button
+        aria-label="回答没有帮助"
+        className={message.feedbackStatus === 'negative' ? 'is-selected' : ''}
+        disabled={disabled}
+        onClick={() => {
+          void onFeedback(message, 'negative');
+        }}
+        type="button"
+      >
+        👎
+      </button>
+    </div>
   );
 }
 
@@ -493,11 +597,12 @@ function createUserMessage(text: string): ChatMessage {
   };
 }
 
-function createAssistantMessage(id: string): ChatMessage {
+function createAssistantMessage(id: string, question: string): ChatMessage {
   return {
     attachments: [],
     citations: [],
     id,
+    question,
     rawAnswer: '',
     role: 'assistant',
     status: 'streaming',

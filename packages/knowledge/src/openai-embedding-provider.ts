@@ -146,11 +146,18 @@ async function fetchEmbedding(
     });
 
     if (response !== undefined) {
+      if (!response.ok && isRetryableStatus(response.status) && attempt < options.maxRetries) {
+        continue;
+      }
       return response;
     }
   }
 
   throw new EmbeddingRequestTimeoutError(options.requestTimeoutMs);
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status < 600);
 }
 
 async function fetchWithTimeout(

@@ -337,6 +337,15 @@ async function plannerNode(
     };
   }
 
+  const deterministicPlan = deterministicProductPlan(state.request, options.registry);
+  if (deterministicPlan !== undefined) {
+    return {
+      currentStep: state.currentStep + 1,
+      plan: deterministicPlan,
+      route: 'product_answer',
+    };
+  }
+
   let plan: AgentPlan;
   const plannerInput = {
     request: state.request,
@@ -396,6 +405,27 @@ async function plannerNode(
     ...(planningErrors.length > 0 ? { errors: planningErrors } : {}),
     plan,
     route: normalizeAgentRoute(plan.route),
+  };
+}
+
+function deterministicProductPlan(
+  request: ChatRequest,
+  registry: ToolRegistry,
+): AgentPlan | undefined {
+  const classification = classifyQuestion(request.message);
+  if (
+    (classification.intent !== 'product_qa' && classification.intent !== 'how_to') ||
+    !registry.list().some((tool) => tool.name === 'answer_product_question')
+  ) {
+    return undefined;
+  }
+
+  return {
+    input: { question: request.message },
+    kind: 'tool',
+    reason: `deterministic ${classification.intent} classification`,
+    route: 'product_answer',
+    toolName: 'answer_product_question',
   };
 }
 
@@ -592,7 +622,7 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
 function listPlannerTools(registry: ToolRegistry): PlannerToolDescriptor[] {
   return registry
     .list()
-    .filter((tool) => isAllowedAgentToolName(tool.name))
+    .filter((tool) => isAllowedAgentToolName(tool.name) && tool.name !== 'search_product_docs')
     .map((tool) => ({
       description: tool.description,
       name: tool.name,

@@ -357,27 +357,77 @@ describe('createRequestHandler', () => {
     expect(response.body).toBe('');
   });
 
-  it('does not handle CORS preflight for removed API routes', async () => {
+  it('accepts feedback without an authorization token', async () => {
+    const recordFeedback = vi.fn(() => Promise.resolve());
     const handler = createRequestHandler({
       env: {
         API_CORS_ORIGIN: 'https://app.example',
       },
+      recordFeedback,
     });
 
     const response = await callHandler(handler, {
-      headers: {
-        'access-control-request-headers': 'Content-Type',
-        origin: 'https://app.example',
+      body: {
+        answer: '根据知识库，支持设置挂单。',
+        channel: 'web',
+        citationCount: 1,
+        intent: 'how_to',
+        question: '怎么设置挂单？',
+        rating: 'positive',
+        sessionId: 'session-1',
       },
-      method: 'OPTIONS',
-      url: '/api/' + 'feedback',
+      method: 'POST',
+      url: '/api/feedback',
     });
 
-    expect(response.statusCode).toBe(404);
-    expect(JSON.parse(response.body)).toEqual({
-      error: 'not_found',
-      message: 'Route not found.',
+    expect(response.statusCode).toBe(204);
+    expect(recordFeedback).toHaveBeenCalledWith({
+      answer: '根据知识库，支持设置挂单。',
+      channel: 'web',
+      citationCount: 1,
+      intent: 'how_to',
+      question: '怎么设置挂单？',
+      rating: 'positive',
+      sessionId: 'session-1',
     });
+  });
+
+  it('records uncited product answers as a review backlog signal', async () => {
+    const recordFeedback = vi.fn(() => Promise.resolve());
+    const handler = createRequestHandler({
+      recordFeedback,
+      getChatService: () =>
+        Promise.resolve({
+          ask() {
+            return Promise.resolve({
+              answer: '当前知识库没有找到直接相关资料。',
+              citations: [],
+              confidence: 0.25,
+              intent: 'product_qa',
+            });
+          },
+          stream() {
+            throw new Error('stream should not be used');
+          },
+        }),
+    });
+
+    const response = await callHandler(handler, {
+      body: { message: '一个尚未覆盖的产品问题', sessionId: 'session-low-evidence' },
+      method: 'POST',
+      url: '/api/chat',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(recordFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        citationCount: 0,
+        comment: 'automatic_low_evidence',
+        question: '一个尚未覆盖的产品问题',
+        rating: 'negative',
+        sessionId: 'session-low-evidence',
+      }),
+    );
   });
 
   it('adds CORS headers to allowed chat responses', async () => {
@@ -1263,7 +1313,7 @@ describe('createRequestHandler', () => {
     const response = await callHandler(handler, {
       method: 'POST',
       url: '/api/chat',
-      body: { message: 'XXYY Pro 有哪些权益？' },
+      body: { message: '你好，可以介绍一下吗？' },
     });
 
     expect(response.statusCode).toBe(503);

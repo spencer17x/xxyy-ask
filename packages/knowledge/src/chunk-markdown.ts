@@ -27,7 +27,10 @@ function chunkMarkdownDocument(
     throw new Error('maxChunkChars must be a positive integer');
   }
 
-  const groups = collectMarkdownGroups(document.content, document.title);
+  const groups = mergeAdjacentGroups(
+    collectMarkdownGroups(document.content, document.title),
+    maxChunkChars,
+  );
   const chunks: RagChunk[] = [];
 
   for (const group of groups) {
@@ -43,6 +46,31 @@ function chunkMarkdownDocument(
   }
 
   return chunks;
+}
+
+function mergeAdjacentGroups(groups: TextGroup[], maxChunkChars: number): TextGroup[] {
+  const merged: TextGroup[] = [];
+
+  for (const group of groups) {
+    const previous = merged.at(-1);
+    const combinedText = previous === undefined ? group.text : `${previous.text}\n\n${group.text}`;
+    if (
+      previous !== undefined &&
+      sameHeadingPath(previous.headingPath, group.headingPath) &&
+      combinedText.length <= maxChunkChars
+    ) {
+      previous.text = combinedText;
+      continue;
+    }
+
+    merged.push({ headingPath: [...group.headingPath], text: group.text });
+  }
+
+  return merged;
+}
+
+function sameHeadingPath(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((heading, index) => heading === right[index]);
 }
 
 function collectMarkdownGroups(content: string, fallbackTitle: string): TextGroup[] {

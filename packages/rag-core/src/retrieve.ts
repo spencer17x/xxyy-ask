@@ -14,6 +14,10 @@ export interface RetrievedChunk extends IndexEntry {
   sourceBoost: number;
   vectorScore: number;
   freshnessBoost?: number;
+  fusionScore?: number;
+  entityRank?: number;
+  lexicalRank?: number;
+  vectorRank?: number;
 }
 
 const DEFAULT_TOP_K = 6;
@@ -129,6 +133,25 @@ function selectEligibleEntries(question: string, entries: IndexEntry[]): IndexEn
 
 export function createRetrieveQueryTokens(question: string): string[] {
   return expandQueryTokens(uniqueTokens(tokenize(question)), question);
+}
+
+const LEXICAL_QUERY_STOP_TOKENS = new Set([
+  'xxyy',
+  '什么',
+  '哪些',
+  '可以',
+  '如何',
+  '怎么',
+  '是否',
+  '支持',
+  '当前',
+  '现在',
+]);
+
+export function createLexicalRetrieveQueryTokens(question: string): string[] {
+  return createRetrieveQueryTokens(question).filter(
+    (token) => token.length > 1 && !LEXICAL_QUERY_STOP_TOKENS.has(token),
+  );
 }
 
 function expandQueryTokens(tokens: string[], question: string): string[] {

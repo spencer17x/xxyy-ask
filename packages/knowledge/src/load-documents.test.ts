@@ -187,6 +187,23 @@ describe('loadProductDocuments', () => {
     });
   });
 
+  it('treats present-tense access instructions as current knowledge', async () => {
+    const fixtureDir = await createProductDocsFixture();
+    await writeFile(
+      path.join(fixtureDir, 'sources', 'usexxyyio-x-posts.jsonl'),
+      `${JSON.stringify({
+        id: '2059120830328770675',
+        url: 'https://x.com/useXXYYio/status/2059120830328770675',
+        text: '使用产品直达链接，或在网站更多工具里找到入口。',
+      })}\n`,
+    );
+
+    const documents = await loadProductDocuments({ productFeaturesDir: fixtureDir });
+    const accessPost = documents.find((document) => document.id.endsWith('2059120830328770675'));
+
+    expect(accessPost?.status).toBe('current');
+  });
+
   it('falls back to retrieved_at when lastmod metadata is empty', async () => {
     const fixtureDir = await createProductDocsFixture();
     await writeFile(

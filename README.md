@@ -189,8 +189,9 @@ pnpm rag:knowledge:list -- --status pending
 
 检索质量：
 
-- 默认产品问答仍使用 hybrid recall 和 source/debug scores。`rag-core` 另外提供可选 `Reranker` 扩展点，可在 retrieval 后对候选证据做二阶段排序。
-- 内置 `createMetadataReranker()` 是本地 deterministic reranker，基于标题、模块和 heading 与问题的 token 匹配做轻量重排，不调用外部模型。它适合 golden eval 或需要更稳定证据选择的本地路径。
+- 正式产品问答使用 pgvector 向量、Postgres 全文关键词和支持实体候选，并通过 RRF 合并不同分数尺度的 rank；候选阶段保留 source/debug scores 便于评测和排障。
+- 内置 `createMetadataReranker()` 是本地 deterministic reranker，使用问题覆盖率、标题/模块/heading、直接来源、列表/步骤证据和当前有效状态做通用二阶段排序，不调用外部模型，也不按具体产品 case 写规则。
+- 明确分类为 `product_qa` / `how_to` 的问题直接使用原问题进入产品 RAG；Planner 仅处理模糊路由和 Agent 自述，避免额外改写影响召回。
 - LLM relevance judge 或外部 reranker provider 可以按同一接口接入，但应默认关闭，并在有评估用例证明收益后再启用，以避免额外成本和延迟。
 
 ## 回答质量闭环
@@ -255,6 +256,7 @@ GET /health/deep
 ```http
 POST /api/chat
 POST /api/chat/stream
+POST /api/feedback
 ```
 
 请求示例：
@@ -276,7 +278,7 @@ GET /assets/*
 
 通过 `pnpm run app:dev` 或 `pnpm run api:dev` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、agentRoute、引用数、耗时、状态码、错误码、消息长度和脱敏截断后的消息预览等字段。日志只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文，并会脱敏密钥、交易哈希、地址、邮箱和手机号等敏感片段。
 
-API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat` 和 `/api/chat/stream` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。默认不信任 `x-forwarded-for` / `x-real-ip`；只有服务确实位于可信反向代理后，才设置 `TRUST_PROXY=true`。客服问答接口不要求鉴权。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。公开部署前请先阅读 [production readiness](docs/production-readiness.md)。
+API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat`、`/api/chat/stream` 和 `/api/feedback` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。默认不信任 `x-forwarded-for` / `x-real-ip`；只有服务确实位于可信反向代理后，才设置 `TRUST_PROXY=true`。客服问答和反馈接口不要求鉴权。Web 的 👍/👎 会写入 `rag_feedback`；Web/Telegram 中无引用的产品问答也会自动记录为 `automatic_low_evidence`，仅进入人工审核队列，不会直接修改线上知识。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。公开部署前请先阅读 [production readiness](docs/production-readiness.md)。
 
 ## 边界
 

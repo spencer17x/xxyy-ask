@@ -183,13 +183,13 @@ function collectFailureReasons(input: {
   }
 
   for (const requiredText of input.testCase.requiredAnswerIncludes ?? []) {
-    if (!input.answer.includes(requiredText)) {
+    if (!normalizedTextIncludes(input.answer, requiredText)) {
       failures.push(`answer missing required text: ${requiredText}`);
     }
   }
 
   for (const forbiddenText of input.testCase.forbiddenAnswerIncludes ?? []) {
-    if (input.answer.includes(forbiddenText)) {
+    if (normalizedTextIncludes(input.answer, forbiddenText)) {
       failures.push(`answer contains forbidden text: ${forbiddenText}`);
     }
   }
@@ -228,7 +228,7 @@ function collectFailureReasons(input: {
     const normalizedCitationText = normalizeGroundingText(input.citationExcerpts.join('\n'));
     for (const requiredText of input.testCase.requiredAnswerIncludes ?? []) {
       if (
-        input.answer.includes(requiredText) &&
+        normalizedTextIncludes(input.answer, requiredText) &&
         !normalizedCitationText.includes(normalizeGroundingText(requiredText))
       ) {
         failures.push(`answer text is not supported by citations: ${requiredText}`);
@@ -250,5 +250,13 @@ function formatTrajectory(values: readonly string[]): string {
 }
 
 function normalizeGroundingText(text: string): string {
-  return text.replace(/\s+/gu, '');
+  return text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[−–—]/gu, '-')
+    .replace(/[\s*_`#「」『』“”"'，,。！!？?：:；;（）()【】[\]{}<>/\\]+/gu, '');
+}
+
+function normalizedTextIncludes(text: string, expected: string): boolean {
+  return normalizeGroundingText(text).includes(normalizeGroundingText(expected));
 }

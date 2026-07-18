@@ -43,9 +43,11 @@ export {
 } from './pgvector-store.js';
 export type {
   EmbeddedKnowledgeChunk,
+  FeedbackRating,
   FeedbackRecord,
   KnowledgeStats,
   PgClientLike,
+  RecordFeedbackInput,
   ReplaceChunksOptions,
 } from './pgvector-store.js';
 export {
@@ -56,6 +58,7 @@ export {
 export type { QualityTraceRecord, QualityTracer } from './quality-trace.js';
 export { redactSensitiveSupportText } from './redaction.js';
 export { aggregateRetrievalResults, evaluateRetrievalRanking } from './retrieval-evaluate.js';
+export { reciprocalRankFusionScore } from './hybrid-rank.js';
 export type { RetrievedChunk } from './retrieve.js';
 export {
   createLazyRetriever,

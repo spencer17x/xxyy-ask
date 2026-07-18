@@ -36,7 +36,7 @@ APP_REVISION=release-sha
 API 内置基础保护：
 
 - `API_MAX_BODY_BYTES` 限制 JSON 请求体大小，默认 `65536` 字节。
-- `API_RATE_LIMIT_MAX` 和 `API_RATE_LIMIT_WINDOW_MS` 对 `/api/chat` 和 `/api/chat/stream` 按客户端地址限流，默认 `60` 次 / `60000` 毫秒。
+- `API_RATE_LIMIT_MAX` 和 `API_RATE_LIMIT_WINDOW_MS` 对 `/api/chat`、`/api/chat/stream` 和 `/api/feedback` 按客户端地址限流，默认 `60` 次 / `60000` 毫秒。
 - `TRUST_PROXY=false` 时只使用 socket 地址；只有在可信反向代理后才设置 `TRUST_PROXY=true` 并读取 `x-forwarded-for` / `x-real-ip`。
 
 公开部署时仍应在网关层增加共享配额，因为进程内限流不适合多实例全局控制：
@@ -52,6 +52,7 @@ API 内置基础保护：
 
 - 日志只保留脱敏后的 `messagePreview` 和长度，不保留完整明文问题。
 - `rag_feedback` 会写入反馈问题、答案、intent、引用数和评论；写入前会脱敏凭证类文本。
+- Web 的显式 👍/👎 和 Web/Telegram 的无引用产品回答会进入 `rag_feedback`；`automatic_low_evidence` 只作为人工审核信号，不自动发布知识。
 - LLM prompt 会脱敏用户问题和检索片段中的凭证类文本。
 - `requestId` 可以用于排查单次请求，但不要把它设计成长期用户标识。
 - LangSmith trace 不存 session/user ID 明文；requestId 只用于短期关联。trace retention 应不长于 API 日志，除非经过单独的数据治理审批。

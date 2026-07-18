@@ -35,7 +35,7 @@ export interface CreateProductToolsOptions {
 
 const MAX_TOP_K = 20;
 const DEFAULT_TOP_K = 6;
-const RERANK_CANDIDATE_MULTIPLIER = 4;
+const RERANK_CANDIDATE_MULTIPLIER = 8;
 
 const nonEmptyStringSchema = z.string().trim().min(1);
 const productChannelSchema = z.enum(['cli', 'web', 'telegram', 'agent']);
