@@ -12,6 +12,7 @@ import {
 
 const GROUNDED_INTENTS = new Set<Intent>(['product_qa', 'how_to']);
 const MAX_CITATIONS = 3;
+const MAX_ATTACHMENTS = 4;
 const MAX_STRUCTURED_GROUNDING_CHUNKS = 4;
 const MAX_EXCERPT_LENGTH = 220;
 const MAX_ANSWER_EVIDENCE_LENGTH = 600;
@@ -28,6 +29,11 @@ const ANSWER_STOP_TOKENS = new Set([
   '现在',
 ]);
 const VIDEO_LINK_PATTERN = /\[([^\]]+)\]\((\/assets\/[^)\s]+\.mp4)\)/giu;
+const IMAGE_LINK_PATTERN =
+  /!\[([^\]]*)\]\((\/assets\/[A-Za-z0-9._-]+\.(?:png|jpe?g|webp|svg|gif|avif))(?:\s+["'][^"']*["'])?\)/giu;
+const HTML_IMAGE_PATTERN = /<img\b[^>]*>/giu;
+const YOUTUBE_URL_PATTERN =
+  /https:\/\/(?:www\.youtube\.com\/watch\?[^\s<>)]+|youtu\.be\/[A-Za-z0-9_-]+)/giu;
 const FUTURE_SUPPORT_PATTERN =
   /计划|即将|预计|未来|下季度|稍后|soon|coming|roadmap|will\s+support|plans?\s+to\s+support/iu;
 
@@ -288,9 +294,15 @@ export function createAttachmentsFromChunks(retrievedChunks: RetrievedChunk[]): 
   const byUrl = new Map<string, ChatAttachment>();
 
   for (const chunk of retrievedChunks) {
-    for (const attachment of extractVideoAttachments(chunk.text)) {
+    for (const attachment of [
+      ...(chunk.metadata.attachments ?? []),
+      ...extractInlineMediaAttachments(chunk.text, chunk.metadata.title),
+    ]) {
       if (!byUrl.has(attachment.url)) {
         byUrl.set(attachment.url, attachment);
+      }
+      if (byUrl.size >= MAX_ATTACHMENTS) {
+        return Array.from(byUrl.values());
       }
     }
   }
@@ -298,7 +310,7 @@ export function createAttachmentsFromChunks(retrievedChunks: RetrievedChunk[]): 
   return Array.from(byUrl.values());
 }
 
-function extractVideoAttachments(text: string): ChatAttachment[] {
+function extractInlineMediaAttachments(text: string, fallbackTitle: string): ChatAttachment[] {
   const attachments: ChatAttachment[] = [];
 
   for (const match of text.matchAll(VIDEO_LINK_PATTERN)) {
@@ -315,7 +327,80 @@ function extractVideoAttachments(text: string): ChatAttachment[] {
     });
   }
 
+  for (const match of text.matchAll(IMAGE_LINK_PATTERN)) {
+    const url = match[2]?.trim();
+    const mediaType = url === undefined ? undefined : imageMediaTypeFromUrl(url);
+    if (url === undefined || mediaType === undefined) continue;
+    attachments.push({
+      kind: 'image',
+      mediaType,
+      title: match[1]?.trim() || fallbackTitle,
+      url,
+    });
+  }
+
+  for (const match of text.matchAll(HTML_IMAGE_PATTERN)) {
+    const tag = match[0];
+    const url = htmlAttribute(tag, 'src');
+    const mediaType = url === undefined ? undefined : imageMediaTypeFromUrl(url);
+    if (url === undefined || mediaType === undefined || !url.startsWith('/assets/')) continue;
+    attachments.push({
+      kind: 'image',
+      mediaType,
+      title: htmlAttribute(tag, 'alt')?.trim() || fallbackTitle,
+      url,
+    });
+  }
+
+  for (const match of text.matchAll(YOUTUBE_URL_PATTERN)) {
+    const url = normalizeYouTubeUrl(match[0]);
+    if (url === undefined) continue;
+    attachments.push({
+      kind: 'video',
+      mediaType: 'text/html',
+      title: fallbackTitle,
+      url,
+    });
+  }
+
   return attachments;
+}
+
+function htmlAttribute(tag: string, name: string): string | undefined {
+  const match = new RegExp(`\\b${name}\\s*=\\s*(["'])(?<value>.*?)\\1`, 'iu').exec(tag);
+  return match?.groups?.value;
+}
+
+function imageMediaTypeFromUrl(
+  url: string,
+): Extract<ChatAttachment, { kind: 'image' }>['mediaType'] | undefined {
+  const extension = /\.([A-Za-z0-9]+)(?:[?#]|$)/u.exec(url)?.[1]?.toLowerCase();
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'svg') return 'image/svg+xml';
+  if (extension === 'gif') return 'image/gif';
+  if (extension === 'avif') return 'image/avif';
+  return undefined;
+}
+
+function normalizeYouTubeUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    if (url.hostname === 'www.youtube.com' && url.pathname === '/watch') {
+      const videoId = url.searchParams.get('v');
+      return videoId === null || !/^[A-Za-z0-9_-]+$/u.test(videoId)
+        ? undefined
+        : `https://www.youtube.com/watch?v=${videoId}`;
+    }
+    if (url.hostname === 'youtu.be') {
+      const videoId = url.pathname.slice(1);
+      return /^[A-Za-z0-9_-]+$/u.test(videoId) ? `https://youtu.be/${videoId}` : undefined;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function isDirectSourceQuestion(question: string): boolean {
@@ -637,6 +722,7 @@ function createCitation(chunk: RetrievedChunk): Citation {
     title: chunk.metadata.title,
     file: normalizeCitationFile(chunk.metadata.file),
     excerpt: withCitationPublicationDate(chunk, createExcerpt(chunk.text)),
+    sourceType: chunk.metadata.sourceType,
   };
 
   if (chunk.metadata.sourceUrl !== undefined) {

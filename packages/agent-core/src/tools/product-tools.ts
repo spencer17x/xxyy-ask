@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import type { ChatResponse, ChatStreamEvent, Classification, RagIndex } from '@xxyy/shared';
+import {
+  supportedSourceTypes,
+  type ChatResponse,
+  type ChatStreamEvent,
+  type Classification,
+  type RagIndex,
+} from '@xxyy/shared';
 import {
   classifyQuestion,
   createAttachmentsFromChunks,
@@ -43,6 +49,7 @@ const productChannelSchema = z.enum(['cli', 'web', 'telegram', 'agent']);
 const citationSchema = z.object({
   excerpt: z.string(),
   file: z.string(),
+  sourceType: z.enum(supportedSourceTypes).optional(),
   sourceUrl: z.string().optional(),
   title: z.string(),
 });

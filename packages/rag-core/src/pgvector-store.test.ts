@@ -339,6 +339,14 @@ describe('createPgVectorStore', () => {
       createChunk({
         embedding: embedding1536({ 0: 0.1, 1: 0.2, 2: 0.3 }),
         metadata: {
+          attachments: [
+            {
+              kind: 'image',
+              mediaType: 'image/png',
+              title: 'Pro 权益截图',
+              url: '/assets/pro.png',
+            },
+          ],
           effectiveAt: '2026-03-16T11:12:30.350Z',
           retrievedAt: '2026-05-24T06:41:04.265Z',
           status: 'current',
@@ -369,6 +377,16 @@ describe('createPgVectorStore', () => {
     expect(client.queries[0]?.values).toContain('2026-03-16T11:12:30.350Z');
     expect(client.queries[0]?.values).toContain('current');
     expect(client.queries[0]?.values).toContain(JSON.stringify(['x_updates:old-pro']));
+    expect(client.queries[0]?.values).toContain(
+      JSON.stringify([
+        {
+          kind: 'image',
+          mediaType: 'image/png',
+          title: 'Pro 权益截图',
+          url: '/assets/pro.png',
+        },
+      ]),
+    );
     expect(client.queries[1]?.values[9]).toBeNull();
   });
 
@@ -563,6 +581,14 @@ describe('createPgVectorStore', () => {
         effective_at: '2026-03-16T11:12:30.350Z',
         status: 'current',
         supersedes: ['x_updates:old-pro'],
+        attachments: [
+          {
+            kind: 'image',
+            mediaType: 'image/png',
+            title: 'Pro 权益截图',
+            url: '/assets/pro.png',
+          },
+        ],
         source_type: 'official_docs',
         source_url: null,
         title: 'XXYY Pro 权益',
@@ -596,6 +622,14 @@ describe('createPgVectorStore', () => {
         sourceType: 'official_docs',
         status: 'current',
         supersedes: ['x_updates:old-pro'],
+        attachments: [
+          {
+            kind: 'image',
+            mediaType: 'image/png',
+            title: 'Pro 权益截图',
+            url: '/assets/pro.png',
+          },
+        ],
         title: 'XXYY Pro 权益',
       },
       text: 'XXYY Pro 支持 Telegram 钱包监控。',

@@ -49,4 +49,43 @@ describe('knowledge chunk preparation', () => {
       retrievedAt: '2026-05-24T06:41:04.265Z',
     });
   });
+
+  it('includes attachment metadata in the content hash', () => {
+    const baseDocument = {
+      id: 'official_docs:screenshot',
+      title: '配置截图',
+      module: '产品文档图片文字',
+      sourceType: 'official_docs' as const,
+      file: '/docs/screenshot.md',
+      content: '# 配置截图\n\n打开设置并保存。',
+    };
+    const first = prepareKnowledgeChunks([
+      {
+        ...baseDocument,
+        attachments: [
+          {
+            kind: 'image' as const,
+            mediaType: 'image/png' as const,
+            title: '配置截图',
+            url: '/assets/first.png',
+          },
+        ],
+      },
+    ]);
+    const second = prepareKnowledgeChunks([
+      {
+        ...baseDocument,
+        attachments: [
+          {
+            kind: 'image' as const,
+            mediaType: 'image/png' as const,
+            title: '配置截图',
+            url: '/assets/second.png',
+          },
+        ],
+      },
+    ]);
+
+    expect(first[0]?.contentHash).not.toBe(second[0]?.contentHash);
+  });
 });

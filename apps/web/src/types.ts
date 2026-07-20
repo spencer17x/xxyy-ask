@@ -1,6 +1,7 @@
 export interface Citation {
   excerpt: string;
   file: string;
+  sourceType?: 'admin_verified' | 'official_docs' | 'x_updates';
   sourceUrl?: string;
   title: string;
 }
@@ -8,6 +9,7 @@ export interface Citation {
 export interface Attachment {
   kind: 'image' | 'video';
   mediaType?: string;
+  posterUrl?: string;
   title: string;
   url: string;
 }

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { ChatRequest } from '@xxyy/shared';
+import { supportedSourceTypes, type ChatRequest } from '@xxyy/shared';
 import { noopQualityTracer, redactSensitiveSupportText, type QualityTracer } from '@xxyy/rag-core';
 
 import {
@@ -68,6 +68,7 @@ const citationSchema = z.object({
   title: z.string(),
   file: z.string(),
   excerpt: z.string(),
+  sourceType: z.enum(supportedSourceTypes).optional(),
   sourceUrl: z.string().optional(),
 });
 

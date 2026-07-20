@@ -14,11 +14,6 @@ const COMMANDS = {
     command: 'pnpm',
     label: 'refresh official docs',
   },
-  refreshExternalDocs: {
-    args: ['docs:sync:external'],
-    command: 'pnpm',
-    label: 'refresh external Agent Skill docs',
-  },
   enrichMedia: {
     args: ['docs:enrich:media'],
     command: 'pnpm',
@@ -47,12 +42,7 @@ export function createRagRefreshPlan(args) {
 
   if (!options.skipScrape) {
     if (options.full) {
-      plan.push(
-        COMMANDS.refreshDocs,
-        COMMANDS.refreshExternalDocs,
-        COMMANDS.enrichMedia,
-        COMMANDS.auditDocs,
-      );
+      plan.push(COMMANDS.refreshDocs, COMMANDS.enrichMedia, COMMANDS.auditDocs);
     }
     plan.push(COMMANDS.refreshXUpdates(options.full));
   }

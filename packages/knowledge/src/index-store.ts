@@ -24,7 +24,7 @@ export function prepareKnowledgeChunks(documents: SourceDocument[]): PreparedKno
       },
       searchableText,
       tokens: tokenize(searchableText),
-      contentHash: createContentHash(chunk.text),
+      contentHash: createContentHash(chunk),
     };
   });
 }
@@ -38,8 +38,12 @@ function createSearchableText(chunk: RagChunk): string {
   ].join('\n');
 }
 
-function createContentHash(content: string): string {
-  return createHash('sha256').update(content).digest('hex');
+function createContentHash(chunk: RagChunk): string {
+  return createHash('sha256')
+    .update(chunk.text)
+    .update('\0')
+    .update(JSON.stringify(chunk.metadata.attachments ?? []))
+    .digest('hex');
 }
 
 function normalizeFilePath(file: string): string {

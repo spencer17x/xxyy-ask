@@ -802,7 +802,13 @@ function uniqueAttachments(attachments: ChatAttachment[]): ChatAttachment[] {
 }
 
 function citationKey(citation: AgentEvidenceForSearch['citations'][number]): string {
-  return [citation.file, citation.title, citation.sourceUrl ?? '', citation.excerpt].join('\0');
+  return [
+    citation.sourceType ?? '',
+    citation.file,
+    citation.title,
+    citation.sourceUrl ?? '',
+    citation.excerpt,
+  ].join('\0');
 }
 
 function consecutiveEmptySearchEvidenceCount(evidenceList: AgentEvidence[]): number {

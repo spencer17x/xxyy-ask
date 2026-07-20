@@ -72,6 +72,8 @@ export function validateCommitMessage(message) {
   }
 
   const subject = match[4];
+  const hasBreakingMarker = match[3] === '!';
+  const breakingFooter = lines.find((line) => line.startsWith('BREAKING CHANGE:'));
 
   if (subject !== subject.trim()) {
     errors.push('subject 前后不能包含多余空格');
@@ -87,6 +89,18 @@ export function validateCommitMessage(message) {
   }
   if (lines.length > 1 && lines[1].trim() !== '') {
     errors.push('标题与正文之间必须保留一个空行');
+  }
+  if (hasBreakingMarker && breakingFooter === undefined) {
+    errors.push('破坏性变更标题包含 ! 时，必须添加 BREAKING CHANGE: footer');
+  }
+  if (!hasBreakingMarker && breakingFooter !== undefined) {
+    errors.push('包含 BREAKING CHANGE: footer 时，标题必须使用 ! 标记破坏性变更');
+  }
+  if (
+    breakingFooter !== undefined &&
+    breakingFooter.slice('BREAKING CHANGE:'.length).trim() === ''
+  ) {
+    errors.push('BREAKING CHANGE: footer 必须说明具体影响');
   }
 
   return errors;

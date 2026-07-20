@@ -288,7 +288,7 @@ describe('CLI output formatting', () => {
     ).toContain('Ingestion run: ingest_run_1');
 
     const document = formatAdminVerifiedKnowledgeDocument(candidate);
-    expect(document).toContain('section: "管理员审核知识"');
+    expect(document).toContain('section: "XXYY 客服群审核知识"');
     expect(document).toContain('effective_at: "2026-07-15T00:00:00.000Z"');
     expect(document).toContain('source_url: "https://docs.example.com/robinhood"');
     expect(document).toContain('supersedes: ["official_docs:old-robinhood"]');
@@ -651,7 +651,9 @@ describe('CLI output formatting', () => {
         'Run ID: ingest_20260606T010203Z_abcd1234',
       ].join('\n'),
     );
-    expect(formatKnowledgeStats(stats)).toContain('official_docs: 48 chunks, 10 documents');
+    expect(formatKnowledgeStats(stats)).toContain(
+      'XXYY 官方文档 (official_docs): 48 chunks, 10 documents',
+    );
     expect(formatKnowledgeStats(stats)).toContain('Content hash: content-hash-1');
   });
 

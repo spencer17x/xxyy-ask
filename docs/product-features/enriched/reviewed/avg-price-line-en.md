@@ -1,6 +1,6 @@
 ---
 title: "Avg. Price Line"
-section: "English / Chart area / Reviewed translation"
+section: "English / Chart area / Reviewed official-doc fallback"
 source_url: "https://docs.xxyy.io/en/chart-area/avg.-price-line"
 effective_at: "2025-02-14T03:53:13.498Z"
 status: current

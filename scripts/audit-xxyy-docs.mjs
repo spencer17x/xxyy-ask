@@ -12,14 +12,6 @@ const KNOWN_NON_CONTENT = new Map([
   ['/en', 'not_found'],
   ['/en/chart-area/avg.-price-line', 'empty'],
 ]);
-const EXTERNAL_REPOSITORY = 'https://github.com/Jimmy-Holiday/xxyy-trade-skill';
-const EXTERNAL_FILES = new Set([
-  'mcp-readme-zh.md',
-  'mcp-readme.md',
-  'readme-zh.md',
-  'readme.md',
-  'skill-reference.md',
-]);
 export async function auditXxyyDocs(options = {}) {
   const cwd = options.cwd ?? process.cwd();
   const productDir = path.resolve(cwd, PRODUCT_DIR);
@@ -79,7 +71,6 @@ export async function auditXxyyDocs(options = {}) {
 
   const assets = await auditAssets(productDir, errors);
   await auditReviewedFallbacks(productDir, errors);
-  await auditExternalSources(productDir, errors);
   const imageOcr = await auditImageOcr(productDir, assets, errors, warnings);
   const videos = await auditVideos(
     productDir,
@@ -122,53 +113,6 @@ async function auditAssets(productDir, errors) {
     }
   }
   return assetManifest.assets;
-}
-
-async function auditExternalSources(productDir, errors) {
-  const directory = path.join(productDir, 'external', 'xxyy-trade-skill');
-  const manifest = await readRequiredJson(
-    path.join(directory, 'manifest.json'),
-    'external Agent Skill manifest',
-    errors,
-  );
-  if (manifest === undefined) return;
-  if (
-    manifest.repository !== EXTERNAL_REPOSITORY ||
-    typeof manifest.commit !== 'string' ||
-    !/^[0-9a-f]{40}$/u.test(manifest.commit) ||
-    manifest.verified_by !== 'https://x.com/useXXYYio/status/2029875008730976415' ||
-    !Array.isArray(manifest.files)
-  ) {
-    errors.push('External Agent Skill manifest has invalid repository provenance.');
-    return;
-  }
-  const outputs = new Set(manifest.files.map((entry) => entry?.output));
-  if (
-    outputs.size !== EXTERNAL_FILES.size ||
-    [...EXTERNAL_FILES].some((output) => !outputs.has(output))
-  ) {
-    errors.push('External Agent Skill manifest does not match the Markdown allowlist.');
-  }
-  for (const entry of manifest.files) {
-    if (
-      typeof entry?.output !== 'string' ||
-      typeof entry.path !== 'string' ||
-      typeof entry.sha256 !== 'string' ||
-      typeof entry.bytes !== 'number' ||
-      entry.source_url !== `${EXTERNAL_REPOSITORY}/blob/${manifest.commit}/${entry.path}`
-    ) {
-      errors.push(`Invalid external Agent Skill file entry: ${JSON.stringify(entry)}`);
-      continue;
-    }
-    await auditGeneratedFile({
-      errors,
-      expectedBytes: entry.bytes,
-      expectedHash: entry.sha256,
-      file: path.join(directory, entry.output),
-      label: `external/${entry.output}`,
-      requiredText: `Pinned commit: ${manifest.commit}`,
-    });
-  }
 }
 
 async function auditImageOcr(productDir, sourceAssets, errors, warnings) {
@@ -368,7 +312,7 @@ async function readRequiredJson(file, label, errors) {
 }
 
 async function auditReviewedFallbacks(productDir, errors) {
-  const fallback = path.join(productDir, 'admin-verified', 'avg-price-line-en.md');
+  const fallback = path.join(productDir, 'enriched', 'reviewed', 'avg-price-line-en.md');
   try {
     const content = await readFile(fallback, 'utf8');
     if (!content.includes('official Chinese documentation') || !content.includes('average cost')) {

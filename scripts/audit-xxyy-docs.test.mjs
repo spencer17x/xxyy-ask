@@ -14,7 +14,7 @@ describe('auditXxyyDocs', () => {
     const productDir = path.join(cwd, 'docs', 'product-features');
     await mkdir(path.join(productDir, 'pages'), { recursive: true });
     await mkdir(path.join(productDir, 'assets'), { recursive: true });
-    await mkdir(path.join(productDir, 'admin-verified'), { recursive: true });
+    await mkdir(path.join(productDir, 'enriched', 'reviewed'), { recursive: true });
     const page = [
       '---',
       'title: "Page Not Found"',
@@ -42,7 +42,7 @@ describe('auditXxyyDocs', () => {
       `${JSON.stringify({ assets: [] })}\n`,
     );
     await writeFile(
-      path.join(productDir, 'admin-verified', 'avg-price-line-en.md'),
+      path.join(productDir, 'enriched', 'reviewed', 'avg-price-line-en.md'),
       'Derived from official Chinese documentation. The average cost line shows average cost.\n',
     );
     await writeExtendedSourceFixtures(productDir);
@@ -98,44 +98,9 @@ describe('auditXxyyDocs', () => {
 });
 
 async function writeExtendedSourceFixtures(productDir) {
-  const externalDir = path.join(productDir, 'external', 'xxyy-trade-skill');
   const mediaDir = path.join(productDir, 'enriched', 'media');
   const videoDir = path.join(productDir, 'enriched', 'videos');
-  await Promise.all([
-    mkdir(externalDir, { recursive: true }),
-    mkdir(mediaDir, { recursive: true }),
-    mkdir(videoDir, { recursive: true }),
-  ]);
-
-  const commit = '0123456789abcdef0123456789abcdef01234567';
-  const externalFiles = [
-    ['mcp-readme-zh.md', 'mcp/docs/README_ZH.md'],
-    ['mcp-readme.md', 'mcp/README.md'],
-    ['readme-zh.md', 'docs/README_ZH.md'],
-    ['readme.md', 'README.md'],
-    ['skill-reference.md', 'SKILL.md'],
-  ];
-  const manifestFiles = [];
-  for (const [output, sourcePath] of externalFiles) {
-    const content = `# External\n\nPinned commit: ${commit}\n`;
-    await writeFile(path.join(externalDir, output), content);
-    manifestFiles.push({
-      bytes: Buffer.byteLength(content),
-      output,
-      path: sourcePath,
-      sha256: sha256(content),
-      source_url: `https://github.com/Jimmy-Holiday/xxyy-trade-skill/blob/${commit}/${sourcePath}`,
-    });
-  }
-  await writeFile(
-    path.join(externalDir, 'manifest.json'),
-    `${JSON.stringify({
-      repository: 'https://github.com/Jimmy-Holiday/xxyy-trade-skill',
-      commit,
-      verified_by: 'https://x.com/useXXYYio/status/2029875008730976415',
-      files: manifestFiles,
-    })}\n`,
-  );
+  await Promise.all([mkdir(mediaDir, { recursive: true }), mkdir(videoDir, { recursive: true })]);
   await writeFile(path.join(mediaDir, 'manifest.json'), `${JSON.stringify({ assets: [] })}\n`);
 
   const localVideo = '# Local video\n\n## 关键帧 OCR 文字\n\nAdd to Home Screen\n';

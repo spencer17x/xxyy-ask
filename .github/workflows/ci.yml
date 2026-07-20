@@ -1,17 +1,36 @@
 name: CI
 
 on:
+  merge_group:
   pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
 
 jobs:
-  check:
+  quality:
+    name: Quality gate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -24,8 +43,14 @@ jobs:
           cache: pnpm
           node-version: 24
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Validate commit messages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+        run: node scripts/validate-commit-range.mjs --from "$BASE_SHA" --to "$HEAD_SHA"
 
-      - name: Run check
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Run quality gate
         run: pnpm check

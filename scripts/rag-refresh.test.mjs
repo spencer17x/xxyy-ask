@@ -26,11 +26,6 @@ describe('createRagRefreshPlan', () => {
         label: 'refresh official docs',
       },
       {
-        args: ['docs:sync:external'],
-        command: 'pnpm',
-        label: 'refresh external Agent Skill docs',
-      },
-      {
         args: ['docs:enrich:media'],
         command: 'pnpm',
         label: 'enrich documentation media',

@@ -28,8 +28,25 @@ const supportedStreamStatusPhases = ['planning', 'retrieving', 'answering'] as c
 
 type StreamStatusPhase = (typeof supportedStreamStatusPhases)[number];
 
-export type SourceType = 'admin_verified' | 'official_docs' | 'x_updates';
+export const supportedSourceTypes = ['admin_verified', 'official_docs', 'x_updates'] as const;
+
+export type SourceType = (typeof supportedSourceTypes)[number];
 export type KnowledgeStatus = 'current' | 'historical' | 'deprecated';
+
+export const knowledgeSourceCatalog = {
+  official_docs: {
+    canonicalUrl: 'https://docs.xxyy.io/',
+    label: 'XXYY 官方文档',
+  },
+  x_updates: {
+    canonicalUrl: 'https://x.com/useXXYYio',
+    label: 'XXYY 官方 X 更新',
+  },
+  admin_verified: {
+    canonicalUrl: undefined,
+    label: 'XXYY 客服群审核知识',
+  },
+} as const satisfies Record<SourceType, { canonicalUrl: string | undefined; label: string }>;
 
 export interface ChatRequest {
   message: string;
@@ -43,6 +60,7 @@ export interface Citation {
   title: string;
   file: string;
   excerpt: string;
+  sourceType?: SourceType;
   sourceUrl?: string;
 }
 
@@ -51,13 +69,20 @@ export type ChatAttachment =
       kind: 'video';
       title: string;
       url: string;
-      mediaType: 'video/mp4';
+      mediaType: 'video/mp4' | 'text/html';
+      posterUrl?: string;
     }
   | {
       kind: 'image';
       title: string;
       url: string;
-      mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/svg+xml';
+      mediaType:
+        | 'image/png'
+        | 'image/jpeg'
+        | 'image/webp'
+        | 'image/svg+xml'
+        | 'image/gif'
+        | 'image/avif';
     };
 
 export interface ChatResponse {
@@ -79,6 +104,7 @@ export interface ChatTokenUsage {
 const citationSchema = z.object({
   excerpt: z.string(),
   file: z.string(),
+  sourceType: z.enum(supportedSourceTypes).optional(),
   sourceUrl: z.string().optional(),
   title: z.string(),
 });
@@ -86,13 +112,21 @@ const citationSchema = z.object({
 const chatAttachmentSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('video'),
-    mediaType: z.literal('video/mp4'),
+    mediaType: z.enum(['video/mp4', 'text/html']),
+    posterUrl: z.string().optional(),
     title: z.string(),
     url: z.string(),
   }),
   z.object({
     kind: z.literal('image'),
-    mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']),
+    mediaType: z.enum([
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'image/svg+xml',
+      'image/gif',
+      'image/avif',
+    ]),
     title: z.string(),
     url: z.string(),
   }),
@@ -152,6 +186,7 @@ export interface SourceDocument {
   sourceType: SourceType;
   file: string;
   content: string;
+  attachments?: ChatAttachment[];
   effectiveAt?: string;
   sourceUrl?: string;
   order?: number;
@@ -166,6 +201,7 @@ export interface ChunkMetadata {
   sourceType: SourceType;
   file: string;
   headingPath: string[];
+  attachments?: ChatAttachment[];
   sourceUrl?: string;
   order?: number;
   effectiveAt?: string;

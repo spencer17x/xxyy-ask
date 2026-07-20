@@ -26,6 +26,17 @@ describe('commit message validation', () => {
     ['trailing punctuation', 'fix(api): handle timeout.', '末尾不能使用'],
     ['vague subject', 'chore: update files', '模糊描述'],
     ['missing body separator', 'fix(api): handle timeout\nExplain why', '空行'],
+    ['missing breaking footer', 'feat(api)!: remove legacy API', '必须添加 BREAKING CHANGE'],
+    [
+      'missing breaking marker',
+      'feat(api): remove legacy API\n\nBREAKING CHANGE: clients must use v2',
+      '标题必须使用 !',
+    ],
+    [
+      'empty breaking footer',
+      'feat(api)!: remove legacy API\n\nBREAKING CHANGE:',
+      '必须说明具体影响',
+    ],
     ['empty message', '# template comment only', '不能为空'],
   ])('rejects a %s', (_name, message, expectedError) => {
     expect(validateCommitMessage(message).join('\n')).toContain(expectedError);

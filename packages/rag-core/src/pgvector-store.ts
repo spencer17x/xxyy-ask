@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import type { BatchEmbeddingProvider, PreparedKnowledgeChunk } from '@xxyy/knowledge';
 import type {
   ChatChannel,
+  ChatAttachment,
   ChunkMetadata,
   IndexEntry,
   Intent,
@@ -107,6 +108,7 @@ interface KnowledgeChunkRow {
   effective_at: string | null;
   status: KnowledgeStatus;
   supersedes: string[] | null;
+  attachments: ChatAttachment[] | null;
   content: string;
   tokens: string[];
   embedding_distance: number;
@@ -290,11 +292,11 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         insert into knowledge_chunks (
           id, document_id, title, module, source_type, source_url, file,
           heading_path, order_index, retrieved_at, effective_at, status, supersedes,
-          content, tokens, embedding, content_hash, updated_at
+          attachments, content, tokens, embedding, content_hash, updated_at
         )
         values (
           $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12,
-          $13::jsonb, $14, $15, $16::vector, $17, now()
+          $13::jsonb, $14::jsonb, $15, $16, $17::vector, $18, now()
         )
         on conflict (id) do update set
           document_id = excluded.document_id,
@@ -309,6 +311,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           effective_at = coalesce(excluded.effective_at, knowledge_chunks.effective_at),
           status = excluded.status,
           supersedes = excluded.supersedes,
+          attachments = excluded.attachments,
           content = excluded.content,
           tokens = excluded.tokens,
           embedding = excluded.embedding,
@@ -329,6 +332,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           chunk.metadata.effectiveAt ?? null,
           chunk.metadata.status ?? defaultKnowledgeStatus(chunk.metadata.sourceType),
           JSON.stringify(chunk.metadata.supersedes ?? []),
+          JSON.stringify(chunk.metadata.attachments ?? []),
           chunk.text,
           chunk.tokens,
           toPgVectorLiteral(chunk.embedding),
@@ -404,6 +408,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           status text not null default 'current'
             check (status in ('current', 'historical', 'deprecated')),
           supersedes jsonb not null default '[]'::jsonb,
+          attachments jsonb not null default '[]'::jsonb,
           content text not null,
           tokens text[] not null,
           embedding vector(${embeddingDimension}) not null,
@@ -454,6 +459,13 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         `
         alter table knowledge_chunks
           add column if not exists supersedes jsonb not null default '[]'::jsonb
+        `,
+      );
+      await queryDatabase(
+        options.client,
+        `
+        alter table knowledge_chunks
+          add column if not exists attachments jsonb not null default '[]'::jsonb
         `,
       );
       await queryDatabase(
@@ -712,7 +724,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           select
             id, document_id, title, module, source_type, source_url, file,
             heading_path, order_index, retrieved_at::text as retrieved_at,
-            effective_at::text as effective_at, status, supersedes, content, tokens,
+            effective_at::text as effective_at, status, supersedes, attachments, content, tokens,
             embedding <=> $1::vector as embedding_distance,
             0::integer as token_overlap,
             row_number() over (order by embedding <=> $1::vector)::integer as vector_rank,
@@ -726,7 +738,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           select
             id, document_id, title, module, source_type, source_url, file,
             heading_path, order_index, retrieved_at::text as retrieved_at,
-            effective_at::text as effective_at, status, supersedes, content, tokens,
+            effective_at::text as effective_at, status, supersedes, attachments, content, tokens,
             embedding <=> $1::vector as embedding_distance,
             (
               select count(*)::integer
@@ -751,7 +763,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           select
             id, document_id, title, module, source_type, source_url, file,
             heading_path, order_index, retrieved_at::text as retrieved_at,
-            effective_at::text as effective_at, status, supersedes, content, tokens,
+            effective_at::text as effective_at, status, supersedes, attachments, content, tokens,
             embedding <=> $1::vector as embedding_distance,
             (
               select count(*)::integer
@@ -790,7 +802,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
         select distinct on (id)
           id, document_id, title, module, source_type, source_url, file,
           heading_path, order_index, retrieved_at, effective_at, status, supersedes,
-          content, tokens,
+          attachments, content, tokens,
           embedding_distance,
           min(vector_rank) over (partition by id) as vector_rank,
           min(lexical_rank) over (partition by id) as lexical_rank,
@@ -1295,6 +1307,9 @@ function mapRow(
       ...(row.supersedes === null || row.supersedes === undefined || row.supersedes.length === 0
         ? {}
         : { supersedes: row.supersedes }),
+      ...(row.attachments === null || row.attachments === undefined || row.attachments.length === 0
+        ? {}
+        : { attachments: row.attachments }),
     },
     text: row.content,
     tokens: row.tokens,

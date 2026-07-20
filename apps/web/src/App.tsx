@@ -541,6 +541,9 @@ function CitationList({ citations }: { citations: Citation[] }): ReactElement {
         <article className="citation" key={`${citation.file}-${index}`}>
           <div className="citation-title">
             [{index + 1}] {citation.title}
+            {citation.sourceType === undefined ? null : (
+              <span className="citation-source">{citationSourceLabel(citation.sourceType)}</span>
+            )}
           </div>
           <div className="citation-meta">
             {citation.sourceUrl === undefined ? (
@@ -558,14 +561,36 @@ function CitationList({ citations }: { citations: Citation[] }): ReactElement {
   );
 }
 
-function AttachmentList({ attachments }: { attachments: Attachment[] }): ReactElement {
+function citationSourceLabel(sourceType: NonNullable<Citation['sourceType']>): string {
+  if (sourceType === 'official_docs') {
+    return 'XXYY 官方文档';
+  }
+  if (sourceType === 'x_updates') {
+    return 'XXYY 官方 X 更新';
+  }
+  return 'XXYY 客服群审核知识';
+}
+
+export function AttachmentList({ attachments }: { attachments: Attachment[] }): ReactElement {
   return (
     <div className="attachment-list">
       {attachments.map((attachment) => (
         <article className="attachment" key={`${attachment.kind}-${attachment.url}`}>
           <div className="attachment-title">{attachment.title}</div>
-          {attachment.kind === 'video' ? (
+          {attachment.kind === 'video' && attachment.mediaType === 'video/mp4' ? (
             <video aria-label={attachment.title} controls preload="metadata" src={attachment.url} />
+          ) : attachment.kind === 'video' ? (
+            <a className="external-video" href={attachment.url} rel="noreferrer" target="_blank">
+              {attachment.posterUrl === undefined ? null : (
+                <img
+                  alt={`${attachment.title} 封面`}
+                  decoding="async"
+                  loading="lazy"
+                  src={attachment.posterUrl}
+                />
+              )}
+              <span>打开原始视频</span>
+            </a>
           ) : (
             <img alt={attachment.title} decoding="async" loading="lazy" src={attachment.url} />
           )}

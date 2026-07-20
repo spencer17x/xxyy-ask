@@ -1,6 +1,6 @@
 # xxyy-ask
 
-XXYY 客服 Agentic RAG 项目。当前阶段暂时收敛为知识库产品问答：使用 LangGraph JS 编排客服回答，从产品文档和官方 X / Twitter 更新中检索依据，并通过 OpenAI-compatible chat completion 生成带引用回答。
+XXYY 客服 Agentic RAG 项目。当前阶段暂时收敛为知识库产品问答：使用 LangGraph JS 编排客服回答，从 [XXYY 官方文档](https://docs.xxyy.io/) 和 [官方 X 更新](https://x.com/useXXYYio) 中检索依据，并通过 OpenAI-compatible chat completion 生成带引用回答。客服群知识当前为空，后续只通过受控审核流程接入。
 
 当前运行面只保留知识库问答：
 
@@ -162,11 +162,12 @@ pnpm run telegram:dev            # 启动 Telegram Bot
 pnpm check                       # lint + format check + typecheck + tests + deterministic golden QA
 ```
 
+`pnpm install` 会自动启用仓库内的 `pre-commit`、`commit-msg` 和 `pre-push`。本地门禁与 GitHub Actions 共用提交消息和质量检查规则，详见[开发质量门禁](docs/development-workflow.md)。
+
 RAG 和数据库命令：
 
 ```bash
 pnpm docs:sync
-pnpm docs:sync:external
 pnpm docs:enrich:media
 pnpm docs:audit
 pnpm rag:ingest
@@ -181,9 +182,10 @@ pnpm rag:knowledge:list -- --status pending
 ```
 
 - `pnpm docs:sync` 根据 `docs.xxyy.io` 中英文 sitemap 同步全部官网 Markdown 页面和站内图片；同步后运行 `pnpm rag:ingest` 写入 pgvector。
-- `pnpm docs:sync:external` 只同步官方 X 明确引用的 `Jimmy-Holiday/xxyy-trade-skill` 五个 Markdown 文件，固定到 Git commit、校验 SHA-256、脱敏疑似凭据且不执行仓库代码。外部 Skill/MCP 文档只参与 API、Agent Skill、MCP、GitHub 等开发者问题的检索。
+- 正式知识库只加载 `docs.xxyy.io`、`x.com/useXXYYio` 和未来经过审核的客服群知识；仓库中的外部参考资料仅归档，不参与检索。
 - `pnpm docs:enrich:media` 对官网图片执行本地 OCR，并为本地视频抽取关键帧；YouTube 优先读取公开字幕，无字幕时仅在配置 `TRANSCRIPTION_MODEL` 后执行音频转写。视频本身的提取状态与知识覆盖状态分开记录；正文已覆盖的视频会保存上下文文件 SHA，不会被误报为知识缺失。结果写入独立 sidecar Markdown 和哈希清单，不覆盖官网原文。
-- `pnpm docs:audit` 校验页面空页/404 状态、图片、OCR、视频知识覆盖、正文覆盖证据、英文审核兜底和外部仓库固定版本；默认未转写但正文已覆盖的视频仅作为 Notice，`MEDIA_REQUIRE_ALL=true` 仍可要求每个视频本身都必须提取成功。
+- OCR、字幕、转写和关键帧文字参与检索，原始图片或视频地址随 chunk 保存；命中相关依据时，API 会返回媒体附件，Web 可直接显示截图和本地视频，Telegram 可发送常用图片格式和本地 MP4。
+- `pnpm docs:audit` 校验页面空页/404 状态、图片、OCR、视频知识覆盖、正文覆盖证据和英文审核兜底；默认未转写但正文已覆盖的视频仅作为 Notice，`MEDIA_REQUIRE_ALL=true` 仍可要求每个视频本身都必须提取成功。
 - `pnpm rag:ingest` 执行数据库迁移、重新生成 embeddings，并在同一事务内替换 pgvector chunks 和记录 ingestion run。
 - `pnpm rag:ingest -- --rebuild-embedding-schema` 会事务性清空知识 chunks、按当前 `EMBEDDING_DIMENSION` 重建 embedding 列和向量索引，再写入完整知识库；只在有意更换维度且已备份时使用。
 - `pnpm rag:sync:x` 只同步官方 X / Twitter 更新中新增或变更的 chunks，不会 prune 旧知识块。

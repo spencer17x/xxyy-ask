@@ -41,7 +41,7 @@ describe('createTelegramApiClient', () => {
     });
   });
 
-  it('sends messages, typing actions, and photos through Bot API methods', async () => {
+  it('sends messages, typing actions, photos, and videos through Bot API methods', async () => {
     const fetch = vi.fn(() => Promise.resolve(createJsonResponse({ ok: true, result: true })));
     const api = createTelegramApiClient({
       apiBaseUrl: 'https://telegram.test/',
@@ -69,6 +69,15 @@ describe('createTelegramApiClient', () => {
       photo: 'https://ask.example.com/a.png',
       replyToMessageId: 11,
     });
+    if (api.sendVideo === undefined) {
+      throw new Error('Expected sendVideo to be implemented.');
+    }
+    await api.sendVideo({
+      caption: '演示视频',
+      chatId: -100,
+      replyToMessageId: 11,
+      video: 'https://ask.example.com/demo.mp4',
+    });
 
     expect(fetch).toHaveBeenNthCalledWith(1, 'https://telegram.test/bot123:abc/sendMessage', {
       body: JSON.stringify({
@@ -95,6 +104,16 @@ describe('createTelegramApiClient', () => {
         caption: '截图',
         chat_id: -100,
         photo: 'https://ask.example.com/a.png',
+        reply_parameters: { message_id: 11 },
+      }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    expect(fetch).toHaveBeenNthCalledWith(5, 'https://telegram.test/bot123:abc/sendVideo', {
+      body: JSON.stringify({
+        caption: '演示视频',
+        chat_id: -100,
+        video: 'https://ask.example.com/demo.mp4',
         reply_parameters: { message_id: 11 },
       }),
       headers: { 'content-type': 'application/json' },

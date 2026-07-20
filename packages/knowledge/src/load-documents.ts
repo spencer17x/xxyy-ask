@@ -1,23 +1,27 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { KnowledgeStatus, SourceDocument, SourceType } from '@xxyy/shared';
+import {
+  knowledgeSourceCatalog,
+  type ChatAttachment,
+  type KnowledgeStatus,
+  type SourceDocument,
+  type SourceType,
+} from '@xxyy/shared';
 
 const PRODUCT_FUNCTIONS_FILE = 'xxyy-product-functions.md';
 const X_UPDATES_FILE = 'xxyy-x-updates.md';
 const X_POSTS_FILE = path.posix.join('sources', 'usexxyyio-x-posts.jsonl');
 const MANIFEST_FILE = 'manifest.jsonl';
 const ADMIN_VERIFIED_DIR = 'admin-verified';
+const DOCS_ORIGIN = new URL(knowledgeSourceCatalog.official_docs.canonicalUrl).origin;
+const X_ACCOUNT = 'useXXYYio';
+const X_PROFILE_URL = knowledgeSourceCatalog.x_updates.canonicalUrl;
 const OPTIONAL_MARKDOWN_DIRECTORIES: Array<{
   directory: string;
   fallbackModule: string;
   sourceType: SourceType;
 }> = [
-  {
-    directory: path.posix.join('external', 'xxyy-trade-skill'),
-    fallbackModule: 'Developer / Agent Skill',
-    sourceType: 'official_docs',
-  },
   {
     directory: path.posix.join('enriched', 'media'),
     fallbackModule: '产品文档图片文字',
@@ -26,6 +30,11 @@ const OPTIONAL_MARKDOWN_DIRECTORIES: Array<{
   {
     directory: path.posix.join('enriched', 'videos'),
     fallbackModule: '产品教程视频',
+    sourceType: 'official_docs',
+  },
+  {
+    directory: path.posix.join('enriched', 'reviewed'),
+    fallbackModule: '官网人工校正',
     sourceType: 'official_docs',
   },
 ];
@@ -68,8 +77,15 @@ interface XPostEntry {
   createdAtIso?: string;
   fetchedAt?: string;
   id: string;
+  media?: XPostMediaEntry[];
   text: string;
   url: string;
+}
+
+interface XPostMediaEntry {
+  expandedUrl?: string;
+  mediaUrl?: string;
+  type?: string;
 }
 
 export async function loadProductDocuments(
@@ -116,7 +132,7 @@ export async function loadProductDocuments(
         relativeFile: path.posix.join(ADMIN_VERIFIED_DIR, adminVerifiedFile),
         sourceType: 'admin_verified',
         fallbackTitle: titleFromFilename(adminVerifiedFile),
-        fallbackModule: '管理员审核知识',
+        fallbackModule: 'XXYY 客服群审核知识',
         manifest,
       }),
     );
@@ -225,14 +241,26 @@ function isXPostEntry(value: unknown): value is XPostEntry {
     typeof value.id === 'string' &&
     typeof value.url === 'string' &&
     typeof value.text === 'string' &&
-    (value.account === undefined || typeof value.account === 'string') &&
+    (value.account === undefined || value.account === X_ACCOUNT) &&
     (value.createdAtIso === undefined || typeof value.createdAtIso === 'string') &&
-    (value.fetchedAt === undefined || typeof value.fetchedAt === 'string')
+    (value.fetchedAt === undefined || typeof value.fetchedAt === 'string') &&
+    (value.media === undefined ||
+      (Array.isArray(value.media) && value.media.every(isXPostMediaEntry))) &&
+    isCanonicalXPostUrl(value.url, value.id)
+  );
+}
+
+function isXPostMediaEntry(value: unknown): value is XPostMediaEntry {
+  return (
+    isObject(value) &&
+    (value.expandedUrl === undefined || typeof value.expandedUrl === 'string') &&
+    (value.mediaUrl === undefined || typeof value.mediaUrl === 'string') &&
+    (value.type === undefined || typeof value.type === 'string')
   );
 }
 
 function createXPostDocument(post: XPostEntry, file: string): SourceDocument {
-  const account = post.account ?? 'useXXYYio';
+  const account = post.account ?? X_ACCOUNT;
   const createdMonth =
     typeof post.createdAtIso === 'string' && post.createdAtIso.length >= 7
       ? post.createdAtIso.slice(0, 7)
@@ -247,6 +275,10 @@ function createXPostDocument(post: XPostEntry, file: string): SourceDocument {
     sourceUrl: post.url,
     status: inferXPostStatus(post.text),
   };
+  const attachments = createXPostAttachments(post);
+  if (attachments.length > 0) {
+    document.attachments = attachments;
+  }
 
   if (post.createdAtIso !== undefined) {
     document.effectiveAt = post.createdAtIso;
@@ -301,6 +333,11 @@ async function readDocument(args: {
     args.fallbackModule;
   const sourceUrl = manifestEntry?.source_url ?? metadata.sourceUrl;
   const retrievedAt = manifestEntry?.retrieved_at ?? metadata.retrievedAt;
+  const sourceType = resolveDocumentSourceType({
+    configuredSourceType: args.sourceType,
+    relativeFile: args.relativeFile,
+    sourceUrl,
+  });
   const effectiveAt = firstNonEmptyString(
     manifestEntry?.effective_at,
     metadata.effectiveAt,
@@ -308,18 +345,27 @@ async function readDocument(args: {
     metadata.lastmod,
     retrievedAt,
   );
-  const status = manifestEntry?.status ?? metadata.status ?? defaultStatus(args.sourceType);
+  const status = manifestEntry?.status ?? metadata.status ?? defaultStatus(sourceType);
   const supersedes = manifestEntry?.supersedes ?? metadata.supersedes;
-  const id = `${args.sourceType}:${withoutMarkdownExtension(args.relativeFile)}`;
+  const id = `${sourceType}:${withoutMarkdownExtension(args.relativeFile)}`;
   const document: SourceDocument = {
     id,
     title,
     module,
-    sourceType: args.sourceType,
+    sourceType,
     file,
     content,
     status,
   };
+  const attachments = createMarkdownDocumentAttachments({
+    content,
+    relativeFile: args.relativeFile,
+    sourceUrl,
+    title,
+  });
+  if (attachments.length > 0) {
+    document.attachments = attachments;
+  }
 
   if (typeof manifestEntry?.order === 'number') {
     document.order = manifestEntry.order;
@@ -338,6 +384,213 @@ async function readDocument(args: {
   }
 
   return document;
+}
+
+function createMarkdownDocumentAttachments(input: {
+  content: string;
+  relativeFile: string;
+  sourceUrl: string | undefined;
+  title: string;
+}): ChatAttachment[] {
+  if (input.relativeFile.startsWith(`${path.posix.join('enriched', 'media')}/`)) {
+    const assetFile = /(?:^|\n)\s*-\s*图片文件[：:]\s*(?<file>[A-Za-z0-9._-]+)/u.exec(input.content)
+      ?.groups?.file;
+    const mediaType = assetFile === undefined ? undefined : imageMediaType(assetFile);
+    if (
+      assetFile !== undefined &&
+      mediaType !== undefined &&
+      path.posix.basename(assetFile) === assetFile
+    ) {
+      return [
+        {
+          kind: 'image',
+          mediaType,
+          title: input.title,
+          url: `/assets/${assetFile}`,
+        },
+      ];
+    }
+  }
+
+  if (
+    input.relativeFile.startsWith(`${path.posix.join('enriched', 'videos')}/`) &&
+    input.sourceUrl !== undefined
+  ) {
+    if (isLocalMp4AssetUrl(input.sourceUrl)) {
+      return [
+        {
+          kind: 'video',
+          mediaType: 'video/mp4',
+          title: input.title,
+          url: input.sourceUrl,
+        },
+      ];
+    }
+    if (isSupportedExternalVideoUrl(input.sourceUrl)) {
+      return [
+        {
+          kind: 'video',
+          mediaType: 'text/html',
+          title: input.title,
+          url: input.sourceUrl,
+        },
+      ];
+    }
+  }
+
+  return [];
+}
+
+function createXPostAttachments(post: XPostEntry): ChatAttachment[] {
+  const attachments: ChatAttachment[] = [];
+  for (const [index, media] of (post.media ?? []).entries()) {
+    const titlePrefix = `@${X_ACCOUNT} 更新 ${post.id}`;
+    if (media.type === 'photo' && media.mediaUrl !== undefined) {
+      const mediaType = imageMediaType(media.mediaUrl);
+      if (mediaType !== undefined && isAllowedXMediaUrl(media.mediaUrl)) {
+        attachments.push({
+          kind: 'image',
+          mediaType,
+          title: `${titlePrefix} 图片 ${index + 1}`,
+          url: media.mediaUrl,
+        });
+      }
+      continue;
+    }
+
+    if (media.type === 'video') {
+      const videoUrl = canonicalXVideoUrl(media.expandedUrl, post.id) ?? post.url;
+      const posterUrl =
+        media.mediaUrl !== undefined && isAllowedXMediaUrl(media.mediaUrl)
+          ? media.mediaUrl
+          : undefined;
+      attachments.push({
+        kind: 'video',
+        mediaType: 'text/html',
+        ...(posterUrl === undefined ? {} : { posterUrl }),
+        title: `${titlePrefix} 视频 ${index + 1}`,
+        url: videoUrl,
+      });
+    }
+  }
+  return attachments;
+}
+
+function imageMediaType(
+  value: string,
+): Extract<ChatAttachment, { kind: 'image' }>['mediaType'] | undefined {
+  let pathname = value;
+  let format: string | null = null;
+  try {
+    const url = new URL(value);
+    pathname = url.pathname;
+    format = url.searchParams.get('format');
+  } catch {
+    // Local asset filenames are expected here.
+  }
+  const extension = (format ?? path.posix.extname(pathname).slice(1)).toLowerCase();
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'svg') return 'image/svg+xml';
+  if (extension === 'gif') return 'image/gif';
+  if (extension === 'avif') return 'image/avif';
+  return undefined;
+}
+
+function isAllowedXMediaUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'pbs.twimg.com';
+  } catch {
+    return false;
+  }
+}
+
+function canonicalXVideoUrl(value: string | undefined, postId: string): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(value);
+    const pattern = new RegExp(`^/${X_ACCOUNT}/status/${postId}/video/\\d+/?$`, 'u');
+    return url.origin === new URL(X_PROFILE_URL).origin && pattern.test(url.pathname)
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isLocalMp4AssetUrl(value: string): boolean {
+  return /^\/assets\/[A-Za-z0-9._-]+\.mp4$/iu.test(value);
+}
+
+function isSupportedExternalVideoUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      ((url.hostname === 'www.youtube.com' &&
+        url.pathname === '/watch' &&
+        url.searchParams.has('v')) ||
+        url.hostname === 'youtu.be')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function resolveDocumentSourceType(input: {
+  configuredSourceType: SourceType;
+  relativeFile: string;
+  sourceUrl: string | undefined;
+}): SourceType {
+  if (input.configuredSourceType === 'admin_verified' || input.sourceUrl === undefined) {
+    return input.configuredSourceType;
+  }
+
+  if (input.sourceUrl.startsWith('/assets/')) {
+    return 'official_docs';
+  }
+  if (
+    input.configuredSourceType === 'official_docs' &&
+    input.relativeFile.startsWith(`${path.posix.join('enriched', 'videos')}/`) &&
+    isSupportedExternalVideoUrl(input.sourceUrl)
+  ) {
+    return 'official_docs';
+  }
+
+  let sourceUrl: URL;
+  try {
+    sourceUrl = new URL(input.sourceUrl);
+  } catch {
+    throw new Error(`Invalid knowledge source URL for ${input.relativeFile}: ${input.sourceUrl}`);
+  }
+
+  if (sourceUrl.origin === DOCS_ORIGIN) {
+    return 'official_docs';
+  }
+  if (isCanonicalXPostUrl(sourceUrl.toString())) {
+    return 'x_updates';
+  }
+
+  throw new Error(`Unsupported knowledge source URL for ${input.relativeFile}: ${input.sourceUrl}`);
+}
+
+function isCanonicalXPostUrl(value: string, expectedId?: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+
+  if (url.origin !== new URL(X_PROFILE_URL).origin) {
+    return false;
+  }
+
+  const match = new RegExp(`^/${X_ACCOUNT}/status/(?<id>\\d+)/?$`, 'u').exec(url.pathname);
+  const id = match?.groups?.id;
+  return id !== undefined && (expectedId === undefined || id === expectedId);
 }
 
 function defaultStatus(sourceType: SourceType): KnowledgeStatus {

@@ -1,11 +1,12 @@
 import { createLocalHashEmbedding, tokenize } from '@xxyy/knowledge';
-import type { IndexEntry, RagIndex, SourceType } from '@xxyy/shared';
+import type { ChatAttachment, IndexEntry, RagIndex, SourceType } from '@xxyy/shared';
 
 interface FixtureEntryInput {
   id: string;
   title: string;
   text: string;
   sourceType: SourceType;
+  attachments?: ChatAttachment[];
   file?: string;
   module?: string;
   sourceUrl?: string;
@@ -35,6 +36,7 @@ function createFixtureEntry(input: FixtureEntryInput): IndexEntry {
       sourceType: input.sourceType,
       file,
       headingPath,
+      ...(input.attachments === undefined ? {} : { attachments: input.attachments }),
     },
     tokens: tokenize(searchableText),
     embedding: createLocalHashEmbedding(searchableText),

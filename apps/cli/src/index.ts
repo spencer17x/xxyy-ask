@@ -62,7 +62,12 @@ import type {
   ReplaceChunksOptions,
   Retriever,
 } from '@xxyy/rag-core';
-import type { ChatRequest, ChatResponse, RagIndex } from '@xxyy/shared';
+import {
+  knowledgeSourceCatalog,
+  type ChatRequest,
+  type ChatResponse,
+  type RagIndex,
+} from '@xxyy/shared';
 
 import { extractTelegramKnowledgeCandidates } from './telegram-export.js';
 
@@ -544,7 +549,7 @@ export function formatAdminVerifiedKnowledgeDocument(candidate: KnowledgeCandida
   const title = candidate.question.replace(/\s+/gu, ' ').trim().slice(0, 120);
   const frontmatter = [
     '---',
-    'section: "管理员审核知识"',
+    'section: "XXYY 客服群审核知识"',
     `effective_at: ${JSON.stringify(candidate.effectiveAt)}`,
     ...(candidate.sourceUrl === undefined
       ? []
@@ -639,7 +644,7 @@ export function formatKnowledgeStats(stats: KnowledgeStats): string {
   } else {
     for (const sourceStat of stats.sourceStats) {
       lines.push(
-        `${sourceStat.sourceType}: ${sourceStat.chunkCount} chunks, ${sourceStat.documentCount} documents`,
+        `${knowledgeSourceCatalog[sourceStat.sourceType].label} (${sourceStat.sourceType}): ${sourceStat.chunkCount} chunks, ${sourceStat.documentCount} documents`,
       );
     }
   }

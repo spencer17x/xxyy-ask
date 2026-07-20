@@ -5,7 +5,7 @@
 ## Current First Slice
 
 - [x] LangGraph 客服 Runtime：`packages/agent-core` 使用 LangGraph JS 组织策略保护、planner、工具执行和回答合成。当前允许的业务工具只有产品问答，账户、订单、钱包余额、私有交易记录、交易分析和投资建议请求会先进入边界或澄清回复。
-- [x] Product RAG：产品问题会检索 Postgres + pgvector 中的知识库 chunks，并通过 OpenAI-compatible chat completion 生成带引用回答。知识来源包含 `docs/product-features` 产品文档和官方 X / Twitter 更新。
+- [x] Product RAG：产品问题会检索 Postgres + pgvector 中的知识库 chunks，并通过 OpenAI-compatible chat completion 生成带引用回答。正式来源限定为 `docs.xxyy.io` 官方文档、`x.com/useXXYYio` 官方更新，以及未来经过审核的客服群知识；客服群来源当前为空。
 - [x] X / Twitter 增量同步：`pnpm run app:dev -- --sync` 执行增量抓取和 `rag:sync:x` 后启动服务；`pnpm run app:dev -- --full-sync` 用于低频全量抓取和重建后启动服务。
 - [x] HTTP 服务面：保留 `GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream` 和 `GET /assets/*`。
 - [x] Web UI：`GET /` 提供静态聊天界面，支持普通回答、流式回答、引用展示和产品知识库附件。

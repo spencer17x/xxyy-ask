@@ -367,6 +367,9 @@ function createChunkMetadata(document: SourceDocument, headingPath: string[]): C
     headingPath,
   };
 
+  if (document.attachments !== undefined && document.attachments.length > 0) {
+    metadata.attachments = document.attachments.map((attachment) => ({ ...attachment }));
+  }
   if (document.sourceUrl !== undefined) {
     metadata.sourceUrl = document.sourceUrl;
   }

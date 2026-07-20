@@ -8,5 +8,8 @@ describe('root quality gate', () => {
 
     expect(packageJson.scripts.check).toContain('pnpm --filter @xxyy/web build');
     expect(packageJson.scripts.check).toContain('pnpm rag:evaluate');
+    expect(packageJson.scripts['hook:pre-commit']).toBe('node scripts/validate-staged-files.mjs');
+    expect(packageJson.scripts['hook:pre-push']).toBe('node scripts/run-pre-push.mjs');
+    expect(packageJson.scripts['commit:range']).toBe('node scripts/validate-commit-range.mjs');
   });
 });

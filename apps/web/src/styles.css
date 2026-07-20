@@ -421,10 +421,33 @@ h1 {
   font-weight: 650;
 }
 
+.citation-source {
+  display: inline-flex;
+  margin-left: 8px;
+  border-radius: 999px;
+  background: #e9f0ff;
+  color: #315a9c;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+}
+
 .citation-meta {
   overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 12px;
+}
+
+.external-video {
+  display: grid;
+  gap: 8px;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.external-video:hover span {
+  text-decoration: underline;
 }
 
 .citation-excerpt {

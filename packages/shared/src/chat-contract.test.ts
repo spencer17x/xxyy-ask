@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   chatStreamEventSchema,
+  knowledgeSourceCatalog,
   supportedAgentRoutes,
   supportedChannels,
   supportedIntents,
@@ -10,6 +11,23 @@ import {
 } from './index.js';
 
 describe('chat contract', () => {
+  it('defines the three canonical XXYY knowledge sources', () => {
+    expect(knowledgeSourceCatalog).toEqual({
+      admin_verified: {
+        canonicalUrl: undefined,
+        label: 'XXYY 客服群审核知识',
+      },
+      official_docs: {
+        canonicalUrl: 'https://docs.xxyy.io/',
+        label: 'XXYY 官方文档',
+      },
+      x_updates: {
+        canonicalUrl: 'https://x.com/useXXYYio',
+        label: 'XXYY 官方 X 更新',
+      },
+    });
+  });
+
   it('defines the supported entry channels', () => {
     expect(supportedChannels).toEqual(['cli', 'web', 'telegram']);
   });
@@ -51,6 +69,7 @@ describe('chat contract', () => {
         {
           excerpt: 'Pro 权益',
           file: 'docs/product-features/pages/61-getting-started__xxyy-pro-quan-yi__pro.md',
+          sourceType: 'official_docs',
           title: 'Pro',
         },
       ],
@@ -87,6 +106,29 @@ describe('chat contract', () => {
     };
 
     expect(response.attachments?.[0]?.kind).toBe('image');
+  });
+
+  it('allows linked external videos with an optional poster image', () => {
+    const event = chatStreamEventSchema.parse({
+      type: 'metadata',
+      attachments: [
+        {
+          kind: 'video',
+          mediaType: 'text/html',
+          posterUrl: 'https://pbs.twimg.com/video-thumb.jpg',
+          title: '官方 X 演示视频',
+          url: 'https://x.com/useXXYYio/status/1/video/1',
+        },
+      ],
+      citations: [],
+      confidence: 0.8,
+      intent: 'product_qa',
+    });
+
+    expect(event).toMatchObject({
+      attachments: [{ kind: 'video', mediaType: 'text/html' }],
+      type: 'metadata',
+    });
   });
 
   it('validates chat stream events at runtime', () => {

@@ -49,6 +49,7 @@ describe('createGroundedAnswer', () => {
     expect(citation.excerpt).toContain('Telegram 钱包监控');
     expect(citation.file).toBe('docs/pro.md');
     expect(citation.title).toBe('XXYY Pro 权益');
+    expect(citation.sourceType).toBe('official_docs');
     expect(citation.sourceUrl).toBe('https://docs.xxyy.io/pro');
     expect(response.confidence).toBeGreaterThan(0.5);
   });
@@ -82,6 +83,77 @@ describe('createGroundedAnswer', () => {
         mediaType: 'video/mp4',
         title: '添加到桌面演示',
         url: '/assets/xxyy-add-to-home.mp4',
+      },
+    ]);
+  });
+
+  it('returns the original screenshot carried by a retrieved OCR chunk', () => {
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:telegram-ocr:chunk:0001',
+        title: 'Telegram 钱包监控配置截图',
+        sourceType: 'official_docs',
+        file: '/docs/product-features/enriched/media/telegram.md',
+        text: '在 Telegram 群组设置中，将 XXYY Bot 设置为管理员并保存。',
+        attachments: [
+          {
+            kind: 'image',
+            mediaType: 'image/png',
+            title: 'Telegram 钱包监控配置截图',
+            url: '/assets/xxyy-docs-telegram.png',
+          },
+        ],
+      },
+    ]);
+    const retrieved = retrieve('Telegram 钱包监控怎么配置？', index);
+
+    const response = createGroundedAnswer(
+      'Telegram 钱包监控怎么配置？',
+      productClassification,
+      retrieved,
+    );
+
+    expect(response.attachments).toEqual([
+      {
+        kind: 'image',
+        mediaType: 'image/png',
+        title: 'Telegram 钱包监控配置截图',
+        url: '/assets/xxyy-docs-telegram.png',
+      },
+    ]);
+  });
+
+  it('extracts inline screenshots and external video links from grounded context', () => {
+    const retrieved = [
+      createRetrievedChunk({
+        id: 'official-doc-media',
+        text: [
+          '钱包监控配置步骤。',
+          '<figure><img src="/assets/wallet-monitor.png" alt="钱包监控配置"></figure>',
+          '演示视频：https://www.youtube.com/watch?v=mzTSPHqP8UA',
+        ].join('\n'),
+        title: '钱包监控教程',
+      }),
+    ];
+
+    const response = createGroundedAnswer(
+      '钱包监控配置步骤是什么？',
+      productClassification,
+      retrieved,
+    );
+
+    expect(response.attachments).toEqual([
+      {
+        kind: 'image',
+        mediaType: 'image/png',
+        title: '钱包监控配置',
+        url: '/assets/wallet-monitor.png',
+      },
+      {
+        kind: 'video',
+        mediaType: 'text/html',
+        title: '钱包监控教程',
+        url: 'https://www.youtube.com/watch?v=mzTSPHqP8UA',
       },
     ]);
   });
@@ -249,6 +321,7 @@ describe('createGroundedAnswer', () => {
       {
         excerpt: '钱包备注支持最多 1 万条，快速捕捉前排地址。',
         file: 'docs/wallet-note-post.md',
+        sourceType: 'x_updates',
         sourceUrl: 'https://x.com/useXXYYio/status/2030954722350575916',
         title: 'X Post 2030954722350575916',
       },

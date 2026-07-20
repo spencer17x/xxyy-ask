@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { ChatMessage } from './types.js';
 import * as appModule from './App.js';
@@ -36,5 +38,42 @@ describe('appendAssistantAnswerDelta', () => {
       status: 'streaming',
       text: '第一段第二段',
     });
+  });
+});
+
+describe('AttachmentList', () => {
+  it('renders local videos, screenshots, and external video links', () => {
+    const markup = renderToStaticMarkup(
+      createElement(appModule.AttachmentList, {
+        attachments: [
+          {
+            kind: 'video',
+            mediaType: 'video/mp4',
+            title: '本地演示',
+            url: '/assets/demo.mp4',
+          },
+          {
+            kind: 'image',
+            mediaType: 'image/png',
+            title: '配置截图',
+            url: '/assets/demo.png',
+          },
+          {
+            kind: 'video',
+            mediaType: 'text/html',
+            posterUrl: 'https://pbs.twimg.com/thumb.jpg',
+            title: '官方 X 视频',
+            url: 'https://x.com/useXXYYio/status/1/video/1',
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain('<video');
+    expect(markup).toContain('src="/assets/demo.mp4"');
+    expect(markup).toContain('src="/assets/demo.png"');
+    expect(markup).toContain('href="https://x.com/useXXYYio/status/1/video/1"');
+    expect(markup).toContain('src="https://pbs.twimg.com/thumb.jpg"');
+    expect(markup).toContain('打开原始视频');
   });
 });

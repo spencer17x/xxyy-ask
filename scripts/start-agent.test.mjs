@@ -225,7 +225,6 @@ describe('runAgentStart', () => {
     expect(exitCode).toBe(0);
     expect(commands).toEqual([
       { args: ['docs:sync'], label: 'refresh official docs' },
-      { args: ['docs:sync:external'], label: 'refresh external Agent Skill docs' },
       { args: ['docs:enrich:media'], label: 'enrich documentation media' },
       { args: ['docs:audit'], label: 'audit documentation coverage' },
       { args: ['x:scrape', '--', '--full'], label: 'refresh X updates' },

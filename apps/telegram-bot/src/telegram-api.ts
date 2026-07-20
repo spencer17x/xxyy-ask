@@ -5,6 +5,7 @@ import type {
   TelegramSendMessageInput,
   TelegramSendMessageDraftInput,
   TelegramSendPhotoInput,
+  TelegramSendVideoInput,
   TelegramUpdate,
 } from './bot.js';
 
@@ -93,6 +94,17 @@ export function createTelegramApiClient(options: CreateTelegramApiClientOptions)
           : { reply_parameters: { message_id: input.replyToMessageId } }),
       }).then(() => undefined);
     },
+
+    sendVideo(input) {
+      return callTelegramMethod(fetchImpl, apiBaseUrl, options.botToken, 'sendVideo', {
+        ...(input.caption === undefined ? {} : { caption: input.caption }),
+        chat_id: input.chatId,
+        video: input.video,
+        ...(input.replyToMessageId === undefined
+          ? {}
+          : { reply_parameters: { message_id: input.replyToMessageId } }),
+      }).then(() => undefined);
+    },
   } satisfies TelegramApi;
 }
 
@@ -100,14 +112,21 @@ async function callTelegramMethod(
   fetchImpl: TelegramFetch,
   apiBaseUrl: string,
   botToken: string,
-  method: 'getUpdates' | 'sendChatAction' | 'sendMessage' | 'sendMessageDraft' | 'sendPhoto',
+  method:
+    | 'getUpdates'
+    | 'sendChatAction'
+    | 'sendMessage'
+    | 'sendMessageDraft'
+    | 'sendPhoto'
+    | 'sendVideo',
   payload:
     | Record<string, unknown>
     | Record<keyof TelegramSendChatActionInput, unknown>
     | Record<keyof TelegramGetUpdatesInput, unknown>
     | Record<keyof TelegramSendMessageInput, unknown>
     | Record<keyof TelegramSendMessageDraftInput, unknown>
-    | Record<keyof TelegramSendPhotoInput, unknown>,
+    | Record<keyof TelegramSendPhotoInput, unknown>
+    | Record<keyof TelegramSendVideoInput, unknown>,
 ): Promise<unknown> {
   const response = await fetchImpl(`${apiBaseUrl}/bot${botToken}/${method}`, {
     body: JSON.stringify(payload),

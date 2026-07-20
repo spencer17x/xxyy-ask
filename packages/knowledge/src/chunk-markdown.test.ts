@@ -224,6 +224,34 @@ describe('chunkMarkdownDocuments', () => {
     expect(chunks.map((chunk) => chunk.text)).toEqual(['这里有可检索的产品说明。']);
   });
 
+  it('preserves document media attachments on every derived chunk', () => {
+    const chunks = chunkMarkdownDocuments(
+      [
+        {
+          ...document,
+          attachments: [
+            {
+              kind: 'image',
+              mediaType: 'image/png',
+              title: 'Telegram 配置截图',
+              url: '/assets/telegram-config.png',
+            },
+          ],
+        },
+      ],
+      { maxChunkChars: 90 },
+    );
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.metadata.attachments?.length === 1)).toBe(true);
+    expect(chunks[1]?.metadata.attachments?.[0]).toEqual({
+      kind: 'image',
+      mediaType: 'image/png',
+      title: 'Telegram 配置截图',
+      url: '/assets/telegram-config.png',
+    });
+  });
+
   it('adds one bounded overview chunk for documents with several short sections', () => {
     const chunks = chunkMarkdownDocuments([
       {

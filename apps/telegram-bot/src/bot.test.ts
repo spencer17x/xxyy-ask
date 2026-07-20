@@ -267,6 +267,102 @@ describe('createTelegramBot', () => {
     });
   });
 
+  it('sends local MP4 attachments through Telegram sendVideo', async () => {
+    const sendVideo = vi.fn(() => Promise.resolve());
+    const bot = createTelegramBot({
+      api: {
+        getUpdates: vi.fn(),
+        sendMessage: createSendMessageMock(),
+        sendPhoto: vi.fn(),
+        sendVideo,
+      },
+      chatService: {
+        ask: vi.fn(() =>
+          Promise.resolve(
+            createResponse({
+              attachments: [
+                {
+                  kind: 'video',
+                  mediaType: 'video/mp4',
+                  title: '添加到桌面演示',
+                  url: '/assets/xxyy-add-to-home.mp4',
+                },
+              ],
+            }),
+          ),
+        ),
+      },
+      config: loadTelegramBotConfig({
+        TELEGRAM_BOT_TOKEN: 'bot-token',
+        TELEGRAM_PUBLIC_BASE_URL: 'https://ask.example.com',
+      }),
+    });
+
+    await bot.handleUpdate({
+      message: {
+        chat: { id: 123 },
+        message_id: 1,
+        text: '有添加到桌面的演示吗？',
+      },
+      update_id: 10,
+    });
+
+    expect(sendVideo).toHaveBeenCalledWith({
+      caption: '添加到桌面演示',
+      chatId: 123,
+      replyToMessageId: 1,
+      video: 'https://ask.example.com/assets/xxyy-add-to-home.mp4',
+    });
+  });
+
+  it('returns external video links in the Telegram message', async () => {
+    const sendMessage = createSendMessageMock();
+    const sendVideo = vi.fn(() => Promise.resolve());
+    const bot = createTelegramBot({
+      api: {
+        getUpdates: vi.fn(),
+        sendMessage,
+        sendPhoto: vi.fn(),
+        sendVideo,
+      },
+      chatService: {
+        ask: vi.fn(() =>
+          Promise.resolve(
+            createResponse({
+              answer: '这是官方更新演示。',
+              attachments: [
+                {
+                  kind: 'video',
+                  mediaType: 'text/html',
+                  title: '官方 X 演示视频',
+                  url: 'https://x.com/useXXYYio/status/1/video/1',
+                },
+              ],
+            }),
+          ),
+        ),
+      },
+      config: loadTelegramBotConfig({ TELEGRAM_BOT_TOKEN: 'bot-token' }),
+    });
+
+    await bot.handleUpdate({
+      message: {
+        chat: { id: 123 },
+        message_id: 1,
+        text: '官方更新视频在哪里？',
+      },
+      update_id: 10,
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith({
+      chatId: 123,
+      parseMode: 'HTML',
+      replyToMessageId: 1,
+      text: '这是官方更新演示。\n视频：官方 X 演示视频 https://x.com/useXXYYio/status/1/video/1',
+    });
+    expect(sendVideo).not.toHaveBeenCalled();
+  });
+
   it('formats citations for Telegram HTML messages', async () => {
     const sendMessage = createSendMessageMock();
     const bot = createTelegramBot({
