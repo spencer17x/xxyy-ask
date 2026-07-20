@@ -153,6 +153,44 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
   - vector store 配置缺失
   - vector store 运行时不可用
 
+## Commit message 规范
+
+Codex Desktop、Codex CLI 和人工创建 Git 提交时统一使用 Conventional Commits。用户在 Codex Desktop 点击 Commit 或 Commit & Push 后，生成的提交消息也必须遵循本节。
+
+生成消息前先检查 `git diff --cached --stat` 和 `git diff --cached`，只描述暂存区中的改动；不要把未暂存文件、历史改动或猜测写进提交消息。暂存区包含多个无关改动时应先拆分提交。单纯执行 Push 时，不要为了改写措辞而修改已有合规提交。
+
+标题格式：
+
+```text
+<type>(<scope>): <subject>
+```
+
+- `type` 必须是 `feat`、`fix`、`docs`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`style` 或 `revert`。
+- `scope` 可省略；优先使用 `shared`、`knowledge`、`rag`、`agent`、`cli`、`api`、`web`、`telegram`、`docs`、`infra`、`deps`。涉及多个模块且没有单一主模块时省略 scope。
+- `subject` 使用简洁、具体的英文祈使句；普通单词小写开头，产品名或缩写保持原样；不要使用 `update files`、`changes`、`misc`、`WIP` 等模糊描述。
+- 标题最长 100 个字符，末尾不加句号、问号或感叹号。
+- 有破坏性变更时使用 `<type>(<scope>)!: <subject>`，并在 footer 中添加 `BREAKING CHANGE: ...`。
+- 需要正文时，标题与正文之间空一行；正文说明原因和影响，不复述文件列表。
+- 不得使用 `--no-verify` 绕过项目的 `commit-msg` 校验。
+
+常用 scope 映射：
+
+- `packages/knowledge` 和 `docs/product-features`：`knowledge`
+- `packages/rag-core`：`rag`
+- `packages/agent-core`：`agent`
+- `packages/shared`：`shared`
+- `apps/api`、`apps/web`、`apps/cli`、`apps/telegram-bot`：分别使用 `api`、`web`、`cli`、`telegram`
+- 开发文档：`docs`；Docker、脚本和仓库工具链：`infra`；依赖更新：`deps`
+
+示例：
+
+```text
+feat(knowledge): improve markdown chunk boundaries
+fix(api): route container model requests to the host
+docs: document the knowledge sync workflow
+chore(infra): enforce conventional commit messages
+```
+
 ## Git 状态提示
 
 当前本地 `main` 可能领先 `origin/main`。提交前先看：

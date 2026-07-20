@@ -1,0 +1,3 @@
+developer_instructions = """
+Whenever Codex Desktop generates or creates a Git commit for this repository, follow the root AGENTS.md section named "Commit message 规范" exactly. Inspect only the staged diff when composing the message. Use Conventional Commits in the form `type(scope): subject`; never return a plain title such as "Update files" or "Improve project". The same rule applies when the user clicks Commit or Commit & Push.
+"""
