@@ -33,6 +33,8 @@ import type {
 import { renderChatPage } from '@xxyy/web';
 
 const PRODUCT_ASSET_NAMES: ReadonlySet<string> = new Set(['xxyy-add-to-home.mp4']);
+const PRODUCT_DOC_ASSET_NAME_PATTERN =
+  /^xxyy-docs-[A-Za-z0-9_-]+\.(?:avif|gif|jpe?g|png|svg|webp)$/u;
 
 type ApiEnv = RagEnv &
   Partial<
@@ -221,7 +223,12 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
       }
 
       if (request.method === 'GET' && requestUrl.pathname.startsWith('/assets/')) {
-        await sendStaticAsset(response, staticAssetsDir, requestUrl.pathname, PRODUCT_ASSET_NAMES);
+        await sendStaticAsset(
+          response,
+          staticAssetsDir,
+          requestUrl.pathname,
+          isAllowedProductAssetName,
+        );
         return;
       }
 
@@ -1252,12 +1259,12 @@ async function sendStaticAsset(
   response: ApiResponseLike,
   assetsDir: string,
   pathname: string,
-  allowedAssetNames?: ReadonlySet<string>,
+  isAllowedAssetName?: (assetName: string) => boolean,
 ): Promise<void> {
   const assetName = decodeURIComponent(pathname.replace(/^\/(?:assets|web-assets)\//u, ''));
   if (
     !/^[A-Za-z0-9._-]+$/u.test(assetName) ||
-    (allowedAssetNames !== undefined && !allowedAssetNames.has(assetName))
+    (isAllowedAssetName !== undefined && !isAllowedAssetName(assetName))
   ) {
     sendJson(response, 404, { error: 'not_found', message: 'Asset not found.' });
     return;
@@ -1278,6 +1285,10 @@ async function sendStaticAsset(
   }
 }
 
+function isAllowedProductAssetName(assetName: string): boolean {
+  return PRODUCT_ASSET_NAMES.has(assetName) || PRODUCT_DOC_ASSET_NAME_PATTERN.test(assetName);
+}
+
 function contentTypeForAsset(assetName: string): string {
   const lower = assetName.toLowerCase();
   if (lower.endsWith('.mp4')) {
@@ -1285,6 +1296,12 @@ function contentTypeForAsset(assetName: string): string {
   }
   if (lower.endsWith('.png')) {
     return 'image/png';
+  }
+  if (lower.endsWith('.avif')) {
+    return 'image/avif';
+  }
+  if (lower.endsWith('.gif')) {
+    return 'image/gif';
   }
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
     return 'image/jpeg';

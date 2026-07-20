@@ -2,13 +2,15 @@
 title: "新手必看"
 source_url: "https://docs.xxyy.io/readme/quickstart"
 source_markdown_url: "https://docs.xxyy.io/readme/quickstart.md"
+language: "zh"
 category: "新手入门"
 section: "新手入门"
-breadcrumbs: ["欢迎使用XXYY"]
-children: []
 lastmod: "2026-03-16T11:12:30.350Z"
 retrieved_at: "2026-05-24T06:41:04.265Z"
+content_state: "content"
+ingest: true
 ---
+
 # 新手必看
 
 XXYY支持Solana链的代币交易。如果你是该领域的新手，建议你在开始交易前先了解以下内容。

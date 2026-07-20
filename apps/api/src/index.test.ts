@@ -682,6 +682,7 @@ describe('createRequestHandler', () => {
     const assetsDir = path.join(workspaceRoot, 'docs', 'product-features', 'assets');
     await mkdir(assetsDir, { recursive: true });
     await writeFile(path.join(assetsDir, 'xxyy-add-to-home.mp4'), Buffer.from('video-bytes'));
+    await writeFile(path.join(assetsDir, 'xxyy-docs-AssetOne.png'), Buffer.from('image-bytes'));
     await writeFile(
       path.join(assetsDir, 'tx-analysis-report-index.jsonl'),
       Buffer.from('{"private":true}\n'),
@@ -696,6 +697,15 @@ describe('createRequestHandler', () => {
     expect(videoResponse.statusCode).toBe(200);
     expect(videoResponse.headers['Content-Type']).toBe('video/mp4');
     expect(videoResponse.rawBody).toEqual(Buffer.from('video-bytes'));
+
+    const docsImageResponse = await callHandler(handler, {
+      method: 'GET',
+      url: '/assets/xxyy-docs-AssetOne.png',
+    });
+
+    expect(docsImageResponse.statusCode).toBe(200);
+    expect(docsImageResponse.headers['Content-Type']).toBe('image/png');
+    expect(docsImageResponse.rawBody).toEqual(Buffer.from('image-bytes'));
 
     const blockedResponse = await callHandler(handler, {
       method: 'GET',

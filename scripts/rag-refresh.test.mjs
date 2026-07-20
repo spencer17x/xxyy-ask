@@ -18,8 +18,28 @@ describe('createRagRefreshPlan', () => {
     ]);
   });
 
-  it('uses full X scraping and full ingestion for explicit full refreshes', () => {
+  it('refreshes official docs and X before full ingestion', () => {
     expect(createRagRefreshPlan(['--full'])).toEqual([
+      {
+        args: ['docs:sync'],
+        command: 'pnpm',
+        label: 'refresh official docs',
+      },
+      {
+        args: ['docs:sync:external'],
+        command: 'pnpm',
+        label: 'refresh external Agent Skill docs',
+      },
+      {
+        args: ['docs:enrich:media'],
+        command: 'pnpm',
+        label: 'enrich documentation media',
+      },
+      {
+        args: ['docs:audit'],
+        command: 'pnpm',
+        label: 'audit documentation coverage',
+      },
       {
         args: ['x:scrape', '--', '--full'],
         command: 'pnpm',

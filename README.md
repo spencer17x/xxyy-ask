@@ -49,6 +49,7 @@ POSTGRES_PASSWORD=replace_me_with_a_strong_password
 OPENAI_API_KEY=...
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=...
+COMPOSE_OPENAI_BASE_URL=
 EMBEDDING_API_KEY=...
 EMBEDDING_BASE_URL=https://api.openai.com/v1
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
@@ -68,7 +69,7 @@ TRUST_PROXY=false
 TELEGRAM_BOT_TOKEN=
 ```
 
-数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。`OPENAI_*` 配置 Chat/Planner；`EMBEDDING_API_KEY` 和 `EMBEDDING_BASE_URL` 可把向量请求发送到独立的 OpenAI-compatible 服务，未配置时回退使用 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL`。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。默认 embedding 维度是 `1536`，匹配 `text-embedding-3-small`；更换 embedding 模型和维度时需要同步调整 `EMBEDDING_DIMENSION`，备份数据库后显式运行 `pnpm rag:ingest -- --rebuild-embedding-schema`。`.env.example` 会列出当前代码支持的环境变量。
+数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。`OPENAI_*` 配置 Chat/Planner；`EMBEDDING_API_KEY` 和 `EMBEDDING_BASE_URL` 可把向量请求发送到独立的 OpenAI-compatible 服务，未配置时回退使用 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL`。当 `OPENAI_BASE_URL` 指向宿主机上的本地服务时，设置 `COMPOSE_OPENAI_BASE_URL=http://host.docker.internal:<端口>/v1`，让 `pnpm run app:up` 中的容器访问宿主机，同时保留 `app:dev` 使用的 `localhost` 地址。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。默认 embedding 维度是 `1536`，匹配 `text-embedding-3-small`；更换 embedding 模型和维度时需要同步调整 `EMBEDDING_DIMENSION`，备份数据库后显式运行 `pnpm rag:ingest -- --rebuild-embedding-schema`。`.env.example` 会列出当前代码支持的环境变量。
 
 例如 Chat/Planner 使用 Sub2API Grok、embedding 使用独立服务：
 
@@ -127,7 +128,7 @@ pnpm run app:dev
 
 ```bash
 pnpm run app:dev -- --sync       # 增量抓取 X / Twitter 并同步知识库后启动
-pnpm run app:dev -- --full-sync  # 全量抓取 X / Twitter 并重建知识库后启动
+pnpm run app:dev -- --full-sync  # 全量同步官网与 X / Twitter 并重建知识库后启动
 pnpm run app:dev -- --ingest     # 只重建知识库后启动
 ```
 
@@ -154,7 +155,7 @@ pnpm run app:up                  # Docker Compose 后台启动 API + Web + Teleg
 pnpm run app:status              # 查看后台服务状态
 pnpm run app:logs                # 查看后台服务日志
 pnpm run app:dev -- --sync       # 启动前增量更新知识库
-pnpm run app:dev -- --full-sync  # 启动前全量抓取并重建知识库
+pnpm run app:dev -- --full-sync  # 启动前全量同步官网与 X / Twitter 并重建知识库
 pnpm run api:dev                 # 只启动 API + Web 服务入口
 pnpm run web:dev                 # 只启动 Vite Web
 pnpm run telegram:dev            # 启动 Telegram Bot
@@ -164,6 +165,10 @@ pnpm check                       # lint + format check + typecheck + tests + det
 RAG 和数据库命令：
 
 ```bash
+pnpm docs:sync
+pnpm docs:sync:external
+pnpm docs:enrich:media
+pnpm docs:audit
 pnpm rag:ingest
 pnpm rag:ingest -- --rebuild-embedding-schema # 仅用于有意更换 embedding 维度
 pnpm rag:sync:x
@@ -175,6 +180,10 @@ pnpm rag:knowledge:import:telegram -- export.json --admin-id 123456789
 pnpm rag:knowledge:list -- --status pending
 ```
 
+- `pnpm docs:sync` 根据 `docs.xxyy.io` 中英文 sitemap 同步全部官网 Markdown 页面和站内图片；同步后运行 `pnpm rag:ingest` 写入 pgvector。
+- `pnpm docs:sync:external` 只同步官方 X 明确引用的 `Jimmy-Holiday/xxyy-trade-skill` 五个 Markdown 文件，固定到 Git commit、校验 SHA-256、脱敏疑似凭据且不执行仓库代码。外部 Skill/MCP 文档只参与 API、Agent Skill、MCP、GitHub 等开发者问题的检索。
+- `pnpm docs:enrich:media` 对官网图片执行本地 OCR，并为本地视频抽取关键帧；YouTube 优先读取公开字幕，无字幕时仅在配置 `TRANSCRIPTION_MODEL` 后执行音频转写。视频本身的提取状态与知识覆盖状态分开记录；正文已覆盖的视频会保存上下文文件 SHA，不会被误报为知识缺失。结果写入独立 sidecar Markdown 和哈希清单，不覆盖官网原文。
+- `pnpm docs:audit` 校验页面空页/404 状态、图片、OCR、视频知识覆盖、正文覆盖证据、英文审核兜底和外部仓库固定版本；默认未转写但正文已覆盖的视频仅作为 Notice，`MEDIA_REQUIRE_ALL=true` 仍可要求每个视频本身都必须提取成功。
 - `pnpm rag:ingest` 执行数据库迁移、重新生成 embeddings，并在同一事务内替换 pgvector chunks 和记录 ingestion run。
 - `pnpm rag:ingest -- --rebuild-embedding-schema` 会事务性清空知识 chunks、按当前 `EMBEDDING_DIMENSION` 重建 embedding 列和向量索引，再写入完整知识库；只在有意更换维度且已备份时使用。
 - `pnpm rag:sync:x` 只同步官方 X / Twitter 更新中新增或变更的 chunks，不会 prune 旧知识块。
@@ -189,6 +198,9 @@ pnpm rag:knowledge:list -- --status pending
 
 检索质量：
 
+- 知识入库按 Markdown 标题层级保留完整 `headingPath`，默认单块上限 900 字符。长正文优先按中英文句末切分并保留最多 100 字符语义重叠；列表、表格和 fenced code 按结构行切分，避免把操作步骤拆在中间。若同一文档包含至少 3 个短章节且合并后仍不超过上限，会在保留叶子块的同时追加一个文档概览父块，用于回答“有哪些区域/功能”这类跨章节问题。
+- 空图片、空注释、孤立代码围栏、水平分隔线和许可证链接不会生成检索块。X / Twitter 原始消息每条独立成文档，只索引正文，账号、帖子 ID、URL 和发布时间继续保留在结构化元数据中。
+- embedding 检索文本和回答模型上下文都包含标题、模块与完整章节路径；Chunk 上限与回答上下文的单块上限保持一致，避免尾部内容在传给 LLM 前再次被截断。
 - 正式产品问答使用 pgvector 向量、Postgres 全文关键词和支持实体候选，并通过 RRF 合并不同分数尺度的 rank；候选阶段保留 source/debug scores 便于评测和排障。
 - 内置 `createMetadataReranker()` 是本地 deterministic reranker，使用问题覆盖率、标题/模块/heading、直接来源、列表/步骤证据和当前有效状态做通用二阶段排序，不调用外部模型，也不按具体产品 case 写规则。
 - 明确分类为 `product_qa` / `how_to` 的问题直接使用原问题进入产品 RAG；Planner 仅处理模糊路由和 Agent 自述，避免额外改写影响召回。

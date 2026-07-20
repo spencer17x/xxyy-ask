@@ -2,13 +2,15 @@
 title: "Dashboard"
 source_url: "https://docs.xxyy.io/getting-started/dashboard"
 source_markdown_url: "https://docs.xxyy.io/getting-started/dashboard.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "Dashboard"
-breadcrumbs: ["使用XXYY交易"]
-children: [{"title":"收益统计","source_url":"https://docs.xxyy.io/getting-started/dashboard/shou-yi-tong-ji","source_markdown_url":"https://docs.xxyy.io/getting-started/dashboard/shou-yi-tong-ji.md"},{"title":"持仓管理","source_url":"https://docs.xxyy.io/getting-started/dashboard/chi-cang-guan-li","source_markdown_url":"https://docs.xxyy.io/getting-started/dashboard/chi-cang-guan-li.md"},{"title":"最新成交","source_url":"https://docs.xxyy.io/getting-started/dashboard/zui-xin-cheng-jiao","source_markdown_url":"https://docs.xxyy.io/getting-started/dashboard/zui-xin-cheng-jiao.md"},{"title":"Holders","source_url":"https://docs.xxyy.io/getting-started/dashboard/holders","source_markdown_url":"https://docs.xxyy.io/getting-started/dashboard/holders.md"},{"title":"订单管理","source_url":"https://docs.xxyy.io/getting-started/dashboard/ding-dan-guan-li","source_markdown_url":"https://docs.xxyy.io/getting-started/dashboard/ding-dan-guan-li.md"},{"title":"监控管理","source_url":"https://docs.xxyy.io/getting-started/dashboard/jian-kong-guan-li","source_markdown_url":"https://docs.xxyy.io/getting-started/dashboard/jian-kong-guan-li.md"}]
 lastmod: ""
 retrieved_at: "2026-05-24T06:41:04.265Z"
+content_state: "content"
+ingest: true
 ---
+
 # Dashboard
 
 - [收益统计](https://docs.xxyy.io/getting-started/dashboard/shou-yi-tong-ji.md)

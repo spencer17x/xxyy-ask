@@ -2,14 +2,18 @@
 title: "生成交易钱包"
 source_url: "https://docs.xxyy.io/readme/sheng-cheng-jiao-yi-qian-bao"
 source_markdown_url: "https://docs.xxyy.io/readme/sheng-cheng-jiao-yi-qian-bao.md"
+language: "zh"
 category: "新手入门"
 section: "新手入门"
-breadcrumbs: ["欢迎使用XXYY"]
-children: []
 lastmod: "2025-02-24T14:47:20.235Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 生成交易钱包
+
+<figure><img src="/assets/xxyy-docs-bLGqA0inBnBEiY46oZve.png" alt=""><figcaption></figcaption></figure>
 
 为了保证交易安全和便捷，XXYY 使用新生成的交易钱包进行交易。首次登录XXYY，你需要生成至少一个交易钱包。
 

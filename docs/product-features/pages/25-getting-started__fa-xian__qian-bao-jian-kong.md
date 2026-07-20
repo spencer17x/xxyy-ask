@@ -2,14 +2,18 @@
 title: "钱包监控"
 source_url: "https://docs.xxyy.io/getting-started/fa-xian/qian-bao-jian-kong"
 source_markdown_url: "https://docs.xxyy.io/getting-started/fa-xian/qian-bao-jian-kong.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "发现"
-breadcrumbs: ["使用XXYY交易","发现"]
-children: []
 lastmod: "2025-02-13T18:06:41.519Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 钱包监控
+
+<figure><img src="/assets/xxyy-docs-s8gm4mj88qp1XP5fdBqH.png" alt="" width="308"><figcaption></figcaption></figure>
 
 钱包监控是XXYY的一亮点功能，会展示出你关注的聪明钱包或KOL钱包的交易记录及历史，可以在钱包监控的页面里关注钱包或跳转监控管理，管理自己的关注钱包地址，钱包监控区域会展示出你设置的关注推送的钱包交易信息。
 

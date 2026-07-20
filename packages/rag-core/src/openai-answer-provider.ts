@@ -59,7 +59,7 @@ const MAX_CONTEXT_CHARS = 4000;
 const MAX_CONTEXT_CHUNK_CONTENT_CHARS = 900;
 const DEFAULT_MAX_RETRIES = 1;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-const OPENAI_ANSWER_PROMPT_VERSION = 'answer-v1';
+const OPENAI_ANSWER_PROMPT_VERSION = 'answer-v2';
 
 export class LlmConfigurationError extends Error {}
 
@@ -666,6 +666,8 @@ function formatContextChunk(chunk: AnswerProviderInput['retrievedChunks'][number
   const content = truncateChunkContent(chunk);
   return [
     `[${chunk.rank}] ${chunk.metadata.title}`,
+    `模块：${chunk.metadata.module}`,
+    `章节：${chunk.metadata.headingPath.join(' > ')}`,
     `文件：${chunk.metadata.file}`,
     `来源类型：${chunk.metadata.sourceType}`,
     chunk.metadata.status === undefined ? undefined : `状态：${chunk.metadata.status}`,

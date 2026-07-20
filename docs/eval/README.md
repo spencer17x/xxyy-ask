@@ -19,7 +19,7 @@ Each line is one JSON object:
   "expectedSourceUrls": ["https://x.com/useXXYYio/status/2031333475010355227"],
   "forbiddenCitationFiles": ["docs/product-features/pages/59-getting-started__xxyy-pro-quan-yi.md"],
   "referenceFacts": ["钱包监控最多支持5000个地址"],
-  "relevantChunkIds": ["x_updates:sources/usexxyyio-x-posts/2031333475010355227:chunk:0004"],
+  "relevantChunkIds": ["x_updates:sources/usexxyyio-x-posts/2031333475010355227:chunk:0001"],
   "forbiddenChunkIds": ["official_docs:pages/59-getting-started__xxyy-pro-quan-yi:chunk:0002"],
   "requireCitationSupport": true,
   "boundaryExpected": false

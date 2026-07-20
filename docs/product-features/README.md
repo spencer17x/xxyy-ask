@@ -1,21 +1,42 @@
-# XXYY 产品功能知识库
+# XXYY 完整知识库
 
-本目录主要由 https://docs.xxyy.io/ 的中文产品功能文档整理而来，并补充官方 X 账号历史更新内容，用于 xxyy-ask RAG 客服系统的知识库种子。
+本目录完整同步 https://docs.xxyy.io/ 当前 sitemap 中的中文和英文页面，并补充官方 X / Twitter 历史更新及经核验的客服知识。
 
-## 范围
+## 覆盖范围
 
-已纳入：产品概览、新手入门、钱包连接、交易钱包、移动端登录、邀请、交易代币、快捷交易、发现、搜索、K 线区域、代币信息区、Dashboard、扫链、持仓盈亏、钱包管理、XXYY Pro 权益等产品功能页面。
-
-官网清洗文档未纳入：API 参考文档、Telegram 官方答疑群、用户条款、隐私协议，以及英文镜像页面。官方 X 历史功能更新已单独整理为 `xxyy-x-updates.md`。
+- 中文站：68 个页面。
+- 英文站：63 个页面。
+- 官网合计：131 个页面，包含产品功能、API、Telegram 支持、功能更新、用户条款、隐私协议及英文文档。
+- 官网媒体：67 个图片资产已下载到 `assets/`，页面中的 GitBook 文件引用已改写为本地 `/assets/` 路径；OCR 覆盖状态见 `enriched/media/manifest.json`。
+- 视频本身的字幕、音频转写、关键帧 OCR 状态，以及正文对视频知识的覆盖等级和证据 SHA，见 `enriched/videos/manifest.json`；`docs:audit` 会区分“视频未转写”和“知识确实缺失”。
+- 官方 X 引用的 Agent Skill / MCP 外部文档按 Git commit 固定同步，且不下载或执行外部代码。
 
 ## 文件
 
-- `xxyy-product-functions.md`：按产品模块汇总后的完整知识库文档。
-- `xxyy-x-updates.md`：按官方 X 历史推文整理的产品更新汇总，用于补充官网文档之外的迭代信息。
-- `pages/`：按 GitBook 原始页面拆分的清洗版 Markdown。
-- `manifest.jsonl`：每个页面一行元数据，方便后续入库、切分和 embedding。
+- `pages/`：官网全量页面及额外客服知识，每页一个 Markdown 文件。
+- `manifest.jsonl`：页面来源、语言、模块、更新时间和本地文件映射。
+- `assets/xxyy-docs-assets.json`：官网图片资产的校验值及来源页面。
+- `external/xxyy-trade-skill/`：固定 commit 的 Agent Skill / MCP 外部参考文档及校验清单。
+- `enriched/media/`：图片 OCR sidecar 与逐资产状态清单。
+- `enriched/videos/`：视频字幕、音频转写或关键帧 OCR sidecar，以及视频提取/正文知识覆盖双维度状态清单。
+- `admin-verified/`：经人工核验的内容兜底。
+- `xxyy-product-functions.md`：历史中文产品功能聚合归档；仅在 `pages/` 没有可入库页面时作为兼容兜底，不与逐页官网文档重复入库。
+- `xxyy-x-updates.md`：官方 X 历史更新聚合。
+- `sources/usexxyyio-x-posts.jsonl`：官方 X 帖子逐条原始数据。
 
-## 页面索引
+## 同步与入库
+
+```bash
+pnpm docs:sync
+pnpm docs:sync:external
+pnpm docs:enrich:media
+pnpm docs:audit
+pnpm rag:ingest
+```
+
+官网同步以中英文 sitemap 为准，保留带 `xxyy-ask:curated-*` 标记的本地客服补充段落。`app:dev -- --full-sync` 会依次执行官网、外部文档、媒体 enrichment、审计、X 全量抓取和正式 ingest。
+
+## 中文页面
 
 - [欢迎使用XXYY](pages/01-welcome.md) - https://docs.xxyy.io
 - [新手必看](pages/02-readme__quickstart.md) - https://docs.xxyy.io/readme/quickstart
@@ -80,5 +101,79 @@
 - [Pro](pages/61-getting-started__xxyy-pro-quan-yi__pro.md) - https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/pro
 - [永久PRO](pages/62-getting-started__xxyy-pro-quan-yi__yong-jiu-pro.md) - https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/yong-jiu-pro
 - [如何升级为 Pro](pages/63-getting-started__xxyy-pro-quan-yi__ru-he-sheng-ji-wei-pro.md) - https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/ru-he-sheng-ji-wei-pro
+- [XXYY API 参考文档](pages/66-xxyy-api-can-kao-wen-dang.md) - https://docs.xxyy.io/xxyy-api-can-kao-wen-dang
+- [Telegram 官方答疑群](pages/67-telegram-guan-fang-da-yi-qun.md) - https://docs.xxyy.io/telegram-guan-fang-da-yi-qun
+- [功能更新](pages/68-changelog.md) - https://docs.xxyy.io/changelog
+- [XXYY 用户条款](pages/69-wang-zhan-xie-yi__xxyy-yong-hu-tiao-kuan.md) - https://docs.xxyy.io/wang-zhan-xie-yi/xxyy-yong-hu-tiao-kuan
+- [XXYY 隐私协议](pages/70-wang-zhan-xie-yi__xxyy-yin-si-xie-yi.md) - https://docs.xxyy.io/wang-zhan-xie-yi/xxyy-yin-si-xie-yi
+
+## English pages
+
+- [Page Not Found](pages/71-en.md) - https://docs.xxyy.io/en
+- [A Must-Read for Beginners](pages/72-en__readme__a-must-read-for-beginners.md) - https://docs.xxyy.io/en/readme/a-must-read-for-beginners
+- [Connect Wallet](pages/73-en__readme__connect-wallet.md) - https://docs.xxyy.io/en/readme/connect-wallet
+- [Generate Your Trading Wallet](pages/74-en__readme__generate-your-trading-wallet.md) - https://docs.xxyy.io/en/readme/generate-your-trading-wallet
+- [Language Selection](pages/75-en__readme__language-selection.md) - https://docs.xxyy.io/en/readme/language-selection
+- [Mobile Device Login](pages/76-en__readme__mobile-device-login.md) - https://docs.xxyy.io/en/readme/mobile-device-login
+- [Referral Program](pages/77-en__readme__referral-program.md) - https://docs.xxyy.io/en/readme/referral-program
+- [Trading on XXYY](pages/78-en__trading-on-xxyy.md) - https://docs.xxyy.io/en/trading-on-xxyy
+- [Trading Tokens](pages/79-en__trading-tokens.md) - https://docs.xxyy.io/en/trading-tokens
+- [Swap](pages/80-en__trading-tokens__swap.md) - https://docs.xxyy.io/en/trading-tokens/swap
+- [Limit Orders](pages/81-en__trading-tokens__limit-orders.md) - https://docs.xxyy.io/en/trading-tokens/limit-orders
+- [Automated Trading](pages/82-en__trading-tokens__automated-trading.md) - https://docs.xxyy.io/en/trading-tokens/automated-trading
+- [Follow Dev Sell 100%](pages/83-en__trading-tokens__automated-trading__follow-dev-sell-100.md) - https://docs.xxyy.io/en/trading-tokens/automated-trading/follow-dev-sell-100
+- [Snipe](pages/84-en__trading-tokens__automated-trading__snipe.md) - https://docs.xxyy.io/en/trading-tokens/automated-trading/snipe
+- [Graduated Sell](pages/85-en__trading-tokens__automated-trading__graduated-sell.md) - https://docs.xxyy.io/en/trading-tokens/automated-trading/graduated-sell
+- [Trading Mode](pages/86-en__trading-tokens__trading-mode.md) - https://docs.xxyy.io/en/trading-tokens/trading-mode
+- [Degen](pages/87-en__trading-tokens__trading-mode__degen.md) - https://docs.xxyy.io/en/trading-tokens/trading-mode/degen
+- [Turbo](pages/88-en__trading-tokens__trading-mode__turbo.md) - https://docs.xxyy.io/en/trading-tokens/trading-mode/turbo
+- [Anti-MEV Mode](pages/89-en__trading-tokens__trading-mode__anti-mev-mode.md) - https://docs.xxyy.io/en/trading-tokens/trading-mode/anti-mev-mode
+- [Trading Settings](pages/90-en__trading-tokens__trading-settings.md) - https://docs.xxyy.io/en/trading-tokens/trading-settings
+- [Quick Trading](pages/91-en__quick-trading.md) - https://docs.xxyy.io/en/quick-trading
+- [Trades](pages/92-en__trades.md) - https://docs.xxyy.io/en/trades
+- [Watchlist](pages/93-en__trades__watchlist.md) - https://docs.xxyy.io/en/trades/watchlist
+- [New Pairs](pages/94-en__trades__new-pairs.md) - https://docs.xxyy.io/en/trades/new-pairs
+- [Trending](pages/95-en__trades__trending.md) - https://docs.xxyy.io/en/trades/trending
+- [Monitor](pages/96-en__trades__monitor.md) - https://docs.xxyy.io/en/trades/monitor
+- [Final Stretch](pages/97-en__trades__final-stretch.md) - https://docs.xxyy.io/en/trades/final-stretch
+- [Migrated](pages/98-en__trades__migrated.md) - https://docs.xxyy.io/en/trades/migrated
+- [DEXs-AD](pages/99-en__trades__dexs-ad.md) - https://docs.xxyy.io/en/trades/dexs-ad
+- [Search](pages/100-en__search.md) - https://docs.xxyy.io/en/search
+- [Chart Area](pages/101-en__chart-area.md) - https://docs.xxyy.io/en/chart-area
+- [Selecting Chart Timeframes](pages/102-en__chart-area__selecting-chart-timeframes.md) - https://docs.xxyy.io/en/chart-area/selecting-chart-timeframes
+- [Toggling Between Price and Market Cap](pages/103-en__chart-area__toggling-between-price-and-market-cap.md) - https://docs.xxyy.io/en/chart-area/toggling-between-price-and-market-cap
+- [On-Chart Transaction Markers](pages/104-en__chart-area__on-chart-transaction-markers.md) - https://docs.xxyy.io/en/chart-area/on-chart-transaction-markers
+- [Avg. Price Line](pages/105-en__chart-area__avg-price-line.md) - https://docs.xxyy.io/en/chart-area/avg.-price-line
+- [Token Information](pages/106-en__token-information.md) - https://docs.xxyy.io/en/token-information
+- [Dashboard](pages/107-en__dashboard.md) - https://docs.xxyy.io/en/dashboard
+- [My trades](pages/108-en__dashboard__my-trades.md) - https://docs.xxyy.io/en/dashboard/my-trades
+- [Holdings](pages/109-en__dashboard__holdings.md) - https://docs.xxyy.io/en/dashboard/holdings
+- [Transactions](pages/110-en__dashboard__transactions.md) - https://docs.xxyy.io/en/dashboard/transactions
+- [Holders](pages/111-en__dashboard__holders.md) - https://docs.xxyy.io/en/dashboard/holders
+- [Holder](pages/112-en__dashboard__holders__holder.md) - https://docs.xxyy.io/en/dashboard/holders/holder
+- [TagHolder](pages/113-en__dashboard__holders__tagholder.md) - https://docs.xxyy.io/en/dashboard/holders/tagholder
+- [Wallet Tag Descriptions](pages/114-en__dashboard__holders__wallet-tag-descriptions.md) - https://docs.xxyy.io/en/dashboard/holders/wallet-tag-descriptions
+- [Orders](pages/115-en__orders.md) - https://docs.xxyy.io/en/orders
+- [Monitor](pages/116-en__monitor.md) - https://docs.xxyy.io/en/monitor
+- [Monitor Wallet Settings](pages/117-en__monitor__monitor-wallet-settings.md) - https://docs.xxyy.io/en/monitor/monitor-wallet-settings
+- [Bulk Import](pages/118-en__monitor__bulk-import.md) - https://docs.xxyy.io/en/monitor/bulk-import
+- [Export Wallets](pages/119-en__monitor__export-wallets.md) - https://docs.xxyy.io/en/monitor/export-wallets
+- [Setting Up Telegram Notifications](pages/120-en__monitor__setting-up-telegram-notifications.md) - https://docs.xxyy.io/en/monitor/setting-up-telegram-notifications
+- [Actions](pages/121-en__monitor__actions.md) - https://docs.xxyy.io/en/monitor/actions
+- [Meme](pages/122-en__meme.md) - https://docs.xxyy.io/en/meme
+- [Filter](pages/123-en__meme__filter.md) - https://docs.xxyy.io/en/meme/filter
+- [Wallet Management](pages/124-en__wallet-management.md) - https://docs.xxyy.io/en/wallet-management
+- [XXYY Pro Membership](pages/125-en__xxyy-pro-membership.md) - https://docs.xxyy.io/en/xxyy-pro-membership
+- [Basic](pages/126-en__xxyy-pro-membership__basic.md) - https://docs.xxyy.io/en/xxyy-pro-membership/basic
+- [Pro](pages/127-en__xxyy-pro-membership__pro.md) - https://docs.xxyy.io/en/xxyy-pro-membership/pro
+- [Elite Pro](pages/128-en__xxyy-pro-membership__elite-pro.md) - https://docs.xxyy.io/en/xxyy-pro-membership/elite-pro
+- [How to Upgrade to Pro](pages/129-en__xxyy-pro-membership__how-to-upgrade-to-pro.md) - https://docs.xxyy.io/en/xxyy-pro-membership/how-to-upgrade-to-pro
+- [Telegram Support Group](pages/130-en__telegram-support-group.md) - https://docs.xxyy.io/en/telegram-support-group
+- [Feature Updates](pages/131-en__feature-updates.md) - https://docs.xxyy.io/en/feature-updates
+- [XXYY Terms of Use](pages/132-en__xxyy-terms__xxyy-terms-of-use.md) - https://docs.xxyy.io/en/xxyy-terms/xxyy-terms-of-use
+- [XXYY Privacy Policy](pages/133-en__xxyy-terms__xxyy-privacy-policy.md) - https://docs.xxyy.io/en/xxyy-terms/xxyy-privacy-policy
+
+## 额外知识页面
+
 - [移动端桌面入口](pages/64-getting-started__mobile-app.md) - https://docs.xxyy.io/readme/yi-dong-duan-deng-lu
 - [Robinhood Chain 支持范围](pages/65-current-support__robinhood-chain.md) - https://x.com/useXXYYio/status/2075547879876554811

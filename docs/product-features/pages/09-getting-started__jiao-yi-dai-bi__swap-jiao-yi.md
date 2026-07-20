@@ -2,14 +2,18 @@
 title: "Swap 交易"
 source_url: "https://docs.xxyy.io/getting-started/jiao-yi-dai-bi/swap-jiao-yi"
 source_markdown_url: "https://docs.xxyy.io/getting-started/jiao-yi-dai-bi/swap-jiao-yi.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "交易代币"
-breadcrumbs: ["使用XXYY交易","交易代币"]
-children: []
 lastmod: "2025-02-26T06:17:05.891Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # Swap 交易
+
+<figure><img src="/assets/xxyy-docs-o2anaqzyVTDzAYOMNOOJ.png" alt="" width="330"><figcaption></figcaption></figure>
 
 XXYY 支持一键买卖代币，操作简单，毫秒级上链。
 

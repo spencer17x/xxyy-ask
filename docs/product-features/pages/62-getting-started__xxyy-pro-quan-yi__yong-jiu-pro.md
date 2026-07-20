@@ -2,13 +2,15 @@
 title: "永久PRO"
 source_url: "https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/yong-jiu-pro"
 source_markdown_url: "https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/yong-jiu-pro.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "XXYY Pro 权益"
-breadcrumbs: ["使用XXYY交易","XXYY Pro 权益"]
-children: []
 lastmod: "2025-02-13T17:56:37.236Z"
 retrieved_at: "2026-05-24T06:41:04.265Z"
+content_state: "content"
+ingest: true
 ---
+
 # 永久PRO
 
 根据交易积分兑换后长期有效

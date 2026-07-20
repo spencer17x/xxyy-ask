@@ -50,6 +50,7 @@ POSTGRES_PASSWORD=replace_me_with_a_strong_password
 OPENAI_API_KEY=...
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=...
+COMPOSE_OPENAI_BASE_URL=
 EMBEDDING_API_KEY=
 EMBEDDING_BASE_URL=
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
@@ -67,13 +68,13 @@ TRUST_PROXY=false
 
 `pnpm run app:dev`、`pnpm run *:dev` 和 `pnpm rag:*` 会读取项目根目录 `.env`。同名 shell 环境变量优先于 `.env`。
 
-`OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL` 配置 Chat/Planner。可用 `EMBEDDING_API_KEY` 和 `EMBEDDING_BASE_URL` 将 embedding 请求发送到独立的 OpenAI-compatible 服务；未配置时回退使用对应的 `OPENAI_*` 配置。
+`OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL` 配置 Chat/Planner。宿主机本地模型服务需要为 Docker Compose 设置 `COMPOSE_OPENAI_BASE_URL`（Docker Desktop 通常使用 `http://host.docker.internal:<端口>/v1`），避免容器把 `localhost` 解释为自身。可用 `EMBEDDING_API_KEY` 和 `EMBEDDING_BASE_URL` 将 embedding 请求发送到独立的 OpenAI-compatible 服务；未配置时回退使用对应的 `OPENAI_*` 配置。
 
 主入口：
 
 - `pnpm run app:dev`：本地会尝试启动 pgvector，然后启动 API + Web；默认不刷新知识库。
 - `pnpm run app:dev -- --sync`：启动前检查知识库，空库时 ingest，然后执行增量 X / Twitter 抓取和 `rag:sync:x`。
-- `pnpm run app:dev -- --full-sync`：启动前全量抓取 X / Twitter 并重建知识库。
+- `pnpm run app:dev -- --full-sync`：启动前全量同步 `docs.xxyy.io` 中英文页面、固定版本的 Agent Skill 外链文档、图片 OCR、视频字幕/关键帧和 X / Twitter，经审计后重建知识库。
 - `pnpm run app:dev -- --ingest`：启动前只执行知识库 ingest。
 - `NODE_ENV=production pnpm run app:dev`：生产模式跳过本地 Docker，默认不刷新知识库；可加 `--sync` 或 `--full-sync` 显式更新。
 - `pnpm run telegram:dev`：启动 Telegram Bot long polling。
@@ -114,6 +115,10 @@ pnpm run app:dev -- --full-sync
 
 命令说明：
 
+- `pnpm docs:sync`：根据 `docs.xxyy.io` 中英文 sitemap 同步全部官网 Markdown 页面和站内图片；同步后需要执行 `pnpm rag:ingest`。
+- `pnpm docs:sync:external`：同步官方 X 引用的固定 Agent Skill 仓库 Markdown 白名单；固定 commit，不执行外部代码。
+- `pnpm docs:enrich:media`：为官网图片和视频生成独立的 OCR/字幕/转写 sidecar；视频提取状态与经 SHA 校验的正文知识覆盖状态分开记录，无公开字幕且需要完整转写的视频需显式配置 `TRANSCRIPTION_MODEL`。
+- `pnpm docs:audit`：检查官网空页/404、资源 SHA、OCR、视频知识覆盖及其正文证据、英文兜底和外部文档固定版本。
 - `pnpm rag:ingest`：执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run。
 - `pnpm rag:sync:x`：同步官方 X / Twitter 更新，只 embedding 新增或变更的 X chunks，不会 prune 旧 chunk。
 - `pnpm rag:migrate`：只执行数据库迁移，不调用 embedding 或 LLM。

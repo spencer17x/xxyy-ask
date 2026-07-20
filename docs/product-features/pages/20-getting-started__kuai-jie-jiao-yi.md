@@ -2,14 +2,18 @@
 title: "快捷交易"
 source_url: "https://docs.xxyy.io/getting-started/kuai-jie-jiao-yi"
 source_markdown_url: "https://docs.xxyy.io/getting-started/kuai-jie-jiao-yi.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "快捷交易"
-breadcrumbs: ["使用XXYY交易"]
-children: []
 lastmod: "2025-02-14T02:55:03.770Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 快捷交易
+
+<figure><img src="/assets/xxyy-docs-s1GC6881bft4g0hiy57M.png" alt=""><figcaption></figcaption></figure>
 
 XXYY支持快捷交易面板设置，方便一键快速购买或卖出项目。点击右侧的悬浮按钮，可将快捷交易面板悬浮在页面上自由移动
 

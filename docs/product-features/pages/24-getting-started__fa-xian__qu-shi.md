@@ -2,14 +2,18 @@
 title: "趋势"
 source_url: "https://docs.xxyy.io/getting-started/fa-xian/qu-shi"
 source_markdown_url: "https://docs.xxyy.io/getting-started/fa-xian/qu-shi.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "发现"
-breadcrumbs: ["使用XXYY交易","发现"]
-children: []
 lastmod: "2025-02-14T03:51:27.926Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 趋势
+
+<figure><img src="/assets/xxyy-docs-6Lsf5Km990aod15t0wpT.png" alt="" width="306"><figcaption></figcaption></figure>
 
 趋势列表是XXYY的一大亮点功能。
 

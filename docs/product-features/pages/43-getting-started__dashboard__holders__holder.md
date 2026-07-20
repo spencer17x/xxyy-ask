@@ -2,14 +2,18 @@
 title: "Holder"
 source_url: "https://docs.xxyy.io/getting-started/dashboard/holders/holder"
 source_markdown_url: "https://docs.xxyy.io/getting-started/dashboard/holders/holder.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "Dashboard"
-breadcrumbs: ["使用XXYY交易","Dashboard","Holders"]
-children: []
 lastmod: "2025-02-14T03:54:31.091Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # Holder
+
+<figure><img src="/assets/xxyy-docs-rLFlxJvymmD0CnN5zQ3o.png" alt=""><figcaption></figcaption></figure>
 
 Holder页面会展示当前代币持有者的所有地址汇总情况，支持查看持仓量前100的所有地址。
 

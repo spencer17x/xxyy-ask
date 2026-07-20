@@ -2,14 +2,18 @@
 title: "移动端登录"
 source_url: "https://docs.xxyy.io/readme/yi-dong-duan-deng-lu"
 source_markdown_url: "https://docs.xxyy.io/readme/yi-dong-duan-deng-lu.md"
+language: "zh"
 category: "新手入门"
 section: "新手入门"
-breadcrumbs: ["欢迎使用XXYY"]
-children: []
 lastmod: "2025-02-24T14:50:01.691Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 移动端登录
+
+<figure><img src="/assets/xxyy-docs-W9ehM5yAH8jJVUN6CI2B.png" alt=""><figcaption></figcaption></figure>
 
 登录后，可以在顶部导航看到移动版入口，点击“下载APP”进入移动版授权登录页面，进行扫码验证。
 
@@ -20,3 +24,5 @@ retrieved_at: "2026-05-24T06:41:04.265Z"
 出于交易安全性考虑，任何一端已经登录的设备退出登录，所有登录的设备都将同时自动退出登录。
 
 **移动端和Web端登录状态绑定，任意一端退出登录，其他各端同步退出登录状态**
+
+<figure><img src="/assets/xxyy-docs-Bl30MK6li6RWe87dHfKm.gif" alt="" width="320"><figcaption></figcaption></figure>

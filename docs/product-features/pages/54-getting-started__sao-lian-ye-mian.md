@@ -2,14 +2,18 @@
 title: "扫链页面"
 source_url: "https://docs.xxyy.io/getting-started/sao-lian-ye-mian"
 source_markdown_url: "https://docs.xxyy.io/getting-started/sao-lian-ye-mian.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "扫链页面"
-breadcrumbs: ["使用XXYY交易"]
-children: [{"title":"扫链筛选","source_url":"https://docs.xxyy.io/getting-started/sao-lian-ye-mian/sao-lian-shai-xuan","source_markdown_url":"https://docs.xxyy.io/getting-started/sao-lian-ye-mian/sao-lian-shai-xuan.md"},{"title":"打满 Alert","source_url":"https://docs.xxyy.io/getting-started/sao-lian-ye-mian/da-man-alert","source_markdown_url":"https://docs.xxyy.io/getting-started/sao-lian-ye-mian/da-man-alert.md"}]
 lastmod: "2025-02-13T18:23:54.297Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 扫链页面
+
+<figure><img src="/assets/xxyy-docs-BJY6y55V0JvaIYolgP1o.png" alt=""><figcaption></figcaption></figure>
 
 ### ⚙️ 交易设置
 
@@ -27,9 +31,13 @@ retrieved_at: "2026-05-24T06:41:04.265Z"
 
 已经发射是指Pump上raydium的项目
 
+<!-- xxyy-ask:curated-start -->
+
 ## 包含的子功能
 
 该页面是 扫链页面 的功能目录页，具体说明见：
 
 - [扫链筛选](https://docs.xxyy.io/getting-started/sao-lian-ye-mian/sao-lian-shai-xuan.md)
 - [打满 Alert](https://docs.xxyy.io/getting-started/sao-lian-ye-mian/da-man-alert.md)
+
+<!-- xxyy-ask:curated-end -->

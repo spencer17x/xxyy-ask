@@ -2,14 +2,18 @@
 title: "扫链筛选"
 source_url: "https://docs.xxyy.io/getting-started/sao-lian-ye-mian/sao-lian-shai-xuan"
 source_markdown_url: "https://docs.xxyy.io/getting-started/sao-lian-ye-mian/sao-lian-shai-xuan.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "扫链页面"
-breadcrumbs: ["使用XXYY交易","扫链页面"]
-children: []
 lastmod: "2025-02-14T03:58:31.598Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 扫链筛选
+
+<figure><img src="/assets/xxyy-docs-Qvg8oNjGG4Dx3IkgzCmx.png" alt=""><figcaption></figcaption></figure>
 
 好的筛选会让扫链事半功倍！
 

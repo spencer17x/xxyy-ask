@@ -2,14 +2,18 @@
 title: "K 线交易标记"
 source_url: "https://docs.xxyy.io/getting-started/k-xian-qu-yu/k-xian-jiao-yi-biao-ji"
 source_markdown_url: "https://docs.xxyy.io/getting-started/k-xian-qu-yu/k-xian-jiao-yi-biao-ji.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "K线区域"
-breadcrumbs: ["使用XXYY交易","K 线区域"]
-children: []
 lastmod: "2025-02-14T03:53:13.870Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # K 线交易标记
+
+<figure><img src="/assets/xxyy-docs-WK0lNaxaDTjKOW6HFVtP.png" alt=""><figcaption></figcaption></figure>
 
 K 线标记分为查看自己的交易和查看 Dev 标记两种，支持配合最新成交或 Holder 查看置顶地址的买入卖出标记。
 

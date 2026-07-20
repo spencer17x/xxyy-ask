@@ -2,13 +2,15 @@
 title: "欢迎使用XXYY"
 source_url: "https://docs.xxyy.io"
 source_markdown_url: "https://docs.xxyy.io/readme.md"
+language: "zh"
 category: "产品概览"
 section: "产品概览"
-breadcrumbs: []
-children: []
 lastmod: "2025-10-27T07:08:39.202Z"
 retrieved_at: "2026-05-24T06:41:04.265Z"
+content_state: "content"
+ingest: true
 ---
+
 # 欢迎使用XXYY
 
 XXYY 为您提供快速、安全的交易体验，在市场中领先一步

@@ -2,14 +2,18 @@
 title: "代币信息区"
 source_url: "https://docs.xxyy.io/getting-started/dai-bi-xin-xi-qu"
 source_markdown_url: "https://docs.xxyy.io/getting-started/dai-bi-xin-xi-qu.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "代币信息区"
-breadcrumbs: ["使用XXYY交易"]
-children: []
 lastmod: "2025-02-14T03:45:47.299Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 代币信息区
+
+<figure><img src="/assets/xxyy-docs-nLRKWojixnpOMvyNzXTQ.png" alt="" width="324"><figcaption></figcaption></figure>
 
 XXYY 代币详情提供详细的代币信息，包括价格，市值，流动性等交易参考信息。XXYY 具有市面上最快的代币交易数据展示，
 

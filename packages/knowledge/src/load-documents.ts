@@ -8,6 +8,27 @@ const X_UPDATES_FILE = 'xxyy-x-updates.md';
 const X_POSTS_FILE = path.posix.join('sources', 'usexxyyio-x-posts.jsonl');
 const MANIFEST_FILE = 'manifest.jsonl';
 const ADMIN_VERIFIED_DIR = 'admin-verified';
+const OPTIONAL_MARKDOWN_DIRECTORIES: Array<{
+  directory: string;
+  fallbackModule: string;
+  sourceType: SourceType;
+}> = [
+  {
+    directory: path.posix.join('external', 'xxyy-trade-skill'),
+    fallbackModule: 'Developer / Agent Skill',
+    sourceType: 'official_docs',
+  },
+  {
+    directory: path.posix.join('enriched', 'media'),
+    fallbackModule: '产品文档图片文字',
+    sourceType: 'official_docs',
+  },
+  {
+    directory: path.posix.join('enriched', 'videos'),
+    fallbackModule: '产品教程视频',
+    sourceType: 'official_docs',
+  },
+];
 
 export interface LoadProductDocumentsOptions {
   productFeaturesDir?: string;
@@ -38,6 +59,8 @@ interface ManifestEntry {
   retrieved_at?: string;
   status?: KnowledgeStatus;
   supersedes?: string[];
+  ingest?: boolean;
+  content_state?: 'content' | 'empty' | 'not_found';
 }
 
 interface XPostEntry {
@@ -57,18 +80,21 @@ export async function loadProductDocuments(
     options.productFeaturesDir ?? path.join('docs', 'product-features'),
   );
   const manifest = await readManifest(path.join(productFeaturesDir, MANIFEST_FILE));
+  const pageDocuments = await readPageDocuments(productFeaturesDir, manifest);
   const documents: SourceDocument[] = [];
 
-  documents.push(
-    await readDocument({
-      productFeaturesDir,
-      relativeFile: PRODUCT_FUNCTIONS_FILE,
-      sourceType: 'official_docs',
-      fallbackTitle: 'XXYY 产品功能整理文档',
-      fallbackModule: '产品功能',
-      manifest,
-    }),
-  );
+  if (pageDocuments.length === 0) {
+    documents.push(
+      await readDocument({
+        productFeaturesDir,
+        relativeFile: PRODUCT_FUNCTIONS_FILE,
+        sourceType: 'official_docs',
+        fallbackTitle: 'XXYY 产品功能整理文档',
+        fallbackModule: '产品功能',
+        manifest,
+      }),
+    );
+  }
   documents.push(
     await readDocument({
       productFeaturesDir,
@@ -96,19 +122,51 @@ export async function loadProductDocuments(
     );
   }
 
-  for (const pageFile of await listPageFiles(productFeaturesDir)) {
-    documents.push(
-      await readDocument({
-        productFeaturesDir,
-        relativeFile: path.posix.join('pages', pageFile),
-        sourceType: 'official_docs',
-        fallbackTitle: titleFromFilename(pageFile),
-        fallbackModule: '产品文档',
-        manifest,
-      }),
-    );
+  for (const optionalDirectory of OPTIONAL_MARKDOWN_DIRECTORIES) {
+    for (const markdownFile of await listOptionalMarkdownFiles(
+      path.join(productFeaturesDir, optionalDirectory.directory),
+    )) {
+      documents.push(
+        await readDocument({
+          productFeaturesDir,
+          relativeFile: path.posix.join(optionalDirectory.directory, markdownFile),
+          sourceType: optionalDirectory.sourceType,
+          fallbackTitle: titleFromFilename(markdownFile),
+          fallbackModule: optionalDirectory.fallbackModule,
+          manifest,
+        }),
+      );
+    }
   }
 
+  documents.push(...pageDocuments);
+
+  return documents;
+}
+
+async function readPageDocuments(
+  productFeaturesDir: string,
+  manifest: Map<string, ManifestEntry>,
+): Promise<SourceDocument[]> {
+  const documents: SourceDocument[] = [];
+  for (const pageFile of await listPageFiles(productFeaturesDir)) {
+    const relativeFile = path.posix.join('pages', pageFile);
+    const manifestEntry = findManifestEntry(manifest, relativeFile);
+    if (manifestEntry?.ingest === false) {
+      continue;
+    }
+    const document = await readDocument({
+      productFeaturesDir,
+      relativeFile,
+      sourceType: 'official_docs',
+      fallbackTitle: titleFromFilename(pageFile),
+      fallbackModule: '产品文档',
+      manifest,
+    });
+    if (isIndexablePageDocument(document)) {
+      documents.push(document);
+    }
+  }
   return documents;
 }
 
@@ -185,19 +243,7 @@ function createXPostDocument(post: XPostEntry, file: string): SourceDocument {
     module: `X / @${account} / ${createdMonth}`,
     sourceType: 'x_updates',
     file,
-    content: [
-      `# X Post ${post.id}`,
-      '',
-      `- Account: @${account}`,
-      `- Tweet ID: ${post.id}`,
-      `- URL: ${post.url}`,
-      ...(post.createdAtIso === undefined ? [] : [`- Published at: ${post.createdAtIso}`]),
-      '',
-      '## Text',
-      '',
-      post.text,
-      '',
-    ].join('\n'),
+    content: [`# X Post ${post.id}`, '', '## Text', '', post.text, ''].join('\n'),
     sourceUrl: post.url,
     status: inferXPostStatus(post.text),
   };
@@ -478,8 +524,30 @@ function isManifestEntry(value: unknown): value is ManifestEntry {
     isOptionalNullableString(record.lastmod) &&
     isOptionalString(record.retrieved_at) &&
     isOptionalKnowledgeStatus(record.status) &&
-    isOptionalStringArray(record.supersedes)
+    isOptionalStringArray(record.supersedes) &&
+    isOptionalBoolean(record.ingest) &&
+    isOptionalContentState(record.content_state)
   );
+}
+
+function isIndexablePageDocument(document: SourceDocument): boolean {
+  if (
+    document.title.normalize('NFKC').trim().toLowerCase() === 'page not found' ||
+    (/^#\s+page not found\s*$/imu.test(document.content) &&
+      /does not exist|moved, renamed, or deleted/iu.test(document.content))
+  ) {
+    return false;
+  }
+
+  const body = document.content
+    .replace(/<!--[^]*?-->/gu, ' ')
+    .replace(/<figure[^>]*>[^]*?<\/figure>/giu, ' ')
+    .replace(/<[^>]+>/gu, ' ')
+    .replace(/^#{1,6}\s+.*$/gmu, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/gu, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/gu, '$1')
+    .replace(/[\s\p{P}\p{S}]+/gu, '');
+  return body.length > 0;
 }
 
 function parseSupersedes(value: string): string[] {
@@ -526,4 +594,12 @@ function isOptionalNullableString(value: unknown): boolean {
 
 function isOptionalNumber(value: unknown): boolean {
   return value === undefined || typeof value === 'number';
+}
+
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === 'boolean';
+}
+
+function isOptionalContentState(value: unknown): boolean {
+  return value === undefined || value === 'content' || value === 'empty' || value === 'not_found';
 }

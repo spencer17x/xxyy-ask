@@ -26,6 +26,26 @@ const COMMANDS = {
     command: 'docker',
     label: 'start local postgres',
   },
+  refreshDocs: {
+    args: ['docs:sync'],
+    command: 'pnpm',
+    label: 'refresh official docs',
+  },
+  refreshExternalDocs: {
+    args: ['docs:sync:external'],
+    command: 'pnpm',
+    label: 'refresh external Agent Skill docs',
+  },
+  enrichMedia: {
+    args: ['docs:enrich:media'],
+    command: 'pnpm',
+    label: 'enrich documentation media',
+  },
+  auditDocs: {
+    args: ['docs:audit'],
+    command: 'pnpm',
+    label: 'audit documentation coverage',
+  },
   refreshXUpdates: (full) => ({
     args: full ? ['x:scrape', '--', '--full'] : ['x:scrape'],
     command: 'pnpm',
@@ -177,6 +197,24 @@ async function prepareKnowledgeBeforeServing({ action, cwd, env, log, runCommand
   }
 
   if (action === 'full-sync') {
+    for (const command of [
+      COMMANDS.refreshDocs,
+      COMMANDS.refreshExternalDocs,
+      COMMANDS.enrichMedia,
+      COMMANDS.auditDocs,
+    ]) {
+      const docsExitCode = await runLoggedCommand({
+        command,
+        cwd,
+        env,
+        log,
+        runCommand,
+      });
+      if (docsExitCode !== 0) {
+        return docsExitCode;
+      }
+    }
+
     const refreshExitCode = await runLoggedCommand({
       command: COMMANDS.refreshXUpdates(true),
       cwd,

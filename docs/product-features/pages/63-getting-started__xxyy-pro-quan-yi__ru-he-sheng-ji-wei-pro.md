@@ -2,13 +2,15 @@
 title: "如何升级为 Pro"
 source_url: "https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/ru-he-sheng-ji-wei-pro"
 source_markdown_url: "https://docs.xxyy.io/getting-started/xxyy-pro-quan-yi/ru-he-sheng-ji-wei-pro.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "XXYY Pro 权益"
-breadcrumbs: ["使用XXYY交易","XXYY Pro 权益"]
-children: []
 lastmod: "2025-02-14T03:59:06.810Z"
 retrieved_at: "2026-05-24T06:41:04.265Z"
+content_state: "content"
+ingest: true
 ---
+
 # 如何升级为 Pro
 
 点击右上角个人中心的会员积分，可查看当前地址积分数量。

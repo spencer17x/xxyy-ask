@@ -198,6 +198,8 @@ describe('createOpenAiAnswerProvider', () => {
     expect(prompt).toContain('默认回答当前有效规则');
     expect(prompt).toContain('不要混合冲突的新旧事实');
     expect(prompt).toContain('来源类型：x_updates');
+    expect(prompt).toContain('模块：X Updates');
+    expect(prompt).toContain('章节：钱包监控上限更新');
     expect(prompt).toContain('状态：current');
     expect(prompt).toContain('生效时间：2026-07-01T00:00:00.000Z');
   });

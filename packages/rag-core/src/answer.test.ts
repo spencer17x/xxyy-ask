@@ -272,6 +272,29 @@ describe('createGroundedAnswer', () => {
     expect(response.citations[0]?.excerpt).toContain('发布日期：2026-03-06');
   });
 
+  it('keeps executable command evidence in citations for installation questions', () => {
+    const response = createGroundedAnswer(
+      'XXYY Agent Skill 如何从 GitHub 安装？',
+      { ...productClassification, intent: 'how_to' },
+      [
+        createRetrievedChunk({
+          id: 'agent-skill-install',
+          text: [
+            '**第 1 步** — 添加市场源：',
+            '```bash\n/plugin marketplace add Jimmy-Holiday/xxyy-trade-skill\n```',
+            '**第 2 步** — 安装插件：',
+            '打开 `/plugin` → 切换到 Marketplaces 标签页 → 选择 xxyy-trade-skill → Browse plugins → 安装 xxyy-trade。',
+          ].join('\n\n'),
+          title: 'XXYY Agent Skill 安装',
+        }),
+      ],
+    );
+
+    expect(response.citations[0]?.excerpt).toContain(
+      '/plugin marketplace add Jimmy-Holiday/xxyy-trade-skill',
+    );
+  });
+
   it('selects the direct X post that best matches the source question text', () => {
     const retrieved = [
       createRetrievedChunk({

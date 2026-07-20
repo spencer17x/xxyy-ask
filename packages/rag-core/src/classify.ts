@@ -54,7 +54,7 @@ const unsupportedTransactionAnalysisPatterns = [
 ];
 
 const productSupportDomainPattern =
-  /跟单|扫链|挂单|监控|交易|钱包|移动端|app|telegram|swap|base|b20|p1\/p2\/p3|k\s*线|pump|tag\s*holder|holder|订单|批量导入|止盈|止损/u;
+  /跟单|扫链|挂单|监控|交易|钱包|移动端|app|telegram|swap|base|b20|p1\/p2\/p3|k\s*线|pump|tag\s*holder|holder|订单|批量导入|止盈|止损|wallet\s+(?:monitoring|management)|limit\s+orders?|automated\s+trading|quick\s+trading|trading\s+(?:settings?|modes?)|chart\s+area|avg\.?\s+price\s+line|average\s+(?:purchase|buy|cost)\s+line|cost\s+basis|token\s+information|watchlist|new\s+pairs|meme\s+scanner/u;
 
 const supportQuestionPattern =
   /是否支持|当前支持|现在支持|支持.*(?:吗|么|不)|(?:does|do|can|is|are).*\bsupport\b|\bsupport(?:s|ed)?\b/u;
@@ -124,6 +124,7 @@ const rules: IntentRule[] = [
       /swap|degen|交易设置|交易模式|极速模式|防夹模式|k\s*线|平均买入成本线|代币信息区/u,
       /pump\s*早鸟|最新成交|tag\s*holder|holder|订单管理|批量导入|持仓盈亏|自动止盈止损/u,
       /交易\s*api|agent\s*skill|p1\/p2\/p3/u,
+      /wallet\s+(?:monitoring|management)|limit\s+orders?|automated\s+trading|quick\s+trading|trading\s+(?:settings?|modes?)|anti[- ]?mev|chart\s+area|avg\.?\s+price\s+line|average\s+(?:purchase|buy|cost)\s+line|cost\s+basis|token\s+information|watchlist|new\s+pairs|meme\s+scanner|referral\s+program|mobile\s+(?:device\s+)?login/u,
     ],
   },
 ];
@@ -155,7 +156,10 @@ export function classifyQuestion(question: string): Classification {
     );
   }
 
-  if (unsupportedTransactionAnalysisPatterns.some((pattern) => pattern.test(normalized))) {
+  if (
+    unsupportedTransactionAnalysisPatterns.some((pattern) => pattern.test(normalized)) &&
+    !isAntiMevModeDocumentationQuestion(normalized)
+  ) {
     return createClassification('unknown', 0.7, 'unsupported transaction or mev analysis request');
   }
 
@@ -198,6 +202,15 @@ export function classifyQuestion(question: string): Classification {
   }
 
   return createClassification('unknown', 0.25, 'no deterministic product support intent matched');
+}
+
+function isAntiMevModeDocumentationQuestion(normalizedQuestion: string): boolean {
+  return (
+    /anti[- ]?mev\s+mode/u.test(normalizedQuestion) &&
+    !/tx\s*hash|transaction\s*hash|explorer|solscan|etherscan|bscscan|basescan|sandwich|交易哈希|链上取证|链上交易|池子/u.test(
+      normalizedQuestion,
+    )
+  );
 }
 
 export function hasProductDomainSignal(question: string): boolean {

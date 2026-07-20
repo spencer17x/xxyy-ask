@@ -12,6 +12,15 @@ import type {
 
 import {
   createLexicalRetrieveQueryTokens,
+  isApiReferenceDocument,
+  isChangelogDocumentationQuestion,
+  isDocumentationScopeEligible,
+  isExternalDeveloperDocument,
+  isHistoricalOrTweetQuestion,
+  isLegalDocumentationQuestion,
+  shouldIncludeEnglishDocumentation,
+  shouldIncludeApiReferenceDocumentation,
+  shouldIncludeExternalDeveloperDocumentation,
   type RetrieveOptions,
   type RetrievedChunk,
 } from './retrieve.js';
@@ -227,6 +236,8 @@ const DEFAULT_PGVECTOR_EMBEDDING_DIMENSION = 1536;
 const DEFAULT_TOP_K = 6;
 const MIN_VECTOR_SCORE = 0.25;
 const DIRECT_X_POST_SOURCE_BOOST = 6;
+const DIRECT_API_REFERENCE_BOOST = 6;
+const DIRECT_EXTERNAL_DEVELOPER_BOOST = 6;
 const CURRENT_STATUS_BOOST = 0.2;
 const CURRENT_X_UPDATE_BOOST = 0.25;
 const HISTORICAL_STATUS_PENALTY = -0.45;
@@ -613,6 +624,11 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
       const topK = normalizeTopK(retrieveOptions.topK);
       const lexicalQueryTokens = createLexicalRetrieveQueryTokens(question);
       const supportEntities = extractSupportEntityTokens(question);
+      const includeApiReferenceDocs = shouldIncludeApiReferenceDocumentation(question);
+      const isChangelogQuestion = isChangelogDocumentationQuestion(question);
+      const isLegalQuestion = isLegalDocumentationQuestion(question);
+      const includeEnglishDocs = shouldIncludeEnglishDocumentation(question);
+      const includeExternalDeveloperDocs = shouldIncludeExternalDeveloperDocumentation(question);
       const entityPrefixPatterns = supportEntities
         .filter((entity) => entity.length >= 6)
         .map((entity) => `%${entity.slice(0, 6)}%`);
@@ -642,13 +658,54 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           select knowledge_chunks.*
           from knowledge_chunks
           where
-            $6::boolean
-            or not exists (
-              select 1
-              from active_supersedes
-              where
-                active_supersedes.knowledge_id = knowledge_chunks.id
-                or active_supersedes.knowledge_id = knowledge_chunks.document_id
+            (
+              $6::boolean
+              or not exists (
+                select 1
+                from active_supersedes
+                where
+                  active_supersedes.knowledge_id = knowledge_chunks.id
+                  or active_supersedes.knowledge_id = knowledge_chunks.document_id
+              )
+            )
+            and (
+              $7::boolean
+              or not (
+                lower(module) like '%api%'
+                or lower(title) like '%api%'
+                or source_url like '%/xxyy-api-can-kao-wen-dang'
+              )
+            )
+            and (
+              $8::boolean
+              or source_url is null
+              or (
+                source_url not like '%/changelog'
+                and source_url not like '%/en/feature-updates'
+              )
+            )
+            and (
+              $9::boolean
+              or source_url is null
+              or (
+                source_url not like '%/wang-zhan-xie-yi/%'
+                and source_url not like '%/en/xxyy-terms/%'
+              )
+            )
+            and (
+              $10::boolean
+              or source_url is null
+              or (
+                source_url not like '%/en'
+                and source_url not like '%/en/%'
+              )
+            )
+            and (
+              $11::boolean
+              or not (
+                source_url like '%github.com/Jimmy-Holiday/xxyy-trade-skill/%'
+                or lower(module) like '%developer / agent skill%'
+              )
             )
         ),
         vector_candidates as (
@@ -748,10 +805,22 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
               supportEntities,
               entityPrefixPatterns,
               isHistoricalOrTweetQuestion(question),
+              includeApiReferenceDocs,
+              isChangelogQuestion,
+              isLegalQuestion,
+              includeEnglishDocs,
+              includeExternalDeveloperDocs,
             ],
           );
 
           return response.rows
+            .filter((row) =>
+              isDocumentationScopeEligible(question, {
+                module: row.module,
+                title: row.title,
+                ...(row.source_url === null ? {} : { sourceUrl: row.source_url }),
+              }),
+            )
             .map((row) => mapRow(row, question, lexicalQueryTokens, supportEntities))
             .filter(hasMinimumRetrievalEvidence)
             .sort(compareRetrievedChunks)
@@ -1189,7 +1258,11 @@ function mapRow(
     row.lexical_rank,
     row.entity_rank,
   ]);
-  const rowSourceBoost = sourceBoost(row.source_type) + directXPostSourceBoost(question, row);
+  const rowSourceBoost =
+    sourceBoost(row.source_type) +
+    directXPostSourceBoost(question, row) +
+    directApiReferenceBoost(question, row) +
+    directExternalDeveloperBoost(question, row);
   const status = row.status ?? defaultKnowledgeStatus(row.source_type);
   const freshnessBoost = freshnessScore(
     question,
@@ -1301,12 +1374,6 @@ function effectiveAtFreshnessBoost(effectiveAt: string | undefined): number {
   return Math.min(MAX_FRESHNESS_BOOST, yearsSinceEpoch * FRESHNESS_BOOST_PER_YEAR);
 }
 
-function isHistoricalOrTweetQuestion(question: string): boolean {
-  return /历史|以前|之前|过去|曾经|更新日志|变更|changelog|哪条推文|哪条推特|推文|推特|tweet|x\s*post/iu.test(
-    question.normalize('NFKC').toLowerCase(),
-  );
-}
-
 function directXPostSourceBoost(question: string, row: KnowledgeChunkRow): number {
   const normalizedQuestion = question.normalize('NFKC').toLowerCase();
   if (!/哪条推文|哪条推特|推文|推特|tweet|x\s*post/u.test(normalizedQuestion)) {
@@ -1323,6 +1390,32 @@ function directXPostSourceBoost(question: string, row: KnowledgeChunkRow): numbe
   }
 
   return 0;
+}
+
+function directApiReferenceBoost(question: string, row: KnowledgeChunkRow): number {
+  if (!shouldIncludeApiReferenceDocumentation(question)) {
+    return 0;
+  }
+  return isApiReferenceDocument({
+    module: row.module,
+    title: row.title,
+    ...(row.source_url === null ? {} : { sourceUrl: row.source_url }),
+  })
+    ? DIRECT_API_REFERENCE_BOOST
+    : 0;
+}
+
+function directExternalDeveloperBoost(question: string, row: KnowledgeChunkRow): number {
+  if (!shouldIncludeExternalDeveloperDocumentation(question)) {
+    return 0;
+  }
+  return isExternalDeveloperDocument({
+    module: row.module,
+    title: row.title,
+    ...(row.source_url === null ? {} : { sourceUrl: row.source_url }),
+  })
+    ? DIRECT_EXTERNAL_DEVELOPER_BOOST
+    : 0;
 }
 
 function compareRetrievedChunks(left: RetrievedChunk, right: RetrievedChunk): number {

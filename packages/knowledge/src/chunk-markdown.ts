@@ -1,9 +1,11 @@
 import type { ChunkMetadata, RagChunk, SourceDocument } from '@xxyy/shared';
 
-const DEFAULT_MAX_CHUNK_CHARS = 1200;
+const DEFAULT_MAX_CHUNK_CHARS = 900;
+const DEFAULT_OVERLAP_CHARS = 100;
 
 export interface ChunkMarkdownOptions {
   maxChunkChars?: number;
+  overlapChars?: number;
 }
 
 interface TextGroup {
@@ -26,6 +28,11 @@ function chunkMarkdownDocument(
   if (!Number.isInteger(maxChunkChars) || maxChunkChars <= 0) {
     throw new Error('maxChunkChars must be a positive integer');
   }
+  const overlapChars =
+    options.overlapChars ?? Math.min(DEFAULT_OVERLAP_CHARS, Math.floor(maxChunkChars / 4));
+  if (!Number.isInteger(overlapChars) || overlapChars < 0 || overlapChars >= maxChunkChars) {
+    throw new Error('overlapChars must be a non-negative integer smaller than maxChunkChars');
+  }
 
   const groups = mergeAdjacentGroups(
     collectMarkdownGroups(document.content, document.title),
@@ -34,7 +41,10 @@ function chunkMarkdownDocument(
   const chunks: RagChunk[] = [];
 
   for (const group of groups) {
-    for (const text of splitText(group.text, maxChunkChars)) {
+    for (const text of splitText(group.text, maxChunkChars, overlapChars)) {
+      if (!isIndexableChunkText(text)) {
+        continue;
+      }
       const metadata = createChunkMetadata(document, group.headingPath);
       chunks.push({
         id: `${document.id}:chunk:${String(chunks.length + 1).padStart(4, '0')}`,
@@ -45,7 +55,44 @@ function chunkMarkdownDocument(
     }
   }
 
+  const rollup = createDocumentRollup(groups, document.title, maxChunkChars);
+  if (rollup !== undefined) {
+    chunks.push({
+      id: `${document.id}:chunk:${String(chunks.length + 1).padStart(4, '0')}`,
+      documentId: document.id,
+      text: rollup.text,
+      metadata: createChunkMetadata(document, rollup.headingPath),
+    });
+  }
+
   return chunks;
+}
+
+function createDocumentRollup(
+  groups: TextGroup[],
+  documentTitle: string,
+  maxChunkChars: number,
+): TextGroup | undefined {
+  const sections = groups
+    .filter((group) => !isFencedCodeBlock(group.text) && isIndexableChunkText(group.text))
+    .map((group) => ({
+      heading: group.headingPath.slice(1).join(' > ') || documentTitle,
+      text: group.text,
+    }));
+  const distinctHeadings = new Set(sections.map((section) => section.heading));
+  if (distinctHeadings.size < 3) {
+    return undefined;
+  }
+
+  const text = sections.map((section) => `### ${section.heading}\n${section.text}`).join('\n\n');
+  if (text.length > maxChunkChars) {
+    return undefined;
+  }
+
+  return {
+    headingPath: [documentTitle, 'Document overview / 页面概览'],
+    text,
+  };
 }
 
 function mergeAdjacentGroups(groups: TextGroup[], maxChunkChars: number): TextGroup[] {
@@ -78,10 +125,11 @@ function collectMarkdownGroups(content: string, fallbackTitle: string): TextGrou
   const groups: TextGroup[] = [];
   let headingPath = [fallbackTitle];
   let currentLines: string[] = [];
-  let currentKind: 'paragraph' | 'list' | undefined;
+  let currentKind: 'code' | 'paragraph' | 'list' | undefined;
+  let activeFence: string | undefined;
 
   const flush = (): void => {
-    const text = currentLines.join('\n').trim();
+    const text = stripNonSemanticMarkup(currentLines.join('\n'));
     if (text.length > 0) {
       groups.push({ text, headingPath: [...headingPath] });
     }
@@ -91,6 +139,24 @@ function collectMarkdownGroups(content: string, fallbackTitle: string): TextGrou
 
   for (const line of lines) {
     const trimmed = line.trim();
+    if (activeFence !== undefined) {
+      currentLines.push(trimmed);
+      if (isClosingFence(trimmed, activeFence)) {
+        activeFence = undefined;
+        flush();
+      }
+      continue;
+    }
+
+    const openingFence = /^(`{3,}|~{3,})/u.exec(trimmed)?.[1];
+    if (openingFence !== undefined) {
+      flush();
+      currentKind = 'code';
+      currentLines.push(trimmed);
+      activeFence = openingFence;
+      continue;
+    }
+
     const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(trimmed);
     if (heading !== null) {
       flush();
@@ -117,43 +183,179 @@ function collectMarkdownGroups(content: string, fallbackTitle: string): TextGrou
   return groups;
 }
 
-function splitText(text: string, maxChunkChars: number): string[] {
+function splitText(text: string, maxChunkChars: number, overlapChars: number): string[] {
   if (text.length <= maxChunkChars) {
     return [text];
   }
 
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const separator = text.includes('\n') ? '\n' : ' ';
+  const structuredBlock =
+    isFencedCodeBlock(text) || (lines.length > 1 && lines.every(isStructuredLine));
+  const units = structuredBlock ? lines : lines.flatMap(splitSentences);
+  return packSemanticUnits(units, maxChunkChars, structuredBlock ? 0 : overlapChars, separator);
+}
+
+function packSemanticUnits(
+  units: string[],
+  maxChunkChars: number,
+  overlapChars: number,
+  separator: string,
+): string[] {
   const chunks: string[] = [];
-  let current = '';
-  for (const line of text.split('\n')) {
-    const candidate = current.length === 0 ? line : `${current}\n${line}`;
-    if (candidate.length <= maxChunkChars) {
-      current = candidate;
+  let current: string[] = [];
+
+  const flush = (): string[] => {
+    if (current.length === 0) {
+      return [];
+    }
+    const flushed = [...current];
+    chunks.push(joinUnits(flushed, separator));
+    current = [];
+    return flushed;
+  };
+
+  for (const unit of units) {
+    if (unit.length > maxChunkChars) {
+      flush();
+      chunks.push(...splitLongLine(unit, maxChunkChars, overlapChars));
       continue;
     }
 
-    if (current.length > 0) {
-      chunks.push(current);
+    const candidate = joinUnits([...current, unit], separator);
+    if (candidate.length <= maxChunkChars) {
+      current.push(unit);
+      continue;
     }
-    current = line;
+
+    const previous = flush();
+    current = createOverlapUnits(previous, overlapChars, separator);
+    while (current.length > 0 && joinUnits([...current, unit], separator).length > maxChunkChars) {
+      current.shift();
+    }
+    current.push(unit);
   }
 
-  if (current.length > 0) {
-    chunks.push(current);
-  }
-
-  return chunks.flatMap((chunk) => splitLongLine(chunk, maxChunkChars));
+  flush();
+  return chunks;
 }
 
-function splitLongLine(text: string, maxChunkChars: number): string[] {
+function createOverlapUnits(units: string[], overlapChars: number, separator: string): string[] {
+  if (overlapChars === 0 || units.length === 0) {
+    return [];
+  }
+
+  const selected: string[] = [];
+  for (let index = units.length - 1; index >= 0; index -= 1) {
+    const unit = units[index];
+    if (unit === undefined) {
+      continue;
+    }
+    const candidate = joinUnits([unit, ...selected], separator);
+    if (candidate.length > overlapChars) {
+      break;
+    }
+    selected.unshift(unit);
+  }
+  if (selected.length > 0) {
+    return selected;
+  }
+
+  const last = units.at(-1);
+  return last === undefined ? [] : [last.slice(-overlapChars)];
+}
+
+function splitLongLine(text: string, maxChunkChars: number, overlapChars: number): string[] {
   if (text.length <= maxChunkChars) {
     return [text];
   }
 
   const chunks: string[] = [];
-  for (let index = 0; index < text.length; index += maxChunkChars) {
+  const step = maxChunkChars - overlapChars;
+  for (let index = 0; index < text.length; index += step) {
     chunks.push(text.slice(index, index + maxChunkChars));
+    if (index + maxChunkChars >= text.length) {
+      break;
+    }
   }
   return chunks;
+}
+
+function splitSentences(text: string): string[] {
+  const sentences: string[] = [];
+  let start = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    const next = text[index + 1];
+    const isBoundary =
+      character === '。' ||
+      character === '！' ||
+      character === '？' ||
+      character === '；' ||
+      character === '!' ||
+      character === '?' ||
+      character === ';' ||
+      (character === '.' && (next === undefined || /\s/u.test(next)));
+    if (!isBoundary) {
+      continue;
+    }
+    const sentence = text.slice(start, index + 1).trim();
+    if (sentence.length > 0) {
+      sentences.push(sentence);
+    }
+    start = index + 1;
+  }
+  const remainder = text.slice(start).trim();
+  if (remainder.length > 0) {
+    sentences.push(remainder);
+  }
+  return sentences.length === 0 ? [text] : sentences;
+}
+
+function joinUnits(units: string[], separator: string): string {
+  return units.join(separator).trim();
+}
+
+function isStructuredLine(line: string): boolean {
+  return (
+    isListLine(line) || /^\|.*\|$/u.test(line) || /^```[a-z0-9_-]*$/iu.test(line) || line === '```'
+  );
+}
+
+function isIndexableChunkText(text: string): boolean {
+  const normalized = text.trim();
+  if (/^(?:```|~~~)[a-z0-9_-]*$/iu.test(normalized)) {
+    return false;
+  }
+  if (/^\[(?:mit|license|许可证)\]\([^)]*\)[.!。]?$/iu.test(normalized)) {
+    return false;
+  }
+  return hasMeaningfulText(normalized);
+}
+
+function stripNonSemanticMarkup(text: string): string {
+  return text
+    .replace(/<!--[^]*?-->/gu, ' ')
+    .replace(/<figure\b[^>]*>[^]*?<\/figure>/giu, (figure) =>
+      hasMeaningfulText(figure) ? figure : ' ',
+    )
+    .replace(/^\s*(?:\*{3,}|-{3,}|_{3,})\s*$/gmu, ' ')
+    .trim();
+}
+
+function hasMeaningfulText(text: string): boolean {
+  return (
+    text
+      .replace(/<!--[^]*?-->/gu, ' ')
+      .replace(/^\s*(?:```|~~~)[^\n]*$/gmu, ' ')
+      .replace(/<img\b[^>]*\balt=(["'])(.*?)\1[^>]*>/giu, '$2')
+      .replace(/<[^>]+>/gu, ' ')
+      .replace(/!\[([^\]]*)\]\([^)]*\)/gu, '$1')
+      .replace(/[\s\p{P}\p{S}]+/gu, '').length > 0
+  );
 }
 
 function createChunkMetadata(document: SourceDocument, headingPath: string[]): ChunkMetadata {
@@ -202,4 +404,17 @@ function stripFrontmatter(content: string): string {
 
 function isListLine(line: string): boolean {
   return /^(?:[-*+]|\d+\.)\s+/.test(line);
+}
+
+function isFencedCodeBlock(text: string): boolean {
+  return /^(?:`{3,}|~{3,})/u.test(text.trimStart());
+}
+
+function isClosingFence(line: string, openingFence: string): boolean {
+  const closingFence = /^(`{3,}|~{3,})\s*$/u.exec(line)?.[1];
+  return (
+    closingFence !== undefined &&
+    closingFence[0] === openingFence[0] &&
+    closingFence.length >= openingFence.length
+  );
 }

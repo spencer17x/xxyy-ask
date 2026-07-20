@@ -2,13 +2,15 @@
 title: "跟随Dev卖100%"
 source_url: "https://docs.xxyy.io/getting-started/jiao-yi-dai-bi/zi-dong-jiao-yi/gen-sui-dev-mai-100"
 source_markdown_url: "https://docs.xxyy.io/getting-started/jiao-yi-dai-bi/zi-dong-jiao-yi/gen-sui-dev-mai-100.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "交易代币"
-breadcrumbs: ["使用XXYY交易","交易代币","自动交易"]
-children: []
 lastmod: "2025-02-26T08:00:22.977Z"
 retrieved_at: "2026-05-24T06:41:04.265Z"
+content_state: "content"
+ingest: true
 ---
+
 # 跟随Dev卖100%
 
 Pump项目很多 Dev 卖出后整个项目会快速贬值，因此如何降低损失成为关键。

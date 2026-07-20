@@ -768,11 +768,24 @@ function evidenceSegmentScore(segment: string, queryTokens: string[], question: 
           ? 1
           : 0)
     : 0;
-  return tokenMatches + structuredEvidence;
+  const commandEvidence =
+    isInstallationOrSetupQuestion(question) &&
+    /(?:^|\s)(?:\/plugin\b|git\s+clone\b|(?:npm|pnpm|yarn)\s+(?:add|install)\b|clawhub\s+install\b)/iu.test(
+      segment,
+    )
+      ? 3
+      : 0;
+  return tokenMatches + structuredEvidence + commandEvidence;
 }
 
 function isStructuredAnswerQuestion(question: string): boolean {
   return /什么|哪些|哪几|有什么|多少|字段|参数|选项|包括|列表|区域|类型|条件/u.test(question);
+}
+
+function isInstallationOrSetupQuestion(question: string): boolean {
+  return /安装|配置|设置|部署|接入|install|setup|set\s+up|configure|configuration|deploy/iu.test(
+    question,
+  );
 }
 
 function selectStructuredGroundingChunks(

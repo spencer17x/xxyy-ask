@@ -2,14 +2,18 @@
 title: "挂单交易"
 source_url: "https://docs.xxyy.io/getting-started/jiao-yi-dai-bi/gua-dan-jiao-yi"
 source_markdown_url: "https://docs.xxyy.io/getting-started/jiao-yi-dai-bi/gua-dan-jiao-yi.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "交易代币"
-breadcrumbs: ["使用XXYY交易","交易代币"]
-children: []
 lastmod: "2025-02-26T06:17:05.891Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 挂单交易
+
+<figure><img src="/assets/xxyy-docs-DOsUX3pzWo2cjWWRzgFw.png" alt="" width="333"><figcaption></figcaption></figure>
 
 XXYY 提供挂单买卖功能，一键设置，按理想价格买入或卖出代币。
 

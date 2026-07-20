@@ -1,0 +1,44 @@
+{
+  "repository": "https://github.com/Jimmy-Holiday/xxyy-trade-skill",
+  "commit": "2cc0ff3d95583579f3e1b2b4a2c8429342bb0784",
+  "effective_at": "2026-06-10T10:03:32Z",
+  "retrieved_at": "2026-07-19T15:53:14.769Z",
+  "verified_by": "https://x.com/useXXYYio/status/2029875008730976415",
+  "files": [
+    {
+      "bytes": 6320,
+      "output": "readme.md",
+      "path": "README.md",
+      "sha256": "3461678d0be1994b24b09f3ca9d20d35ea79ae65d88b28bcaa1594ce9f5f9c4e",
+      "source_url": "https://github.com/Jimmy-Holiday/xxyy-trade-skill/blob/2cc0ff3d95583579f3e1b2b4a2c8429342bb0784/README.md"
+    },
+    {
+      "bytes": 6450,
+      "output": "readme-zh.md",
+      "path": "docs/README_ZH.md",
+      "sha256": "85f2cf9d92db2761c2f45135ed7bf2035358ef3fcafe819764875e862a6f6c0c",
+      "source_url": "https://github.com/Jimmy-Holiday/xxyy-trade-skill/blob/2cc0ff3d95583579f3e1b2b4a2c8429342bb0784/docs/README_ZH.md"
+    },
+    {
+      "bytes": 9909,
+      "output": "mcp-readme.md",
+      "path": "mcp/README.md",
+      "sha256": "03d93103eb0c47543217a98ba56cb8a87dea793cef130095bf4d853c560b7953",
+      "source_url": "https://github.com/Jimmy-Holiday/xxyy-trade-skill/blob/2cc0ff3d95583579f3e1b2b4a2c8429342bb0784/mcp/README.md"
+    },
+    {
+      "bytes": 9926,
+      "output": "mcp-readme-zh.md",
+      "path": "mcp/docs/README_ZH.md",
+      "sha256": "8fade961a222ef0c27c15d070764849fdebbb6318bc629ad26c3d6280f33919b",
+      "source_url": "https://github.com/Jimmy-Holiday/xxyy-trade-skill/blob/2cc0ff3d95583579f3e1b2b4a2c8429342bb0784/mcp/docs/README_ZH.md"
+    },
+    {
+      "bytes": 71890,
+      "output": "skill-reference.md",
+      "path": "SKILL.md",
+      "sha256": "8e0f18eca464bc8769d0ea7d913b49f7bd42c68a4d3e9017afec74934369400d",
+      "source_url": "https://github.com/Jimmy-Holiday/xxyy-trade-skill/blob/2cc0ff3d95583579f3e1b2b4a2c8429342bb0784/SKILL.md"
+    }
+  ]
+}

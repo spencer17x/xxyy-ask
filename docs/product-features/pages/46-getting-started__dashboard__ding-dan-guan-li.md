@@ -2,14 +2,18 @@
 title: "订单管理"
 source_url: "https://docs.xxyy.io/getting-started/dashboard/ding-dan-guan-li"
 source_markdown_url: "https://docs.xxyy.io/getting-started/dashboard/ding-dan-guan-li.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "Dashboard"
-breadcrumbs: ["使用XXYY交易","Dashboard"]
-children: []
 lastmod: "2025-02-14T02:59:18.137Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 订单管理
+
+<figure><img src="/assets/xxyy-docs-I36S6DsTX26wD9nfxUZG.png" alt=""><figcaption></figcaption></figure>
 
 * 挂单
 * 狙击

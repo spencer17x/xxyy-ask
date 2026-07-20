@@ -1,0 +1,21 @@
+---
+title: "Telegram Support Group：截图文字"
+section: "English / Support / 图片 OCR"
+source_url: "https://docs.xxyy.io/en/telegram-support-group"
+retrieved_at: "2026-07-19T16:07:12.754Z"
+status: current
+---
+
+# Telegram Support Group：截图文字
+
+> 以下文字由本地 OCR 从官方文档截图提取，仅作为页面正文的补充证据；排版、图标和个别字符可能识别不准确。
+
+- 图片文件：xxyy-docs-J9UHLGursNDwyARUTDFb.png
+- 图片 SHA-256：5ca3fd8fd926b306000f820093b234e6964946db3c7632032851cf719318b3ad
+- 来源页面：https://docs.xxyy.io/en/telegram-support-group
+
+## OCR 文字
+
+Fast Trading as Lightning
+00W6 02 TIG7
+https://xxyy.lo

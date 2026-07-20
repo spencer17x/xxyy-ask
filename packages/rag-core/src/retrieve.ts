@@ -34,6 +34,8 @@ const DEPRECATED_STATUS_PENALTY = -8;
 const EFFECTIVE_AT_EPOCH = Date.UTC(2024, 0, 1);
 const FRESHNESS_BOOST_PER_YEAR = 0.08;
 const MAX_FRESHNESS_BOOST = 0.4;
+const API_REFERENCE_CONTEXT_BOOST = 40;
+const EXTERNAL_DEVELOPER_CONTEXT_BOOST = 36;
 
 export function retrieve(
   question: string,
@@ -112,23 +114,150 @@ export function retrieve(
 }
 
 function selectEligibleEntries(question: string, entries: IndexEntry[]): IndexEntry[] {
+  const audienceEligibleEntries = entries.filter((entry) =>
+    isDocumentationScopeEligible(question, entry.metadata),
+  );
+
   if (isHistoricalOrTweetQuestion(question)) {
-    return entries;
+    return audienceEligibleEntries;
   }
 
   const supersededIds = new Set(
-    entries
+    audienceEligibleEntries
       .filter((entry) => entry.metadata.status === 'current')
       .flatMap((entry) => entry.metadata.supersedes ?? []),
   );
 
   if (supersededIds.size === 0) {
-    return entries;
+    return audienceEligibleEntries;
   }
 
-  return entries.filter(
+  return audienceEligibleEntries.filter(
     (entry) => !supersededIds.has(entry.id) && !supersededIds.has(entry.documentId),
   );
+}
+
+export function isApiDocumentationQuestion(question: string): boolean {
+  return /\bapi\b|\bapi[ _-]?key\b|\brest(?:ful)?\b|\bsdk\b|\bendpoint\b|\bauthorization\b|\bbearer\b|接口|开发者文档|请求头|错误码|频率限制|\bqps\b/iu.test(
+    question.normalize('NFKC').toLowerCase(),
+  );
+}
+
+export function isApiReferenceDocument(metadata: {
+  module: string;
+  title: string;
+  sourceUrl?: string;
+}): boolean {
+  return (
+    /(?:^|\s)api(?:\s|$)|api 参考/iu.test(`${metadata.title} ${metadata.module}`) ||
+    metadata.sourceUrl?.includes('/xxyy-api-can-kao-wen-dang') === true
+  );
+}
+
+export function shouldIncludeApiReferenceDocumentation(question: string): boolean {
+  return isApiDocumentationQuestion(question) && !isHistoricalOrTweetQuestion(question);
+}
+
+export function isExternalDeveloperDocumentationQuestion(question: string): boolean {
+  const normalized = question.normalize('NFKC').toLowerCase();
+  return (
+    isApiDocumentationQuestion(normalized) ||
+    /agent\s*skill|api\s*skill|\bskill\b|\bmcp\b|clawhub|openclaw|github|智能体技能|代理技能|技能仓库|代码仓库/iu.test(
+      normalized,
+    )
+  );
+}
+
+export function isExternalDeveloperDocument(metadata: {
+  module: string;
+  title: string;
+  sourceUrl?: string;
+}): boolean {
+  return (
+    metadata.sourceUrl?.includes('github.com/Jimmy-Holiday/xxyy-trade-skill/') === true ||
+    /Developer\s*\/\s*Agent Skill/iu.test(metadata.module)
+  );
+}
+
+export function shouldIncludeExternalDeveloperDocumentation(question: string): boolean {
+  return (
+    isExternalDeveloperDocumentationQuestion(question) && !isHistoricalOrTweetQuestion(question)
+  );
+}
+
+export function isChangelogDocumentationQuestion(question: string): boolean {
+  const normalized = question.normalize('NFKC').toLowerCase();
+  return (
+    /更新|升级|新增|上线|版本|changelog|release\s*notes|what'?s\s*new|\bv?\d+\.\d+/iu.test(
+      normalized,
+    ) || isProductTimelineQuestion(normalized)
+  );
+}
+
+export function isLegalDocumentationQuestion(question: string): boolean {
+  return /用户条款|服务条款|使用条款|隐私|协议|个人信息|个人资料|cookie|gdpr|仲裁|terms|privacy|legal/iu.test(
+    question.normalize('NFKC').toLowerCase(),
+  );
+}
+
+export function shouldIncludeEnglishDocumentation(question: string): boolean {
+  const normalized = question.normalize('NFKC').toLowerCase();
+  return /英文|英语|english/u.test(normalized) || !/\p{Script=Han}/u.test(normalized);
+}
+
+export function isDocumentationScopeEligible(
+  question: string,
+  metadata: {
+    module: string;
+    title: string;
+    sourceUrl?: string;
+  },
+): boolean {
+  if (
+    isExternalDeveloperDocument(metadata) &&
+    !shouldIncludeExternalDeveloperDocumentation(question)
+  ) {
+    return false;
+  }
+  if (isApiReferenceDocument(metadata) && !shouldIncludeApiReferenceDocumentation(question)) {
+    return false;
+  }
+  if (isChangelogDocument(metadata) && !isChangelogDocumentationQuestion(question)) {
+    return false;
+  }
+  if (isLegalDocument(metadata) && !isLegalDocumentationQuestion(question)) {
+    return false;
+  }
+  if (isEnglishDocument(metadata) && !shouldIncludeEnglishDocumentation(question)) {
+    return false;
+  }
+  return true;
+}
+
+function isChangelogDocument(metadata: { sourceUrl?: string }): boolean {
+  return (
+    metadata.sourceUrl?.endsWith('/changelog') === true ||
+    metadata.sourceUrl?.endsWith('/en/feature-updates') === true
+  );
+}
+
+function isLegalDocument(metadata: { sourceUrl?: string }): boolean {
+  return (
+    metadata.sourceUrl?.includes('/wang-zhan-xie-yi/') === true ||
+    metadata.sourceUrl?.includes('/en/xxyy-terms/') === true
+  );
+}
+
+function isEnglishDocument(metadata: { sourceUrl?: string }): boolean {
+  if (metadata.sourceUrl === undefined) {
+    return false;
+  }
+  try {
+    const pathname = new URL(metadata.sourceUrl, 'https://docs.xxyy.io').pathname;
+    return pathname === '/en' || pathname.startsWith('/en/');
+  } catch {
+    return false;
+  }
 }
 
 export function createRetrieveQueryTokens(question: string): string[] {
@@ -248,16 +377,35 @@ function effectiveAtFreshnessBoost(effectiveAt: string | undefined): number {
   return Math.min(MAX_FRESHNESS_BOOST, yearsSinceEpoch * FRESHNESS_BOOST_PER_YEAR);
 }
 
-function isHistoricalOrTweetQuestion(question: string): boolean {
-  return /历史|以前|之前|过去|曾经|更新日志|变更|changelog|哪条推文|哪条推特|推文|推特|tweet|x\s*post/iu.test(
-    question.normalize('NFKC').toLowerCase(),
+export function isHistoricalOrTweetQuestion(question: string): boolean {
+  const normalized = question.normalize('NFKC').toLowerCase();
+  return (
+    /历史|以前|之前|过去|曾经|更新日志|变更|changelog|哪条推文|哪条推特|推文|推特|tweet|x\s*post/iu.test(
+      normalized,
+    ) || isProductTimelineQuestion(normalized)
+  );
+}
+
+function isProductTimelineQuestion(normalizedQuestion: string): boolean {
+  return /什么时候|何时|哪年|哪月|哪天|开放时间|发布时间|发布日期|推出时间|上线时间|开始开放|最初开放|首次开放|when\s+(?:was|did)|timeline/iu.test(
+    normalizedQuestion,
   );
 }
 
 function calculateContextScore(question: string, entry: IndexEntry): number {
   const normalizedQuestion = question.normalize('NFKC').toLowerCase();
+  const apiScore =
+    shouldIncludeApiReferenceDocumentation(normalizedQuestion) &&
+    isApiReferenceDocument(entry.metadata)
+      ? API_REFERENCE_CONTEXT_BOOST
+      : 0;
+  const externalDeveloperScore =
+    shouldIncludeExternalDeveloperDocumentation(normalizedQuestion) &&
+    isExternalDeveloperDocument(entry.metadata)
+      ? EXTERNAL_DEVELOPER_CONTEXT_BOOST
+      : 0;
   if (!isTradingOperationQuestion(normalizedQuestion)) {
-    return 0;
+    return apiScore + externalDeveloperScore;
   }
 
   const title = entry.metadata.title.toLowerCase();
@@ -282,7 +430,7 @@ function calculateContextScore(question: string, entry: IndexEntry): number {
     score += 4;
   }
 
-  return score;
+  return score + apiScore + externalDeveloperScore;
 }
 
 function isTradingOperationQuestion(normalizedQuestion: string): boolean {

@@ -257,6 +257,151 @@ describe('retrieve', () => {
     expect(results[0]?.id).toBe('official_docs:swap:chunk:0001');
   });
 
+  it('separates end-user trading questions from explicit API integration questions', () => {
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:swap:chunk:0001',
+        title: 'Swap 交易',
+        module: '交易代币',
+        sourceType: 'official_docs',
+        text: '在产品页面选择钱包和金额，然后买入或卖出代币。',
+      },
+      {
+        id: 'official_docs:api:chunk:0001',
+        title: 'XXYY API 参考文档',
+        module: 'XXYY API',
+        sourceType: 'official_docs',
+        sourceUrl: 'https://docs.xxyy.io/xxyy-api-can-kao-wen-dang',
+        text: 'Swap API 使用 Authorization Bearer API Key 请求买入或卖出代币。',
+      },
+    ]);
+
+    expect(retrieve('如何在 XXYY 买入代币？', index, { topK: 2 })[0]?.id).toBe(
+      'official_docs:swap:chunk:0001',
+    );
+    expect(retrieve('如何通过 XXYY API 买入代币？', index, { topK: 2 })[0]?.id).toBe(
+      'official_docs:api:chunk:0001',
+    );
+  });
+
+  it('isolates external Agent Skill references from ordinary product questions', () => {
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:swap:chunk:0001',
+        title: 'Swap 交易',
+        module: '交易代币',
+        sourceType: 'official_docs',
+        text: '在产品页面选择钱包和金额，然后买入或卖出代币。',
+      },
+      {
+        id: 'official_docs:external-skill:chunk:0001',
+        title: 'XXYY Trade Skill',
+        module: 'Developer / Agent Skill',
+        sourceType: 'official_docs',
+        sourceUrl: 'https://github.com/Jimmy-Holiday/xxyy-trade-skill/blob/abc/SKILL.md',
+        text: 'Agent Skill 通过 GitHub 安装，并调用 XXYY API 执行交易。',
+      },
+    ]);
+
+    expect(retrieve('如何在 XXYY 买入代币？', index, { topK: 2 }).map((item) => item.id)).toEqual([
+      'official_docs:swap:chunk:0001',
+    ]);
+    expect(retrieve('XXYY Agent Skill 如何从 GitHub 安装？', index, { topK: 2 })[0]?.id).toBe(
+      'official_docs:external-skill:chunk:0001',
+    );
+  });
+
+  it('uses dated product updates instead of the API reference for API launch-history questions', () => {
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:api:chunk:0001',
+        title: 'XXYY API 参考文档',
+        module: 'XXYY API',
+        sourceType: 'official_docs',
+        sourceUrl: 'https://docs.xxyy.io/xxyy-api-can-kao-wen-dang',
+        text: '交易 API 使用 Bearer API Key 认证。',
+      },
+      {
+        id: 'x_updates:api-launch:chunk:0001',
+        title: 'X Post 2029875008730976415',
+        sourceType: 'x_updates',
+        sourceUrl: 'https://x.com/useXXYYio/status/2029875008730976415',
+        text: '2026 年 XXYY 开放交易 API，并将交易 API 封装为 Agent Skill。',
+      },
+    ]);
+
+    expect(
+      retrieve('交易 API 和 Agent Skill 是什么时候开放的？', index, { topK: 2 }).map(
+        (chunk) => chunk.id,
+      ),
+    ).toEqual(['x_updates:api-launch:chunk:0001']);
+  });
+
+  it('routes changelog, legal, and English mirrors only to matching question scopes', () => {
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:product:chunk:0001',
+        title: '钱包管理',
+        sourceType: 'official_docs',
+        sourceUrl: 'https://docs.xxyy.io/getting-started/qian-bao-guan-li',
+        text: '钱包管理支持创建和管理交易钱包。',
+      },
+      {
+        id: 'official_docs:changelog:chunk:0001',
+        title: '功能更新',
+        sourceType: 'official_docs',
+        sourceUrl: 'https://docs.xxyy.io/changelog',
+        text: '最新版本更新了钱包管理。',
+      },
+      {
+        id: 'official_docs:privacy:chunk:0001',
+        title: 'XXYY 隐私协议',
+        sourceType: 'official_docs',
+        sourceUrl: 'https://docs.xxyy.io/wang-zhan-xie-yi/xxyy-yin-si-xie-yi',
+        text: '隐私协议介绍个人信息处理规则。',
+      },
+      {
+        id: 'official_docs:english:chunk:0001',
+        title: 'Wallet Management',
+        sourceType: 'official_docs',
+        sourceUrl: 'https://docs.xxyy.io/en/wallet-management',
+        text: 'Manage trading wallets in XXYY.',
+      },
+    ]);
+
+    expect(retrieve('钱包管理支持什么？', index, { topK: 4 }).map((chunk) => chunk.id)).toEqual([
+      'official_docs:product:chunk:0001',
+    ]);
+    expect(retrieve('最近版本更新了哪些钱包功能？', index, { topK: 4 })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'official_docs:changelog:chunk:0001' }),
+      ]),
+    );
+    expect(retrieve('XXYY 如何处理个人信息？', index, { topK: 4 })).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'official_docs:privacy:chunk:0001' })]),
+    );
+    expect(retrieve('How does wallet management work?', index, { topK: 4 })).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'official_docs:english:chunk:0001' })]),
+    );
+  });
+
+  it('accepts relative product-asset source URLs without treating them as English docs', () => {
+    const index = createFixtureIndex([
+      {
+        id: 'official_docs:video:chunk:0001',
+        title: '添加到桌面演示',
+        module: '产品教程视频',
+        sourceType: 'official_docs',
+        sourceUrl: '/assets/xxyy-add-to-home.mp4',
+        text: '在 Safari 分享菜单选择添加到主屏幕。',
+      },
+    ]);
+
+    expect(retrieve('怎么添加到主屏幕？', index, { topK: 1 })[0]?.id).toBe(
+      'official_docs:video:chunk:0001',
+    );
+  });
+
   it('prioritizes exact feature mentions from X updates for short Chinese feature questions', () => {
     const index = createFixtureIndex([
       {

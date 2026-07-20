@@ -2,20 +2,26 @@
 title: "关注钱包设置"
 source_url: "https://docs.xxyy.io/getting-started/dashboard/jian-kong-guan-li/guan-zhu-qian-bao-she-zhi"
 source_markdown_url: "https://docs.xxyy.io/getting-started/dashboard/jian-kong-guan-li/guan-zhu-qian-bao-she-zhi.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "Dashboard"
-breadcrumbs: ["使用XXYY交易","Dashboard","监控管理"]
-children: []
 lastmod: "2025-02-13T18:17:02.479Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 关注钱包设置
+
+<figure><img src="/assets/xxyy-docs-5yGvtahfPqbBNd1sW4cu.png" alt=""><figcaption></figcaption></figure>
 
 钱包地址：输入你要关注的钱包地址
 
 钱包名称：设置一个你对该钱包的备注或昵称，如DNF
 
 钱包分组：可手动填写钱包分组或选择钱包分组，通过分组可以实现批量管理
+
+<figure><img src="/assets/xxyy-docs-ERAux5pNANaT70RL8H0h.png" alt="" width="563"><figcaption></figcaption></figure>
 
 #### &#x20;**钱包交易推送设置：**
 

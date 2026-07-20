@@ -617,6 +617,116 @@ describe('createPgVectorStore', () => {
     expect(client.queries.at(-1)?.values[5]).toBe(true);
   });
 
+  it('filters API reference rows unless the question explicitly asks about the API', async () => {
+    const client = new FakePgClient();
+    client.rows = [
+      createKnowledgeRow({
+        id: 'official_docs:api:chunk:0001',
+        module: 'XXYY API',
+        source_url: 'https://docs.xxyy.io/xxyy-api-can-kao-wen-dang',
+        title: 'XXYY API 参考文档',
+        tokens: ['买入', '代币', 'api'],
+      }),
+      createKnowledgeRow({
+        id: 'official_docs:swap:chunk:0001',
+        module: '交易代币',
+        title: 'Swap 交易',
+        tokens: ['买入', '代币'],
+      }),
+    ];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1 })]),
+      },
+    });
+
+    const productResults = await store.retrieve('如何买入代币？', { topK: 2 });
+
+    expect(client.queries.at(-1)?.values[6]).toBe(false);
+    expect(productResults.map((result) => result.id)).toEqual(['official_docs:swap:chunk:0001']);
+
+    client.rows = [
+      createKnowledgeRow({
+        id: 'official_docs:api:chunk:0001',
+        module: 'XXYY API',
+        source_url: 'https://docs.xxyy.io/xxyy-api-can-kao-wen-dang',
+        title: 'XXYY API 参考文档',
+        tokens: ['买入', '代币', 'api'],
+      }),
+    ];
+    const apiResults = await store.retrieve('如何通过 API 买入代币？', { topK: 1 });
+
+    expect(client.queries.at(-1)?.values[6]).toBe(true);
+    expect(apiResults[0]?.id).toBe('official_docs:api:chunk:0001');
+
+    client.rows = [
+      createKnowledgeRow({
+        id: 'official_docs:api:chunk:0001',
+        module: 'XXYY API',
+        source_url: 'https://docs.xxyy.io/xxyy-api-can-kao-wen-dang',
+        title: 'XXYY API 参考文档',
+        tokens: ['交易', 'api'],
+      }),
+      createKnowledgeRow({
+        content: '2026 年 XXYY 开放交易 API，并将交易 API 封装为 Agent Skill。',
+        document_id: 'x_updates:api-launch',
+        id: 'x_updates:api-launch:chunk:0001',
+        source_type: 'x_updates',
+        source_url: 'https://x.com/useXXYYio/status/2029875008730976415',
+        title: 'X Post 2029875008730976415',
+        tokens: ['2026', '交易', 'api', 'agent', 'skill', '开放'],
+      }),
+    ];
+    const historyResults = await store.retrieve('交易 API 和 Agent Skill 是什么时候开放的？', {
+      topK: 2,
+    });
+
+    expect(client.queries.at(-1)?.values[5]).toBe(true);
+    expect(client.queries.at(-1)?.values[6]).toBe(false);
+    expect(historyResults.map((result) => result.id)).toEqual(['x_updates:api-launch:chunk:0001']);
+  });
+
+  it('filters external Agent Skill rows unless the question has developer scope', async () => {
+    const client = new FakePgClient();
+    const externalRow = createKnowledgeRow({
+      content: 'Agent Skill 通过 GitHub 安装，并调用 XXYY API。',
+      id: 'official_docs:external-skill:chunk:0001',
+      module: 'Developer / Agent Skill',
+      source_url: 'https://github.com/Jimmy-Holiday/xxyy-trade-skill/blob/abc/SKILL.md',
+      title: 'XXYY Trade Skill',
+      tokens: ['agent', 'skill', 'github', '交易'],
+    });
+    const productRow = createKnowledgeRow({
+      content: '在产品页面选择钱包和金额，然后买入或卖出代币。',
+      id: 'official_docs:swap:chunk:0001',
+      module: '交易代币',
+      title: 'Swap 交易',
+      tokens: ['买入', '代币'],
+    });
+    client.rows = [externalRow, productRow];
+    const store = createPgVectorStore({
+      client,
+      embeddingProvider: {
+        embedTexts: () => Promise.resolve([embedding1536({ 0: 0.1 })]),
+      },
+    });
+
+    const productResults = await store.retrieve('如何买入代币？', { topK: 2 });
+
+    expect(client.queries.at(-1)?.values[10]).toBe(false);
+    expect(productResults.map((result) => result.id)).toEqual(['official_docs:swap:chunk:0001']);
+
+    client.rows = [externalRow];
+    const skillResults = await store.retrieve('Agent Skill 如何从 GitHub 安装？', { topK: 1 });
+
+    expect(client.queries.at(-1)?.values[10]).toBe(true);
+    expect(skillResults[0]).toMatchObject({
+      id: 'official_docs:external-skill:chunk:0001',
+      sourceBoost: 6.05,
+    });
+  });
+
   it('traces embedding and pgvector candidates without raw query, vectors, or content', async () => {
     const client = new FakePgClient();
     client.rows = [createKnowledgeRow({ id: 'chunk-current', tokens: ['xxyy', 'pro'] })];

@@ -1,3 +1,7 @@
+---
+status: historical
+---
+
 # XXYY 产品功能整理文档
 
 来源站点：https://docs.xxyy.io/

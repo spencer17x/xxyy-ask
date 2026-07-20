@@ -2,14 +2,18 @@
 title: "收藏"
 source_url: "https://docs.xxyy.io/getting-started/fa-xian/shou-cang"
 source_markdown_url: "https://docs.xxyy.io/getting-started/fa-xian/shou-cang.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "发现"
-breadcrumbs: ["使用XXYY交易","发现"]
-children: []
 lastmod: "2025-02-13T18:05:04.978Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 收藏
+
+<figure><img src="/assets/xxyy-docs-OUtqxTlWa4x5sGurBMKY.png" alt="" width="307"><figcaption></figcaption></figure>
 
 在收藏列表里也可以查看价格的二十四小时排序和一小时排序，查看二十四小时的涨跌幅24小时排序和1小时排序，查看24小时的涨跌幅以及当前的项目市值
 

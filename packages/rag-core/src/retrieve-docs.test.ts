@@ -38,6 +38,27 @@ describe('retrieve over product docs', () => {
     expect(results[0]?.metadata.title).toBe('Swap 交易');
   });
 
+  it('retrieves the API reference for explicit developer API questions', async () => {
+    const index = await loadProductIndex();
+
+    const results = retrieve('XXYY API 的认证方式和 Swap 接口是什么？', index, { topK: 3 });
+
+    expect(results[0]?.metadata.title).toBe('XXYY API 参考文档');
+    expect(results[0]?.metadata.sourceUrl).toBe('https://docs.xxyy.io/xxyy-api-can-kao-wen-dang');
+  });
+
+  it('retrieves the reviewed English fallback for the upstream empty Avg. Price Line page', async () => {
+    const index = await loadProductIndex();
+
+    const results = retrieve('How does the Avg. Price Line work?', index, { topK: 3 });
+
+    expect(results[0]?.metadata.title).toBe('Avg. Price Line');
+    expect(results[0]?.metadata.sourceUrl).toBe(
+      'https://docs.xxyy.io/en/chart-area/avg.-price-line',
+    );
+    expect(results[0]?.text).toContain('average purchase cost');
+  });
+
   it('retrieves the mobile app desktop shortcut FAQ', async () => {
     const index = await loadProductIndex();
 

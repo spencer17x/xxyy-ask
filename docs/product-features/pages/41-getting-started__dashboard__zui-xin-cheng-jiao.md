@@ -2,14 +2,18 @@
 title: "最新成交"
 source_url: "https://docs.xxyy.io/getting-started/dashboard/zui-xin-cheng-jiao"
 source_markdown_url: "https://docs.xxyy.io/getting-started/dashboard/zui-xin-cheng-jiao.md"
+language: "zh"
 category: "使用XXYY交易"
 section: "Dashboard"
-breadcrumbs: ["使用XXYY交易","Dashboard"]
-children: []
 lastmod: "2025-02-14T03:54:31.091Z"
-retrieved_at: "2026-05-24T06:41:04.265Z"
+retrieved_at: "2026-07-19T14:24:48.800Z"
+content_state: "content"
+ingest: true
 ---
+
 # 最新成交
+
+<figure><img src="/assets/xxyy-docs-R0XknhDckz2koDKHhPym.png" alt=""><figcaption></figcaption></figure>
 
 最新成交展示了当前项目所在池子的每一条交易记录，平均展示速度和链上差距1秒以内，方便查看最新的成交记录。最新成交支持查看该项目所有成交记录。
 
