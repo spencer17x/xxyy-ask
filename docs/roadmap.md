@@ -15,7 +15,7 @@
 
 ## Paused / Out of Scope
 
-- [ ] MCP 和 project skills：当前阶段先移除，不作为对外或本地调用入口。
+- [ ] 实际 MCP adapter、MCP server 和 project skills：当前阶段仍不作为对外或本地调用入口；v0.6 只交付未接线的安全能力平面契约。
 - [ ] 交易分析、池子查询和链上取证：当前客服入口只做知识库产品回答，相关问题进入边界/澄清回复。
 - [ ] 账户、订单、钱包余额、私有交易记录和投资建议：长期保持边界，不进入自动回答或自动操作链路。
 
@@ -67,6 +67,21 @@
 - [x] Human handoff / ticketing readiness：未来工单或人工客服接入前的权限、审计和人工确认边界已定义。
 
 成功标准：服务能安全暴露给真实用户；异常请求、错误回答和模型成本可观测；敏感数据有明确处理策略。
+
+## v0.6 MCP / Skill Capability Plane Foundation
+
+目标：在不扩大当前客服能力边界的前提下，为未来自行实现的 MCP / Skill 建立与 LangGraph 解耦、默认拒绝、可审计的执行契约。
+
+- [x] Transport-neutral manifest：能力显式声明 namespace id、精确 semver、source、risk、side effect、data scopes、确认/幂等要求和单次资源限制。
+- [x] 独立 CapabilityRegistry：目录只暴露冻结后的 manifest，不暴露 adapter；注册校验来源一致性和重复 id，不会自动加入 Planner 工具列表。
+- [x] Deny-by-default policy：grant 必须精确覆盖 capability/version/source、channel/principal、风险、副作用和全部数据范围；无 grant 时在业务输入解析前拒绝。
+- [x] Bounded executor：使用 manifest 与全局限制中的更小值执行 timeout、上游 cancellation、input/output schema、JSON 边界和最大输出字节检查。
+- [x] 副作用硬门禁：外部写入和金融交易必须声明并提供确认与 idempotency key，即使替换自定义 policy 也不能绕过；持久化去重和 exactly-once 留给未来 adapter / coordinator。
+- [x] 脱敏审计：`agent.capability` 只记录固定 manifest/policy 元数据、值类型、字段/元素数量和输出大小，不记录字段名、payload 或 idempotency key 原文。
+- [x] 运行面隔离：当前 LangGraph、Web/API、Telegram、CLI 和 `ToolRegistry` 不创建或调用 CapabilityRegistry，生产业务工具仍只有 `search_product_docs`。
+- [ ] 实现第一个只读 MCP / Skill adapter，并通过显式 bridge 暴露给 Agent；需要单独目标、网络/RPC 安全审查和评测后再开启。
+
+成功标准：未授权、版本漂移、来源/通道/数据范围不匹配和缺少确认/幂等的调用全部失败；超时、取消、超限与非 JSON 输出有稳定错误；当前客服行为和 Chat API 契约保持不变。详细设计见 [capability-plane.md](capability-plane.md)。
 
 ## GitHub Planning Convention
 
