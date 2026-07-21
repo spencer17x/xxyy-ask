@@ -35,19 +35,19 @@
 
 目标：在保持客服边界的前提下，让 Agent 支持复杂产品问题的受控多步检索与证据观察。
 
-- [ ] 拆分工具职责：将 `answer_product_question` 的“大工具”能力拆为 `search_product_docs` + evidence collection + `answer_composer`。
-- [ ] 增加 observe 节点：`tool_executor` 后进入 observation，基于证据质量决定继续规划还是回答。
-- [ ] 增加有界 loop：实现 `planner -> search -> observe -> planner -> answer`，并保留 max steps、重复工具调用检测和无新增证据停止。
-- [ ] Planner query rewrite policy：明确 planner 是否允许改写检索 query；若允许，保留 original question 与 rewritten query 的职责边界。
-- [ ] Evidence sufficiency：判断证据是否足够回答，证据不足时二次检索或澄清。
+- [x] 拆分工具职责：生产只注册 `search_product_docs`；检索证据由 state 累积，`answer_composer` 聚合去重 chunks 后调用 AnswerProvider，不再用“大工具”同时检索和回答。
+- [x] 增加 observe 节点：`tool_executor` 后按问题维度覆盖、可验证引用、distinct evidence 和 latest new evidence 形成结构化 observation，决定继续规划、回答或安全停止。
+- [x] 增加有界 loop：支持 `search -> observe -> planner -> search -> observe -> answer`；max steps、标准化后的重复工具输入和不同 query 无新增 chunk/引用都会停止。
+- [x] Planner query rewrite policy：首次检索固定使用完整 original question；仅在 observation 报告缺失维度后允许 rewritten query，且必须保留产品范围与时间/版本限定并命中缺失维度。
+- [x] Evidence sufficiency：普通问题有直接引用即可回答；比较/多模块问题要求各维度都有证据，不足时定向二次检索，停止后返回带引用的部分证据说明或澄清。
 
-成功标准：普通问题仍保持单步低延迟；复杂比较 / 多模块问题可以多步检索；loop 不会死循环或重复调用同一工具输入。
+成功标准：普通问题仍保持单次检索且不调用 Planner；复杂比较 / 多模块问题可以针对缺失维度多步检索；loop 不会死循环、重复调用同一工具输入或因 query 不同而反复消费相同证据。
 
 ## v0.4 Evaluation & Feedback Loop
 
 目标：把评测从基础 golden QA 扩展为持续回归、线上反馈沉淀和发布前验收体系。
 
-- [ ] 扩展 golden QA 到 30+ realistic support cases，覆盖产品 FAQ、how-to、套餐限制、链支持、历史更新、边界拒答。
+- [x] 扩展 golden QA 到 30+ realistic support cases：当前 48 个用例覆盖产品 FAQ、how-to、套餐限制、链支持、历史更新、边界拒答和引用稳定性。
 - [x] 加入 citation grounding eval、answer completeness 辅助 judge、Recall@K / Precision@K / MRR / nDCG / forbidden-hit 指标。
 - [x] Provider-backed evaluation report：`pnpm rag:evaluate -- --provider` 输出分层报告，可显式启用独立 judge。
 - [x] Feedback-to-eval backlog：负反馈和 failed eval 都能输出脱敏、待审核 JSONL。

@@ -13,18 +13,30 @@ import {
   createBoundaryAnswer,
   createInsufficientKnowledgeAnswer,
   createSupportConclusionFromEvidence,
+  hasProductDomainSignal,
   LlmConfigurationError,
   noopQualityTracer,
+  redactSensitiveSupportText,
+  type AnswerProvider,
   type QualityTracer,
+  type RetrievedChunk,
   shouldUseDeterministicSupportAnswer,
   VectorStoreConfigurationError,
 } from '@xxyy/rag-core';
+
+import {
+  isAllowedSearchQueryRewrite,
+  observeProductEvidence,
+  type EvidenceObservation,
+  type SearchEvidenceAttempt,
+} from './evidence-observation.js';
 
 import {
   AGENT_MAX_STEPS_DEFAULT,
   AgentStateAnnotation,
   createInitialAgentState,
   isAllowedAgentToolName,
+  isExecutableAgentToolName,
   normalizeAgentRoute,
   type AgentEvidence,
   type AgentPlan,
@@ -41,6 +53,7 @@ import type { ToolContext, ToolRegistry } from './tool-registry.js';
 
 const KNOWLEDGE_ONLY_CLARIFICATION =
   '当前只支持基于 XXYY 知识库回答产品功能、配置步骤、权益说明和官方更新相关问题。请补充一个具体的 XXYY 产品问题。';
+const MAX_COLLECTED_EVIDENCE_CHUNKS = 20;
 
 export interface CustomerAgentRuntime {
   ask(request: ChatRequest): Promise<ChatResponse>;
@@ -48,6 +61,7 @@ export interface CustomerAgentRuntime {
 }
 
 export interface CreateLangGraphCustomerRuntimeOptions {
+  answerProvider?: AnswerProvider;
   maxSteps?: number;
   planner: PlannerModel;
   registry: ToolRegistry;
@@ -58,9 +72,10 @@ type CustomerRuntimeNode = 'answer_composer' | 'observe' | 'planner' | 'tool_exe
 
 type LangGraphAgentState = Omit<
   AgentState,
-  'finalResponse' | 'plan' | 'policyDecision' | 'route'
+  'finalResponse' | 'observation' | 'plan' | 'policyDecision' | 'route'
 > & {
   finalResponse: ChatResponse | undefined;
+  observation: EvidenceObservation | undefined;
   plan: AgentPlan | undefined;
   policyDecision: AgentPolicyDecision | undefined;
   route: AgentRoute | undefined;
@@ -215,12 +230,19 @@ async function* streamRuntimeRequest(
 
     const plan = state.plan;
     if (plan === undefined || plan.kind === 'final') {
-      state = applyStatePatch(state, answerComposerNode(state));
+      state = applyStatePatch(
+        state,
+        await traceAnswerComposerNode(
+          state,
+          options.answerProvider,
+          options.tracer ?? noopQualityTracer,
+        ),
+      );
       break;
     }
 
     if (plan.toolName === 'answer_product_question') {
-      const toolInput = inputForToolExecution(plan, request);
+      const toolInput = inputForToolExecution(plan, state);
       try {
         const toolStream = options.registry.stream(
           plan.toolName,
@@ -244,15 +266,38 @@ async function* streamRuntimeRequest(
 
     yield {
       type: 'status',
-      phase: 'answering',
-      message: '正在生成回答…',
+      phase: plan.toolName === 'search_product_docs' ? 'retrieving' : 'answering',
+      message: plan.toolName === 'search_product_docs' ? '正在检索知识库…' : '正在生成回答…',
     };
     state = applyStatePatch(state, await toolExecutorNode(state, options.registry));
-    state = applyStatePatch(state, observeNode(state));
+    state = applyStatePatch(
+      state,
+      await traceObserveNode(state, options.tracer ?? noopQualityTracer),
+    );
+    if (shouldComposeProductAnswer(state)) {
+      yield {
+        type: 'status',
+        phase: 'answering',
+        message: '正在生成回答…',
+      };
+      yield* traceProductAnswerStream(
+        state,
+        options.answerProvider,
+        options.tracer ?? noopQualityTracer,
+      );
+      return;
+    }
   }
 
   if (state.finalResponse === undefined) {
-    state = applyStatePatch(state, answerComposerNode(state));
+    state = applyStatePatch(
+      state,
+      await traceAnswerComposerNode(
+        state,
+        options.answerProvider,
+        options.tracer ?? noopQualityTracer,
+      ),
+    );
   }
 
   yield* streamChatResponse(
@@ -311,11 +356,14 @@ function isBoundaryUnknownReason(reason: string): boolean {
 }
 
 function createCustomerGraph(options: CreateLangGraphCustomerRuntimeOptions) {
+  const tracer = options.tracer ?? noopQualityTracer;
   return new StateGraph(AgentStateAnnotation)
     .addNode('planner', (state) => plannerNode(state, options))
     .addNode('tool_executor', (state) => toolExecutorNode(state, options.registry))
-    .addNode('observe', observeNode)
-    .addNode('answer_composer', answerComposerNode)
+    .addNode('observe', (state) => traceObserveNode(state, tracer))
+    .addNode('answer_composer', (state) =>
+      traceAnswerComposerNode(state, options.answerProvider, tracer),
+    )
     .addEdge(START, 'planner')
     .addConditionalEdges('planner', routeAfterPlanner)
     .addEdge('tool_executor', 'observe')
@@ -330,14 +378,15 @@ async function plannerNode(
 ): Promise<Partial<AgentState>> {
   if (state.currentStep >= state.maxSteps) {
     return {
-      finalResponse: createClarificationResponse(
+      finalResponse: responseForStoppedSearch(
+        state,
         '当前问题需要更多步骤才能可靠处理，请补充更具体的问题。',
       ),
-      route: 'clarify',
+      route: searchEvidenceList(state.evidence).length > 0 ? 'product_answer' : 'clarify',
     };
   }
 
-  const deterministicPlan = deterministicProductPlan(state.request, options.registry);
+  const deterministicPlan = deterministicProductPlan(state, options.registry);
   if (deterministicPlan !== undefined) {
     return {
       currentStep: state.currentStep + 1,
@@ -350,7 +399,7 @@ async function plannerNode(
   const plannerInput = {
     request: state.request,
     stateSummary: summarizeState(state),
-    tools: listPlannerTools(options.registry),
+    tools: listPlannerTools(options.registry, state),
   };
   const planningErrors: string[] = [];
   try {
@@ -379,24 +428,29 @@ async function plannerNode(
     }
   }
 
-  if (plan.kind === 'tool' && isRepeatedToolInput(plan, state)) {
-    const noEvidenceSupportResponse = noEvidenceSupportResponseForQuestion(state.request.message);
-    if (noEvidenceSupportResponse !== undefined) {
-      return {
-        currentStep: state.currentStep + 1,
-        errors: [...planningErrors, `Repeated tool input: ${plan.toolName}`],
-        finalResponse: withAgentRoute(noEvidenceSupportResponse, 'product_answer'),
-        route: 'product_answer',
-      };
-    }
+  plan = normalizePlannerPlan(plan, state);
+  if (
+    plan.kind === 'tool' &&
+    plan.toolName === 'search_product_docs' &&
+    !canSearchProductKnowledge(state.request.message)
+  ) {
+    return {
+      currentStep: state.currentStep + 1,
+      errors: [...planningErrors, 'Planner selected product search outside the product domain.'],
+      finalResponse: createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION),
+      route: 'clarify',
+    };
+  }
 
+  if (plan.kind === 'tool' && isRepeatedToolInput(plan, state)) {
     return {
       currentStep: state.currentStep + 1,
       errors: [...planningErrors, `Repeated tool input: ${plan.toolName}`],
-      finalResponse: createClarificationResponse(
+      finalResponse: responseForStoppedSearch(
+        state,
         '已停止重复检索同一组工具输入。请补充更具体的产品功能、模块或时间范围。',
       ),
-      route: 'clarify',
+      route: searchEvidenceList(state.evidence).length > 0 ? 'product_answer' : 'clarify',
     };
   }
 
@@ -409,23 +463,37 @@ async function plannerNode(
 }
 
 function deterministicProductPlan(
-  request: ChatRequest,
+  state: LangGraphAgentState,
   registry: ToolRegistry,
 ): AgentPlan | undefined {
-  const classification = classifyQuestion(request.message);
-  if (
-    (classification.intent !== 'product_qa' && classification.intent !== 'how_to') ||
-    !registry.list().some((tool) => tool.name === 'answer_product_question')
-  ) {
+  if (state.toolCalls.length > 0 || state.evidence.length > 0) {
+    return undefined;
+  }
+
+  const classification = classifyQuestion(state.request.message);
+  if (classification.intent !== 'product_qa' && classification.intent !== 'how_to') {
+    return undefined;
+  }
+
+  const registeredToolNames = new Set(registry.list().map((tool) => tool.name));
+  const toolName = registeredToolNames.has('search_product_docs')
+    ? 'search_product_docs'
+    : registeredToolNames.has('answer_product_question')
+      ? 'answer_product_question'
+      : undefined;
+  if (toolName === undefined) {
     return undefined;
   }
 
   return {
-    input: { question: request.message },
+    input:
+      toolName === 'search_product_docs'
+        ? { query: state.request.message }
+        : { question: state.request.message },
     kind: 'tool',
     reason: `deterministic ${classification.intent} classification`,
     route: 'product_answer',
-    toolName: 'answer_product_question',
+    toolName,
   };
 }
 
@@ -438,7 +506,7 @@ function routeAfterPlanner(state: LangGraphAgentState): CustomerRuntimeNode {
 }
 
 function routeAfterObserve(state: LangGraphAgentState): CustomerRuntimeNode {
-  if (state.finalResponse !== undefined) {
+  if (state.finalResponse !== undefined || state.observation?.sufficient === true) {
     return 'answer_composer';
   }
 
@@ -454,7 +522,7 @@ async function toolExecutorNode(
     return {};
   }
 
-  if (!isAllowedAgentToolName(plan.toolName)) {
+  if (!isExecutableAgentToolName(plan.toolName)) {
     return {
       errors: [`Unauthorized tool requested: ${String(plan.toolName)}`],
       finalResponse: createClarificationResponse(KNOWLEDGE_ONLY_CLARIFICATION),
@@ -463,7 +531,7 @@ async function toolExecutorNode(
   }
 
   let output: unknown;
-  const toolInput = inputForToolExecution(plan, state.request);
+  const toolInput = inputForToolExecution(plan, state);
   try {
     output = await registry.execute(
       plan.toolName,
@@ -514,60 +582,114 @@ function observeNode(state: LangGraphAgentState): Partial<AgentState> {
     };
   }
 
-  if (evidence.output.citations.length > 0 && hasSufficientSearchEvidence(state)) {
-    return {
-      finalResponse: withAgentRoute(
-        responseFromSearchEvidenceList(searchEvidenceList(state.evidence), state.request.message),
-        'product_answer',
-      ),
-    };
+  const observation = createEvidenceObservation(state);
+  if (observation.sufficient || observation.shouldContinue) {
+    return { observation };
   }
 
-  if (consecutiveEmptySearchEvidenceCount(state.evidence) >= 2) {
-    const noEvidenceSupportResponse = noEvidenceSupportResponseForQuestion(state.request.message);
-    if (noEvidenceSupportResponse !== undefined) {
-      return {
-        finalResponse: withAgentRoute(noEvidenceSupportResponse, 'product_answer'),
-        route: 'product_answer',
-      };
-    }
-
-    return {
-      finalResponse: createClarificationResponse(
-        '连续检索后没有找到新的知识库证据。请补充更具体的产品功能、模块、时间范围或官方更新线索。',
-      ),
-      route: 'clarify',
-    };
-  }
-
-  return {};
+  const stopMessage =
+    observation.stopReason === 'no_new_evidence'
+      ? '连续检索后没有找到新的知识库证据。请补充更具体的产品功能、模块、时间范围或官方更新线索。'
+      : '已达到当前问题的检索步骤上限，请缩小比较范围或补充更具体的产品模块。';
+  const finalResponse = responseForStoppedSearch(state, stopMessage, observation);
+  return {
+    finalResponse,
+    observation,
+    route: finalResponse.agentRoute ?? 'clarify',
+  };
 }
 
-function inputForToolExecution(plan: Extract<AgentPlan, { kind: 'tool' }>, request: ChatRequest) {
+function traceObserveNode(
+  state: LangGraphAgentState,
+  tracer: QualityTracer,
+): Promise<Partial<AgentState>> {
+  return tracer.run(
+    {
+      inputs: {
+        evidenceCount: state.evidence.length,
+        searchAttemptCount: searchEvidenceList(state.evidence).length,
+      },
+      name: 'agent.observe',
+      output: (patch) => ({
+        finalResponsePresent: patch.finalResponse !== undefined,
+        ...(patch.observation === undefined
+          ? {}
+          : {
+              complexity: patch.observation.complexity,
+              distinctCitationCount: patch.observation.distinctCitationCount,
+              latestNewEvidenceCount: patch.observation.latestNewEvidenceCount,
+              missingFacetCount: patch.observation.missingFacets.length,
+              shouldContinue: patch.observation.shouldContinue,
+              stopReason: patch.observation.stopReason,
+              sufficient: patch.observation.sufficient,
+            }),
+      }),
+      runType: 'chain',
+    },
+    () => Promise.resolve(observeNode(state)),
+  );
+}
+
+function inputForToolExecution(
+  plan: Extract<AgentPlan, { kind: 'tool' }>,
+  state: LangGraphAgentState,
+) {
   if (plan.toolName === 'answer_product_question') {
-    return { question: request.message };
+    return { question: state.request.message };
   }
 
   if (plan.toolName === 'search_product_docs') {
-    return inputForSearchProductDocs(plan.input, request.message);
+    return inputForSearchProductDocs(plan.input, state);
   }
 
   return plan.input;
 }
 
-function inputForSearchProductDocs(input: unknown, fallbackQuery: string) {
+function inputForSearchProductDocs(input: unknown, state: LangGraphAgentState) {
+  const fallbackQuery = state.request.message;
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    return { query: fallbackQuery };
+    return { question: fallbackQuery, query: fallbackQuery };
   }
 
   const record = input as Record<string, unknown>;
-  const query = nonEmptyString(record.query) ?? nonEmptyString(record.question) ?? fallbackQuery;
+  const proposedQuery =
+    nonEmptyString(record.query) ?? nonEmptyString(record.question) ?? fallbackQuery;
+  const hasPreviousSearch = state.toolCalls.some(
+    (toolCall) => toolCall.toolName === 'search_product_docs',
+  );
+  const missingFacets = state.observation?.missingFacets ?? [];
+  const query = !hasPreviousSearch
+    ? fallbackQuery
+    : isAllowedSearchQueryRewrite(fallbackQuery, proposedQuery, missingFacets)
+      ? proposedQuery
+      : (state.observation?.suggestedQuery ?? fallbackQuery);
+  const topK = positiveInteger(record.topK);
 
   return {
     question: fallbackQuery,
-    query,
-    ...(typeof record.topK === 'number' ? { topK: record.topK } : {}),
+    query: query.slice(0, 240),
+    ...(topK === undefined ? {} : { topK }),
   };
+}
+
+function normalizePlannerPlan(plan: AgentPlan, state: LangGraphAgentState): AgentPlan {
+  if (plan.kind !== 'tool' || plan.toolName !== 'search_product_docs') {
+    return plan;
+  }
+
+  return {
+    ...plan,
+    input: inputForSearchProductDocs(plan.input, state),
+  };
+}
+
+function canSearchProductKnowledge(question: string): boolean {
+  const classification = classifyQuestion(question);
+  return (
+    classification.intent === 'product_qa' ||
+    classification.intent === 'how_to' ||
+    hasProductDomainSignal(question)
+  );
 }
 
 function nonEmptyString(value: unknown): string | undefined {
@@ -578,7 +700,14 @@ function nonEmptyString(value: unknown): string | undefined {
   return value.trim().length === 0 ? undefined : value;
 }
 
-function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function answerComposerNode(
+  state: LangGraphAgentState,
+  answerProvider: AnswerProvider | undefined,
+): Promise<Partial<AgentState>> {
   if (state.finalResponse !== undefined) {
     return {};
   }
@@ -601,11 +730,25 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
   if (evidence !== undefined) {
     const searchEvidence = searchEvidenceList(state.evidence);
     if (searchEvidence.length > 0) {
+      let response: ChatResponse;
+      try {
+        response = await composeProductAnswer(
+          searchEvidence,
+          state.request.message,
+          answerProvider,
+        );
+      } catch (error) {
+        if (isProductConfigurationError(error)) {
+          throw error;
+        }
+        return {
+          errors: [`Answer composer failed: ${errorMessageFrom(error)}`],
+          finalResponse: toolFailureResponse('answer_composer'),
+          route: 'clarify',
+        };
+      }
       return {
-        finalResponse: withAgentRoute(
-          responseFromSearchEvidenceList(searchEvidence, state.request.message),
-          'product_answer',
-        ),
+        finalResponse: withAgentRoute(response, 'product_answer'),
       };
     }
 
@@ -619,10 +762,34 @@ function answerComposerNode(state: LangGraphAgentState): Partial<AgentState> {
   };
 }
 
-function listPlannerTools(registry: ToolRegistry): PlannerToolDescriptor[] {
+function traceAnswerComposerNode(
+  state: LangGraphAgentState,
+  answerProvider: AnswerProvider | undefined,
+  tracer: QualityTracer,
+): Promise<Partial<AgentState>> {
+  return tracer.run(
+    {
+      inputs: answerComposerInputs(state),
+      name: 'agent.answer_composer',
+      output: (patch) => ({
+        composed: patch.finalResponse !== undefined,
+        ...(patch.finalResponse === undefined ? {} : summarizeResponse(patch.finalResponse)),
+      }),
+      runType: 'chain',
+    },
+    () => answerComposerNode(state, answerProvider),
+  );
+}
+
+function listPlannerTools(
+  registry: ToolRegistry,
+  state: LangGraphAgentState,
+): PlannerToolDescriptor[] {
+  const continuingProductSearch = searchEvidenceList(state.evidence).length > 0;
   return registry
     .list()
-    .filter((tool) => isAllowedAgentToolName(tool.name) && tool.name !== 'search_product_docs')
+    .filter((tool) => isAllowedAgentToolName(tool.name))
+    .filter((tool) => !continuingProductSearch || tool.name === 'search_product_docs')
     .map((tool) => ({
       description: tool.description,
       name: tool.name,
@@ -634,9 +801,33 @@ function summarizeState(state: LangGraphAgentState): string {
   return JSON.stringify({
     currentStep: state.currentStep,
     evidenceCount: state.evidence.length,
-    searchCitationSourceCount: distinctSearchCitationKeys(searchEvidence).size,
-    searchEvidenceSufficient: hasSufficientSearchEvidence(state),
+    observation:
+      state.observation === undefined
+        ? undefined
+        : {
+            complexity: state.observation.complexity,
+            coveredFacets: state.observation.coveredFacets.map(redactSensitiveSupportText),
+            distinctCitationCount: state.observation.distinctCitationCount,
+            latestNewEvidenceCount: state.observation.latestNewEvidenceCount,
+            missingFacets: state.observation.missingFacets.map(redactSensitiveSupportText),
+            shouldContinue: state.observation.shouldContinue,
+            stopReason: state.observation.stopReason,
+            sufficient: state.observation.sufficient,
+            ...(state.observation.suggestedQuery === undefined
+              ? {}
+              : {
+                  suggestedQuery: redactSensitiveSupportText(state.observation.suggestedQuery),
+                }),
+          },
     route: state.route,
+    searchCitationSourceCount: distinctSearchCitationKeys(searchEvidence).size,
+    searchedQueries: state.toolCalls.flatMap((toolCall) => {
+      if (toolCall.toolName !== 'search_product_docs' || !isRecord(toolCall.input)) {
+        return [];
+      }
+      const query = nonEmptyString(toolCall.input.query);
+      return query === undefined ? [] : [redactSensitiveSupportText(query)];
+    }),
     toolCallCount: state.toolCalls.length,
   });
 }
@@ -695,6 +886,202 @@ function responseFromSearchEvidence(
   );
 }
 
+async function composeProductAnswer(
+  evidenceList: AgentEvidence[],
+  question: string,
+  answerProvider: AnswerProvider | undefined,
+): Promise<ChatResponse> {
+  const retrievedChunks = collectedRetrievedChunks(evidenceList);
+  if (answerProvider === undefined || retrievedChunks.length === 0) {
+    return responseFromSearchEvidenceList(evidenceList, question);
+  }
+
+  return answerProvider.answer({
+    classification: classificationForProductAnswer(question),
+    question,
+    retrievedChunks,
+  });
+}
+
+async function* streamProductAnswer(
+  state: LangGraphAgentState,
+  answerProvider: AnswerProvider | undefined,
+): AsyncIterable<ChatStreamEvent> {
+  const evidenceList = searchEvidenceList(state.evidence);
+  const retrievedChunks = collectedRetrievedChunks(evidenceList);
+  if (answerProvider?.stream !== undefined && retrievedChunks.length > 0) {
+    const bufferedEvents: ChatStreamEvent[] = [];
+    try {
+      for await (const event of answerProvider.stream({
+        classification: classificationForProductAnswer(state.request.message),
+        question: state.request.message,
+        retrievedChunks,
+      })) {
+        bufferedEvents.push(event);
+      }
+    } catch (error) {
+      if (isProductConfigurationError(error)) {
+        throw error;
+      }
+      yield* streamChatResponse(withAgentRoute(toolFailureResponse('answer_composer'), 'clarify'));
+      return;
+    }
+    for (const event of bufferedEvents) {
+      yield withStreamAgentRoute(event, 'product_answer');
+    }
+    return;
+  }
+
+  yield* streamChatResponse(
+    withAgentRoute(
+      await composeProductAnswer(evidenceList, state.request.message, answerProvider),
+      'product_answer',
+    ),
+  );
+}
+
+function traceProductAnswerStream(
+  state: LangGraphAgentState,
+  answerProvider: AnswerProvider | undefined,
+  tracer: QualityTracer,
+): AsyncIterable<ChatStreamEvent> {
+  return tracer.stream(
+    {
+      event: summarizeStreamEvent,
+      inputs: answerComposerInputs(state),
+      name: 'agent.answer_composer',
+      output: (events) => ({
+        eventCount: events.length,
+        eventTypes: events.map((event) => event.type),
+      }),
+      runType: 'chain',
+    },
+    () => streamProductAnswer(state, answerProvider),
+  );
+}
+
+function answerComposerInputs(state: LangGraphAgentState): Record<string, unknown> {
+  return {
+    evidenceChunkCount: searchEvidenceList(state.evidence).reduce((count, evidence) => {
+      return evidence.kind === 'search_results' ? count + evidence.output.chunks.length : count;
+    }, 0),
+    evidenceCount: state.evidence.length,
+    evidenceSufficient: state.observation?.sufficient === true,
+    searchAttemptCount: searchEvidenceList(state.evidence).length,
+  };
+}
+
+function shouldComposeProductAnswer(state: LangGraphAgentState): boolean {
+  return (
+    state.finalResponse === undefined &&
+    state.observation?.sufficient === true &&
+    searchEvidenceList(state.evidence).length > 0
+  );
+}
+
+function classificationForProductAnswer(question: string): Classification {
+  const classification = classifyQuestion(question);
+  if (classification.intent === 'product_qa' || classification.intent === 'how_to') {
+    return classification;
+  }
+
+  return {
+    confidence: 0.7,
+    intent: 'product_qa',
+    reason: 'planner selected bounded product knowledge search',
+  };
+}
+
+function collectedRetrievedChunks(evidenceList: AgentEvidence[]): RetrievedChunk[] {
+  const chunkLists = evidenceList.flatMap((evidence) => {
+    if (evidence.kind !== 'search_results') {
+      return [];
+    }
+    return [
+      evidence.output.chunks.flatMap((rawChunk, index) => {
+        const chunk = toRetrievedChunk(rawChunk, index + 1);
+        return chunk === undefined ? [] : [chunk];
+      }),
+    ];
+  });
+  const byId = new Map<string, RetrievedChunk>();
+  const maxListLength = chunkLists.reduce((max, chunks) => Math.max(max, chunks.length), 0);
+  for (let chunkIndex = 0; chunkIndex < maxListLength; chunkIndex += 1) {
+    for (const chunks of chunkLists) {
+      const chunk = chunks[chunkIndex];
+      if (chunk !== undefined && !byId.has(chunk.id)) {
+        byId.set(chunk.id, chunk);
+        if (byId.size >= MAX_COLLECTED_EVIDENCE_CHUNKS) {
+          return [...byId.values()].map((entry, index) => ({ ...entry, rank: index + 1 }));
+        }
+      }
+    }
+  }
+
+  return [...byId.values()].map((chunk, index) => ({ ...chunk, rank: index + 1 }));
+}
+
+function toRetrievedChunk(value: unknown, fallbackRank: number): RetrievedChunk | undefined {
+  if (!isRecord(value) || !isRecord(value.metadata)) {
+    return undefined;
+  }
+
+  const id = nonEmptyString(value.id);
+  const documentId = nonEmptyString(value.documentId);
+  const text = nonEmptyString(value.text);
+  const file = nonEmptyString(value.metadata.file);
+  const moduleName = nonEmptyString(value.metadata.module);
+  const title = nonEmptyString(value.metadata.title);
+  const sourceType = value.metadata.sourceType;
+  const headingPath = value.metadata.headingPath;
+  if (
+    id === undefined ||
+    documentId === undefined ||
+    text === undefined ||
+    file === undefined ||
+    moduleName === undefined ||
+    title === undefined ||
+    !isSourceType(sourceType) ||
+    !Array.isArray(headingPath) ||
+    !headingPath.every((heading) => typeof heading === 'string')
+  ) {
+    return undefined;
+  }
+
+  return {
+    documentId,
+    embedding: [],
+    id,
+    lexicalScore: finiteNumber(value.lexicalScore),
+    metadata: {
+      ...value.metadata,
+      file,
+      headingPath,
+      module: moduleName,
+      sourceType,
+      title,
+    },
+    rank: positiveInteger(value.rank) ?? fallbackRank,
+    score: finiteNumber(value.score),
+    sourceBoost: finiteNumber(value.sourceBoost),
+    text,
+    tokens: [],
+    vectorScore: finiteNumber(value.vectorScore),
+  };
+}
+
+function isSourceType(value: unknown): value is RetrievedChunk['metadata']['sourceType'] {
+  return value === 'admin_verified' || value === 'official_docs' || value === 'x_updates';
+}
+
+function finiteNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
 function responseFromSearchEvidenceList(
   evidenceList: AgentEvidence[],
   question: string,
@@ -735,38 +1122,81 @@ function noEvidenceSupportResponseForQuestion(question: string): ChatResponse | 
   return createInsufficientKnowledgeAnswer(question, classification.intent);
 }
 
-function hasSufficientSearchEvidence(state: LangGraphAgentState): boolean {
-  const searchEvidence = searchEvidenceList(state.evidence);
-  if (!hasSearchCitations(searchEvidence)) {
-    return false;
-  }
-
-  if (!requiresMultiSourceEvidence(state.request.message)) {
-    return true;
-  }
-
-  if (distinctSearchCitationKeys(searchEvidence).size >= 2) {
-    return true;
-  }
-
-  return state.currentStep >= state.maxSteps;
-}
-
 function searchEvidenceList(evidenceList: AgentEvidence[]): AgentEvidence[] {
   return evidenceList.filter((evidence) => evidence.kind === 'search_results');
 }
 
-function hasSearchCitations(evidenceList: AgentEvidence[]): boolean {
-  return evidenceList.some((evidence) => {
-    return evidence.kind === 'search_results' && evidence.output.citations.length > 0;
+function createEvidenceObservation(state: LangGraphAgentState): EvidenceObservation {
+  const searchEvidence = searchEvidenceList(state.evidence);
+  const searchCalls = state.toolCalls.filter(
+    (toolCall) => toolCall.toolName === 'search_product_docs',
+  );
+  const attempts: SearchEvidenceAttempt[] = searchEvidence.map((evidence, index) => {
+    if (evidence.kind !== 'search_results') {
+      return { chunkIds: [], citationKeys: [], evidenceTexts: [], query: '' };
+    }
+    const queryInput = searchCalls[index]?.input;
+    return {
+      chunkIds: evidence.output.chunks.flatMap((chunk) => {
+        if (!isRecord(chunk)) {
+          return [];
+        }
+        const id = nonEmptyString(chunk.id);
+        return id === undefined ? [] : [id];
+      }),
+      citationKeys: evidence.output.citations.map(citationKey),
+      evidenceTexts: evidence.output.citations.map(
+        (citation) => `${citation.title}\n${citation.excerpt}`,
+      ),
+      query:
+        isRecord(queryInput) && nonEmptyString(queryInput.query) !== undefined
+          ? (nonEmptyString(queryInput.query) ?? '')
+          : '',
+    };
   });
+
+  return observeProductEvidence(state.request.message, attempts, state.maxSteps);
 }
 
-function requiresMultiSourceEvidence(question: string): boolean {
-  return (
-    /比较|对比|区别|分别|同时|以及|与|\bcompare\b|\bversus\b|\bvs\b/iu.test(question) ||
-    /(?:权益|功能|设置|上限|限制|管理).+和.+(?:权益|功能|设置|上限|限制|管理)/u.test(question)
-  );
+function responseForStoppedSearch(
+  state: LangGraphAgentState,
+  fallbackMessage: string,
+  observation: EvidenceObservation | undefined = state.observation,
+): ChatResponse {
+  const searchEvidence = searchEvidenceList(state.evidence);
+  if (searchEvidence.length === 0) {
+    return createClarificationResponse(fallbackMessage);
+  }
+
+  const outputs = searchEvidence
+    .filter((evidence): evidence is Extract<AgentEvidence, { kind: 'search_results' }> => {
+      return evidence.kind === 'search_results';
+    })
+    .map((evidence) => evidence.output);
+  const citations = uniqueCitations(outputs.flatMap((output) => output.citations));
+  if (citations.length > 0) {
+    const missing = observation?.missingFacets ?? [];
+    const missingMessage =
+      missing.length === 0
+        ? '但证据仍不足以完整回答全部条件'
+        : `但缺少“${missing.join('、')}”的直接证据`;
+    const attachments = uniqueAttachments(outputs.flatMap((output) => output.attachments ?? []));
+    return {
+      agentRoute: 'product_answer',
+      answer: `当前知识库找到了一部分相关资料，${missingMessage}，暂时无法可靠给出完整结论。${fallbackMessage}`,
+      citations,
+      confidence: 0.4,
+      intent: classificationForProductAnswer(state.request.message).intent,
+      ...(attachments.length === 0 ? {} : { attachments }),
+    };
+  }
+
+  const noEvidenceSupportResponse = noEvidenceSupportResponseForQuestion(state.request.message);
+  if (noEvidenceSupportResponse !== undefined) {
+    return withAgentRoute(noEvidenceSupportResponse, 'product_answer');
+  }
+
+  return createClarificationResponse(fallbackMessage);
 }
 
 function distinctSearchCitationKeys(evidenceList: AgentEvidence[]): Set<string> {
@@ -811,32 +1241,42 @@ function citationKey(citation: AgentEvidenceForSearch['citations'][number]): str
   ].join('\0');
 }
 
-function consecutiveEmptySearchEvidenceCount(evidenceList: AgentEvidence[]): number {
-  let count = 0;
-  for (let index = evidenceList.length - 1; index >= 0; index -= 1) {
-    const evidence = evidenceList[index];
-    if (evidence === undefined || evidence.kind !== 'search_results') {
-      break;
-    }
-    if (evidence.output.chunks.length > 0 || evidence.output.citations.length > 0) {
-      break;
-    }
-    count += 1;
-  }
-  return count;
-}
-
 function isRepeatedToolInput(plan: AgentPlan, state: LangGraphAgentState): boolean {
   if (plan.kind !== 'tool') {
     return false;
   }
 
-  const nextInput = inputForToolExecution(plan, state.request);
+  const nextInput = inputForToolExecution(plan, state);
+  if (plan.toolName === 'search_product_docs') {
+    const nextQuery = normalizedSearchQuery(nextInput);
+    if (nextQuery !== undefined) {
+      return state.toolCalls.some(
+        (toolCall) =>
+          toolCall.toolName === 'search_product_docs' &&
+          normalizedSearchQuery(toolCall.input) === nextQuery,
+      );
+    }
+  }
+
   const nextInputKey = stableJson(nextInput);
   return state.toolCalls.some(
     (toolCall) =>
       toolCall.toolName === plan.toolName && stableJson(toolCall.input) === nextInputKey,
   );
+}
+
+function normalizedSearchQuery(input: unknown): string | undefined {
+  if (!isRecord(input)) {
+    return undefined;
+  }
+  const query = nonEmptyString(input.query);
+  if (query === undefined) {
+    return undefined;
+  }
+  return query
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
 function stableJson(value: unknown): string {
@@ -873,7 +1313,7 @@ function toolContextFromRequest(request: ChatRequest): ToolContext {
   return {
     channel: request.channel,
     ...(request.requestId === undefined ? {} : { requestId: request.requestId }),
-    sessionId: request.sessionId,
+    ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
     userIdPresent: request.userId !== undefined,
   };
 }

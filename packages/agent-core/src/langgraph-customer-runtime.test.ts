@@ -589,7 +589,7 @@ describe('createLangGraphCustomerRuntime', () => {
     });
     expect(response.answer).toContain('XXYY 跟单支持 SOL 和 BSC');
     expect(execute).toHaveBeenCalledWith(
-      { query: 'XXYY 跟单 支持 哪些链' },
+      { query: 'XXYY 跟单支持哪些链？' },
       { channel: 'web', userIdPresent: false },
     );
   });
@@ -742,7 +742,7 @@ describe('createLangGraphCustomerRuntime', () => {
     });
   });
 
-  it('normalizes planner search question input into a docs query', async () => {
+  it('keeps the original question as the first docs query', async () => {
     const registry = createToolRegistry();
     const execute = vi.fn(() =>
       Promise.resolve({
@@ -802,7 +802,7 @@ describe('createLangGraphCustomerRuntime', () => {
       intent: 'product_qa',
     });
     expect(execute).toHaveBeenCalledWith(
-      { query: 'XXYY Pro 权益' },
+      { query: 'XXYY Pro 有哪些权益？' },
       { channel: 'web', userIdPresent: false },
     );
   });
@@ -1015,14 +1015,14 @@ describe('createLangGraphCustomerRuntime', () => {
     const response = await createLangGraphCustomerRuntime({
       planner: createScriptedPlannerModel([
         {
-          input: { query: '不存在的功能' },
+          input: { query: '这个不存在的功能怎么用？' },
           kind: 'tool',
           reason: 'Search product docs.',
           route: 'product_answer',
           toolName: 'search_product_docs' as never,
         },
         {
-          input: { query: '不存在的功能' },
+          input: { query: ' 这个不存在的功能，怎么用 ', topK: 20 },
           kind: 'tool',
           reason: 'Repeat the same search.',
           route: 'product_answer',
@@ -1064,7 +1064,7 @@ describe('createLangGraphCustomerRuntime', () => {
     for await (const event of createLangGraphCustomerRuntime({
       planner: createScriptedPlannerModel([
         {
-          input: { query: '不存在的功能' },
+          input: { query: '这个不存在的功能怎么用？' },
           kind: 'tool',
           reason: 'Search product docs.',
           route: 'product_answer',
@@ -1121,7 +1121,7 @@ describe('createLangGraphCustomerRuntime', () => {
     const response = await createLangGraphCustomerRuntime({
       planner: createScriptedPlannerModel([
         {
-          input: { query: 'robinhood 支持' },
+          input: { query: '当前支持robinhood么' },
           kind: 'tool',
           reason: 'Search product docs.',
           route: 'product_answer',

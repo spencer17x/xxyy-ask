@@ -217,7 +217,8 @@ pnpm rag:knowledge:publication:work
 - embedding 检索文本包含标题、模块与完整章节路径。进入回答模型前，知识正文及可展示元数据会先脱敏并隔离疑似 prompt injection，再按 chunk 公平预算、完整句子、列表和限制条件打包为 JSON 资料字段；长 chunk 不再固定截取前 900 个字符。
 - 正式产品问答使用 pgvector 向量、Postgres 全文关键词和支持实体候选，并通过 RRF 合并不同分数尺度的 rank；候选阶段保留 source/debug scores 便于评测和排障。
 - 内置 `createMetadataReranker()` 是本地 deterministic reranker，使用问题覆盖率、标题/模块/heading、直接来源、列表/步骤证据和当前有效状态做通用二阶段排序，不调用外部模型，也不按具体产品 case 写规则。
-- 明确分类为 `product_qa` / `how_to` 的问题直接使用原问题进入产品 RAG；Planner 仅处理模糊路由和 Agent 自述，避免额外改写影响召回。
+- 明确分类为 `product_qa` / `how_to` 的普通问题直接用完整原问题执行一次 `search_product_docs`，随后由 `answer_composer` 回答，不增加 Planner 调用。比较/多模块问题若缺少证据维度，observation 才允许 Planner 针对缺失维度改写后续 query；original question 始终独立保留。
+- Agent loop 受 max steps、重复工具输入和无新增证据三重保护；即使 query 不同但返回同一批 chunk/引用也会停止，并以部分证据说明或澄清安全结束。
 - 模型答案返回前会在本地校验关键 claim 的数字、限制、支持状态和操作事实；无证据输出降级为 deterministic grounded answer，成功输出只保留实际支撑 claim 的引用。该校验不调用第二个模型。流式答案先缓冲完成校验，防止已经发出的幻觉 token 无法撤回。
 - LLM relevance judge 或外部 reranker provider 可以按同一接口接入，但应默认关闭，并在有评估用例证明收益后再启用，以避免额外成本和延迟。
 

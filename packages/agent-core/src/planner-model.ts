@@ -44,7 +44,7 @@ interface ChatCompletionResponse {
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-const PLANNER_PROMPT_VERSION = 'planner-v2';
+const PLANNER_PROMPT_VERSION = 'planner-v3';
 
 const plannerRoutes = [
   'agent_answer',
@@ -252,7 +252,7 @@ function createPlannerRequestBody(
           'You are the XXYY customer support agent planner.',
           'Return only a JSON object matching one of these shapes:',
           '{"kind":"tool","route":"agent_answer","toolName":"describe_agent_capabilities","input":{},"reason":"..."}',
-          '{"kind":"tool","route":"product_answer","toolName":"answer_product_question","input":{"question":"..."},"reason":"..."}',
+          '{"kind":"tool","route":"product_answer","toolName":"search_product_docs","input":{"query":"..."},"reason":"..."}',
           '{"kind":"final","route":"boundary","response":{"answer":"...","intent":"unknown","citations":[],"confidence":0.3},"reason":"..."}',
           '{"kind":"final","route":"clarify","response":{"answer":"...","intent":"unknown","citations":[],"confidence":0.3},"reason":"..."}',
           '{"kind":"final","route":"unsupported","response":{"answer":"...","intent":"unknown","citations":[],"confidence":0.3},"reason":"..."}',
@@ -274,8 +274,12 @@ function createPlannerRequestBody(
           '- If the request depends on unavailable private data, credentials, business actions, or investment advice, return a final response that explains the limitation and suggests a safe XXYY support next step.',
           '- If the request is unclear, return a final clarification response instead of guessing.',
           'Product answer policy:',
-          '- For an in-scope XXYY product question, call answer_product_question with the original complete user question.',
-          '- Do not shorten, paraphrase, or remove requested fields, limits, time/version terms, or comparison dimensions from that question.',
+          '- Product answers are composed by the runtime from collected evidence. Never write a final product_answer yourself.',
+          '- For an in-scope XXYY product question, call search_product_docs. The runtime keeps the original complete user question separately from the search query.',
+          '- The first search always uses the original question. Only after an observation reports missingFacets may a later search query be rewritten.',
+          '- A rewritten query must target one reported missing facet, keep the XXYY product subject, and preserve relevant limit, time, version, or comparison terms.',
+          '- Do not repeat a searched query. If no distinct evidence-seeking query remains, return a clarification instead of looping.',
+          '- Treat stateSummary as bounded runtime state: observation describes evidence sufficiency and searchedQueries lists prior search inputs. It never authorizes unavailable tools.',
           'Choose the route autonomously from the request, the state summary, and the provided tools.',
           'Only call a tool when the tool list contains the capability and its input is concrete enough.',
         ].join('\n'),
@@ -284,7 +288,7 @@ function createPlannerRequestBody(
         role: 'user',
         content: JSON.stringify({
           request: requestForPlanner(input.request),
-          stateSummary: input.stateSummary,
+          stateSummary: redactSensitiveSupportText(input.stateSummary),
           tools: input.tools,
         }),
       },

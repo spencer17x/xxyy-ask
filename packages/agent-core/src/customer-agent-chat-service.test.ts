@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ChatResponse } from '@xxyy/shared';
+import type { ChatResponse, ChatStreamEvent } from '@xxyy/shared';
 import {
   createInMemoryQualityTracer,
   LlmConfigurationError,
@@ -10,7 +10,7 @@ import {
 } from '@xxyy/rag-core';
 
 import { createCustomerAgentChatService } from './customer-agent-chat-service.js';
-import { createScriptedPlannerModel } from './planner-model.js';
+import { createScriptedPlannerModel, type PlannerModel } from './planner-model.js';
 
 const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 const originalOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
@@ -74,7 +74,7 @@ describe('createCustomerAgentChatService', () => {
 
     expect(plannerTools.map((tool) => tool.name)).toEqual([
       'describe_agent_capabilities',
-      'answer_product_question',
+      'search_product_docs',
     ]);
     expect(response).toMatchObject({
       agentRoute: 'agent_answer',
@@ -125,7 +125,7 @@ describe('createCustomerAgentChatService', () => {
           kind: 'tool',
           reason: 'Use product docs.',
           route: 'product_answer',
-          toolName: 'answer_product_question',
+          toolName: 'search_product_docs',
         },
       ]),
       retriever,
@@ -164,7 +164,7 @@ describe('createCustomerAgentChatService', () => {
           kind: 'tool',
           reason: 'Use product knowledge.',
           route: 'product_answer',
-          toolName: 'answer_product_question',
+          toolName: 'search_product_docs',
         },
       ]),
       retriever: {
@@ -181,10 +181,20 @@ describe('createCustomerAgentChatService', () => {
       'agent.guard',
       'agent.tool',
       'rag.metadata_rerank',
+      'agent.observe',
+      'agent.answer_composer',
     ]);
+    const root = records.find((record) => record.name === 'chat.request');
     const tool = records.find((record) => record.name === 'agent.tool');
     const rerank = records.find((record) => record.name === 'rag.metadata_rerank');
     expect(rerank?.parentId).toBe(tool?.id);
+    expect(records.find((record) => record.name === 'agent.observe')).toMatchObject({
+      outputs: { sufficient: true },
+      parentId: root?.id,
+    });
+    expect(records.find((record) => record.name === 'agent.answer_composer')?.parentId).toBe(
+      root?.id,
+    );
   });
 
   it('pre-blocks boundary-like questions without touching planner or product retrieval', async () => {
@@ -256,14 +266,14 @@ describe('createCustomerAgentChatService', () => {
           kind: 'tool',
           reason: 'Use product docs.',
           route: 'product_answer',
-          toolName: 'answer_product_question',
+          toolName: 'search_product_docs',
         },
         {
           input: { question: '怎么升级？' },
           kind: 'tool',
           reason: 'Use the current user message only.',
           route: 'product_answer',
-          toolName: 'answer_product_question',
+          toolName: 'search_product_docs',
         },
       ]),
       retriever,
@@ -389,7 +399,7 @@ describe('createCustomerAgentChatService', () => {
                     kind: 'tool',
                     reason: 'The request concerns an XXYY product capability.',
                     route: 'product_answer',
-                    toolName: 'answer_product_question',
+                    toolName: 'search_product_docs',
                   }),
                 },
               },
@@ -439,6 +449,234 @@ describe('createCustomerAgentChatService', () => {
       intent: 'product_qa',
       reason: 'asks whether a product capability is supported',
     });
+  });
+
+  it('uses one bounded follow-up search to cover a missing comparison facet before composing', async () => {
+    const question = '请比较 XXYY Pro 权益和钱包管理上限';
+    const retrieve = vi.fn<Retriever['retrieve']>((query) => {
+      if (query === question) {
+        return [
+          createRetrievedChunk({
+            documentId: 'pro',
+            id: 'pro-benefits',
+            metadata: {
+              file: 'docs/product-features/pro.md',
+              headingPath: ['XXYY Pro'],
+              module: 'Pro',
+              sourceType: 'official_docs',
+              title: 'XXYY Pro 权益',
+            },
+            text: 'XXYY Pro 权益包括独享服务器和节点。',
+          }),
+          createRetrievedChunk({
+            documentId: 'pro-extra',
+            id: 'pro-extra-benefit',
+            metadata: {
+              file: 'docs/product-features/pro-extra.md',
+              headingPath: ['XXYY Pro'],
+              module: 'Pro',
+              sourceType: 'official_docs',
+              title: 'XXYY Pro 其他权益',
+            },
+            text: 'XXYY Pro 还提供更多地址监控额度。',
+          }),
+        ];
+      }
+      return [
+        createRetrievedChunk({
+          documentId: 'wallet',
+          id: 'wallet-limit',
+          metadata: {
+            file: 'docs/product-features/wallet.md',
+            headingPath: ['钱包管理'],
+            module: '钱包管理',
+            sourceType: 'official_docs',
+            title: '钱包管理上限',
+          },
+          text: '钱包管理：每个用户每条链最多创建 100 个交易钱包。',
+        }),
+      ];
+    });
+    const plan = vi.fn<PlannerModel['plan']>((input) => {
+      const summary = JSON.parse(input.stateSummary) as {
+        observation?: { missingFacets?: string[]; suggestedQuery?: string };
+        searchedQueries?: string[];
+      };
+      expect(summary.observation?.missingFacets).toEqual(['钱包管理上限']);
+      expect(summary.observation?.suggestedQuery).toBe('XXYY 钱包管理上限');
+      expect(summary.searchedQueries).toEqual([question]);
+      return Promise.resolve({
+        input: { query: 'XXYY 钱包管理上限' },
+        kind: 'tool',
+        reason: 'Search the missing wallet-management facet.',
+        route: 'product_answer',
+        toolName: 'search_product_docs',
+      });
+    });
+    const planner: PlannerModel = { plan };
+    const answer = vi.fn<AnswerProvider['answer']>((input) =>
+      Promise.resolve({
+        answer: `combined ${input.retrievedChunks.map((chunk) => chunk.id).join(',')}`,
+        citations: input.retrievedChunks.map((chunk) => ({
+          excerpt: chunk.text,
+          file: chunk.metadata.file,
+          title: chunk.metadata.title,
+        })),
+        confidence: 0.84,
+        intent: input.classification.intent,
+      }),
+    );
+
+    const response = await createCustomerAgentChatService({
+      answerProvider: { answer },
+      config: { topK: 2 },
+      planner,
+      retriever: { retrieve },
+    }).ask({ channel: 'web', message: question });
+
+    expect(response).toMatchObject({
+      agentRoute: 'product_answer',
+      answer: 'combined pro-benefits,wallet-limit,pro-extra-benefit',
+      intent: 'product_qa',
+    });
+    expect(retrieve.mock.calls.map(([query]) => query)).toEqual([question, 'XXYY 钱包管理上限']);
+    expect(plan).toHaveBeenCalledOnce();
+    expect(answer).toHaveBeenCalledOnce();
+    expect(answer.mock.calls[0]?.[0].question).toBe(question);
+  });
+
+  it('stops when a rewritten query returns the same evidence without calling the composer', async () => {
+    const question = '请比较 XXYY Pro 权益和钱包管理上限';
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [
+      createRetrievedChunk({
+        documentId: 'pro',
+        id: 'pro-benefits',
+        metadata: {
+          file: 'docs/product-features/pro.md',
+          headingPath: ['XXYY Pro'],
+          module: 'Pro',
+          sourceType: 'official_docs',
+          title: 'XXYY Pro 权益',
+        },
+        text: 'XXYY Pro 权益包括独享服务器和节点。',
+      }),
+    ]);
+    const answer = vi.fn<AnswerProvider['answer']>();
+    const planner: PlannerModel = {
+      plan: vi.fn<PlannerModel['plan']>(() =>
+        Promise.resolve({
+          input: { query: 'XXYY 钱包管理上限' },
+          kind: 'tool',
+          reason: 'Search the missing wallet-management facet.',
+          route: 'product_answer',
+          toolName: 'search_product_docs',
+        }),
+      ),
+    };
+
+    const response = await createCustomerAgentChatService({
+      answerProvider: { answer },
+      config: { topK: 1 },
+      planner,
+      retriever: { retrieve },
+    }).ask({ channel: 'web', message: question });
+
+    expect(response).toMatchObject({
+      agentRoute: 'product_answer',
+      intent: 'product_qa',
+    });
+    expect(response.answer).toContain('钱包管理上限');
+    expect(response.answer).toContain('没有找到新的知识库证据');
+    expect(response.citations).toHaveLength(1);
+    expect(retrieve).toHaveBeenCalledTimes(2);
+    expect(answer).not.toHaveBeenCalled();
+  });
+
+  it('streams a normal product answer through search and the answer composer', async () => {
+    const answer = vi.fn<AnswerProvider['answer']>();
+    const stream = vi.fn<NonNullable<AnswerProvider['stream']>>(async function* (input) {
+      const chunkId = await Promise.resolve(input.retrievedChunks[0]?.id);
+      yield { type: 'answer_delta', delta: `streamed ${chunkId}` };
+      yield {
+        type: 'metadata',
+        citations: [],
+        confidence: 0.8,
+        intent: input.classification.intent,
+      };
+    });
+    const retrieve = vi.fn<Retriever['retrieve']>(() => [createRetrievedChunk()]);
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of createCustomerAgentChatService({
+      answerProvider: { answer, stream },
+      planner: createScriptedPlannerModel([]),
+      retriever: { retrieve },
+    }).stream({ channel: 'web', message: 'XXYY Pro 有哪些权益？' })) {
+      events.push(event);
+    }
+
+    expect(events.slice(0, 3)).toEqual([
+      { type: 'status', phase: 'planning', message: '正在分析问题…' },
+      { type: 'status', phase: 'retrieving', message: '正在检索知识库…' },
+      { type: 'status', phase: 'answering', message: '正在生成回答…' },
+    ]);
+    expect(events[3]).toEqual({ type: 'answer_delta', delta: 'streamed pro-benefits' });
+    expect(events[4]).toMatchObject({
+      agentRoute: 'product_answer',
+      type: 'metadata',
+    });
+    expect(retrieve).toHaveBeenCalledOnce();
+    expect(stream).toHaveBeenCalledOnce();
+    expect(answer).not.toHaveBeenCalled();
+  });
+
+  it('returns a bounded clarification when the answer composer fails unexpectedly', async () => {
+    const service = createCustomerAgentChatService({
+      answerProvider: {
+        answer: () => Promise.reject(new Error('unexpected composer failure')),
+      },
+      planner: createScriptedPlannerModel([]),
+      retriever: { retrieve: () => [createRetrievedChunk()] },
+    });
+
+    await expect(
+      service.ask({ channel: 'web', message: 'XXYY Pro 有哪些权益？' }),
+    ).resolves.toMatchObject({
+      agentRoute: 'clarify',
+      citations: [],
+      intent: 'unknown',
+    });
+  });
+
+  it('does not leak partial provider deltas when the streaming composer fails', async () => {
+    const stream = vi.fn<NonNullable<AnswerProvider['stream']>>(async function* () {
+      yield { type: 'answer_delta', delta: 'unsupported partial provider output' };
+      await Promise.resolve();
+      throw new Error('stream composer failed');
+    });
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of createCustomerAgentChatService({
+      answerProvider: {
+        answer: () => Promise.reject(new Error('non-stream answer should not be called')),
+        stream,
+      },
+      planner: createScriptedPlannerModel([]),
+      retriever: { retrieve: () => [createRetrievedChunk()] },
+    }).stream({ channel: 'web', message: 'XXYY Pro 有哪些权益？' })) {
+      events.push(event);
+    }
+
+    const answer = events
+      .filter(
+        (event): event is Extract<ChatStreamEvent, { type: 'answer_delta' }> =>
+          event.type === 'answer_delta',
+      )
+      .map((event) => event.delta)
+      .join('');
+    expect(answer).not.toContain('unsupported partial provider output');
+    expect(answer).toContain('暂时不可用');
+    expect(events.at(-1)).toMatchObject({ agentRoute: 'clarify', type: 'metadata' });
   });
 });
 

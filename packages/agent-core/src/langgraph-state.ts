@@ -2,15 +2,22 @@ import { Annotation } from '@langchain/langgraph';
 
 import type { AgentRoute, ChatAttachment, ChatRequest, ChatResponse, Citation } from '@xxyy/shared';
 
+import type { EvidenceObservation } from './evidence-observation.js';
+
 export const AGENT_MAX_STEPS_DEFAULT = 4;
 
 export const ALLOWED_AGENT_TOOL_NAMES = [
   'describe_agent_capabilities',
-  'answer_product_question',
   'search_product_docs',
 ] as const;
 
+// Compatibility for injected runtimes/tests only. The planner schema and production registry
+// expose only ALLOWED_AGENT_TOOL_NAMES.
+export const LEGACY_AGENT_TOOL_NAMES = ['answer_product_question'] as const;
+
 export type AllowedAgentToolName = (typeof ALLOWED_AGENT_TOOL_NAMES)[number];
+export type LegacyAgentToolName = (typeof LEGACY_AGENT_TOOL_NAMES)[number];
+export type AgentToolName = AllowedAgentToolName | LegacyAgentToolName;
 
 export type AgentMessage = {
   role: 'assistant' | 'system' | 'tool' | 'user';
@@ -31,7 +38,7 @@ export type AgentPlan =
       kind: 'tool';
       reason: string;
       route: PlannerRoute;
-      toolName: AllowedAgentToolName;
+      toolName: AgentToolName;
       input: unknown;
     }
   | {
@@ -86,6 +93,7 @@ export type AgentState = {
   finalResponse?: ChatResponse;
   maxSteps: number;
   messages: AgentMessage[];
+  observation?: EvidenceObservation;
   plan?: AgentPlan;
   policyDecision?: AgentPolicyDecision;
   request: ChatRequest;
@@ -118,6 +126,10 @@ export const AgentStateAnnotation = Annotation.Root({
   messages: Annotation<AgentMessage[]>({
     default: () => [],
     reducer: (left, right) => left.concat(right),
+  }),
+  observation: Annotation<EvidenceObservation | undefined>({
+    default: () => undefined,
+    reducer: (_left, right) => right,
   }),
   plan: Annotation<AgentPlan | undefined>({
     default: () => undefined,
@@ -162,6 +174,12 @@ export function createInitialAgentState(
 
 export function isAllowedAgentToolName(name: string): name is AllowedAgentToolName {
   return ALLOWED_AGENT_TOOL_NAMES.includes(name as AllowedAgentToolName);
+}
+
+export function isExecutableAgentToolName(name: string): name is AgentToolName {
+  return (
+    isAllowedAgentToolName(name) || LEGACY_AGENT_TOOL_NAMES.includes(name as LegacyAgentToolName)
+  );
 }
 
 export function normalizeAgentRoute(route: PlannerRoute): AgentRoute {

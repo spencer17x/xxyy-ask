@@ -1,19 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ChatResponse, RagIndex } from '@xxyy/shared';
-import type { AnswerProvider, RetrievedChunk, Retriever } from '@xxyy/rag-core';
+import type { RagIndex } from '@xxyy/shared';
+import type { RetrievedChunk, Retriever } from '@xxyy/rag-core';
 
 import { createToolRegistry } from '../tool-registry.js';
 import {
   PRODUCT_TOOL_NAMES,
-  answerProductQuestionInputSchema,
   createProductTools,
   searchProductDocsInputSchema,
 } from './product-tools.js';
 
 describe('createProductTools', () => {
   it('exports the product tool names in registration order', () => {
-    expect(PRODUCT_TOOL_NAMES).toEqual(['search_product_docs', 'answer_product_question']);
+    expect(PRODUCT_TOOL_NAMES).toEqual(['search_product_docs']);
   });
 
   it('registers search_product_docs and returns chunks, citations, and confidence for a Telegram docs question', async () => {
@@ -130,88 +129,9 @@ describe('createProductTools', () => {
   it('rejects blank product tool inputs at the schema boundary', () => {
     expect(searchProductDocsInputSchema.safeParse({ query: '' }).success).toBe(false);
     expect(searchProductDocsInputSchema.safeParse({ query: '   ' }).success).toBe(false);
-    expect(answerProductQuestionInputSchema.safeParse({ question: '' }).success).toBe(false);
-    expect(answerProductQuestionInputSchema.safeParse({ question: '   ' }).success).toBe(false);
   });
 
-  it('answers a product question through an injected AnswerProvider with retrieved chunks', async () => {
-    const registry = createToolRegistry();
-    const answerProvider: AnswerProvider = {
-      answer(input) {
-        const response: ChatResponse = {
-          answer: `retrieved ${input.retrievedChunks.length} chunks`,
-          citations: [],
-          confidence: 0.73,
-          intent: input.classification.intent,
-        };
-        return Promise.resolve(response);
-      },
-    };
-
-    for (const tool of createProductTools({
-      answerProvider,
-      config: { topK: 2 },
-      index: createRagIndex(),
-    })) {
-      registry.register(tool);
-    }
-
-    await expect(
-      registry.execute('answer_product_question', {
-        channel: 'agent',
-        question: 'XXYY Pro 有哪些权益？',
-      }),
-    ).resolves.toEqual({
-      answer: 'retrieved 2 chunks',
-      citations: [],
-      confidence: 0.73,
-      intent: 'product_qa',
-    });
-  });
-
-  it('answers short copy-trading support questions with deterministic product classification', async () => {
-    const registry = createToolRegistry();
-    const retrieve = vi.fn<Retriever['retrieve']>(() => [
-      createRetrievedChunk({
-        text: '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链。',
-      }),
-    ]);
-    const answer = vi.fn<AnswerProvider['answer']>((input) =>
-      Promise.resolve({
-        answer: `intent ${input.classification.intent}; chunks ${input.retrievedChunks.length}`,
-        citations: [],
-        confidence: input.classification.confidence,
-        intent: input.classification.intent,
-      }),
-    );
-
-    for (const tool of createProductTools({
-      answerProvider: { answer },
-      retriever: { retrieve },
-    })) {
-      registry.register(tool);
-    }
-
-    await expect(
-      registry.execute('answer_product_question', {
-        channel: 'agent',
-        question: '支持跟单么',
-      }),
-    ).resolves.toMatchObject({
-      answer: 'intent product_qa; chunks 1',
-      intent: 'product_qa',
-    });
-    expect(retrieve).toHaveBeenCalledWith('支持跟单么', { topK: 48 });
-    const answerInput = answer.mock.calls[0]?.[0];
-    expect(answerInput).toBeDefined();
-    expect(answerInput?.classification).toMatchObject({
-      intent: 'product_qa',
-      reason: 'asks whether a product capability is supported',
-    });
-    expect(answerInput?.question).toBe('支持跟单么');
-  });
-
-  it('reranks product evidence before answering short copy-trading support questions', async () => {
+  it('reranks product evidence before returning search results', async () => {
     const registry = createToolRegistry();
     const retrieve = vi.fn<Retriever['retrieve']>(() => [
       createRetrievedChunk({
@@ -230,17 +150,8 @@ describe('createProductTools', () => {
         text: '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。',
       }),
     ]);
-    const answer = vi.fn<AnswerProvider['answer']>((input) =>
-      Promise.resolve({
-        answer: input.retrievedChunks[0]?.text ?? '',
-        citations: [],
-        confidence: input.retrievedChunks[0]?.score ?? 0,
-        intent: input.classification.intent,
-      }),
-    );
 
     for (const tool of createProductTools({
-      answerProvider: { answer },
       config: { topK: 1 },
       retriever: { retrieve },
     })) {
@@ -248,105 +159,11 @@ describe('createProductTools', () => {
     }
 
     await expect(
-      registry.execute('answer_product_question', {
-        channel: 'agent',
-        question: 'XXYY支持跟单么',
-      }),
+      registry.execute('search_product_docs', { query: 'XXYY支持跟单么' }),
     ).resolves.toMatchObject({
-      answer:
-        '跟单功能上线，支持 SOL、BSC、Base、ETH、X Layer、Plasma 六条链，可查看地址利润和胜率，自定义跟单金额、卖出比例、gas、滑点和过滤条件。',
-      intent: 'product_qa',
+      chunks: [{ id: 'copy-trading-launch' }],
     });
     expect(retrieve).toHaveBeenCalledWith('XXYY支持跟单么', { topK: 8 });
-  });
-
-  it('keeps realtime account lookups blocked even when planner selects answer_product_question', async () => {
-    const registry = createToolRegistry();
-    const retrieve = vi.fn<Retriever['retrieve']>(() => [createRetrievedChunk()]);
-    const answer = vi.fn<AnswerProvider['answer']>((input) =>
-      Promise.resolve({
-        answer: `planner routed ${input.classification.intent}`,
-        citations: [],
-        confidence: input.classification.confidence,
-        intent: input.classification.intent,
-      }),
-    );
-
-    for (const tool of createProductTools({
-      answerProvider: { answer },
-      retriever: { retrieve },
-    })) {
-      registry.register(tool);
-    }
-
-    const result = (await registry.execute('answer_product_question', {
-      question: '帮我查一下钱包余额',
-    })) as ChatResponse;
-
-    expect(result.answer).toContain('我不能直接查询你的钱包余额');
-    expect(result).toMatchObject({
-      citations: [],
-      intent: 'realtime_account_query',
-    });
-    expect(retrieve).not.toHaveBeenCalled();
-    expect(answer).not.toHaveBeenCalled();
-  });
-
-  it('keeps investment advice blocked even when planner selects answer_product_question', async () => {
-    const registry = createToolRegistry();
-    const retrieve = vi.fn<Retriever['retrieve']>(() => [createRetrievedChunk()]);
-    const answer = vi.fn<AnswerProvider['answer']>(() =>
-      Promise.resolve({
-        answer: 'planner-overridden product response',
-        citations: [],
-        confidence: 0.7,
-        intent: 'product_qa',
-      }),
-    );
-
-    for (const tool of createProductTools({
-      answerProvider: { answer },
-      retriever: { retrieve },
-    })) {
-      registry.register(tool);
-    }
-
-    const result = (await registry.execute('answer_product_question', {
-      question: '现在可以买 SOL 吗，推荐一个能保证盈利的 token',
-    })) as ChatResponse;
-
-    expect(result.answer).toContain('我不能提供买卖建议');
-    expect(result).toMatchObject({
-      citations: [],
-      intent: 'investment_advice',
-    });
-    expect(retrieve).not.toHaveBeenCalled();
-    expect(answer).not.toHaveBeenCalled();
-  });
-
-  it('keeps unsupported transaction analysis blocked when planner selects answer_product_question', async () => {
-    const registry = createToolRegistry();
-    const retrieve = vi.fn<Retriever['retrieve']>(() => [createRetrievedChunk()]);
-    const answer = vi.fn<AnswerProvider['answer']>();
-
-    for (const tool of createProductTools({
-      answerProvider: { answer },
-      retriever: { retrieve },
-    })) {
-      registry.register(tool);
-    }
-
-    const result = (await registry.execute('answer_product_question', {
-      question: '这个 tx hash 是不是被夹了，有 MEV sandwich 吗？',
-    })) as ChatResponse;
-
-    expect(result.answer).toContain('当前不分析交易哈希');
-    expect(result).toMatchObject({
-      citations: [],
-      intent: 'unknown',
-    });
-    expect(retrieve).not.toHaveBeenCalled();
-    expect(answer).not.toHaveBeenCalled();
   });
 
   it('normalizes citation file paths, truncates excerpts, and limits citations for search results', async () => {

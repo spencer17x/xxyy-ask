@@ -38,7 +38,6 @@ export function createCustomerAgentChatService(
   }
 
   for (const tool of createProductTools({
-    answerProvider: options.answerProvider,
     ...(options.config === undefined ? {} : { config: options.config }),
     ...(options.index === undefined ? {} : { index: options.index }),
     ...(options.retriever === undefined ? {} : { retriever: options.retriever }),
@@ -48,6 +47,7 @@ export function createCustomerAgentChatService(
   }
 
   return createLangGraphCustomerRuntime({
+    answerProvider: options.answerProvider,
     planner: options.planner ?? createDefaultPlannerModel(options.config, options.tracer),
     registry,
     ...(options.tracer === undefined ? {} : { tracer: options.tracer }),

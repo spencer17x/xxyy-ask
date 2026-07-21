@@ -44,6 +44,7 @@ Supported checks:
 - `relevantChunkIds`: exact chunk IDs that should be recalled. Only cases with this field contribute retrieval metrics.
 - `forbiddenChunkIds`: stale, conflicting, or unsafe chunks that must not enter the evaluated ranking.
 - `expectedAgentRoute` and `expectedToolNames`: optional exact route and ordered tool trajectory checks for provider-backed cases with trace observations.
+  普通产品问题的标准轨迹是 `['search_product_docs']`；复杂比较问题可以出现多个该工具调用，但 rewritten query 必须不同且每次带来新证据。`agent.observe` 和 `agent.answer_composer` 是 chain spans，不计入 toolNames。
 
 Chunk IDs must come from `prepareKnowledgeChunks`, not from hand-written guesses. Keep annotations small: list the chunks required to answer the question, not every vaguely related chunk.
 

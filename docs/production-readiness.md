@@ -27,7 +27,7 @@ QUALITY_TRACE_SAMPLE_RATE=0.1
 APP_REVISION=release-sha
 ```
 
-开启后可观察 `chat.request`、`agent.classify`、`agent.guard`、`llm.planner`、`agent.tool`、`rag.query_embedding`、`rag.pgvector_candidates`、`rag.metadata_rerank`、`rag.grounding_selection` 和 `llm.answer`。未配置采样率时显式开启默认值为 `1`；设置 `0` 会保留功能但停止发送样本。上线先从低采样率开始，按 project、`APP_REVISION`、span name、status 和 requestId 排查失败。
+开启后可观察 `chat.request`、`agent.classify`、`agent.guard`、`llm.planner`、`agent.tool`、`agent.observe`、`agent.answer_composer`、`rag.query_embedding`、`rag.pgvector_candidates`、`rag.metadata_rerank`、`rag.grounding_selection` 和 `llm.answer`。`agent.observe` 只记录证据数、缺失维度数量、是否充分、是否继续和停止原因，不记录 chunk 正文；`agent.answer_composer` 只记录聚合数量与输出摘要。未配置采样率时显式开启默认值为 `1`；设置 `0` 会保留功能但停止发送样本。上线先从低采样率开始，按 project、`APP_REVISION`、span name、status 和 requestId 排查失败。
 
 隐私约束是代码契约，不依赖平台 UI 设置：client input/output/anonymizer 三层都会再次脱敏；span 只包含长度、存在性、route/tool、chunk ID/分数、模型/prompt 版本、token usage、context packing 计数、grounding coverage/claim 计数和 bounded event type。禁止上传完整 system/user prompt、完整 chunk、完整答案、unsupported claim 文本或流式 delta、session/user ID、Authorization/API key 和错误堆栈。首次接入和每次修改摘要字段后，应在测试 project 只读抽查一条合成 trace。生产 retention、数据区域、成员权限和删除流程必须由组织管理员确认。
 

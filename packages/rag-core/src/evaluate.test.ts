@@ -324,7 +324,7 @@ describe('evaluateCases', () => {
         request: { channel: 'web' as const, message: '现在支持多少地址？' },
         expectedIntent: 'product_qa' as const,
         expectedAgentRoute: 'product_answer' as const,
-        expectedToolNames: ['answer_product_question'],
+        expectedToolNames: ['search_product_docs'],
         forbiddenChunkIds: ['chunk-old'],
         referenceFacts: ['5000个地址'],
         relevantChunkIds: ['chunk-current'],
@@ -350,7 +350,7 @@ describe('evaluateCases', () => {
           ? {}
           : {
               retrievedChunkIds: ['chunk-current'],
-              toolNames: ['answer_product_question'],
+              toolNames: ['search_product_docs'],
             };
       },
     });
@@ -363,13 +363,13 @@ describe('evaluateCases', () => {
       relevantChunkIds: ['chunk-current'],
       response,
       retrievedChunkIds: ['chunk-current'],
-      toolNames: ['answer_product_question'],
+      toolNames: ['search_product_docs'],
     });
     expect(report.results[1]).toMatchObject({
       passed: false,
       failureReasons: [
         'agent route product_answer != clarify',
-        'tool trajectory answer_product_question != lookup_other_tool',
+        'tool trajectory search_product_docs != lookup_other_tool',
       ],
     });
     expect(report.results[2]).toMatchObject({

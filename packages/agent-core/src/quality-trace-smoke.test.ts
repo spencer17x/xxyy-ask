@@ -47,7 +47,7 @@ describe('quality trace end-to-end smoke', () => {
           kind: 'tool',
           reason: 'Use product knowledge.',
           route: 'product_answer',
-          toolName: 'answer_product_question',
+          toolName: 'search_product_docs',
         },
       ]),
       retriever,
@@ -69,6 +69,8 @@ describe('quality trace end-to-end smoke', () => {
       'rag.query_embedding',
       'rag.pgvector_candidates',
       'rag.metadata_rerank',
+      'agent.observe',
+      'agent.answer_composer',
       'rag.grounding_selection',
       'llm.answer',
       'rag.claim_grounding',
@@ -76,13 +78,25 @@ describe('quality trace end-to-end smoke', () => {
     const productRoot = records[0];
     const tool = records.find((record) => record.name === 'agent.tool');
     expect(tool?.parentId).toBe(productRoot?.id);
-    for (const dependency of records.filter(
-      (record) => record.name.startsWith('rag.') && record.name !== 'rag.claim_grounding',
+    for (const dependency of records.filter((record) =>
+      ['rag.query_embedding', 'rag.pgvector_candidates', 'rag.metadata_rerank'].includes(
+        record.name,
+      ),
     )) {
       expect(dependency.parentId).toBe(tool?.id);
     }
+    const observe = records.find((record) => record.name === 'agent.observe');
+    const composer = records.find((record) => record.name === 'agent.answer_composer');
+    expect(observe).toMatchObject({
+      outputs: { shouldContinue: false, sufficient: true },
+      parentId: productRoot?.id,
+    });
+    expect(composer?.parentId).toBe(productRoot?.id);
+    expect(records.find((record) => record.name === 'rag.grounding_selection')?.parentId).toBe(
+      composer?.id,
+    );
     const answer = records.find((record) => record.name === 'llm.answer');
-    expect(answer?.parentId).toBe(tool?.id);
+    expect(answer?.parentId).toBe(composer?.id);
     expect(records.find((record) => record.name === 'rag.claim_grounding')).toMatchObject({
       outputs: { grounded: true, unsupportedClaimCount: 0 },
       parentId: answer?.id,

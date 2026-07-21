@@ -1,25 +1,15 @@
 import { z } from 'zod';
 
+import { supportedSourceTypes, type RagIndex } from '@xxyy/shared';
 import {
-  supportedSourceTypes,
-  type ChatResponse,
-  type ChatStreamEvent,
-  type Classification,
-  type RagIndex,
-} from '@xxyy/shared';
-import {
-  classifyQuestion,
   createAttachmentsFromChunks,
-  createBoundaryAnswer,
   createCitationsFromChunks,
-  hasProductDomainSignal,
   createLocalRetriever,
   createMetadataReranker,
   createRerankingRetriever,
   selectGroundingChunks,
   sanitizeRetrievedKnowledgeChunk,
   loadRagConfig,
-  type AnswerProvider,
   type RagConfig,
   type RetrievedChunk,
   type Retriever,
@@ -28,12 +18,11 @@ import {
 
 import type { ToolDefinition } from '../tool-registry.js';
 
-export const PRODUCT_TOOL_NAMES = ['search_product_docs', 'answer_product_question'] as const;
+export const PRODUCT_TOOL_NAMES = ['search_product_docs'] as const;
 
 export type ProductToolName = (typeof PRODUCT_TOOL_NAMES)[number];
 
 export interface CreateProductToolsOptions {
-  answerProvider?: AnswerProvider;
   config?: Partial<RagConfig>;
   index?: RagIndex;
   retriever?: Retriever;
@@ -45,7 +34,6 @@ const DEFAULT_TOP_K = 6;
 const RERANK_CANDIDATE_MULTIPLIER = 8;
 
 const nonEmptyStringSchema = z.string().trim().min(1);
-const productChannelSchema = z.enum(['cli', 'web', 'telegram', 'agent']);
 
 const citationSchema = z.object({
   excerpt: z.string(),
@@ -91,36 +79,10 @@ const searchProductDocsOutputSchema = z.object({
   confidence: z.number(),
 });
 
-export const answerProductQuestionInputSchema = z.object({
-  channel: productChannelSchema.optional(),
-  question: nonEmptyStringSchema,
-});
-
-const answerProductQuestionOutputSchema = z.object({
-  answer: z.string(),
-  attachments: z.array(z.unknown()).optional(),
-  citations: z.array(citationSchema),
-  confidence: z.number(),
-  intent: z.enum([
-    'agent_capabilities',
-    'product_qa',
-    'how_to',
-    'realtime_account_query',
-    'investment_advice',
-    'unknown',
-  ]),
-});
-
 type SearchProductDocsToolDefinition = ToolDefinition<
   'search_product_docs',
   typeof searchProductDocsInputSchema,
   typeof searchProductDocsOutputSchema
->;
-
-type AnswerProductQuestionToolDefinition = ToolDefinition<
-  'answer_product_question',
-  typeof answerProductQuestionInputSchema,
-  typeof answerProductQuestionOutputSchema
 >;
 
 export function createProductTools(
@@ -145,99 +107,7 @@ export function createProductTools(
     },
   };
 
-  const answerProductQuestionTool: AnswerProductQuestionToolDefinition = {
-    name: 'answer_product_question',
-    description: 'Answer an XXYY product support question using retrieved product documentation.',
-    inputSchema: answerProductQuestionInputSchema,
-    outputSchema: answerProductQuestionOutputSchema,
-    async execute(input) {
-      const classification = classificationForPlannerSelectedProductQuestion(input.question);
-      if (!shouldRetrieveForPlannerSelectedProductQuestion(classification)) {
-        return createBoundaryAnswer(classification);
-      }
-      if (options.answerProvider === undefined) {
-        throw new Error('answer_product_question requires an answerProvider.');
-      }
-
-      const retrievedChunks = await retriever.retrieve(input.question, {
-        topK: normalizeTopK(config.topK),
-      });
-      return options.answerProvider.answer({
-        classification,
-        question: input.question,
-        retrievedChunks,
-      });
-    },
-    async *stream(input) {
-      const classification = classificationForPlannerSelectedProductQuestion(input.question);
-      if (!shouldRetrieveForPlannerSelectedProductQuestion(classification)) {
-        yield* streamChatResponse(createBoundaryAnswer(classification));
-        return;
-      }
-      if (options.answerProvider === undefined) {
-        throw new Error('answer_product_question requires an answerProvider.');
-      }
-
-      yield {
-        type: 'status',
-        phase: 'retrieving',
-        message: '正在检索知识库…',
-      };
-      const retrievedChunks = await retriever.retrieve(input.question, {
-        topK: normalizeTopK(config.topK),
-      });
-      const answerInput = {
-        classification,
-        question: input.question,
-        retrievedChunks,
-      };
-      yield {
-        type: 'status',
-        phase: 'answering',
-        message: '正在生成回答…',
-      };
-      if (options.answerProvider.stream !== undefined) {
-        yield* options.answerProvider.stream(answerInput);
-        return;
-      }
-
-      yield* streamChatResponse(await options.answerProvider.answer(answerInput));
-    },
-  };
-
-  return [searchProductDocsTool, answerProductQuestionTool];
-}
-
-function classificationForPlannerSelectedProductQuestion(question: string): Classification {
-  const classification = classifyQuestion(question);
-  if (classification.intent === 'product_qa' || classification.intent === 'how_to') {
-    return classification;
-  }
-
-  if (!canPlannerSafelyOverrideProductClassification(classification, question)) {
-    return classification;
-  }
-
-  return {
-    confidence: 0.7,
-    intent: 'product_qa',
-    reason: 'planner selected product answer tool',
-  };
-}
-
-function shouldRetrieveForPlannerSelectedProductQuestion(classification: Classification): boolean {
-  return classification.intent === 'product_qa' || classification.intent === 'how_to';
-}
-
-function canPlannerSafelyOverrideProductClassification(
-  classification: Classification,
-  question: string,
-): boolean {
-  return (
-    classification.intent === 'unknown' &&
-    classification.reason === 'no deterministic product support intent matched' &&
-    hasProductDomainSignal(question)
-  );
+  return [searchProductDocsTool];
 }
 
 function createConfiguredRetriever(options: CreateProductToolsOptions): Retriever {
@@ -293,43 +163,4 @@ function normalizeTopK(topK: number): number {
   }
 
   return Math.min(topK, MAX_TOP_K);
-}
-
-async function* streamChatResponse(response: ChatResponse): AsyncIterable<ChatStreamEvent> {
-  for (const delta of chunkAnswerForStreaming(response.answer)) {
-    yield { type: 'answer_delta', delta };
-    await delay(STREAM_CHUNK_DELAY_MS);
-  }
-
-  yield {
-    type: 'metadata',
-    ...(response.attachments === undefined ? {} : { attachments: response.attachments }),
-    citations: response.citations,
-    confidence: response.confidence,
-    intent: response.intent,
-    ...(response.tokenUsage === undefined ? {} : { tokenUsage: response.tokenUsage }),
-  };
-}
-
-const STREAM_CHUNK_DELAY_MS = 20;
-
-function chunkAnswerForStreaming(answer: string, chunkSize = 18): string[] {
-  if (answer.length === 0) {
-    return [];
-  }
-  if (answer.length <= chunkSize) {
-    return [answer];
-  }
-
-  const chunks: string[] = [];
-  for (let index = 0; index < answer.length; index += chunkSize) {
-    chunks.push(answer.slice(index, index + chunkSize));
-  }
-  return chunks;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }

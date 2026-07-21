@@ -18,7 +18,7 @@ describe('planner model', () => {
         kind: 'tool',
         reason: 'product question',
         route: 'product_answer',
-        toolName: 'answer_product_question',
+        toolName: 'search_product_docs',
       },
       {
         kind: 'final',
@@ -42,7 +42,7 @@ describe('planner model', () => {
     ).resolves.toMatchObject({
       kind: 'tool',
       route: 'product_answer',
-      toolName: 'answer_product_question',
+      toolName: 'search_product_docs',
     });
 
     await expect(
@@ -73,7 +73,7 @@ describe('planner model', () => {
                     kind: 'tool',
                     reason: 'product question',
                     route: 'product_answer',
-                    toolName: 'answer_product_question',
+                    toolName: 'search_product_docs',
                   }),
                 },
               },
@@ -98,14 +98,14 @@ describe('planner model', () => {
         tools: [
           {
             description: 'Answer product questions.',
-            name: 'answer_product_question',
+            name: 'search_product_docs',
           },
         ],
       }),
     ).resolves.toMatchObject({
       kind: 'tool',
       route: 'product_answer',
-      toolName: 'answer_product_question',
+      toolName: 'search_product_docs',
     });
 
     expect(fetchImpl).toHaveBeenCalledWith(
@@ -123,7 +123,7 @@ describe('planner model', () => {
       kind: 'tool',
       reason: 'product question secret raw reason',
       route: 'product_answer',
-      toolName: 'answer_product_question',
+      toolName: 'search_product_docs',
     });
     const planner = createOpenAiCompatiblePlannerModel({
       apiKey: 'test-key',
@@ -142,7 +142,7 @@ describe('planner model', () => {
     await planner.plan({
       request: { channel: 'web', message: 'email alice@example.com XXYY Pro 有哪些权益？' },
       stateSummary: 'secret raw state summary',
-      tools: [{ description: 'Answer products', name: 'answer_product_question' }],
+      tools: [{ description: 'Search products', name: 'search_product_docs' }],
     });
 
     expect(records).toContainEqual(
@@ -152,13 +152,13 @@ describe('planner model', () => {
           promptVersion: 'planner-v-test',
           question: 'email [email] XXYY Pro 有哪些权益？',
           stateSummaryLength: 24,
-          toolNames: ['answer_product_question'],
+          toolNames: ['search_product_docs'],
         },
         name: 'llm.planner',
         outputs: {
           kind: 'tool',
           route: 'product_answer',
-          toolName: 'answer_product_question',
+          toolName: 'search_product_docs',
         },
       }),
     );
@@ -304,7 +304,7 @@ describe('planner model', () => {
                         kind: 'tool',
                         reason: 'product question',
                         route: 'product_answer',
-                        toolName: 'answer_product_question',
+                        toolName: 'search_product_docs',
                       }),
                       '```',
                     ].join('\n'),
@@ -327,7 +327,7 @@ describe('planner model', () => {
     ).resolves.toMatchObject({
       kind: 'tool',
       route: 'product_answer',
-      toolName: 'answer_product_question',
+      toolName: 'search_product_docs',
     });
   });
 
@@ -352,7 +352,7 @@ describe('planner model', () => {
                       kind: 'tool',
                       reason: 'product question',
                       route: 'product_answer',
-                      toolName: 'answer_product_question',
+                      toolName: 'search_product_docs',
                     }),
                   },
                 },
@@ -367,7 +367,7 @@ describe('planner model', () => {
 
     await planner.plan({
       request: { channel: 'web', message: 'XXYY Pro 有哪些权益？' },
-      stateSummary: 'no tools called',
+      stateSummary: 'searched query with password: state-secret',
       tools: [],
     });
 
@@ -431,9 +431,16 @@ describe('planner model', () => {
     expect(systemMessage?.content).toEqual(expect.stringContaining('private account'));
     expect(systemMessage?.content).toEqual(expect.stringContaining('return a final response'));
     expect(systemMessage?.content).toEqual(expect.stringContaining('Product answer policy'));
-    expect(systemMessage?.content).toEqual(expect.stringContaining('answer_product_question'));
+    expect(systemMessage?.content).toEqual(expect.stringContaining('search_product_docs'));
     expect(systemMessage?.content).toEqual(
       expect.stringContaining('original complete user question'),
+    );
+    expect(systemMessage?.content).toEqual(
+      expect.stringContaining('The first search always uses the original question'),
+    );
+    expect(systemMessage?.content).toEqual(expect.stringContaining('missingFacets'));
+    expect(systemMessage?.content).toEqual(
+      expect.stringContaining('Do not repeat a searched query'),
     );
     expect(systemMessage?.content).toEqual(expect.stringContaining('Semantic subject resolution'));
     expect(systemMessage?.content).toEqual(expect.stringContaining('current_assistant'));
@@ -465,7 +472,7 @@ describe('planner model', () => {
                       kind: 'tool',
                       reason: 'product question',
                       route: 'product_answer',
-                      toolName: 'answer_product_question',
+                      toolName: 'search_product_docs',
                     }),
                   },
                 },
@@ -494,6 +501,7 @@ describe('planner model', () => {
     expect(serialized).not.toContain('hunter2');
     expect(serialized).not.toContain('sk-test-123');
     expect(serialized).not.toContain('session-secret');
+    expect(serialized).not.toContain('state-secret');
     expect(serialized).not.toContain('user-secret');
 
     const messages = requestBody?.messages as Array<{ content?: string }>;

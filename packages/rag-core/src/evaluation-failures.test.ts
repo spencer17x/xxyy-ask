@@ -28,7 +28,7 @@ describe('formatEvaluationFailureJsonl', () => {
         intent: 'product_qa',
       },
       retrievedChunkIds: ['chunk-current'],
-      toolNames: ['answer_product_question'],
+      toolNames: ['search_product_docs'],
     });
     const report: EvaluationReport = {
       passed: 1,
@@ -51,7 +51,7 @@ describe('formatEvaluationFailureJsonl', () => {
         retrievedChunkIds: ['chunk-current'],
         reviewRequired: true,
         source: 'rag_evaluate',
-        toolNames: ['answer_product_question'],
+        toolNames: ['search_product_docs'],
       },
       boundaryExpected: false,
       expectedAgentRoute: 'product_answer',
@@ -87,7 +87,7 @@ function createResult(overrides: Partial<EvaluationResult>): EvaluationResult {
     citationCount: 0,
     expectedAgentRoute: 'product_answer',
     expectedIntent: 'product_qa',
-    expectedToolNames: ['answer_product_question'],
+    expectedToolNames: ['search_product_docs'],
     failureReasons: [],
     forbiddenChunkIds: ['chunk-old'],
     minCitations: 0,

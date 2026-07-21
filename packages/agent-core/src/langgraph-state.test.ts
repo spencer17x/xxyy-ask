@@ -4,6 +4,7 @@ import {
   AGENT_MAX_STEPS_DEFAULT,
   createInitialAgentState,
   isAllowedAgentToolName,
+  isExecutableAgentToolName,
   normalizeAgentRoute,
 } from './langgraph-state.js';
 
@@ -33,7 +34,9 @@ describe('langgraph agent state helpers', () => {
 
   it('allows only knowledge-base customer support tools', () => {
     expect(isAllowedAgentToolName('describe_agent_capabilities')).toBe(true);
-    expect(isAllowedAgentToolName('answer_product_question')).toBe(true);
+    expect(isAllowedAgentToolName('answer_product_question')).toBe(false);
+    expect(isAllowedAgentToolName('search_product_docs')).toBe(true);
+    expect(isExecutableAgentToolName('answer_product_question')).toBe(true);
     expect(isAllowedAgentToolName('unsupported_tool')).toBe(false);
     expect(isAllowedAgentToolName('boundary_reply')).toBe(false);
     expect(isAllowedAgentToolName('clarify_request')).toBe(false);

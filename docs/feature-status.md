@@ -4,7 +4,7 @@
 
 ## Current First Slice
 
-- [x] LangGraph 客服 Runtime：`packages/agent-core` 使用 LangGraph JS 组织策略保护、planner、工具执行和回答合成。当前允许的业务工具只有产品问答，账户、订单、钱包余额、私有交易记录、交易分析和投资建议请求会先进入边界或澄清回复。
+- [x] LangGraph 客服 Runtime：`packages/agent-core` 使用 LangGraph JS 组织策略保护、planner、检索工具、证据观察和回答合成。当前只注册 `search_product_docs` 业务工具；账户、订单、钱包余额、私有交易记录、交易分析和投资建议请求会先进入边界或澄清回复。
 - [x] Product RAG：产品问题会检索 Postgres + pgvector 中的知识库 chunks，并通过 OpenAI-compatible chat completion 生成带引用回答。正式来源限定为 `docs.xxyy.io` 官方文档、`x.com/useXXYYio` 官方更新，以及未来经过审核的客服群知识；客服群来源当前为空。
 - [x] X / Twitter 增量同步：`pnpm run app:dev -- --sync` 执行增量抓取和 `rag:sync:x` 后启动服务；`pnpm run app:dev -- --full-sync` 用于低频全量抓取和重建后启动服务。
 - [x] HTTP 服务面：保留 `GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream` 和 `GET /assets/*`。
@@ -15,6 +15,7 @@
 - [x] 可靠发布任务：后台只创建 `PublicationJob`；CLI Worker 使用租约领取任务并复用既有发布门禁，支持失败状态、审计、幂等申请和安全重试，最终候选状态与 pgvector ingest 在同一数据库事务完成。
 - [x] 新旧规则策略：当前问题默认排除被 `supersedes` 替代的知识，历史追溯问题仍可检索旧版本。
 - [x] RAG Trustworthiness v0.2：知识正文和标题/章节元数据先执行凭证脱敏与 prompt injection 隔离；回答上下文按 chunk、完整句子和限制条件打包；模型回答在返回前执行本地 claim grounding，未被安全证据支持的数字、限制、支持状态或操作事实会降级为确定性回答。流式路径先完成同一校验，避免无证据 token 已发送后无法撤回。
+- [x] Bounded Agent Loop v0.3：普通产品问题用完整原问题执行一次检索后直接合成；比较/多模块问题由 observation 识别缺失维度并允许一次或多次受限 query rewrite。max steps、重复输入和无新增证据共同阻止死循环，ask/stream 使用同一充分性与 composer 契约。
 - [x] 静态资产：`GET /assets/*` 返回产品文档视频、图片等静态资源。
 - [x] 服务保护：API 对 JSON 请求体大小、聊天 POST 请求频率和跨域来源做基础限制，配置项为 `API_MAX_BODY_BYTES`、`API_RATE_LIMIT_MAX`、`API_RATE_LIMIT_WINDOW_MS` 和 `API_CORS_ORIGIN`。
 - [x] 本地开发命令：启动入口统一为 `pnpm run app:dev`、`pnpm run api:dev`、`pnpm run web:dev` 和 `pnpm run telegram:dev`；知识库更新通过 `app:dev` 的 `--sync`、`--full-sync` 或 `--ingest` 参数显式触发。

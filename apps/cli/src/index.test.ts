@@ -383,7 +383,7 @@ describe('CLI output formatting', () => {
       () =>
         tracer.run(
           {
-            metadata: { toolName: 'answer_product_question' },
+            metadata: { toolName: 'search_product_docs' },
             name: 'agent.tool',
             runType: 'tool',
           },
@@ -401,7 +401,7 @@ describe('CLI output formatting', () => {
 
     expect(collectEvaluationTraceObservation(records, 'eval:case-1')).toEqual({
       retrievedChunkIds: ['chunk-current'],
-      toolNames: ['answer_product_question'],
+      toolNames: ['search_product_docs'],
     });
     expect(collectEvaluationTraceObservation(records, 'eval:missing')).toEqual({
       retrievedChunkIds: [],
@@ -746,7 +746,7 @@ describe('CLI output formatting', () => {
         question: '钱包备注支持最多 1 万条是哪条推文？',
         expectedIntent: 'product_qa',
         expectedAgentRoute: 'product_answer',
-        expectedToolNames: ['answer_product_question'],
+        expectedToolNames: ['search_product_docs'],
         forbiddenChunkIds: ['chunk-old'],
         forbiddenCitationFiles: [
           'docs/product-features/pages/59-getting-started__xxyy-pro-quan-yi.md',
@@ -771,7 +771,7 @@ describe('CLI output formatting', () => {
             minCitations: 0,
             name: 'tweet-source',
             expectedAgentRoute: 'product_answer',
-            expectedToolNames: ['answer_product_question'],
+            expectedToolNames: ['search_product_docs'],
             forbiddenChunkIds: ['chunk-old'],
             passed: true,
           },
