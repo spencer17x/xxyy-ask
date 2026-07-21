@@ -2,6 +2,7 @@
 
 ## 项目状态
 
+- [目标产品需求与总体设计](target-product-design.md)
 - [业务架构](architecture.md)
 - [知识来源与分类](knowledge-sources.md)
 - [开发质量门禁](development-workflow.md)
