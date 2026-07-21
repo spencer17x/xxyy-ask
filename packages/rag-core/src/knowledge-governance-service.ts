@@ -5,6 +5,10 @@ import type {
   PgKnowledgeCandidateStore,
   ReviseKnowledgeCandidateInput,
 } from './knowledge-candidates.js';
+import type {
+  KnowledgeConflictReference,
+  KnowledgeGovernanceReferenceStore,
+} from './knowledge-governance-references.js';
 import {
   runKnowledgeCurator,
   type KnowledgeCuratorModel,
@@ -27,6 +31,7 @@ export interface KnowledgeGovernanceServiceOptions {
   trustedAuthorStore: PgTrustedAuthorStore;
   curatorModel?: KnowledgeCuratorModel;
   inspector?: KnowledgeMatchInspector;
+  referenceStore?: KnowledgeGovernanceReferenceStore;
 }
 
 export interface ImportTelegramKnowledgeInput {
@@ -65,6 +70,7 @@ export interface KnowledgeGovernanceService {
     supersedes?: string[];
   }): Promise<KnowledgeCandidate>;
   getCandidate(id: string): Promise<KnowledgeCandidate | undefined>;
+  getCandidateDetail(id: string): Promise<KnowledgeCandidateDetail | undefined>;
   getCandidateHistory(id: string): Promise<KnowledgeCandidateHistory>;
   importTelegram(input: ImportTelegramKnowledgeInput): Promise<ImportTelegramKnowledgeResult>;
   listCandidates(options?: {
@@ -76,6 +82,13 @@ export interface KnowledgeGovernanceService {
   reject(input: { id: string; reviewedBy: string; note?: string }): Promise<KnowledgeCandidate>;
   revise(input: ReviseKnowledgeCandidateInput): Promise<KnowledgeCandidate>;
   trustAuthor(input: TrustAuthorInput): Promise<TrustedAuthor>;
+}
+
+export interface KnowledgeCandidateDetail {
+  candidate: KnowledgeCandidate;
+  conflicts: KnowledgeConflictReference[];
+  duplicates: KnowledgeCandidate[];
+  history: KnowledgeCandidateHistory;
 }
 
 export class UnverifiedTelegramKnowledgeAuthorError extends Error {
@@ -105,6 +118,26 @@ export function createKnowledgeGovernanceService(
 
     getCandidate(id) {
       return options.candidateStore.get(id);
+    },
+
+    async getCandidateDetail(id): Promise<KnowledgeCandidateDetail | undefined> {
+      const candidate = await options.candidateStore.get(id);
+      if (candidate === undefined) {
+        return undefined;
+      }
+      const history = await options.candidateStore.getHistory(id);
+      const duplicates: KnowledgeCandidate[] = [];
+      for (const duplicateId of candidate.duplicateCandidateIds ?? []) {
+        const duplicate = await options.candidateStore.get(duplicateId);
+        if (duplicate !== undefined) {
+          duplicates.push(duplicate);
+        }
+      }
+      const conflicts =
+        options.referenceStore === undefined
+          ? []
+          : await options.referenceStore.getByIds(candidate.conflictChunkIds ?? []);
+      return { candidate, conflicts, duplicates, history };
     },
 
     getCandidateHistory(id) {

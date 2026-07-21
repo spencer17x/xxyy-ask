@@ -30,7 +30,18 @@ import type {
   RagEnv,
   RecordFeedbackInput,
 } from '@xxyy/rag-core';
-import { renderChatPage } from '@xxyy/web';
+import { renderAdminPage, renderChatPage } from '@xxyy/web';
+
+import {
+  createKnowledgeAdminAuthenticator,
+  type KnowledgeAdminAuthenticator,
+} from './knowledge-admin-auth.js';
+import {
+  handleKnowledgeAdminApi,
+  isKnowledgeAdminApiPath,
+  type KnowledgeAdminServices,
+} from './knowledge-admin-api.js';
+import { createCachedKnowledgeAdminServicesLoader } from './knowledge-admin-services.js';
 
 const PRODUCT_ASSET_NAMES: ReadonlySet<string> = new Set(['xxyy-add-to-home.mp4']);
 const PRODUCT_DOC_ASSET_NAME_PATTERN =
@@ -50,9 +61,15 @@ type ApiEnv = RagEnv &
       | 'LANGSMITH_ENDPOINT'
       | 'LANGSMITH_PROJECT'
       | 'LANGSMITH_TRACING'
+      | 'KNOWLEDGE_ADMIN_MAX_BODY_BYTES'
+      | 'KNOWLEDGE_ADMIN_RATE_LIMIT_MAX'
+      | 'KNOWLEDGE_ADMIN_RATE_LIMIT_WINDOW_MS'
+      | 'KNOWLEDGE_ADMIN_TOKENS_JSON'
       | 'PORT'
       | 'QUALITY_TRACE_SAMPLE_RATE'
-      | 'TRUST_PROXY',
+      | 'TRUST_PROXY'
+      | 'TELEGRAM_API_BASE_URL'
+      | 'TELEGRAM_BOT_TOKEN',
       string
     >
   >;
@@ -87,10 +104,13 @@ export interface CreateRequestHandlerOptions {
   env?: ApiEnv;
   getChatService?: () => Promise<ChatService>;
   getHealthStatus?: () => Promise<DeepHealthStatus>;
+  getKnowledgeAdminServices?: () => Promise<KnowledgeAdminServices>;
+  knowledgeAdminAuthenticator?: KnowledgeAdminAuthenticator;
   logger?: ApiLogger;
   now?: () => number;
   recordFeedback?: FeedbackRecorder;
   renderHtml?: () => string;
+  renderKnowledgeAdminHtml?: () => string;
   staticAssetsDir?: string;
   webAssetsDir?: string;
 }
@@ -103,6 +123,9 @@ export interface StartServerOptions extends CreateRequestHandlerOptions {
 const DEFAULT_LOCAL_PORT_RETRY_LIMIT = 20;
 
 interface ApiRuntimeConfig {
+  adminMaxBodyBytes: number;
+  adminRateLimitMax: number;
+  adminRateLimitWindowMs: number;
   corsOrigins: string[];
   enableDeepHealth: boolean;
   maxBodyBytes: number;
@@ -169,8 +192,14 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const apiConfig = loadApiRuntimeConfig(env);
   const tracer = createQualityTracerFromEnv({ ...env });
   const renderHtml = options.renderHtml ?? renderChatPage;
+  const renderKnowledgeAdminHtml = options.renderKnowledgeAdminHtml ?? renderAdminPage;
   const getChatService = options.getChatService ?? createCachedChatServiceLoader(config, tracer);
   const getHealthStatus = options.getHealthStatus ?? (() => createDeepHealthStatus(config));
+  const getKnowledgeAdminServices =
+    options.getKnowledgeAdminServices ?? createCachedKnowledgeAdminServicesLoader({ config, env });
+  const knowledgeAdminAuthenticator =
+    options.knowledgeAdminAuthenticator ??
+    createKnowledgeAdminAuthenticator(env.KNOWLEDGE_ADMIN_TOKENS_JSON);
   const recordFeedback =
     options.recordFeedback ??
     (isTestRuntime(env) ? noopFeedbackRecorder : createCachedFeedbackRecorder(config));
@@ -180,12 +209,34 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
   const staticAssetsDir = options.staticAssetsDir ?? createDefaultStaticAssetsDir(options, env);
   const webAssetsDir = options.webAssetsDir ?? createDefaultWebAssetsDir(options, env);
   const rateLimiter = createRateLimiter(apiConfig, now);
+  const adminRateLimiter = createRateLimiter(
+    {
+      rateLimitMax: apiConfig.adminRateLimitMax,
+      rateLimitWindowMs: apiConfig.adminRateLimitWindowMs,
+    },
+    now,
+  );
 
   return async function handleRequest(request, response): Promise<void> {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
     const corsResult = applyCors(request, response, requestUrl, apiConfig);
     if (corsResult === 'handled') {
       return;
+    }
+
+    if (isKnowledgeAdminApiPath(requestUrl.pathname)) {
+      const rateLimitResult = adminRateLimiter.check(clientAddress(request, apiConfig));
+      if (!rateLimitResult.allowed) {
+        response.setHeader('Cache-Control', 'no-store');
+        response.setHeader('X-Content-Type-Options', 'nosniff');
+        response.setHeader('Referrer-Policy', 'no-referrer');
+        response.setHeader('Retry-After', String(Math.ceil(rateLimitResult.retryAfterMs / 1000)));
+        sendJson(response, 429, {
+          error: 'rate_limited',
+          message: 'Too many knowledge administration requests. Please try again later.',
+        });
+        return;
+      }
     }
 
     if (isRateLimitedPostApiRoute(requestUrl.pathname) && request.method === 'POST') {
@@ -219,6 +270,31 @@ export function createRequestHandler(options: CreateRequestHandlerOptions = {}):
 
       if (request.method === 'GET' && requestUrl.pathname === '/') {
         sendHtml(response, 200, renderHtml());
+        return;
+      }
+
+      if (
+        request.method === 'GET' &&
+        (requestUrl.pathname === '/admin' || requestUrl.pathname === '/admin/')
+      ) {
+        response.setHeader('Cache-Control', 'no-store');
+        response.setHeader('Content-Security-Policy', adminContentSecurityPolicy());
+        response.setHeader('X-Content-Type-Options', 'nosniff');
+        response.setHeader('X-Frame-Options', 'DENY');
+        response.setHeader('Referrer-Policy', 'no-referrer');
+        sendHtml(response, 200, renderKnowledgeAdminHtml());
+        return;
+      }
+
+      if (isKnowledgeAdminApiPath(requestUrl.pathname)) {
+        await handleKnowledgeAdminApi({
+          authenticator: knowledgeAdminAuthenticator,
+          getServices: getKnowledgeAdminServices,
+          maxBodyBytes: apiConfig.adminMaxBodyBytes,
+          request,
+          requestUrl,
+          response,
+        });
         return;
       }
 
@@ -403,6 +479,9 @@ function isLowEvidenceProductAnswer(
 
 function loadApiRuntimeConfig(env: ApiEnv): ApiRuntimeConfig {
   return {
+    adminMaxBodyBytes: parsePositiveInteger(env.KNOWLEDGE_ADMIN_MAX_BODY_BYTES, 5 * 1024 * 1024),
+    adminRateLimitMax: parsePositiveInteger(env.KNOWLEDGE_ADMIN_RATE_LIMIT_MAX, 30),
+    adminRateLimitWindowMs: parsePositiveInteger(env.KNOWLEDGE_ADMIN_RATE_LIMIT_WINDOW_MS, 60_000),
     corsOrigins: parseCsv(env.API_CORS_ORIGIN),
     enableDeepHealth: parseBoolean(env.API_ENABLE_DEEP_HEALTH, true),
     maxBodyBytes: parsePositiveInteger(env.API_MAX_BODY_BYTES, 64 * 1024),
@@ -1466,6 +1545,21 @@ function sendHtml(response: ApiResponseLike, statusCode: number, html: string): 
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   response.end(html);
+}
+
+function adminContentSecurityPolicy(): string {
+  return [
+    "default-src 'self'",
+    "base-uri 'none'",
+    "connect-src 'self'",
+    "font-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "img-src 'self' data:",
+    "object-src 'none'",
+    "script-src 'self'",
+    "style-src 'self'",
+  ].join('; ');
 }
 
 class BadRequestError extends Error {}

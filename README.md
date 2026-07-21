@@ -65,6 +65,10 @@ API_MAX_BODY_BYTES=65536
 API_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_WINDOW_MS=60000
 TRUST_PROXY=false
+KNOWLEDGE_ADMIN_TOKENS_JSON=
+KNOWLEDGE_ADMIN_MAX_BODY_BYTES=5242880
+KNOWLEDGE_ADMIN_RATE_LIMIT_MAX=30
+KNOWLEDGE_ADMIN_RATE_LIMIT_WINDOW_MS=60000
 
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_API_BASE_URL=
@@ -182,6 +186,8 @@ pnpm rag:knowledge:author:trust -- --chat-id -100123 --user-id 123 --role knowle
 pnpm rag:knowledge:import:telegram -- export.json
 pnpm rag:knowledge:import:telegram -- export.json --agent
 pnpm rag:knowledge:list -- --status pending
+pnpm admin:token:create -- alice admin
+pnpm rag:knowledge:publication:work
 ```
 
 - `pnpm docs:sync` 根据 `docs.xxyy.io` 中英文 sitemap 同步全部官网 Markdown 页面和站内图片；同步后运行 `pnpm rag:ingest` 写入 pgvector。
@@ -200,7 +206,9 @@ pnpm rag:knowledge:list -- --status pending
 - `pnpm rag:ask` 从命令行调用客服 Agent。
 - `pnpm rag:knowledge:author:trust/list` 维护按群和有效期生效的可信作者名册。导入默认先查名册，也可用 Telegram Bot API 识别当前管理员；只有当前角色却无法证明历史角色时会增加风险标签，不会伪装成历史已验证。
 - `pnpm rag:knowledge:import:telegram` 从 Telegram Desktop JSON 重建 reply 线程，执行脱敏、边界、去重、冲突与质量检查，只写入待审核候选区；`--agent` 可选处理多消息上下文，默认确定性路径不调用模型。
-- `pnpm rag:knowledge:list/revise/history/approve/reject/publish` 完成候选修订、审计和受控发布；未经人工批准不能入库，发布继续经过边界、检索命中和 deterministic golden QA 门禁。完整流程见 [受控知识演进](docs/knowledge-evolution.md)。
+- `pnpm rag:knowledge:list/revise/history/approve/reject/publish` 完成候选修订、审计和受控发布；未经人工批准不能入库，发布继续经过边界、检索命中和 deterministic golden QA 门禁。
+- `pnpm admin:token:create -- <id> <role>` 生成只显示一次的高熵管理令牌及其 SHA-256 配置记录；把记录写入 `KNOWLEDGE_ADMIN_TOKENS_JSON`，不要把明文令牌提交到仓库。
+- 管理后台在 `GET /admin`。后台申请发布只创建持久化 `PublicationJob`；`pnpm rag:knowledge:publication:work` 领取一条 queued 或租约过期的任务，执行现有门禁与事务性 ingest。失败任务可在后台安全重试。完整流程见 [受控知识演进](docs/knowledge-evolution.md)。
 
 检索质量：
 
@@ -293,6 +301,25 @@ GET /assets/*
 ```
 
 用于返回产品文档中的视频、图片等静态资源。
+
+受保护的知识管理面：
+
+```http
+GET /admin
+GET /admin/api/me
+GET /admin/api/candidates
+GET /admin/api/candidates/:id
+PATCH /admin/api/candidates/:id
+POST /admin/api/candidates/:id/approve
+POST /admin/api/candidates/:id/reject
+POST /admin/api/candidates/:id/publication
+GET /admin/api/publications
+POST /admin/api/publications/:id/retry
+GET|POST /admin/api/trusted-authors
+POST /admin/api/imports/telegram
+```
+
+`/admin/api/*` 必须使用 `Authorization: Bearer <token>`，并按 `viewer`、`reviewer`、`publisher`、`admin` 实施 RBAC。管理令牌只保存 SHA-256 哈希；未配置 `KNOWLEDGE_ADMIN_TOKENS_JSON` 时管理 API 返回 `503`，公开聊天不受影响。管理页面使用同源请求、严格 CSP、`no-store` 和独立限流，不给公开 `/api/chat` 增加鉴权。
 
 通过 `pnpm run app:dev` 或 `pnpm run api:dev` 启动的 API 会为 `/api/chat` 和 `/api/chat/stream` 输出 JSON line 结构化日志，包含 channel、intent、agentRoute、引用数、耗时、状态码、错误码、消息长度和脱敏截断后的消息预览等字段。日志只记录 `sessionId/userId` 是否存在，不打印用户 ID 明文，并会脱敏密钥、交易哈希、地址、邮箱和手机号等敏感片段。
 

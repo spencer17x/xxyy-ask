@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "admin:token:create": "node scripts/create-knowledge-admin-token.mjs",
     "agent:smoke": "node scripts/agent-smoke.mjs",
     "app:down": "docker compose down",
     "api:dev": "pnpm --filter @xxyy/api start",
@@ -38,6 +39,7 @@
     "rag:knowledge:import:telegram": "pnpm --filter @xxyy/cli rag:knowledge:import:telegram",
     "rag:knowledge:list": "pnpm --filter @xxyy/cli rag:knowledge:list",
     "rag:knowledge:publish": "pnpm --filter @xxyy/cli rag:knowledge:publish",
+    "rag:knowledge:publication:work": "pnpm --filter @xxyy/cli rag:knowledge:publication:work",
     "rag:knowledge:reject": "pnpm --filter @xxyy/cli rag:knowledge:reject",
     "rag:knowledge:revise": "pnpm --filter @xxyy/cli rag:knowledge:revise",
     "rag:migrate": "pnpm --filter @xxyy/cli rag:migrate",

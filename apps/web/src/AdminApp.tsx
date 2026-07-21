@@ -1,0 +1,1275 @@
+import { useCallback, useEffect, useState } from 'react';
+import type { ChangeEvent, FormEvent, ReactElement } from 'react';
+
+import { KnowledgeAdminApiError, knowledgeAdminRequest } from './admin-api.js';
+import type {
+  AdminPermission,
+  AdminSession,
+  CandidateDetail,
+  CandidateStatus,
+  KnowledgeCandidate,
+  PublicationJob,
+  PublicationStatus,
+  TelegramImportResult,
+  TrustedAuthor,
+} from './admin-types.js';
+
+const ADMIN_TOKEN_STORAGE_KEY = 'xxyy.knowledgeAdmin.token';
+type AdminTab = 'authors' | 'candidates' | 'imports' | 'publications';
+
+export function AdminApp(): ReactElement {
+  const initialToken = readStoredToken();
+  const [token, setToken] = useState(initialToken);
+  const [session, setSession] = useState<AdminSession | undefined>();
+  const [authBusy, setAuthBusy] = useState(initialToken.length > 0);
+  const [authError, setAuthError] = useState<string | undefined>();
+  const [activeTab, setActiveTab] = useState<AdminTab>('candidates');
+
+  const authenticate = useCallback(async (candidateToken: string): Promise<void> => {
+    const normalized = candidateToken.trim();
+    if (normalized.length === 0) {
+      setAuthError('请输入管理令牌。');
+      return;
+    }
+    setAuthBusy(true);
+    setAuthError(undefined);
+    try {
+      const nextSession = await knowledgeAdminRequest<AdminSession>(normalized, '/me');
+      setToken(normalized);
+      setSession(nextSession);
+      storeToken(normalized);
+    } catch (error) {
+      clearStoredToken();
+      setSession(undefined);
+      setToken('');
+      setAuthError(errorMessage(error));
+    } finally {
+      setAuthBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (initialToken.length > 0) {
+      void authenticate(initialToken);
+    }
+  }, [authenticate, initialToken]);
+
+  const logout = (): void => {
+    clearStoredToken();
+    setSession(undefined);
+    setToken('');
+    setAuthError(undefined);
+  };
+
+  if (session === undefined) {
+    return <AdminLogin busy={authBusy} error={authError} onLogin={authenticate} />;
+  }
+
+  const permissions = new Set(session.permissions);
+  return (
+    <main className="admin-shell">
+      <AdminSidebar
+        activeTab={activeTab}
+        onLogout={logout}
+        onSelectTab={setActiveTab}
+        session={session}
+      />
+      <section className="admin-workbench">
+        <header className="admin-header">
+          <div>
+            <div className="admin-eyebrow">Knowledge Governance</div>
+            <h1>{tabTitle(activeTab)}</h1>
+          </div>
+          <div className="admin-boundary-badge">受保护管理面 · 发布由 Worker 执行</div>
+        </header>
+        <div className="admin-content">
+          {activeTab === 'candidates' ? (
+            <CandidatesPanel permissions={permissions} token={token} />
+          ) : undefined}
+          {activeTab === 'publications' ? (
+            <PublicationsPanel permissions={permissions} token={token} />
+          ) : undefined}
+          {activeTab === 'authors' ? (
+            <TrustedAuthorsPanel permissions={permissions} token={token} />
+          ) : undefined}
+          {activeTab === 'imports' ? (
+            <TelegramImportPanel permissions={permissions} token={token} />
+          ) : undefined}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function AdminLogin({
+  busy,
+  error,
+  onLogin,
+}: {
+  busy: boolean;
+  error: string | undefined;
+  onLogin: (token: string) => Promise<void>;
+}): ReactElement {
+  const [value, setValue] = useState('');
+  const submit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    void onLogin(value);
+  };
+
+  return (
+    <main className="admin-login-page">
+      <section className="admin-login-card" aria-labelledby="admin-login-title">
+        <div className="admin-login-mark">XY</div>
+        <div className="admin-eyebrow">XXYY Knowledge Governance</div>
+        <h1 id="admin-login-title">知识库管理后台</h1>
+        <p>使用由运维人员签发的高熵管理令牌登录。令牌只保存在当前浏览器标签会话中。</p>
+        <form onSubmit={submit}>
+          <label htmlFor="admin-token">管理令牌</label>
+          <input
+            autoComplete="off"
+            id="admin-token"
+            onChange={(event) => setValue(event.target.value)}
+            placeholder="粘贴管理令牌"
+            type="password"
+            value={value}
+          />
+          {error === undefined ? undefined : <div className="admin-alert error">{error}</div>}
+          <button className="admin-primary-button" disabled={busy} type="submit">
+            {busy ? '正在验证…' : '进入管理后台'}
+          </button>
+        </form>
+        <div className="admin-security-note">
+          未配置 <code>KNOWLEDGE_ADMIN_TOKENS_JSON</code> 时，管理 API 默认关闭。
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function AdminSidebar({
+  activeTab,
+  onLogout,
+  onSelectTab,
+  session,
+}: {
+  activeTab: AdminTab;
+  onLogout: () => void;
+  onSelectTab: (tab: AdminTab) => void;
+  session: AdminSession;
+}): ReactElement {
+  const tabs: Array<{ id: AdminTab; label: string; meta: string }> = [
+    { id: 'candidates', label: '知识候选', meta: '审核与冲突处理' },
+    { id: 'publications', label: '发布任务', meta: '状态与安全重试' },
+    { id: 'authors', label: '可信作者', meta: 'Telegram 角色有效期' },
+    { id: 'imports', label: 'Telegram 导入', meta: '生成 Pending 候选' },
+  ];
+  return (
+    <aside className="admin-sidebar">
+      <div className="admin-brand">
+        <div className="admin-brand-mark">XY</div>
+        <div>
+          <strong>XXYY Admin</strong>
+          <span>Knowledge Control Plane</span>
+        </div>
+      </div>
+      <nav aria-label="知识库管理导航">
+        {tabs.map((tab) => (
+          <button
+            className={activeTab === tab.id ? 'admin-nav-item active' : 'admin-nav-item'}
+            key={tab.id}
+            onClick={() => onSelectTab(tab.id)}
+            type="button"
+          >
+            <strong>{tab.label}</strong>
+            <span>{tab.meta}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="admin-profile">
+        <div>
+          <strong>{session.principal.displayName}</strong>
+          <span>
+            {session.principal.id} · {session.principal.role}
+          </span>
+        </div>
+        <button onClick={onLogout} type="button">
+          退出
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function CandidatesPanel({
+  permissions,
+  token,
+}: {
+  permissions: ReadonlySet<AdminPermission>;
+  token: string;
+}): ReactElement {
+  const [status, setStatus] = useState<CandidateStatus | ''>('pending');
+  const [candidates, setCandidates] = useState<KnowledgeCandidate[]>([]);
+  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [detail, setDetail] = useState<CandidateDetail | undefined>();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string }>();
+
+  const loadCandidates = useCallback(async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const query = status === '' ? '' : `?status=${status}`;
+      const result = await knowledgeAdminRequest<{ candidates: KnowledgeCandidate[] }>(
+        token,
+        `/candidates${query}`,
+      );
+      setCandidates(result.candidates);
+      setSelectedId((current) =>
+        current !== undefined && result.candidates.some((candidate) => candidate.id === current)
+          ? current
+          : result.candidates[0]?.id,
+      );
+      if (result.candidates.length === 0) {
+        setDetail(undefined);
+      }
+    } catch (error) {
+      setMessage({ kind: 'error', text: errorMessage(error) });
+    } finally {
+      setBusy(false);
+    }
+  }, [status, token]);
+
+  const loadDetail = useCallback(async (): Promise<void> => {
+    if (selectedId === undefined) {
+      setDetail(undefined);
+      return;
+    }
+    try {
+      const result = await knowledgeAdminRequest<CandidateDetail>(
+        token,
+        `/candidates/${encodeURIComponent(selectedId)}`,
+      );
+      setDetail(result);
+    } catch (error) {
+      setMessage({ kind: 'error', text: errorMessage(error) });
+    }
+  }, [selectedId, token]);
+
+  useEffect(() => {
+    void loadCandidates();
+  }, [loadCandidates]);
+  useEffect(() => {
+    void loadDetail();
+  }, [loadDetail]);
+
+  const refresh = async (successMessage: string): Promise<void> => {
+    await loadCandidates();
+    await loadDetail();
+    setMessage({ kind: 'success', text: successMessage });
+  };
+
+  return (
+    <div className="candidate-layout">
+      <section className="admin-panel candidate-list-panel">
+        <div className="admin-panel-header">
+          <div>
+            <h2>候选队列</h2>
+            <span>{candidates.length} 条</span>
+          </div>
+          <select
+            aria-label="候选状态"
+            onChange={(event) => setStatus(event.target.value as CandidateStatus | '')}
+            value={status}
+          >
+            <option value="pending">待审核</option>
+            <option value="approved">已批准</option>
+            <option value="rejected">已拒绝</option>
+            <option value="published">已发布</option>
+            <option value="">全部</option>
+          </select>
+        </div>
+        <div className="candidate-list">
+          {busy ? <div className="admin-empty">正在加载候选…</div> : undefined}
+          {!busy && candidates.length === 0 ? (
+            <div className="admin-empty">当前筛选条件下没有候选。</div>
+          ) : undefined}
+          {candidates.map((candidate) => (
+            <button
+              className={candidate.id === selectedId ? 'candidate-card selected' : 'candidate-card'}
+              key={candidate.id}
+              onClick={() => setSelectedId(candidate.id)}
+              type="button"
+            >
+              <div className="candidate-card-topline">
+                <StatusBadge status={candidate.status} />
+                <span>{formatDate(candidate.createdAt)}</span>
+              </div>
+              <strong>{candidate.proposedTitle ?? candidate.question}</strong>
+              <p>{candidate.canonicalAnswer}</p>
+              <div className="candidate-card-meta">
+                <span>{candidate.proposedModule ?? '未分类'}</span>
+                <span>{formatScore(candidate.qualityScore)}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="candidate-detail-column">
+        {message === undefined ? undefined : (
+          <div className={`admin-alert ${message.kind}`}>{message.text}</div>
+        )}
+        {detail === undefined ? (
+          <div className="admin-panel admin-empty detail-empty">选择一个候选查看治理详情。</div>
+        ) : (
+          <CandidateDetailPanel
+            detail={detail}
+            key={`${detail.candidate.id}:${detail.candidate.currentRevision ?? 1}`}
+            onError={(text) => setMessage({ kind: 'error', text })}
+            onRefresh={refresh}
+            permissions={permissions}
+            token={token}
+          />
+        )}
+      </section>
+    </div>
+  );
+}
+
+function CandidateDetailPanel({
+  detail,
+  onError,
+  onRefresh,
+  permissions,
+  token,
+}: {
+  detail: CandidateDetail;
+  onError: (message: string) => void;
+  onRefresh: (message: string) => Promise<void>;
+  permissions: ReadonlySet<AdminPermission>;
+  token: string;
+}): ReactElement {
+  const candidate = detail.candidate;
+  const existingPublication = detail.publications[0];
+  const canReview = permissions.has('candidate:review') && candidate.status === 'pending';
+  const canPublish =
+    permissions.has('publication:request') &&
+    candidate.status === 'approved' &&
+    existingPublication === undefined;
+  const [question, setQuestion] = useState(candidate.question);
+  const [answer, setAnswer] = useState(candidate.canonicalAnswer);
+  const [title, setTitle] = useState(candidate.proposedTitle ?? '');
+  const [module, setModule] = useState(candidate.proposedModule ?? '');
+  const [evidence, setEvidence] = useState(candidate.evidence ?? '');
+  const [reason, setReason] = useState('');
+  const [reviewNote, setReviewNote] = useState('');
+  const [sourceUrl, setSourceUrl] = useState(candidate.sourceUrl ?? '');
+  const [effectiveAt, setEffectiveAt] = useState(toDateTimeLocal(candidate.effectiveAt));
+  const [supersedes, setSupersedes] = useState((candidate.supersedes ?? []).join(', '));
+  const [actionBusy, setActionBusy] = useState(false);
+
+  const runAction = async (
+    operation: () => Promise<void>,
+    successMessage: string,
+  ): Promise<void> => {
+    setActionBusy(true);
+    try {
+      await operation();
+      await onRefresh(successMessage);
+    } catch (error) {
+      onError(errorMessage(error));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const revise = (): Promise<void> =>
+    runAction(async () => {
+      await knowledgeAdminRequest(token, `/candidates/${encodeURIComponent(candidate.id)}`, {
+        body: {
+          canonicalAnswer: answer,
+          question,
+          reason: reason.length === 0 ? '管理后台修订' : reason,
+          ...(evidence.trim().length === 0 ? {} : { evidence }),
+          ...(module.trim().length === 0 ? {} : { proposedModule: module }),
+          ...(title.trim().length === 0 ? {} : { proposedTitle: title }),
+        },
+        method: 'PATCH',
+      });
+    }, '候选修订已保存，并生成新的不可变 revision。');
+
+  const review = (decision: 'approve' | 'reject'): Promise<void> =>
+    runAction(
+      async () => {
+        if (decision === 'approve' && effectiveAt.length === 0) {
+          throw new Error('批准候选前必须设置生效时间。');
+        }
+        const body =
+          decision === 'approve'
+            ? {
+                ...(effectiveAt.length === 0
+                  ? {}
+                  : { effectiveAt: new Date(effectiveAt).toISOString() }),
+                ...(reviewNote.length === 0 ? {} : { note: reviewNote }),
+                ...(sourceUrl.length === 0 ? {} : { sourceUrl }),
+                supersedes: splitCommaList(supersedes),
+              }
+            : { ...(reviewNote.length === 0 ? {} : { note: reviewNote }) };
+        await knowledgeAdminRequest(
+          token,
+          `/candidates/${encodeURIComponent(candidate.id)}/${decision}`,
+          { body, method: 'POST' },
+        );
+      },
+      decision === 'approve' ? '候选已批准，等待发布申请。' : '候选已拒绝。',
+    );
+
+  const requestPublication = (): Promise<void> =>
+    runAction(async () => {
+      await knowledgeAdminRequest(
+        token,
+        `/candidates/${encodeURIComponent(candidate.id)}/publication`,
+        { method: 'POST' },
+      );
+    }, '发布任务已进入队列。运行受控 publication worker 后会执行门禁与索引。');
+
+  return (
+    <div className="detail-stack">
+      <section className="admin-panel candidate-summary">
+        <div className="candidate-summary-heading">
+          <div>
+            <div className="admin-eyebrow">{candidate.id}</div>
+            <h2>{candidate.proposedTitle ?? candidate.question}</h2>
+          </div>
+          <StatusBadge status={candidate.status} />
+        </div>
+        <div className="candidate-facts">
+          <Fact label="质量分" value={formatScore(candidate.qualityScore)} />
+          <Fact label="提取方式" value={candidate.extractionMethod ?? 'manual'} />
+          <Fact label="当前 Revision" value={String(candidate.currentRevision ?? 1)} />
+          <Fact label="来源" value={candidate.sourceChannel} />
+        </div>
+        <TagList emptyLabel="无风险标签" items={candidate.riskFlags ?? []} tone="risk" />
+      </section>
+
+      <section className="admin-panel">
+        <SectionHeading
+          description="Curator 标准化结果；保存会生成新 revision。"
+          title="候选知识"
+        />
+        <div className="admin-form-grid">
+          <label className="span-2">
+            标准问题
+            <textarea
+              disabled={!canReview}
+              onChange={(event) => setQuestion(event.target.value)}
+              value={question}
+            />
+          </label>
+          <label className="span-2">
+            标准答案
+            <textarea
+              disabled={!canReview}
+              onChange={(event) => setAnswer(event.target.value)}
+              rows={6}
+              value={answer}
+            />
+          </label>
+          <label>
+            标题
+            <input
+              disabled={!canReview}
+              onChange={(event) => setTitle(event.target.value)}
+              value={title}
+            />
+          </label>
+          <label>
+            模块
+            <input
+              disabled={!canReview}
+              onChange={(event) => setModule(event.target.value)}
+              value={module}
+            />
+          </label>
+          <label className="span-2">
+            证据说明
+            <textarea
+              disabled={!canReview}
+              onChange={(event) => setEvidence(event.target.value)}
+              value={evidence}
+            />
+          </label>
+          {canReview ? (
+            <label className="span-2">
+              修订原因
+              <input
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="说明为什么修改"
+                value={reason}
+              />
+            </label>
+          ) : undefined}
+        </div>
+        {canReview ? (
+          <div className="admin-actions">
+            <button
+              className="admin-secondary-button"
+              disabled={actionBusy}
+              onClick={() => void revise()}
+              type="button"
+            >
+              保存 Revision
+            </button>
+          </div>
+        ) : undefined}
+      </section>
+
+      <section className="admin-panel">
+        <SectionHeading
+          description="原消息已在候选生成前脱敏；这里只展示审计所需上下文。"
+          title="Telegram 原始上下文"
+        />
+        <div className="context-compare">
+          <ContextCard
+            id={candidate.sourceQuestionMessageId}
+            label="用户问题"
+            text={candidate.sourceQuestionText}
+          />
+          <ContextCard
+            id={candidate.sourceAnswerMessageId}
+            label="可信作者回复"
+            text={candidate.sourceAnswerText}
+          />
+        </div>
+        <div className="context-meta">
+          <span>Chat: {candidate.sourceChatId ?? 'unknown'}</span>
+          <span>Context IDs: {(candidate.contextMessageIds ?? []).join(', ') || 'none'}</span>
+          <span>
+            Author: {candidate.authorVerification?.userId ?? 'unknown'} ·{' '}
+            {candidate.authorVerification?.status ?? 'unverified'}
+          </span>
+        </div>
+      </section>
+
+      <section className="admin-panel">
+        <SectionHeading
+          description="批准前逐项检查相似候选和正式知识冲突。"
+          title="重复与冲突对比"
+        />
+        {detail.duplicates.length === 0 && detail.conflicts.length === 0 ? (
+          <div className="admin-empty compact">未发现重复候选或正式知识冲突。</div>
+        ) : undefined}
+        <div className="comparison-grid">
+          {detail.duplicates.map((duplicate) => (
+            <article className="comparison-card duplicate" key={duplicate.id}>
+              <div className="comparison-label">相似候选 · {duplicate.status}</div>
+              <strong>{duplicate.question}</strong>
+              <p>{duplicate.canonicalAnswer}</p>
+              <code>{duplicate.id}</code>
+            </article>
+          ))}
+          {detail.conflicts.map((conflict) => (
+            <article className="comparison-card conflict" key={conflict.id}>
+              <div className="comparison-label">
+                正式知识冲突 · {conflict.sourceType} · {conflict.status}
+              </div>
+              <strong>{conflict.title}</strong>
+              <p>{conflict.content}</p>
+              <code>{conflict.id}</code>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {canReview ? (
+        <section className="admin-panel review-panel">
+          <SectionHeading
+            description="审批身份由服务端认证主体写入，浏览器不可指定。"
+            title="审核决策"
+          />
+          <div className="admin-form-grid">
+            <label>
+              生效时间
+              <input
+                onChange={(event) => setEffectiveAt(event.target.value)}
+                type="datetime-local"
+                value={effectiveAt}
+              />
+            </label>
+            <label>
+              正式来源 URL
+              <input
+                onChange={(event) => setSourceUrl(event.target.value)}
+                placeholder="https://…"
+                value={sourceUrl}
+              />
+            </label>
+            <label className="span-2">
+              替代的 document/chunk ID（逗号分隔）
+              <input onChange={(event) => setSupersedes(event.target.value)} value={supersedes} />
+            </label>
+            <label className="span-2">
+              审核备注
+              <textarea
+                onChange={(event) => setReviewNote(event.target.value)}
+                value={reviewNote}
+              />
+            </label>
+          </div>
+          <div className="admin-actions">
+            <button
+              className="admin-danger-button"
+              disabled={actionBusy}
+              onClick={() => void review('reject')}
+              type="button"
+            >
+              拒绝候选
+            </button>
+            <button
+              className="admin-primary-button"
+              disabled={actionBusy}
+              onClick={() => void review('approve')}
+              type="button"
+            >
+              批准候选
+            </button>
+          </div>
+        </section>
+      ) : undefined}
+
+      {canPublish ? (
+        <section className="admin-panel publication-request-panel">
+          <div>
+            <h3>申请受控发布</h3>
+            <p>这里只创建持久化任务。Worker 将执行边界、检索命中、Golden QA 和事务性 ingest。</p>
+          </div>
+          <button
+            className="admin-primary-button"
+            disabled={actionBusy}
+            onClick={() => void requestPublication()}
+            type="button"
+          >
+            创建 PublicationJob
+          </button>
+        </section>
+      ) : undefined}
+
+      {candidate.status === 'approved' && existingPublication !== undefined ? (
+        <section className="admin-panel publication-request-panel">
+          <div>
+            <h3>发布任务已存在</h3>
+            <p>
+              Job {existingPublication.id} · attempt {existingPublication.attemptCount}
+              。失败任务请到“发布任务”页执行安全重试。
+            </p>
+          </div>
+          <StatusBadge status={existingPublication.status} />
+        </section>
+      ) : undefined}
+
+      <section className="admin-panel">
+        <SectionHeading
+          description="Revision、审核、发布请求和执行结果均不可变记录。"
+          title="版本与审计"
+        />
+        <div className="history-grid">
+          <div>
+            <h4>Revisions · {detail.history.revisions.length}</h4>
+            <div className="history-list">
+              {detail.history.revisions.length === 0 ? (
+                <div className="admin-empty compact">暂无 revision。</div>
+              ) : undefined}
+              {detail.history.revisions.map((revision) => (
+                <article key={revision.id}>
+                  <strong>Revision {revision.revision}</strong>
+                  <span>
+                    {revision.editedBy} · {formatDate(revision.createdAt)}
+                  </span>
+                  <p>{revision.reason ?? '未填写修订原因'}</p>
+                  <small>{revision.question}</small>
+                </article>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h4>Reviews · {detail.history.reviews.length}</h4>
+            <div className="history-list">
+              {detail.history.reviews.length === 0 ? (
+                <div className="admin-empty compact">暂无审核记录。</div>
+              ) : undefined}
+              {detail.history.reviews.map((review) => (
+                <article key={review.id}>
+                  <strong>
+                    {review.decision} · Revision {review.revision}
+                  </strong>
+                  <span>
+                    {review.reviewedBy} · {formatDate(review.createdAt)}
+                  </span>
+                  <p>{review.note ?? '未填写审核备注'}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+        <h4 className="audit-heading">Audit events · {detail.history.auditEvents.length}</h4>
+        <div className="audit-timeline">
+          {detail.history.auditEvents.length === 0 ? (
+            <div className="admin-empty compact">暂无审计事件。</div>
+          ) : undefined}
+          {detail.history.auditEvents.map((event) => (
+            <article key={event.id}>
+              <span className="audit-dot" />
+              <div>
+                <strong>{event.eventType}</strong>
+                <p>
+                  {event.actor} · {formatDate(event.createdAt)}
+                </p>
+                <code>{JSON.stringify(event.details)}</code>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PublicationsPanel({
+  permissions,
+  token,
+}: {
+  permissions: ReadonlySet<AdminPermission>;
+  token: string;
+}): ReactElement {
+  const [status, setStatus] = useState<PublicationStatus | ''>('');
+  const [jobs, setJobs] = useState<PublicationJob[]>([]);
+  const [message, setMessage] = useState<string | undefined>();
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const query = status === '' ? '' : `?status=${status}`;
+      const result = await knowledgeAdminRequest<{ publications: PublicationJob[] }>(
+        token,
+        `/publications${query}`,
+      );
+      setJobs(result.publications);
+      setMessage(undefined);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [status, token]);
+  useEffect(() => void load(), [load]);
+
+  const retry = async (id: string): Promise<void> => {
+    setBusy(true);
+    try {
+      await knowledgeAdminRequest(token, `/publications/${encodeURIComponent(id)}/retry`, {
+        method: 'POST',
+      });
+      await load();
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="admin-stack">
+      <section className="admin-panel publication-guide">
+        <div>
+          <h2>可靠发布队列</h2>
+          <p>队列使用租约和幂等候选键。执行器崩溃后，过期任务可由下一个 Worker 接管。</p>
+        </div>
+        <code>pnpm rag:knowledge:publication:work</code>
+      </section>
+      <section className="admin-panel">
+        <div className="admin-panel-header">
+          <div>
+            <h2>PublicationJob</h2>
+            <span>{jobs.length} 条</span>
+          </div>
+          <select
+            aria-label="发布状态"
+            onChange={(event) => setStatus(event.target.value as PublicationStatus | '')}
+            value={status}
+          >
+            <option value="">全部</option>
+            <option value="queued">Queued</option>
+            <option value="running">Running</option>
+            <option value="failed">Failed</option>
+            <option value="succeeded">Succeeded</option>
+          </select>
+        </div>
+        {message === undefined ? undefined : <div className="admin-alert error">{message}</div>}
+        {busy && jobs.length === 0 ? <div className="admin-empty">正在加载任务…</div> : undefined}
+        <div className="publication-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>状态</th>
+                <th>候选</th>
+                <th>尝试</th>
+                <th>申请人</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.id}>
+                  <td>
+                    <StatusBadge status={job.status} />
+                  </td>
+                  <td>
+                    <strong>{job.candidateId}</strong>
+                    <small>{job.lastError ?? job.documentId ?? job.id}</small>
+                  </td>
+                  <td>{job.attemptCount}</td>
+                  <td>{job.requestedBy}</td>
+                  <td>{formatDate(job.updatedAt)}</td>
+                  <td>
+                    {job.status === 'failed' && permissions.has('publication:request') ? (
+                      <button
+                        className="admin-link-button"
+                        disabled={busy}
+                        onClick={() => void retry(job.id)}
+                        type="button"
+                      >
+                        安全重试
+                      </button>
+                    ) : (
+                      <span>—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TrustedAuthorsPanel({
+  permissions,
+  token,
+}: {
+  permissions: ReadonlySet<AdminPermission>;
+  token: string;
+}): ReactElement {
+  const [authors, setAuthors] = useState<TrustedAuthor[]>([]);
+  const [chatIdFilter, setChatIdFilter] = useState('');
+  const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string }>();
+  const [form, setForm] = useState({
+    chatId: '',
+    role: 'administrator' as TrustedAuthor['role'],
+    userId: '',
+    validFrom: '',
+    validTo: '',
+  });
+
+  const load = useCallback(async (): Promise<void> => {
+    try {
+      const query =
+        chatIdFilter.trim().length === 0
+          ? ''
+          : `?chatId=${encodeURIComponent(chatIdFilter.trim())}`;
+      const result = await knowledgeAdminRequest<{ authors: TrustedAuthor[] }>(
+        token,
+        `/trusted-authors${query}`,
+      );
+      setAuthors(result.authors);
+    } catch (error) {
+      setMessage({ kind: 'error', text: errorMessage(error) });
+    }
+  }, [chatIdFilter, token]);
+  useEffect(() => void load(), [load]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    try {
+      await knowledgeAdminRequest(token, '/trusted-authors', {
+        body: {
+          chatId: form.chatId,
+          role: form.role,
+          userId: form.userId,
+          validFrom: new Date(form.validFrom).toISOString(),
+          ...(form.validTo.length === 0 ? {} : { validTo: new Date(form.validTo).toISOString() }),
+          verificationSource: 'manual',
+        },
+        method: 'POST',
+      });
+      setMessage({
+        kind: 'success',
+        text: '可信作者记录已保存。角色只在配置的时间窗口内生效。',
+      });
+      await load();
+    } catch (error) {
+      setMessage({ kind: 'error', text: errorMessage(error) });
+    }
+  };
+
+  return (
+    <div className="admin-stack two-column-admin">
+      <section className="admin-panel">
+        <div className="admin-panel-header">
+          <div>
+            <h2>可信作者名册</h2>
+            <span>{authors.length} 条</span>
+          </div>
+          <input
+            aria-label="按 Chat ID 筛选可信作者"
+            onChange={(event) => setChatIdFilter(event.target.value)}
+            placeholder="按 Chat ID 筛选"
+            value={chatIdFilter}
+          />
+        </div>
+        <div className="author-list">
+          {authors.length === 0 ? (
+            <div className="admin-empty">没有匹配的可信作者。</div>
+          ) : undefined}
+          {authors.map((author) => (
+            <article key={author.id}>
+              <div>
+                <strong>{author.userId}</strong>
+                <StatusBadge status={author.role} />
+              </div>
+              <p>Chat {author.chatId}</p>
+              <p>
+                {formatDate(author.validFrom)} →{' '}
+                {author.validTo === undefined ? '持续有效' : formatDate(author.validTo)}
+              </p>
+              <small>
+                {author.verificationSource} · {author.verifiedBy}
+              </small>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section className="admin-panel">
+        <SectionHeading
+          description="禁止根据昵称、写作风格或发言频率推断管理员。"
+          title="新增或调整角色窗口"
+        />
+        {message === undefined ? undefined : (
+          <div className={`admin-alert ${message.kind}`}>{message.text}</div>
+        )}
+        {permissions.has('trusted_author:manage') ? (
+          <form className="admin-form-grid single" onSubmit={(event) => void submit(event)}>
+            <label>
+              Chat ID
+              <input
+                required
+                onChange={(event) => setForm({ ...form, chatId: event.target.value })}
+                value={form.chatId}
+              />
+            </label>
+            <label>
+              User ID
+              <input
+                required
+                onChange={(event) => setForm({ ...form, userId: event.target.value })}
+                value={form.userId}
+              />
+            </label>
+            <label>
+              角色
+              <select
+                onChange={(event) =>
+                  setForm({ ...form, role: event.target.value as TrustedAuthor['role'] })
+                }
+                value={form.role}
+              >
+                <option value="owner">Owner</option>
+                <option value="administrator">Administrator</option>
+                <option value="knowledge_editor">Knowledge Editor</option>
+              </select>
+            </label>
+            <label>
+              有效期开始
+              <input
+                required
+                type="datetime-local"
+                onChange={(event) => setForm({ ...form, validFrom: event.target.value })}
+                value={form.validFrom}
+              />
+            </label>
+            <label>
+              有效期结束（可选）
+              <input
+                type="datetime-local"
+                onChange={(event) => setForm({ ...form, validTo: event.target.value })}
+                value={form.validTo}
+              />
+            </label>
+            <button className="admin-primary-button" type="submit">
+              保存可信作者
+            </button>
+          </form>
+        ) : (
+          <div className="admin-empty compact">当前角色只有查看权限。</div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function TelegramImportPanel({
+  permissions,
+  token,
+}: {
+  permissions: ReadonlySet<AdminPermission>;
+  token: string;
+}): ReactElement {
+  const [rawExport, setRawExport] = useState<unknown>();
+  const [fileName, setFileName] = useState<string>();
+  const [useAgent, setUseAgent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<TelegramImportResult>();
+  const [error, setError] = useState<string>();
+
+  const chooseFile = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = event.target.files?.[0];
+    if (file === undefined) return;
+    try {
+      setRawExport(JSON.parse(await file.text()) as unknown);
+      setFileName(file.name);
+      setError(undefined);
+    } catch {
+      setRawExport(undefined);
+      setError('所选文件不是有效的 Telegram JSON 导出。');
+    }
+  };
+
+  const submit = async (): Promise<void> => {
+    if (rawExport === undefined) {
+      setError('请先选择 Telegram JSON 导出文件。');
+      return;
+    }
+    setBusy(true);
+    setError(undefined);
+    try {
+      const nextResult = await knowledgeAdminRequest<TelegramImportResult>(
+        token,
+        '/imports/telegram',
+        {
+          body: { rawExport, useAgent },
+          method: 'POST',
+        },
+      );
+      setResult(nextResult);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="admin-stack import-layout">
+      <section className="admin-panel import-dropzone">
+        <div className="import-icon">JSON</div>
+        <h2>导入 Telegram Desktop JSON</h2>
+        <p>
+          导出内容不会直接进入正式知识库。系统只创建 pending
+          候选，并自动执行脱敏、边界、重复与冲突检查。
+        </p>
+        <label className="admin-file-button">
+          选择 JSON 文件
+          <input
+            accept="application/json,.json"
+            onChange={(event) => void chooseFile(event)}
+            type="file"
+          />
+        </label>
+        <strong>{fileName ?? '尚未选择文件'}</strong>
+        <label className="admin-checkbox">
+          <input
+            checked={useAgent}
+            onChange={(event) => setUseAgent(event.target.checked)}
+            type="checkbox"
+          />
+          使用 Knowledge Curator Agent 处理多消息上下文
+        </label>
+        <small>
+          管理员身份优先使用时间有效的可信作者名册；配置 Bot Token 时可查询当前 Telegram
+          管理员。不能验证时失败关闭。
+        </small>
+        {error === undefined ? undefined : <div className="admin-alert error">{error}</div>}
+        <button
+          className="admin-primary-button"
+          disabled={busy || !permissions.has('import:telegram')}
+          onClick={() => void submit()}
+          type="button"
+        >
+          {busy ? '正在清洗与提取…' : '生成知识候选'}
+        </button>
+      </section>
+      {result === undefined ? undefined : (
+        <section className="admin-panel">
+          <SectionHeading description={`Curator Run ${result.runId}`} title="导入结果" />
+          <div className="metric-grid">
+            <Metric label="消息" value={result.messageCount} />
+            <Metric label="线程" value={result.threadCount} />
+            <Metric label="候选" value={result.candidateCount} />
+            <Metric label="新建" value={result.created.length} />
+            <Metric label="重复" value={result.duplicateCount} />
+            <Metric label="未验证作者消息" value={result.unverifiedAuthorMessageCount} />
+          </div>
+          <div className="admin-alert success">
+            导入完成。所有新知识仍处于 pending，必须人工审核。
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }): ReactElement {
+  return <span className={`status-badge status-${status.replaceAll('_', '-')}`}>{status}</span>;
+}
+
+function SectionHeading({
+  description,
+  title,
+}: {
+  description: string;
+  title: string;
+}): ReactElement {
+  return (
+    <div className="section-heading">
+      <div>
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }): ReactElement {
+  return (
+    <div className="candidate-fact">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function TagList({
+  emptyLabel,
+  items,
+  tone,
+}: {
+  emptyLabel: string;
+  items: string[];
+  tone: 'risk';
+}): ReactElement {
+  return (
+    <div className="tag-list">
+      {items.length === 0 ? (
+        <span className="tag neutral">{emptyLabel}</span>
+      ) : (
+        items.map((item) => (
+          <span className={`tag ${tone}`} key={item}>
+            {item}
+          </span>
+        ))
+      )}
+    </div>
+  );
+}
+
+function ContextCard({
+  id,
+  label,
+  text,
+}: {
+  id: string | undefined;
+  label: string;
+  text: string | undefined;
+}): ReactElement {
+  return (
+    <article className="context-card">
+      <div>
+        <strong>{label}</strong>
+        <span>Message {id ?? 'unknown'}</span>
+      </div>
+      <p>{text ?? '未保存可展示的脱敏文本。'}</p>
+    </article>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }): ReactElement {
+  return (
+    <div className="metric">
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function formatDate(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('zh-CN', { hour12: false });
+}
+
+function formatScore(value: number | undefined): string {
+  return value === undefined ? '未评分' : `${Math.round(value * 100)}%`;
+}
+
+function toDateTimeLocal(value: string | undefined): string {
+  if (value === undefined) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const offset = parsed.getTimezoneOffset() * 60_000;
+  return new Date(parsed.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function splitCommaList(value: string): string[] {
+  return [
+    ...new Set(
+      value
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  ];
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof KnowledgeAdminApiError) {
+    if (error.status === 401) clearStoredToken();
+    return error.message;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+function tabTitle(tab: AdminTab): string {
+  switch (tab) {
+    case 'authors':
+      return '可信作者与角色有效期';
+    case 'candidates':
+      return '知识候选审核';
+    case 'imports':
+      return 'Telegram 知识导入';
+    case 'publications':
+      return '发布任务与恢复';
+  }
+}
+
+function readStoredToken(): string {
+  if (typeof window === 'undefined') return '';
+  return window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? '';
+}
+
+function storeToken(token: string): void {
+  if (typeof window !== 'undefined') window.sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+}
+
+function clearStoredToken(): void {
+  if (typeof window !== 'undefined') window.sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+}

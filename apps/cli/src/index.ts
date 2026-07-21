@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { hostname } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,6 +31,7 @@ import {
   createPgKnowledgeCandidateStore,
   createPgPool,
   createPgKnowledgeMatchInspector,
+  createPgKnowledgePublicationJobStore,
   createPgTrustedAuthorStore,
   createPgVectorStore,
   createQualityTracerFromEnv,
@@ -61,6 +63,7 @@ import type {
   KnowledgeCandidate,
   KnowledgeCandidateHistory,
   KnowledgeCandidateStatus,
+  KnowledgePublicationJob,
   KnowledgeStats,
   RagEnv,
   QualityTracer,
@@ -164,6 +167,7 @@ type CliCommand =
       reviewedBy: string;
     }
   | { command: 'knowledge:publish'; id: string }
+  | { command: 'knowledge:publication:work'; workerId?: string }
   | { command: 'migrate' }
   | { command: 'stats' }
   | { command: 'sync:x' }
@@ -207,6 +211,7 @@ interface KnowledgePublicationSummary {
   candidateId: string;
   documentId: string;
   file: string;
+  jobId: string;
   runId?: string;
 }
 
@@ -247,6 +252,7 @@ const HELP_TEXT = [
   '  pnpm rag:knowledge:approve -- <id> --reviewer <id> [--effective-at <date>] [--source-url <url>]',
   '  pnpm rag:knowledge:reject -- <id> --reviewer <id> [--note <reason>]',
   '  pnpm rag:knowledge:publish -- <id>',
+  '  pnpm rag:knowledge:publication:work -- [--worker-id <id>]',
   '  pnpm rag:ask -- "question"',
   '  pnpm rag:ask -- --debug-retrieve "question"',
 ].join('\n');
@@ -307,6 +313,10 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
 
   if (command === 'knowledge:publish') {
     return parseKnowledgePublishArgs(rawRest);
+  }
+
+  if (command === 'knowledge:publication:work') {
+    return parseKnowledgePublicationWorkArgs(rawRest);
   }
 
   if (command === 'ask') {
@@ -633,6 +643,25 @@ function parseKnowledgePublishArgs(rawArgs: readonly string[]): CliCommand {
   return { command: 'knowledge:publish', id: args[0] };
 }
 
+function parseKnowledgePublicationWorkArgs(rawArgs: readonly string[]): CliCommand {
+  const args = stripPnpmSeparator(rawArgs);
+  if (args.length === 0) {
+    return { command: 'knowledge:publication:work' };
+  }
+  if (
+    args.length !== 2 ||
+    args[0] !== '--worker-id' ||
+    args[1] === undefined ||
+    args[1].startsWith('--')
+  ) {
+    return {
+      command: 'help',
+      error: 'knowledge:publication:work accepts only an optional --worker-id <id>.',
+    };
+  }
+  return { command: 'knowledge:publication:work', workerId: args[1] };
+}
+
 function stripPnpmSeparator(args: readonly string[]): readonly string[] {
   return args[0] === '--' ? args.slice(1) : args;
 }
@@ -789,10 +818,11 @@ function formatJsonLines(values: readonly unknown[], emptyMessage: string): stri
 
 export function formatKnowledgePublicationSummary(summary: KnowledgePublicationSummary): string {
   if (summary.alreadyPublished) {
-    return `Knowledge candidate ${summary.candidateId} is already published as ${summary.documentId}.`;
+    return `Knowledge candidate ${summary.candidateId} is already published as ${summary.documentId} (job ${summary.jobId}).`;
   }
   return [
     `Published ${summary.candidateId} as ${summary.documentId}.`,
+    `Publication job: ${summary.jobId}`,
     `Document: ${summary.file}`,
     ...(summary.runId === undefined ? [] : [`Ingestion run: ${summary.runId}`]),
   ].join('\n');
@@ -1260,6 +1290,28 @@ export async function runCli(
     }
   }
 
+  if (parsed.command === 'knowledge:publication:work') {
+    try {
+      const summary = await workKnowledgePublicationQueue(
+        { ...io, cwd: workspaceCwd },
+        config,
+        parsed,
+      );
+      writeLine(
+        io.stdout,
+        summary === undefined
+          ? 'No queued or expired knowledge publication jobs.'
+          : formatKnowledgePublicationSummary(summary),
+      );
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
   try {
     const tracer = createQualityTracerFromEnv({ ...io.env });
     const runtime = createCliChatRuntime(config, tracer);
@@ -1388,7 +1440,7 @@ export function formatProviderRetrievalReport(report: ProviderRetrievalReport): 
 async function ingest(
   io: CliIo,
   rebuildEmbeddingSchema: boolean,
-  afterReplace?: NonNullable<ReplaceChunksOptions['afterReplace']>,
+  afterReplace?: (client: PgClientLike, runId: string) => Promise<void>,
 ): Promise<IngestSummary> {
   const config = loadRagConfig(io.env);
   const documents = await loadProductDocuments({ cwd: io.cwd });
@@ -1422,7 +1474,11 @@ async function ingest(
       await store.replaceChunks(embeddedChunks, ingestionRun);
     } else {
       const replaceOptions: ReplaceChunksOptions = {
-        ...(afterReplace === undefined ? {} : { afterReplace }),
+        ...(afterReplace === undefined
+          ? {}
+          : {
+              afterReplace: (client: PgClientLike) => afterReplace(client, ingestionRun.runId),
+            }),
         ...(rebuildEmbeddingSchema ? { rebuildEmbeddingSchema: true } : {}),
       };
       await store.replaceChunks(embeddedChunks, ingestionRun, replaceOptions);
@@ -2021,56 +2077,138 @@ async function publishKnowledgeCandidate(
 ): Promise<KnowledgePublicationSummary> {
   const pool = createPgPool(config.databaseUrl);
   try {
-    const store = createPgKnowledgeCandidateStore({ client: pool });
-    await store.migrate();
-    const candidate = await store.get(command.id);
+    const candidateStore = createPgKnowledgeCandidateStore({ client: pool });
+    const publicationStore = createPgKnowledgePublicationJobStore({ client: pool });
+    await publicationStore.migrate();
+    let publication = await publicationStore.request({
+      candidateId: command.id,
+      requestedBy: 'system:cli',
+    });
+    const candidate = await candidateStore.get(command.id);
     if (candidate === undefined) {
       throw new Error(`Knowledge candidate ${command.id} was not found.`);
     }
     const documentId = adminVerifiedDocumentId(candidate.id);
-    const relativeFile = path.join(
-      'docs',
-      'product-features',
-      'admin-verified',
-      `${candidate.id}.md`,
-    );
-    const file = path.resolve(io.cwd, relativeFile);
-    if (candidate.status === 'published') {
+    const file = knowledgePublicationFile(io.cwd, candidate.id);
+    if (publication.status === 'succeeded' || candidate.status === 'published') {
       return {
         alreadyPublished: true,
         candidateId: candidate.id,
         documentId: candidate.publishedDocumentId ?? documentId,
         file,
+        jobId: publication.id,
       };
     }
-
-    const content = formatAdminVerifiedKnowledgeDocument(candidate);
-    const createdFile = await writeKnowledgeDocumentIfAbsent(file, content);
-    try {
-      await runKnowledgePublicationGate(io, candidate, documentId);
-      const ingestSummary = await ingest(io, false, async (client: PgClientLike) => {
-        const transactionalCandidateStore = createPgKnowledgeCandidateStore({ client });
-        await transactionalCandidateStore.markPublished({
-          id: candidate.id,
-          publishedDocumentId: documentId,
-        });
+    if (publication.status === 'failed') {
+      publication = await publicationStore.retry({
+        id: publication.id,
+        requestedBy: 'system:cli',
       });
-      return {
-        alreadyPublished: false,
-        candidateId: candidate.id,
-        documentId,
-        file,
-        ...(ingestSummary.runId === undefined ? {} : { runId: ingestSummary.runId }),
-      };
-    } catch (error) {
-      if (createdFile) {
-        await unlink(file).catch(() => undefined);
-      }
-      throw error;
     }
+    const claimed = await publicationStore.claim({
+      id: publication.id,
+      workerId: defaultPublicationWorkerId(),
+    });
+    return executeKnowledgePublicationJob(io, candidate, claimed, publicationStore);
   } finally {
     await pool.end();
   }
+}
+
+async function workKnowledgePublicationQueue(
+  io: CliIo,
+  config: ReturnType<typeof loadRagConfig>,
+  command: Extract<CliCommand, { command: 'knowledge:publication:work' }>,
+): Promise<KnowledgePublicationSummary | undefined> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const candidateStore = createPgKnowledgeCandidateStore({ client: pool });
+    const publicationStore = createPgKnowledgePublicationJobStore({ client: pool });
+    await publicationStore.migrate();
+    const publication = await publicationStore.claimNext({
+      workerId: command.workerId ?? defaultPublicationWorkerId(),
+    });
+    if (publication === undefined) {
+      return undefined;
+    }
+    const candidate = await candidateStore.get(publication.candidateId);
+    if (candidate === undefined) {
+      await publicationStore.fail({
+        attemptCount: publication.attemptCount,
+        error: `Knowledge candidate ${publication.candidateId} was not found.`,
+        id: publication.id,
+        workerId: requirePublicationWorkerId(publication),
+      });
+      throw new Error(`Knowledge candidate ${publication.candidateId} was not found.`);
+    }
+    return executeKnowledgePublicationJob(io, candidate, publication, publicationStore);
+  } finally {
+    await pool.end();
+  }
+}
+
+async function executeKnowledgePublicationJob(
+  io: CliIo,
+  candidate: KnowledgeCandidate,
+  publication: KnowledgePublicationJob,
+  publicationStore: ReturnType<typeof createPgKnowledgePublicationJobStore>,
+): Promise<KnowledgePublicationSummary> {
+  const documentId = adminVerifiedDocumentId(candidate.id);
+  const file = knowledgePublicationFile(io.cwd, candidate.id);
+  const workerId = requirePublicationWorkerId(publication);
+  let content: string | undefined;
+  try {
+    content = formatAdminVerifiedKnowledgeDocument(candidate);
+    await writeKnowledgeDocumentIfAbsent(file, content);
+    await runKnowledgePublicationGate(io, candidate, documentId);
+    const ingestSummary = await ingest(io, false, async (client: PgClientLike, runId: string) => {
+      const transactionalPublicationStore = createPgKnowledgePublicationJobStore({ client });
+      await transactionalPublicationStore.complete({
+        attemptCount: publication.attemptCount,
+        documentId,
+        id: publication.id,
+        runId,
+        workerId,
+      });
+    });
+    return {
+      alreadyPublished: false,
+      candidateId: candidate.id,
+      documentId,
+      file,
+      jobId: publication.id,
+      ...(ingestSummary.runId === undefined ? {} : { runId: ingestSummary.runId }),
+    };
+  } catch (error) {
+    const failed = await publicationStore
+      .fail({
+        attemptCount: publication.attemptCount,
+        error: error instanceof Error ? error.message : String(error),
+        id: publication.id,
+        workerId,
+      })
+      .then(() => true)
+      .catch(() => false);
+    if (failed && content !== undefined) {
+      await removeKnowledgeDocumentIfMatching(file, content);
+    }
+    throw error;
+  }
+}
+
+function knowledgePublicationFile(cwd: string, candidateId: string): string {
+  return path.resolve(cwd, 'docs', 'product-features', 'admin-verified', `${candidateId}.md`);
+}
+
+function defaultPublicationWorkerId(): string {
+  return `cli:${hostname()}:${process.pid}`;
+}
+
+function requirePublicationWorkerId(publication: KnowledgePublicationJob): string {
+  if (publication.status !== 'running' || publication.workerId === undefined) {
+    throw new Error(`Knowledge publication job ${publication.id} has no active worker lease.`);
+  }
+  return publication.workerId;
 }
 
 async function writeKnowledgeDocumentIfAbsent(file: string, content: string): Promise<boolean> {
@@ -2089,6 +2227,18 @@ async function writeKnowledgeDocumentIfAbsent(file: string, content: string): Pr
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, content, { encoding: 'utf8', flag: 'wx' });
   return true;
+}
+
+async function removeKnowledgeDocumentIfMatching(file: string, content: string): Promise<void> {
+  try {
+    if ((await readFile(file, 'utf8')) === content) {
+      await unlink(file);
+    }
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw error;
+    }
+  }
 }
 
 async function runKnowledgePublicationGate(

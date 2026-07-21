@@ -154,6 +154,15 @@ describe('parseCliArgs', () => {
       command: 'knowledge:publish',
       id: 'knowledge_candidate_1',
     });
+    expect(parseCliArgs(['knowledge:publication:work'])).toEqual({
+      command: 'knowledge:publication:work',
+    });
+    expect(parseCliArgs(['knowledge:publication:work', '--', '--worker-id', 'worker:one'])).toEqual(
+      {
+        command: 'knowledge:publication:work',
+        workerId: 'worker:one',
+      },
+    );
     expect(
       parseCliArgs([
         'knowledge:author:trust',
@@ -349,6 +358,7 @@ describe('CLI output formatting', () => {
         candidateId: candidate.id,
         documentId: `admin_verified:admin-verified/${candidate.id}`,
         file: `/tmp/${candidate.id}.md`,
+        jobId: 'knowledge_publication_1',
         runId: 'ingest_run_1',
       }),
     ).toContain('Ingestion run: ingest_run_1');

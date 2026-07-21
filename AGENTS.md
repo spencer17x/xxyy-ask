@@ -63,6 +63,10 @@ API_ENABLE_DEEP_HEALTH=
 API_MAX_BODY_BYTES=65536
 API_RATE_LIMIT_MAX=60
 API_RATE_LIMIT_WINDOW_MS=60000
+KNOWLEDGE_ADMIN_TOKENS_JSON=
+KNOWLEDGE_ADMIN_MAX_BODY_BYTES=5242880
+KNOWLEDGE_ADMIN_RATE_LIMIT_MAX=30
+KNOWLEDGE_ADMIN_RATE_LIMIT_WINDOW_MS=60000
 TRUST_PROXY=false
 ```
 
@@ -89,6 +93,8 @@ API 保留的公开服务面：
 - `POST /api/chat/stream`：流式客服问答。
 - `POST /api/feedback`：记录 Web 回答的有用/无用反馈；不要求鉴权。
 - `GET /assets/*`：产品视频、图片等静态资产。
+
+独立受保护的管理面：`GET /admin` 提供知识治理 UI，`/admin/api/*` 必须使用配置在 `KNOWLEDGE_ADMIN_TOKENS_JSON` 中的 Bearer Token 哈希记录并经过 RBAC。它不是公开客服 API；未配置令牌时管理 API 失败关闭，不影响公开聊天。
 
 API 默认限制 JSON 请求体最大 `65536` 字节，并对 `/api/chat`、`/api/chat/stream` 和 `/api/feedback` 按客户端地址做 `60` 次 / `60000` 毫秒的基础限流。默认不信任 `x-forwarded-for` / `x-real-ip`；仅在可信反向代理后设置 `TRUST_PROXY=true`。客服问答和反馈接口不要求鉴权。跨域接入前端时配置 `API_CORS_ORIGIN`，支持单个 origin、逗号分隔多个 origin 或 `*`。
 
@@ -121,6 +127,8 @@ pnpm run app:dev -- --full-sync
 - `pnpm docs:audit`：检查官网空页/404、资源 SHA、OCR、视频知识覆盖及其正文证据和英文兜底。
 - `pnpm rag:ingest`：执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run。
 - `pnpm rag:sync:x`：同步官方 X / Twitter 更新，只 embedding 新增或变更的 X chunks，不会 prune 旧 chunk。
+- `pnpm admin:token:create -- <id> <role>`：生成只显示一次的管理令牌和 SHA-256 配置记录。
+- `pnpm rag:knowledge:publication:work`：领取一条持久化 PublicationJob，执行发布门禁与事务性 ingest；生产 API 不直接执行发布。
 - `pnpm rag:migrate`：只执行数据库迁移，不调用 embedding 或 LLM。
 - `pnpm rag:stats`：查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 - `pnpm rag:evaluate`：运行便宜的 deterministic golden QA 子集；`pnpm rag:evaluate -- --provider` 使用正式 Agent/pgvector/OpenAI-compatible provider 做人工全链路评估。

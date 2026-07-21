@@ -214,13 +214,56 @@ pnpm rag:knowledge:publish -- knowledge_candidate_0123456789abcdef
 
 ## 管理接口现状
 
-`packages/rag-core` 提供框架无关的 `KnowledgeGovernanceService`，覆盖导入、列表、详情、revision/history、批准、拒绝和可信作者维护；它不暴露发布能力。CLI 是当前第一个受控管理 adapter。
+`packages/rag-core` 提供框架无关的 `KnowledgeGovernanceService`，覆盖导入、列表、详情、revision/history、批准、拒绝和可信作者维护；它仍不暴露直接 publish 方法。`GET /admin` 提供 React 管理后台，`/admin/api/*` 是独立受保护的管理 adapter，没有挂到公开 `/api/chat`、`/api/chat/stream` 或 `/api/feedback`。
 
-本阶段没有把这些能力挂到公开 `/api/chat`，也没有新增无鉴权的管理 HTTP 路由。后续管理后台应在独立认证、RBAC、CSRF/审计和管理网络边界完成后调用同一服务，不能直接编辑 pgvector 行或另建一套审核状态。
+### 认证和 RBAC
+
+管理 API 使用高熵 Bearer Token。服务端配置只保存 SHA-256 哈希，明文令牌只在生成时展示一次：
+
+```bash
+pnpm admin:token:create -- alice admin
+```
+
+把输出的 JSON record 组成数组，按单行写入 `KNOWLEDGE_ADMIN_TOKENS_JSON`。不要把明文令牌或真实哈希配置提交到 Git。角色权限如下：
+
+| 角色        | 查看 | 修订/审核/导入 | 申请和重试发布 | 维护可信作者 |
+| ----------- | ---- | -------------- | -------------- | ------------ |
+| `viewer`    | 是   | 否             | 否             | 否           |
+| `reviewer`  | 是   | 是             | 否             | 否           |
+| `publisher` | 是   | 是             | 是             | 否           |
+| `admin`     | 是   | 是             | 是             | 是           |
+
+审核人、修订人、发布申请人和可信作者验证人都由认证主体生成，HTTP body 不能覆盖 actor。未配置管理令牌时 `/admin/api/*` 失败关闭并返回 `503`；无效令牌返回 `401`。管理接口同源运行，不开放管理 CORS；页面启用严格 CSP、`no-store`、frame deny，并有独立于公开聊天的限流。Bearer Header 不会由浏览器跨站自动附带，因此没有 Cookie 型 CSRF 通道；生产仍必须使用 HTTPS，并建议再放在管理网络或身份代理之后。
+
+### 管理功能
+
+后台支持：
+
+- 按状态查看候选，展开脱敏后的原始问题/回复、作者验证快照和上下文消息 ID。
+- 并排查看 Curator 标准知识、重复候选和正式 `knowledge_chunks` 冲突正文。
+- 保存 revision、批准、拒绝、审核备注、生效时间、来源和 `supersedes`。
+- 查看 revision、review、publication audit timeline。
+- 维护按 Chat、用户和有效期生效的可信作者。
+- 上传 Telegram Desktop JSON，默认自动使用可信名册和可用的 Telegram 当前管理员查询，不接受客户端伪造 `admin-id`。
+- 查看发布任务、失败原因、尝试次数和安全重试。
+
+后台不能直接编辑 pgvector 行；候选 revision、审核记录、版本化 Markdown 和 ingestion run 是事实源，向量索引只是派生数据。
+
+### PublicationJob
+
+后台的“申请发布”只创建唯一的持久化 `PublicationJob`，不会在 HTTP 请求内运行长时间 embedding 或全量索引：
+
+```bash
+pnpm rag:knowledge:publication:work
+```
+
+Worker 每次领取一条 `queued` 或租约过期的任务，状态为 `queued → running → succeeded|failed`。领取会写入 worker、租约和 attempt count；崩溃后其他 Worker 可在租约过期后接管。完成和失败写入同时校验 worker ID 与 attempt count，旧租约的执行器会被 fencing 拒绝。失败任务只能由 `publisher/admin` 明确重置为 queued。候选 ID 是幂等键，重复申请不会创建多个发布任务。
+
+Worker 继续使用本节已有的 Markdown、边界、检索、Golden QA 和 ingest 门禁。最终 chunk 替换、ingestion run、候选 `published` 与任务 `succeeded` 在同一个 PostgreSQL 事务完成；并发或重放最多造成重复计算，不能重复发布或越过候选状态机。生产 API 不执行数据库迁移，部署时仍先运行 `pnpm rag:migrate`。
 
 ## 验证
 
-相关单元测试覆盖：角色有效期、当前管理员历史风险、匿名/越权作者拒绝、线程重建、PII 脱敏、Agent Schema 与消息权限校验、重复/冲突识别、候选 revision/review、pending-only 和发布状态机。`docs/eval/knowledge-curator-golden.jsonl` 还提供版本化的确定性 Curator 回归样本。
+相关单元测试覆盖：角色有效期、当前管理员历史风险、匿名/越权作者拒绝、线程重建、PII 脱敏、Agent Schema 与消息权限校验、重复/冲突识别、候选 revision/review、pending-only、管理认证/RBAC、actor 防伪、管理 body 限制以及 PublicationJob 状态机。`docs/eval/knowledge-curator-golden.jsonl` 还提供版本化的确定性 Curator 回归样本。
 
 ```bash
 pnpm check
@@ -234,4 +277,5 @@ pnpm check
 - 不根据高频发言、投票或用户共识自动改变产品事实。
 - 不抓取 Telegram 消息中的任意链接并自动发布。
 - 不自动批准高质量分候选。
-- 尚未提供 Web 管理后台和 Telegram Guest Mode 的 `/teach`、`/approve`、`/reject`；这些入口必须复用当前服务与门禁。
+- 尚未提供 Telegram Guest Mode 的 `/teach`、`/approve`、`/reject`；这些入口必须复用当前服务与门禁。
+- 当前 Publication Worker 是显式 CLI 单任务执行器；常驻调度、跨重启长任务编排和 Temporal 属于后续规模化阶段。

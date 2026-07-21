@@ -202,6 +202,44 @@ describe('startServer', () => {
 });
 
 describe('createRequestHandler', () => {
+  it('serves the management shell with strict browser security headers', async () => {
+    const handler = createRequestHandler({
+      renderKnowledgeAdminHtml: () => '<!doctype html><title>Knowledge Admin</title>',
+    });
+
+    const response = await callHandler(handler, { method: 'GET', url: '/admin' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('Knowledge Admin');
+    expect(response.headers['Cache-Control']).toBe('no-store');
+    expect(response.headers['Content-Security-Policy']).toContain("default-src 'self'");
+    expect(response.headers['X-Frame-Options']).toBe('DENY');
+  });
+
+  it('rate limits the protected management namespace independently', async () => {
+    const handler = createRequestHandler({
+      env: {
+        KNOWLEDGE_ADMIN_RATE_LIMIT_MAX: '1',
+        KNOWLEDGE_ADMIN_RATE_LIMIT_WINDOW_MS: '60000',
+      },
+    });
+
+    const first = await callHandler(handler, {
+      method: 'GET',
+      remoteAddress: '203.0.113.10',
+      url: '/admin/api/me',
+    });
+    const second = await callHandler(handler, {
+      method: 'GET',
+      remoteAddress: '203.0.113.10',
+      url: '/admin/api/me',
+    });
+
+    expect(first.statusCode).toBe(503);
+    expect(second.statusCode).toBe(429);
+    expect(second.headers['Retry-After']).toBe('60');
+  });
+
   it('loads workspace .env values for the default API environment', async () => {
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'xxyy-api-env-'));
     await writeFile(path.join(workspaceRoot, 'pnpm-workspace.yaml'), 'packages: []\n');

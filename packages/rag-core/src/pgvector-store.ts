@@ -32,7 +32,7 @@ import {
   type QualityTracer,
 } from './quality-trace.js';
 import { extractSupportEntityTokens, supportEntityEvidenceBoost } from './support-entity.js';
-import { migrateKnowledgeCandidates } from './knowledge-candidates.js';
+import { migrateKnowledgePublicationJobs } from './knowledge-publication-jobs.js';
 import { reciprocalRankFusionScore } from './hybrid-rank.js';
 
 export interface PgClientLike {
@@ -583,7 +583,7 @@ export function createPgVectorStore(options: PgVectorStoreOptions): PgVectorStor
           where session_id is not null
         `,
       );
-      await migrateKnowledgeCandidates(options.client);
+      await migrateKnowledgePublicationJobs(options.client);
     },
 
     async recordFeedback(input: RecordFeedbackInput): Promise<void> {

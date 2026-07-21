@@ -86,6 +86,44 @@ describe('createKnowledgeGovernanceService', () => {
     });
     expect(service).not.toHaveProperty('publish');
   });
+
+  it('loads candidate context, duplicate candidates, conflict chunks, and immutable history', async () => {
+    const primary = {
+      ...candidateRow('pending'),
+      conflictChunkIds: ['official_docs:feature:chunk:1'],
+      duplicateCandidateIds: ['knowledge_candidate_2'],
+    };
+    const duplicate = { ...candidateRow('pending'), id: 'knowledge_candidate_2' };
+    const get = vi.fn<PgKnowledgeCandidateStore['get']>((id) =>
+      Promise.resolve(id === primary.id ? primary : id === duplicate.id ? duplicate : undefined),
+    );
+    const service = createKnowledgeGovernanceService({
+      candidateStore: candidateStore({ get }),
+      referenceStore: {
+        getByIds: () =>
+          Promise.resolve([
+            {
+              content: '旧规则内容',
+              documentId: 'official_docs:feature',
+              headingPath: ['功能'],
+              id: 'official_docs:feature:chunk:1',
+              module: '功能',
+              sourceType: 'official_docs',
+              status: 'current',
+              title: '功能规则',
+            },
+          ]),
+      },
+      trustedAuthorStore: trustedAuthorStore([]),
+    });
+
+    const detail = await service.getCandidateDetail(primary.id);
+
+    expect(detail?.candidate.id).toBe(primary.id);
+    expect(detail?.duplicates).toEqual([duplicate]);
+    expect(detail?.conflicts[0]).toMatchObject({ content: '旧规则内容' });
+    expect(get).toHaveBeenCalledWith('knowledge_candidate_2');
+  });
 });
 
 function candidateStore(

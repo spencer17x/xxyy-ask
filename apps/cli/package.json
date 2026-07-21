@@ -21,6 +21,7 @@
     "rag:knowledge:import:telegram": "tsx src/index.ts knowledge:import:telegram",
     "rag:knowledge:list": "tsx src/index.ts knowledge:list",
     "rag:knowledge:publish": "tsx src/index.ts knowledge:publish",
+    "rag:knowledge:publication:work": "tsx src/index.ts knowledge:publication:work",
     "rag:knowledge:reject": "tsx src/index.ts knowledge:reject",
     "rag:knowledge:revise": "tsx src/index.ts knowledge:revise",
     "rag:migrate": "tsx src/index.ts migrate",

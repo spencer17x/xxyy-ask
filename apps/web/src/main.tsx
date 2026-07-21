@@ -2,7 +2,9 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App.js';
+import { AdminApp } from './AdminApp.js';
 import './styles.css';
+import './admin.css';
 
 const root = document.getElementById('root');
 if (root === null) {
@@ -10,7 +12,5 @@ if (root === null) {
 }
 
 createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+  <StrictMode>{window.location.pathname.startsWith('/admin') ? <AdminApp /> : <App />}</StrictMode>,
 );

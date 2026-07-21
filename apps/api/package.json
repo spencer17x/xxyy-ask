@@ -8,7 +8,8 @@
     "@xxyy/knowledge": "workspace:*",
     "@xxyy/rag-core": "workspace:*",
     "@xxyy/shared": "workspace:*",
-    "@xxyy/web": "workspace:*"
+    "@xxyy/web": "workspace:*",
+    "zod": "^4.0.0"
   },
   "scripts": {
     "start": "tsx src/index.ts",

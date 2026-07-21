@@ -25,6 +25,7 @@ export type { EvaluationCase, EvaluationReport, EvaluationResult } from './evalu
 export { formatEvaluationFailureJsonl } from './evaluation-failures.js';
 export {
   createPgKnowledgeCandidateStore,
+  InvalidKnowledgeCandidateStateError,
   sanitizeKnowledgeCandidateText,
 } from './knowledge-candidates.js';
 export type {
@@ -49,12 +50,30 @@ export {
   createKnowledgeGovernanceService,
   UnverifiedTelegramKnowledgeAuthorError,
 } from './knowledge-governance-service.js';
+export {
+  createPgKnowledgePublicationJobStore,
+  InvalidKnowledgePublicationJobStateError,
+  KnowledgePublicationJobNotFoundError,
+  migrateKnowledgePublicationJobs,
+} from './knowledge-publication-jobs.js';
+export type {
+  KnowledgePublicationJob,
+  KnowledgePublicationJobStatus,
+  ListKnowledgePublicationJobsOptions,
+  PgKnowledgePublicationJobStore,
+} from './knowledge-publication-jobs.js';
 export type {
   ImportTelegramKnowledgeInput,
   ImportTelegramKnowledgeResult,
   KnowledgeGovernanceService,
   KnowledgeGovernanceServiceOptions,
+  KnowledgeCandidateDetail,
 } from './knowledge-governance-service.js';
+export { createPgKnowledgeGovernanceReferenceStore } from './knowledge-governance-references.js';
+export type {
+  KnowledgeConflictReference,
+  KnowledgeGovernanceReferenceStore,
+} from './knowledge-governance-references.js';
 export type {
   CuratorThreadInput,
   CuratorThreadMessage,

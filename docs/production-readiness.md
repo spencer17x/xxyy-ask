@@ -37,6 +37,8 @@ API 内置基础保护：
 
 - `API_MAX_BODY_BYTES` 限制 JSON 请求体大小，默认 `65536` 字节。
 - `API_RATE_LIMIT_MAX` 和 `API_RATE_LIMIT_WINDOW_MS` 对 `/api/chat`、`/api/chat/stream` 和 `/api/feedback` 按客户端地址限流，默认 `60` 次 / `60000` 毫秒。
+- `KNOWLEDGE_ADMIN_RATE_LIMIT_MAX` 和 `KNOWLEDGE_ADMIN_RATE_LIMIT_WINDOW_MS` 独立限制 `/admin/api/*`，默认 `30` 次 / `60000` 毫秒；未认证请求同样计数，降低令牌暴力尝试风险。
+- `KNOWLEDGE_ADMIN_MAX_BODY_BYTES` 限制管理请求和 Telegram JSON 导入，默认 `5242880` 字节。网关限制不得高于服务端限制太多。
 - `TRUST_PROXY=false` 时只使用 socket 地址；只有在可信反向代理后才设置 `TRUST_PROXY=true` 并读取 `x-forwarded-for` / `x-real-ip`。
 
 公开部署时仍应在网关层增加共享配额，因为进程内限流不适合多实例全局控制：
@@ -45,6 +47,20 @@ API 内置基础保护：
 - 对匿名 Web 流量设置更低 burst，对 Telegram 或可信服务端调用设置独立配额。
 - 对 429、5xx、超大请求体和高成本模型调用做告警。
 - 多实例部署时使用网关、Redis 或 API gateway 的共享限流，而不是依赖单个 Node 进程内存。
+
+## Knowledge Administration Security
+
+知识管理默认关闭。使用 `pnpm admin:token:create -- <id> <role>` 生成高熵令牌，只把 SHA-256 record 配置到 `KNOWLEDGE_ADMIN_TOKENS_JSON`，明文令牌进入组织密码管理器。生产要求：
+
+- 强制 HTTPS；管理入口优先限制在 VPN、零信任代理或独立管理域名。
+- 按 `viewer`、`reviewer`、`publisher`、`admin` 最小授权，不把共享 admin token 发给日常审核人员。
+- 轮换或撤销令牌时更新配置并滚动重启 API；审计记录使用稳定 actor ID，不写入令牌。
+- `/admin` 页面设置 CSP、`no-store`、`X-Frame-Options: DENY` 和 `no-referrer`；管理 API 不开放跨域。
+- API 只创建和审核候选、维护可信作者及申请发布，不在 HTTP 请求内执行长时间 ingest，也不直接编辑 pgvector。
+- 发布由 `pnpm rag:knowledge:publication:work` 领取持久化任务，完成/失败写入受 worker ID 与 attempt count fencing 保护。对 `failed`、租约频繁过期、attempt count 异常和长期 queued 建立告警。
+- 部署先执行 `pnpm rag:migrate`。API 进程不会自行迁移管理表。
+
+当前 Bearer Token adapter 是本地 MVP 的认证边界；接入企业 IdP 时应保持同一 `KnowledgeAdminPrincipal` 与权限契约，避免把身份提供方逻辑写入知识治理核心。
 
 ## Data Privacy And Retention
 
