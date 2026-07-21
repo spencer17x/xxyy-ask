@@ -6,6 +6,7 @@ export type { AnswerQualityJudge } from './answer-quality-judge.js';
 export {
   createAttachmentsFromChunks,
   createBoundaryAnswer,
+  createCitationsForAnswer,
   createCitationsFromChunks,
   createGroundedAnswer,
   createInsufficientKnowledgeAnswer,
@@ -22,7 +23,15 @@ export type { RagConfig, RagEnv } from './config.js';
 export { loadWorkspaceEnv, resolveWorkspaceCwd } from './env.js';
 export { evaluateCases } from './evaluate.js';
 export type { EvaluationCase, EvaluationReport, EvaluationResult } from './evaluate.js';
+export { packKnowledgeContext } from './context-packer.js';
+export type {
+  KnowledgeContextPackingOptions,
+  KnowledgeContextPackingStats,
+  PackedKnowledgeContext,
+} from './context-packer.js';
 export { formatEvaluationFailureJsonl } from './evaluation-failures.js';
+export { validateAnswerGrounding } from './grounding-validation.js';
+export type { AnswerGroundingValidation, GroundingClaimResult } from './grounding-validation.js';
 export {
   createPgKnowledgeCandidateStore,
   InvalidKnowledgeCandidateStateError,
@@ -50,6 +59,16 @@ export {
   createKnowledgeGovernanceService,
   UnverifiedTelegramKnowledgeAuthorError,
 } from './knowledge-governance-service.js';
+export {
+  hasUsableKnowledgeText,
+  KNOWLEDGE_INJECTION_QUARANTINE_MARKER,
+  sanitizeRetrievedKnowledgeChunk,
+  sanitizeUntrustedKnowledgeText,
+} from './knowledge-content-safety.js';
+export type {
+  KnowledgeContentSafetyResult,
+  KnowledgeInjectionSignal,
+} from './knowledge-content-safety.js';
 export {
   createPgKnowledgePublicationJobStore,
   InvalidKnowledgePublicationJobStateError,

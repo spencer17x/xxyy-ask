@@ -380,7 +380,7 @@ function effectiveAtFreshnessBoost(effectiveAt: string | undefined): number {
 export function isHistoricalOrTweetQuestion(question: string): boolean {
   const normalized = question.normalize('NFKC').toLowerCase();
   return (
-    /历史|以前|之前|过去|曾经|更新日志|变更|changelog|哪条推文|哪条推特|推文|推特|tweet|x\s*post/iu.test(
+    /历史|以前|之前|过去|曾经|当时|截至(?:当时|那时|\d)|(?:19|20)\d{2}(?:\s*年|[-/]\d{1,2})|更新日志|变更|changelog|哪条推文|哪条推特|推文|推特|tweet|x\s*post/iu.test(
       normalized,
     ) || isProductTimelineQuestion(normalized)
   );

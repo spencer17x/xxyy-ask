@@ -601,6 +601,92 @@ describe('createGroundedAnswer', () => {
     expect(selected.map((chunk) => chunk.id)).not.toContain('capacity-history');
   });
 
+  it('keeps explicitly historical evidence when a dated question also says maximum', () => {
+    const selected = selectGroundingChunks('2025年9月24日当时钱包监控上限是多少？', [
+      createRetrievedChunk({
+        effectiveAt: '2025-09-24T07:57:10.000Z',
+        id: 'historical-capacity',
+        rank: 1,
+        status: 'historical',
+        text: '当时每条链的钱包监控上限为3000个。',
+        title: '2025 钱包监控上限',
+      }),
+      createRetrievedChunk({
+        effectiveAt: '2026-03-10T11:36:55.000Z',
+        id: 'current-capacity',
+        rank: 2,
+        status: 'current',
+        text: '当前钱包监控最多支持5000个地址。',
+        title: '当前钱包监控上限',
+      }),
+      createRetrievedChunk({
+        id: 'undated-rollup',
+        rank: 3,
+        text: '钱包监控后来提升到每条链最多5000个地址。',
+        title: '容量历史汇总',
+      }),
+    ]);
+
+    expect(selected[0]?.id).toBe('historical-capacity');
+    expect(selected[0]?.text).toContain('3000');
+    expect(selected.map((chunk) => chunk.id)).not.toContain('current-capacity');
+    expect(selected.map((chunk) => chunk.id)).not.toContain('undated-rollup');
+  });
+
+  it('uses a scoped current standard answer for colloquial old-vs-new conflicts', () => {
+    const selected = selectGroundingChunks(
+      '群里有人说 Pro 只能监控2000个钱包，也有人说5000个，现在到底是多少？',
+      [
+        createRetrievedChunk({
+          id: 'current-pro',
+          rank: 1,
+          status: 'current',
+          text: '标准客服回答：XXYY Pro 每条链最多监控5000个钱包。',
+          title: 'XXYY Pro 权益',
+        }),
+        createRetrievedChunk({
+          id: 'old-pro',
+          rank: 2,
+          status: 'historical',
+          text: 'Pro 用户支持监控2000个钱包。',
+          title: '旧 Pro 权益',
+        }),
+      ],
+    );
+
+    expect(selected.map((chunk) => chunk.id)).toEqual(['current-pro']);
+  });
+
+  it('keeps structured evidence within the anchor document when it is sufficient', () => {
+    const selected = selectGroundingChunks('永久 PRO 额外有哪些权益？', [
+      createRetrievedChunk({
+        documentId: 'permanent-pro',
+        id: 'permanent-pro-features',
+        rank: 1,
+        text: '永久 PRO 支持定制化功能开发、一次升级长期有效。',
+        title: '永久 PRO',
+      }),
+      createRetrievedChunk({
+        documentId: 'permanent-pro',
+        id: 'permanent-pro-support',
+        rank: 2,
+        text: '永久 PRO 提供专属客服随时答疑。',
+        title: '永久 PRO',
+      }),
+      createRetrievedChunk({
+        id: 'old-promotion',
+        rank: 3,
+        text: '春节期间 PRO 限时一折兑换。',
+        title: '旧促销推文',
+      }),
+    ]);
+
+    expect(selected.map((chunk) => chunk.id)).toEqual([
+      'permanent-pro-features',
+      'permanent-pro-support',
+    ]);
+  });
+
   it('matches short support entities as exact tokens instead of substrings', () => {
     expect(
       createSupportConclusionFromEvidence('XXYY 支持 OP 吗？', ['XXYY 支持 Copy Trading。']),
@@ -707,17 +793,19 @@ describe('createGroundedAnswer', () => {
 });
 
 function createRetrievedChunk(input: {
+  documentId?: string;
   effectiveAt?: string;
   id: string;
   rank?: number;
   score?: number;
   sourceType?: RetrievedChunk['metadata']['sourceType'];
   sourceUrl?: string;
+  status?: RetrievedChunk['metadata']['status'];
   text: string;
   title: string;
 }): RetrievedChunk {
   return {
-    documentId: input.id,
+    documentId: input.documentId ?? input.id,
     embedding: [],
     id: input.id,
     lexicalScore: 1,
@@ -726,6 +814,7 @@ function createRetrievedChunk(input: {
       headingPath: [input.title],
       module: input.title,
       sourceType: input.sourceType ?? 'official_docs',
+      ...(input.status === undefined ? {} : { status: input.status }),
       title: input.title,
       ...(input.effectiveAt === undefined ? {} : { effectiveAt: input.effectiveAt }),
       ...(input.sourceUrl === undefined ? {} : { sourceUrl: input.sourceUrl }),

@@ -1,7 +1,11 @@
 import type { ChatAttachment, ChatResponse, Citation, Classification, Intent } from '@xxyy/shared';
 import { tokenize } from '@xxyy/knowledge';
 
-import type { RetrievedChunk } from './retrieve.js';
+import { isHistoricalOrTweetQuestion, type RetrievedChunk } from './retrieve.js';
+import {
+  hasUsableKnowledgeText,
+  sanitizeRetrievedKnowledgeChunk,
+} from './knowledge-content-safety.js';
 import {
   extractSupportEntityTokens,
   isSupportEntityToken,
@@ -92,9 +96,12 @@ export function selectGroundingChunks(
   question: string,
   retrievedChunks: RetrievedChunk[],
 ): RetrievedChunk[] {
+  const safeRetrievedChunks = retrievedChunks
+    .map(sanitizeRetrievedKnowledgeChunk)
+    .filter((chunk) => hasUsableKnowledgeText(chunk.text));
   const deduplicatedChunks = filterStandardAnswerGroundingChunks(
     question,
-    filterTemporalGroundingChunks(question, deduplicateGroundingChunks(retrievedChunks)),
+    filterTemporalGroundingChunks(question, deduplicateGroundingChunks(safeRetrievedChunks)),
   );
   const highRankedChunks = deduplicatedChunks.slice(0, MAX_CITATIONS);
 
@@ -184,6 +191,15 @@ function standardAnswerMatchesQuestion(chunk: RetrievedChunk, question: string):
   if (queryTokens.length === 0) {
     return false;
   }
+  const titleTokens = meaningfulAnswerTokens(chunk.metadata.title);
+  const matchedTitleTokens = titleTokens.filter((token) => queryTokens.includes(token));
+  if (
+    titleTokens.length > 0 &&
+    matchedTitleTokens.length / titleTokens.length >= 0.5 &&
+    /权益|有什么|哪些|多少|上限|限制|包括|包含|区别|比较/u.test(question)
+  ) {
+    return true;
+  }
   const evidenceTokens = new Set(tokenize(toEvidenceText(chunk)));
   const matchedTokenCount = queryTokens.filter((token) => evidenceTokens.has(token)).length;
   return matchedTokenCount / queryTokens.length >= 0.75;
@@ -193,6 +209,33 @@ function filterTemporalGroundingChunks(
   question: string,
   chunks: RetrievedChunk[],
 ): RetrievedChunk[] {
+  const historicalRange = extractHistoricalReferenceRange(question);
+  if (historicalRange !== undefined) {
+    const datedChunks = chunks.flatMap((chunk) => {
+      const timestamp = Date.parse(chunk.metadata.effectiveAt ?? '');
+      return Number.isFinite(timestamp) ? [{ chunk, timestamp }] : [];
+    });
+    const withinRange = datedChunks
+      .filter(
+        ({ timestamp }) =>
+          timestamp >= historicalRange.startTimestamp && timestamp <= historicalRange.endTimestamp,
+      )
+      .map(({ chunk }) => chunk);
+    if (withinRange.length > 0) {
+      return withinRange;
+    }
+
+    const latestBeforeRange = datedChunks
+      .filter(({ timestamp }) => timestamp <= historicalRange.endTimestamp)
+      .sort((left, right) => right.timestamp - left.timestamp || left.chunk.rank - right.chunk.rank)
+      .map(({ chunk }) => chunk);
+    if (latestBeforeRange.length > 0) {
+      return latestBeforeRange;
+    }
+
+    return datedChunks.length === 0 ? chunks : [];
+  }
+
   if (!isCurrentStateQuestion(question)) {
     return chunks;
   }
@@ -206,7 +249,64 @@ function filterTemporalGroundingChunks(
   return currentChunks.length === 0 ? chunks : currentChunks;
 }
 
+function extractHistoricalReferenceRange(
+  question: string,
+): { endTimestamp: number; startTimestamp: number } | undefined {
+  const normalized = question.normalize('NFKC');
+  const dayMatch =
+    /(?<year>(?:19|20)\d{2})\s*年\s*(?<month>\d{1,2})\s*月\s*(?<day>\d{1,2})\s*日?/u.exec(
+      normalized,
+    ) ?? /(?<year>(?:19|20)\d{2})[-/](?<month>\d{1,2})[-/](?<day>\d{1,2})/u.exec(normalized);
+  const year = Number(dayMatch?.groups?.year);
+  const month = Number(dayMatch?.groups?.month);
+  const day = Number(dayMatch?.groups?.day);
+  if (isValidDateParts(year, month, day)) {
+    return {
+      endTimestamp: Date.UTC(year, month - 1, day + 1) - 1,
+      startTimestamp: Date.UTC(year, month - 1, day),
+    };
+  }
+
+  const monthMatch = /(?<year>(?:19|20)\d{2})\s*年\s*(?<month>\d{1,2})\s*月/u.exec(normalized);
+  const monthYear = Number(monthMatch?.groups?.year);
+  const monthNumber = Number(monthMatch?.groups?.month);
+  if (
+    Number.isInteger(monthYear) &&
+    Number.isInteger(monthNumber) &&
+    monthNumber >= 1 &&
+    monthNumber <= 12
+  ) {
+    return {
+      endTimestamp: Date.UTC(monthYear, monthNumber, 1) - 1,
+      startTimestamp: Date.UTC(monthYear, monthNumber - 1, 1),
+    };
+  }
+
+  return undefined;
+}
+
+function isValidDateParts(year: number, month: number, day: number): boolean {
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return false;
+  }
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+}
+
 function isCurrentStateQuestion(question: string): boolean {
+  if (isHistoricalOrTweetQuestion(question)) {
+    return false;
+  }
   return /当前|现在|目前|最新|最多|上限|现阶段|today|current(?:ly)?|latest|now/iu.test(
     question.normalize('NFKC'),
   );
@@ -704,7 +804,30 @@ function unsupportedTransactionAnalysisBoundaryText(): string {
 }
 
 export function createCitationsFromChunks(retrievedChunks: RetrievedChunk[]): Citation[] {
-  return retrievedChunks.slice(0, MAX_STRUCTURED_GROUNDING_CHUNKS).map(createCitation);
+  return retrievedChunks
+    .map(sanitizeRetrievedKnowledgeChunk)
+    .filter((chunk) => hasUsableKnowledgeText(chunk.text))
+    .slice(0, MAX_STRUCTURED_GROUNDING_CHUNKS)
+    .map(createCitation);
+}
+
+export function createCitationsForAnswer(
+  question: string,
+  answer: string,
+  retrievedChunks: RetrievedChunk[],
+): Citation[] {
+  const relevanceQuery = `${question}\n${answer}`;
+  return retrievedChunks
+    .map(sanitizeRetrievedKnowledgeChunk)
+    .filter((chunk) => hasUsableKnowledgeText(chunk.text))
+    .slice(0, MAX_STRUCTURED_GROUNDING_CHUNKS)
+    .map((chunk) => ({
+      ...createCitation(chunk),
+      excerpt: withCitationPublicationDate(
+        chunk,
+        createRelevantExcerpt(relevanceQuery, chunk.text),
+      ),
+    }));
 }
 
 function createCitationsForQuestion(
@@ -906,6 +1029,18 @@ function selectStructuredGroundingChunks(
       score: groundingEvidenceStrength(chunk, question, queryTokens, anchorDocumentId),
     }))
     .filter((candidate) => candidate.score > 0);
+  const sameDocumentCandidates =
+    anchorDocumentId === undefined
+      ? []
+      : scored.filter((candidate) => candidate.chunk.documentId === anchorDocumentId);
+  if (sameDocumentCandidates.length > 0 && !requiresMultipleGroundingSources(question)) {
+    return [
+      anchorChunk,
+      ...sameDocumentCandidates
+        .sort((left, right) => right.score - left.score || left.chunk.rank - right.chunk.rank)
+        .map((candidate) => candidate.chunk),
+    ].slice(0, MAX_STRUCTURED_GROUNDING_CHUNKS);
+  }
   const remaining = scored
     .sort((left, right) => {
       const rightScore = right.score + reciprocalGroundingRank(right.chunk.rank);

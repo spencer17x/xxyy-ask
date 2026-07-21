@@ -24,12 +24,12 @@
 目标：让产品知识库回答更可信、可追溯，并能处理官方文档与 X / Twitter 更新之间的新旧冲突。
 
 - [x] 知识新旧与冲突策略：official docs / X updates / admin verified 支持 freshness、effective time、current / historical / deprecated 和 `supersedes`；当前问题使用更新规则，历史问题保留旧版本回溯。
-- [ ] Citation grounding：验证答案中的关键 claim 是否被引用片段支持，避免“有引用但引用不支撑答案”。
-- [ ] Chunk-aware context packing：替代固定字符截断，按 chunk / 句子 / 限制条件保留关键上下文。
-- [ ] Prompt injection 防护：把知识库内容当作资料而不是指令，检测并清洗外部来源中的指令注入文本。
-- [ ] Golden QA 扩充：补充真实客服问题、历史失败样本、知识冲突样本、边界样本和引用稳定性样本。
+- [x] Citation grounding：模型回答返回前，本地逐条验证关键 claim 的数字、限制、支持状态和操作事实；无证据 claim 安全降级，引用只保留实际支撑回答的 chunk。
+- [x] Chunk-aware context packing：按 chunk 公平分配预算，按问题相关度、完整句子、列表和限制条件选择内容，不再固定截取每个 chunk 的前缀。
+- [x] Prompt injection 防护：知识正文和可展示元数据先脱敏并检测角色覆盖、忽略规则、提示词泄露和伪造工具调用；命中片段隔离后再以 JSON 字符串进入模型上下文。
+- [x] Golden QA 扩充：48 个 deterministic 用例覆盖真实客服问法、当前/历史冲突、边界、限制条件和引用稳定性；另有注入、context packing、claim grounding 与流式泄漏单元测试。
 
-成功标准：默认回答当前有效规则；冲突时不混合旧/新事实；关键事实有可验证引用；`pnpm check` 覆盖核心回归样本。
+成功标准：默认回答当前有效规则；显式日期问题使用对应时间窗口；冲突时不混合旧/新事实；关键事实有可验证引用；`pnpm check` 覆盖核心回归样本。
 
 ## v0.3 Bounded Agent Loop
 

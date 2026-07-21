@@ -214,10 +214,11 @@ pnpm rag:knowledge:publication:work
 
 - 知识入库按 Markdown 标题层级保留完整 `headingPath`，默认单块上限 900 字符。长正文优先按中英文句末切分并保留最多 100 字符语义重叠；列表、表格和 fenced code 按结构行切分，避免把操作步骤拆在中间。若同一文档包含至少 3 个短章节且合并后仍不超过上限，会在保留叶子块的同时追加一个文档概览父块，用于回答“有哪些区域/功能”这类跨章节问题。
 - 空图片、空注释、孤立代码围栏、水平分隔线和许可证链接不会生成检索块。X / Twitter 原始消息每条独立成文档，只索引正文，账号、帖子 ID、URL 和发布时间继续保留在结构化元数据中。
-- embedding 检索文本和回答模型上下文都包含标题、模块与完整章节路径；Chunk 上限与回答上下文的单块上限保持一致，避免尾部内容在传给 LLM 前再次被截断。
+- embedding 检索文本包含标题、模块与完整章节路径。进入回答模型前，知识正文及可展示元数据会先脱敏并隔离疑似 prompt injection，再按 chunk 公平预算、完整句子、列表和限制条件打包为 JSON 资料字段；长 chunk 不再固定截取前 900 个字符。
 - 正式产品问答使用 pgvector 向量、Postgres 全文关键词和支持实体候选，并通过 RRF 合并不同分数尺度的 rank；候选阶段保留 source/debug scores 便于评测和排障。
 - 内置 `createMetadataReranker()` 是本地 deterministic reranker，使用问题覆盖率、标题/模块/heading、直接来源、列表/步骤证据和当前有效状态做通用二阶段排序，不调用外部模型，也不按具体产品 case 写规则。
 - 明确分类为 `product_qa` / `how_to` 的问题直接使用原问题进入产品 RAG；Planner 仅处理模糊路由和 Agent 自述，避免额外改写影响召回。
+- 模型答案返回前会在本地校验关键 claim 的数字、限制、支持状态和操作事实；无证据输出降级为 deterministic grounded answer，成功输出只保留实际支撑 claim 的引用。该校验不调用第二个模型。流式答案先缓冲完成校验，防止已经发出的幻觉 token 无法撤回。
 - LLM relevance judge 或外部 reranker provider 可以按同一接口接入，但应默认关闭，并在有评估用例证明收益后再启用，以避免额外成本和延迟。
 
 ## 回答质量闭环

@@ -2,6 +2,8 @@
 
 `golden-qa.jsonl` is the cheap deterministic regression set that runs in `pnpm check`.
 Keep it stable, source-grounded, and focused on customer-support behavior.
+The current set contains 48 reviewed cases, including current-vs-historical conflicts,
+colloquial support questions, constraint preservation, boundary replies, and citation stability.
 
 ## Record format
 
@@ -73,6 +75,13 @@ Add or update a golden case when:
 - tightening a safety boundary for account data, transaction forensics, private credentials, or investment advice.
 
 Prefer realistic user wording. Keep assertions short and factual; avoid checking prose style unless the style is the behavior under test.
+
+Trustworthiness changes need two layers of regression evidence:
+
+- Golden QA records verify real source selection, current/historical conflict handling, required facts, forbidden stale facts, and stable citation files/URLs.
+- Unit tests verify adversarial properties that should not be inserted into production knowledge, including prompt injection quarantine, sentence-aware context budgets, unsupported numeric/step claim fallback, and streamed-token non-leakage.
+
+`requireCitationSupport` is a deterministic literal check for the selected required phrases. The runtime answer provider additionally performs claim-level local grounding for the complete model answer; provider-backed evaluation exercises that runtime path.
 
 ## Verification
 

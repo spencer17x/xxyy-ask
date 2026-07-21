@@ -71,14 +71,22 @@ describe('quality trace end-to-end smoke', () => {
       'rag.metadata_rerank',
       'rag.grounding_selection',
       'llm.answer',
+      'rag.claim_grounding',
     ]);
     const productRoot = records[0];
     const tool = records.find((record) => record.name === 'agent.tool');
     expect(tool?.parentId).toBe(productRoot?.id);
-    for (const dependency of records.filter((record) => record.name.startsWith('rag.'))) {
+    for (const dependency of records.filter(
+      (record) => record.name.startsWith('rag.') && record.name !== 'rag.claim_grounding',
+    )) {
       expect(dependency.parentId).toBe(tool?.id);
     }
-    expect(records.find((record) => record.name === 'llm.answer')?.parentId).toBe(tool?.id);
+    const answer = records.find((record) => record.name === 'llm.answer');
+    expect(answer?.parentId).toBe(tool?.id);
+    expect(records.find((record) => record.name === 'rag.claim_grounding')).toMatchObject({
+      outputs: { grounded: true, unsupportedClaimCount: 0 },
+      parentId: answer?.id,
+    });
     expect(embedding).toHaveBeenCalledTimes(1);
     expect(database.queryCount).toBe(1);
     expect(llm).toHaveBeenCalledTimes(1);

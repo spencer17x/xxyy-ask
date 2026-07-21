@@ -17,6 +17,7 @@ import {
   createMetadataReranker,
   createRerankingRetriever,
   selectGroundingChunks,
+  sanitizeRetrievedKnowledgeChunk,
   loadRagConfig,
   type AnswerProvider,
   type RagConfig,
@@ -270,18 +271,19 @@ function toSearchProductDocsOutput(
 }
 
 function toOutputChunk(chunk: RetrievedChunk): z.input<typeof retrievedChunkSchema> {
+  const safeChunk = sanitizeRetrievedKnowledgeChunk(chunk);
   return {
-    documentId: chunk.documentId,
-    id: chunk.id,
-    lexicalScore: chunk.lexicalScore,
+    documentId: safeChunk.documentId,
+    id: safeChunk.id,
+    lexicalScore: safeChunk.lexicalScore,
     metadata: {
-      ...chunk.metadata,
+      ...safeChunk.metadata,
     },
-    rank: chunk.rank,
-    score: chunk.score,
-    sourceBoost: chunk.sourceBoost,
-    text: chunk.text,
-    vectorScore: chunk.vectorScore,
+    rank: safeChunk.rank,
+    score: safeChunk.score,
+    sourceBoost: safeChunk.sourceBoost,
+    text: safeChunk.text,
+    vectorScore: safeChunk.vectorScore,
   };
 }
 
