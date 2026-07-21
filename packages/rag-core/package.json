@@ -11,7 +11,8 @@
     "@xxyy/shared": "workspace:*",
     "dotenv": "^17.4.2",
     "langsmith": "^0.7.10",
-    "pg": "^8.21.0"
+    "pg": "^8.21.0",
+    "zod": "^4.0.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"

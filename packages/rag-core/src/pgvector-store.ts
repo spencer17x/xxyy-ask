@@ -38,6 +38,7 @@ import { reciprocalRankFusionScore } from './hybrid-rank.js';
 export interface PgClientLike {
   connect?(): Promise<PgTransactionClientLike>;
   query<T>(sql: string, values?: readonly unknown[]): Promise<{ rows: T[] }>;
+  release?(): void;
 }
 
 interface PgTransactionClientLike {

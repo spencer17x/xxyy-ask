@@ -1,0 +1,164 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import type { PgKnowledgeCandidateStore } from './knowledge-candidates.js';
+import {
+  createKnowledgeGovernanceService,
+  UnverifiedTelegramKnowledgeAuthorError,
+} from './knowledge-governance-service.js';
+import type { PgTrustedAuthorStore, TrustedAuthor } from './trusted-authors.js';
+
+describe('createKnowledgeGovernanceService', () => {
+  it('fails when agent curation is requested without a configured model', async () => {
+    const service = createKnowledgeGovernanceService({
+      candidateStore: candidateStore(),
+      trustedAuthorStore: trustedAuthorStore([trustedAuthor()]),
+    });
+
+    await expect(
+      service.importTelegram({ rawExport: telegramExport(), useAgent: true }),
+    ).rejects.toThrow('no curator model is configured');
+  });
+
+  it('automatically uses the time-bounded roster and persists pending-only inputs', async () => {
+    const createMany = vi.fn<PgKnowledgeCandidateStore['createMany']>().mockResolvedValue({
+      created: [],
+      duplicateCount: 0,
+    });
+    const service = createKnowledgeGovernanceService({
+      candidateStore: candidateStore({ createMany }),
+      trustedAuthorStore: trustedAuthorStore([trustedAuthor()]),
+    });
+
+    const result = await service.importTelegram({
+      rawExport: telegramExport(),
+      runId: 'curator_run_1',
+    });
+
+    expect(result).toMatchObject({
+      candidateCount: 1,
+      deterministicCandidateCount: 1,
+      runId: 'curator_run_1',
+      verifiedAuthorMessageCount: 1,
+    });
+    const inputs = createMany.mock.calls[0]?.[0] ?? [];
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).not.toHaveProperty('status');
+    expect(inputs[0]).toMatchObject({
+      authorVerification: { status: 'trusted_author' },
+      curatorRunId: 'curator_run_1',
+    });
+  });
+
+  it('fails closed when no author can be verified', async () => {
+    const createMany = vi.fn<PgKnowledgeCandidateStore['createMany']>();
+    const service = createKnowledgeGovernanceService({
+      candidateStore: candidateStore({ createMany }),
+      trustedAuthorStore: trustedAuthorStore([]),
+    });
+
+    await expect(service.importTelegram({ rawExport: telegramExport() })).rejects.toBeInstanceOf(
+      UnverifiedTelegramKnowledgeAuthorError,
+    );
+    expect(createMany).not.toHaveBeenCalled();
+  });
+
+  it('does not expose publication and delegates approval to the existing review gate', async () => {
+    const review = vi
+      .fn<PgKnowledgeCandidateStore['review']>()
+      .mockResolvedValue(candidateRow('approved'));
+    const service = createKnowledgeGovernanceService({
+      candidateStore: candidateStore({ review }),
+      trustedAuthorStore: trustedAuthorStore([]),
+    });
+
+    const approved = await service.approve({
+      effectiveAt: '2026-07-15',
+      id: 'knowledge_candidate_1',
+      reviewedBy: 'operator:alice',
+    });
+
+    expect(approved.status).toBe('approved');
+    expect(review).toHaveBeenCalledWith({
+      decision: 'approve',
+      effectiveAt: '2026-07-15',
+      id: 'knowledge_candidate_1',
+      reviewedBy: 'operator:alice',
+    });
+    expect(service).not.toHaveProperty('publish');
+  });
+});
+
+function candidateStore(
+  overrides: Partial<PgKnowledgeCandidateStore> = {},
+): PgKnowledgeCandidateStore {
+  return {
+    createMany: () => Promise.resolve({ created: [], duplicateCount: 0 }),
+    get: () => Promise.resolve(undefined),
+    getHistory: () => Promise.resolve({ auditEvents: [], reviews: [], revisions: [] }),
+    list: () => Promise.resolve([]),
+    markPublished: () => Promise.reject(new Error('not used')),
+    migrate: () => Promise.resolve(),
+    revise: () => Promise.reject(new Error('not used')),
+    review: () => Promise.reject(new Error('not used')),
+    ...overrides,
+  };
+}
+
+function trustedAuthorStore(authors: TrustedAuthor[]): PgTrustedAuthorStore {
+  return {
+    list: () => Promise.resolve(authors),
+    migrate: () => Promise.resolve(),
+    resolve: () => Promise.resolve(undefined),
+    trust: () => Promise.reject(new Error('not used')),
+  };
+}
+
+function trustedAuthor(): TrustedAuthor {
+  return {
+    chatId: '-100123',
+    createdAt: '2026-07-01T00:00:00.000Z',
+    id: 'trusted_author_123',
+    role: 'administrator',
+    updatedAt: '2026-07-01T00:00:00.000Z',
+    userId: '123',
+    validFrom: '2026-07-01T00:00:00.000Z',
+    verificationSource: 'manual',
+    verifiedAt: '2026-07-01T00:00:00.000Z',
+    verifiedBy: 'operator:alice',
+  };
+}
+
+function telegramExport() {
+  return {
+    id: -100123,
+    messages: [
+      {
+        date: '2026-07-15T01:00:00Z',
+        from_id: 'user456',
+        id: 1,
+        text: 'XXYY 如何设置价格提醒？',
+      },
+      {
+        date: '2026-07-15T01:02:00Z',
+        from_id: 'user123',
+        id: 2,
+        reply_to_message_id: 1,
+        text: '在提醒设置中开启价格提醒，保存后生效。',
+      },
+    ],
+  };
+}
+
+function candidateRow(status: 'approved' | 'pending') {
+  return {
+    canonicalAnswer: '答案',
+    contentHash: 'hash',
+    createdAt: '2026-07-15T00:00:00.000Z',
+    currentRevision: 1,
+    id: 'knowledge_candidate_1',
+    question: '问题',
+    sourceChannel: 'telegram_export' as const,
+    status,
+    updatedAt: '2026-07-15T00:00:00.000Z',
+  };
+}

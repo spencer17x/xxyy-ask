@@ -40,14 +40,28 @@ describe('extractTelegramKnowledgeCandidates', () => {
     });
     expect(result.candidates).toEqual([
       {
+        authorVerification: {
+          role: 'administrator',
+          source: 'explicit_admin_id',
+          status: 'explicit_admin_id',
+          userId: '123',
+        },
         canonicalAnswer: '是的，已经支持。来源：https://docs.example.com/robinhood',
+        contextMessageIds: ['10', '11'],
         effectiveAt: '2026-07-15T01:02:00.000Z',
         evidence: 'Telegram export reply 11 to message 10.',
+        extractionMethod: 'deterministic_direct_reply',
+        proposedModule: '产品功能',
+        proposedTitle: 'XXYY 支持 Robinhood 吗',
+        qualityScore: 0.78,
         question: 'XXYY 支持 Robinhood 吗？',
+        riskFlags: ['non_official_source', 'unversioned_explicit_admin'],
         sourceAnswerMessageId: '11',
+        sourceAnswerText: '是的，已经支持。来源：https://docs.example.com/robinhood',
         sourceChannel: 'telegram_export',
         sourceChatId: '-100123',
         sourceQuestionMessageId: '10',
+        sourceQuestionText: 'XXYY 支持 Robinhood 吗？',
         sourceUrl: 'https://docs.example.com/robinhood',
         submittedBy: '123',
       },
@@ -86,5 +100,17 @@ describe('extractTelegramKnowledgeCandidates', () => {
         },
       ),
     ).toThrow('Invalid Telegram export message at index 0.');
+
+    expect(() =>
+      extractTelegramKnowledgeCandidates(
+        {
+          messages: [
+            { id: 1, text: 'first' },
+            { id: 1, text: 'duplicate' },
+          ],
+        },
+        { adminUserIds: new Set(['123']) },
+      ),
+    ).toThrow('Telegram export contains duplicate message id 1.');
   });
 });

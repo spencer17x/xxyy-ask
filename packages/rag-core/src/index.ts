@@ -23,12 +23,51 @@ export { loadWorkspaceEnv, resolveWorkspaceCwd } from './env.js';
 export { evaluateCases } from './evaluate.js';
 export type { EvaluationCase, EvaluationReport, EvaluationResult } from './evaluate.js';
 export { formatEvaluationFailureJsonl } from './evaluation-failures.js';
-export { createPgKnowledgeCandidateStore } from './knowledge-candidates.js';
+export {
+  createPgKnowledgeCandidateStore,
+  sanitizeKnowledgeCandidateText,
+} from './knowledge-candidates.js';
 export type {
   CreateKnowledgeCandidateInput,
+  KnowledgeAuthorVerification,
   KnowledgeCandidate,
+  KnowledgeCandidateExtractionMethod,
+  KnowledgeCandidateHistory,
+  KnowledgeCandidateRevision,
+  KnowledgeCandidateReviewRecord,
   KnowledgeCandidateStatus,
+  KnowledgeGovernanceAuditEvent,
+  ReviseKnowledgeCandidateInput,
 } from './knowledge-candidates.js';
+export {
+  createKnowledgeMatchInspector,
+  createPgKnowledgeMatchInspector,
+  createOpenAiKnowledgeCuratorModel,
+  runKnowledgeCurator,
+} from './knowledge-curator.js';
+export {
+  createKnowledgeGovernanceService,
+  UnverifiedTelegramKnowledgeAuthorError,
+} from './knowledge-governance-service.js';
+export type {
+  ImportTelegramKnowledgeInput,
+  ImportTelegramKnowledgeResult,
+  KnowledgeGovernanceService,
+  KnowledgeGovernanceServiceOptions,
+} from './knowledge-governance-service.js';
+export type {
+  CuratorThreadInput,
+  CuratorThreadMessage,
+  KnowledgeCuratorModel,
+  KnowledgeCuratorProposal,
+  KnowledgeCuratorRunResult,
+  KnowledgeMatchInspection,
+  KnowledgeMatchInspector,
+  KnowledgeMatchInspectorOptions,
+  OpenAiKnowledgeCuratorModelOptions,
+  PgKnowledgeMatchInspectorOptions,
+  RunKnowledgeCuratorInput,
+} from './knowledge-curator.js';
 export {
   createQualityTracerFromEnv,
   QualityTracingConfigurationError,
@@ -67,4 +106,32 @@ export {
   createRerankingRetriever,
 } from './retriever.js';
 export type { Retriever } from './retriever.js';
+export { fetchTelegramCurrentAdministratorIds } from './telegram-admin-api.js';
+export type { FetchTelegramAdministratorsOptions } from './telegram-admin-api.js';
+export {
+  extractTelegramKnowledgeCandidates,
+  readTelegramKnowledgeExport,
+  reconstructTelegramConversationThreads,
+} from './telegram-knowledge.js';
+export type {
+  ExtractTelegramCandidateOptions,
+  ExtractTelegramCandidateResult,
+  TelegramConversationThread,
+  TelegramKnowledgeExport,
+  TelegramKnowledgeMessage,
+} from './telegram-knowledge.js';
 export { formatRetrievedChunksDebug } from './support-entity.js';
+export {
+  createPgTrustedAuthorStore,
+  migrateTrustedAuthors,
+  normalizeTelegramUserId,
+} from './trusted-authors.js';
+export type {
+  ListTrustedAuthorsOptions,
+  PgTrustedAuthorStore,
+  ResolveTrustedAuthorInput,
+  TrustedAuthor,
+  TrustedAuthorRole,
+  TrustedAuthorVerificationSource,
+  TrustAuthorInput,
+} from './trusted-authors.js';

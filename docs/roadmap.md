@@ -9,7 +9,7 @@
 - [x] 官方 X / Twitter 同步：`pnpm run app:dev -- --sync` 做增量抓取和入库后启动服务，`pnpm run app:dev -- --full-sync` 做低频全量重建后启动服务。
 - [x] 服务基础面：Web UI、health/deep health、chat/stream、static assets、请求体限制、基础限流和 CORS 配置已保留。
 - [x] Telegram Bot：long polling 入口复用同一套客服 Agent runtime。
-- [x] 受控知识演进第一阶段：Telegram JSON 导入、候选知识库、管理员审核、发布门禁和 `admin_verified` 知识源已具备。
+- [x] Knowledge Curator MVP：可信作者与角色有效期、Telegram 线程重建、确定性/可选 Agent 提取、脱敏、去重、冲突、质量评分、候选 revision/review/audit、管理 CLI 和发布门禁已具备。
 - [x] 基础可信度建设：deterministic guard、planner route、tool registry、stream schema 校验、golden QA、基础 reranker extension point 已具备。
 
 ## Paused / Out of Scope

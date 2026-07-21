@@ -10,7 +10,8 @@
 - [x] HTTP 服务面：保留 `GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream` 和 `GET /assets/*`。
 - [x] Web UI：`GET /` 提供静态聊天界面，支持普通回答、流式回答、引用展示和产品知识库附件。
 - [x] Telegram Bot：`pnpm run telegram:dev` 通过 Telegram Bot API long polling 接收文本消息，并以 `channel: "telegram"` 复用同一套 LangGraph 客服 Agent。
-- [x] 受控知识演进第一阶段：Telegram Desktop JSON 导出可提取管理员直接回复形成脱敏候选知识；候选必须人工批准并通过发布门禁，才会写入 `admin_verified` 知识源和 pgvector。
+- [x] Knowledge Curator MVP：Telegram Desktop JSON 可按角色有效期验证作者、重建 reply 线程、脱敏、分类、标准化、去重、检查正式 chunk 冲突并生成质量/风险信息；默认确定性提取，`--agent` 可选处理多消息上下文。所有结果只进入 `pending`，必须人工批准并通过发布门禁才会写入 `admin_verified` 和 pgvector。
+- [x] 知识治理管理面：框架无关的 `KnowledgeGovernanceService` 与 CLI 支持可信作者、候选列表、修订、版本历史、批准和拒绝；公开客服 API 不暴露知识写入能力。
 - [x] 新旧规则策略：当前问题默认排除被 `supersedes` 替代的知识，历史追溯问题仍可检索旧版本。
 - [x] 静态资产：`GET /assets/*` 返回产品文档视频、图片等静态资源。
 - [x] 服务保护：API 对 JSON 请求体大小、聊天 POST 请求频率和跨域来源做基础限制，配置项为 `API_MAX_BODY_BYTES`、`API_RATE_LIMIT_MAX`、`API_RATE_LIMIT_WINDOW_MS` 和 `API_CORS_ORIGIN`。
@@ -35,4 +36,5 @@
 - [ ] 产品知识质量增强：继续补官方文档、X / Twitter 更新和回归样本，让 Product RAG 对新功能更新更稳。
 - [ ] 更多渠道接入：在不改变客服 Agent 核心边界的前提下，继续接入更多入口。
 - [ ] Telegram Guest Mode 教学入口：在候选知识与审核权限模型之上接入 `/teach`、`/approve`、`/reject`，不直接自动发布群聊内容。
+- [ ] 认证管理后台：在 RBAC、CSRF、审计和独立管理边界完成后，为当前治理服务增加候选对比、审核、发布状态和角色维护 UI。
 - [ ] 安全与隐私增强：完善 prompt injection 防护、敏感信息脱敏、数据保留和删除策略。

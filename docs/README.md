@@ -8,7 +8,7 @@
 - [开发质量门禁](development-workflow.md)
 - [功能状态](feature-status.md)
 - [生产运行、安全与观测](production-readiness.md)
-- [受控知识演进与 Telegram 导入](knowledge-evolution.md)
+- [受控知识演进与 Knowledge Curator](knowledge-evolution.md)
 - [Roadmap](roadmap.md)
 
 ## 完整官网与产品知识库
@@ -27,9 +27,9 @@
 
 - `packages/shared`：共享类型与聊天请求/响应契约。
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize 和 embedding provider。
-- `packages/rag-core`：意图分类、检索接口、pgvector store、LLM answer provider、边界回复和配置错误类型。
+- `packages/rag-core`：意图分类、检索、pgvector、可信作者、Knowledge Curator、知识治理服务、LLM answer provider 和边界回复。
 - `packages/agent-core`：LangGraph customer runtime、planner/state 合约和产品问答工具。
-- `apps/cli`：`rag:ask`、`rag:ingest`、`rag:migrate`、`rag:stats`、`rag:sync:x`，以及 Telegram 导出候选知识的导入、审核和发布命令。
+- `apps/cli`：`rag:ask`、`rag:ingest`、`rag:migrate`、`rag:stats`、`rag:sync:x`，以及可信作者、Telegram 候选导入、修订、审核和发布命令。
 - `apps/api`：`GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream`、`GET /assets/*`。
 - `apps/telegram-bot`：Telegram Bot long polling 入口，复用 LangGraph 客服 Agent。
 - `apps/web`：静态聊天 UI。

@@ -67,6 +67,7 @@ API_RATE_LIMIT_WINDOW_MS=60000
 TRUST_PROXY=false
 
 TELEGRAM_BOT_TOKEN=
+TELEGRAM_API_BASE_URL=
 ```
 
 数据库默认从 `POSTGRES_*` 组装连接串；使用托管数据库时可以配置 `DATABASE_URL` 覆盖。`OPENAI_*` 配置 Chat/Planner；`EMBEDDING_API_KEY` 和 `EMBEDDING_BASE_URL` 可把向量请求发送到独立的 OpenAI-compatible 服务，未配置时回退使用 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL`。当 `OPENAI_BASE_URL` 指向宿主机上的本地服务时，设置 `COMPOSE_OPENAI_BASE_URL=http://host.docker.internal:<端口>/v1`，让 `pnpm run app:up` 中的容器访问宿主机，同时保留 `app:dev` 使用的 `localhost` 地址。OpenAI-compatible 请求默认 30 秒超时、重试 1 次。默认 embedding 维度是 `1536`，匹配 `text-embedding-3-small`；更换 embedding 模型和维度时需要同步调整 `EMBEDDING_DIMENSION`，备份数据库后显式运行 `pnpm rag:ingest -- --rebuild-embedding-schema`。`.env.example` 会列出当前代码支持的环境变量。
@@ -177,7 +178,9 @@ pnpm rag:migrate
 pnpm rag:stats
 pnpm rag:evaluate
 pnpm rag:ask -- "XXYY Pro 有哪些权益？"
-pnpm rag:knowledge:import:telegram -- export.json --admin-id 123456789
+pnpm rag:knowledge:author:trust -- --chat-id -100123 --user-id 123 --role knowledge_editor --valid-from 2026-07-01 --reviewer ops:alice
+pnpm rag:knowledge:import:telegram -- export.json
+pnpm rag:knowledge:import:telegram -- export.json --agent
 pnpm rag:knowledge:list -- --status pending
 ```
 
@@ -195,8 +198,9 @@ pnpm rag:knowledge:list -- --status pending
 - `pnpm rag:evaluate -- --provider --judge` 在人工验收时额外使用 `EVAL_JUDGE_MODEL` 评分；judge 不进入默认 CI，也不会回退复用 `OPENAI_MODEL`。
 - `pnpm rag:evaluate -- --failures-out .rag/eval-failures.jsonl` 把失败项写成已脱敏、必须人工审核的 JSONL，不会直接修改 golden QA。
 - `pnpm rag:ask` 从命令行调用客服 Agent。
-- `pnpm rag:knowledge:import:telegram` 从 Telegram Desktop JSON 导出中提取“管理员直接回复用户”的产品问答，只写入待审核候选区，不会自动影响线上回答。
-- `pnpm rag:knowledge:list/approve/reject/publish` 完成候选知识的人工审核与受控发布；发布会经过边界、检索命中和 deterministic golden QA 门禁。
+- `pnpm rag:knowledge:author:trust/list` 维护按群和有效期生效的可信作者名册。导入默认先查名册，也可用 Telegram Bot API 识别当前管理员；只有当前角色却无法证明历史角色时会增加风险标签，不会伪装成历史已验证。
+- `pnpm rag:knowledge:import:telegram` 从 Telegram Desktop JSON 重建 reply 线程，执行脱敏、边界、去重、冲突与质量检查，只写入待审核候选区；`--agent` 可选处理多消息上下文，默认确定性路径不调用模型。
+- `pnpm rag:knowledge:list/revise/history/approve/reject/publish` 完成候选修订、审计和受控发布；未经人工批准不能入库，发布继续经过边界、检索命中和 deterministic golden QA 门禁。完整流程见 [受控知识演进](docs/knowledge-evolution.md)。
 
 检索质量：
 

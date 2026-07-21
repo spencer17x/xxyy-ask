@@ -20,13 +20,17 @@ import {
   classifyQuestion,
   composeQualityTracers,
   createInMemoryQualityTracer,
+  createKnowledgeGovernanceService,
   createLazyRetriever,
   createLocalRetriever,
   createOpenAiAnswerQualityJudge,
   createOpenAiAnswerProvider,
+  createOpenAiKnowledgeCuratorModel,
   createPgFeedbackStore,
   createPgKnowledgeCandidateStore,
   createPgPool,
+  createPgKnowledgeMatchInspector,
+  createPgTrustedAuthorStore,
   createPgVectorStore,
   createQualityTracerFromEnv,
   createChatService,
@@ -35,12 +39,14 @@ import {
   createRerankingRetriever,
   evaluateRetrievalRanking,
   evaluateCases,
+  fetchTelegramCurrentAdministratorIds,
   formatEvaluationFailureJsonl,
   formatRetrievedChunksDebug,
   LlmConfigurationError,
   QualityTracingConfigurationError,
   loadRagConfig,
   loadWorkspaceEnv,
+  readTelegramKnowledgeExport,
   resolveWorkspaceCwd,
 } from '@xxyy/rag-core';
 import type {
@@ -53,6 +59,7 @@ import type {
   EvaluationResult,
   FeedbackRecord,
   KnowledgeCandidate,
+  KnowledgeCandidateHistory,
   KnowledgeCandidateStatus,
   KnowledgeStats,
   RagEnv,
@@ -61,6 +68,9 @@ import type {
   PgClientLike,
   ReplaceChunksOptions,
   Retriever,
+  TrustedAuthor,
+  TrustedAuthorRole,
+  TrustedAuthorVerificationSource,
 } from '@xxyy/rag-core';
 import {
   knowledgeSourceCatalog,
@@ -68,8 +78,6 @@ import {
   type ChatResponse,
   type RagIndex,
 } from '@xxyy/shared';
-
-import { extractTelegramKnowledgeCandidates } from './telegram-export.js';
 
 export { resolveWorkspaceCwd } from '@xxyy/rag-core';
 
@@ -83,7 +91,9 @@ type CliEnv = RagEnv &
       | 'LANGSMITH_ENDPOINT'
       | 'LANGSMITH_PROJECT'
       | 'LANGSMITH_TRACING'
-      | 'QUALITY_TRACE_SAMPLE_RATE',
+      | 'QUALITY_TRACE_SAMPLE_RATE'
+      | 'TELEGRAM_API_BASE_URL'
+      | 'TELEGRAM_BOT_TOKEN',
       string
     >
   >;
@@ -103,11 +113,40 @@ type CliCommand =
       adminUserIds: string[];
       command: 'knowledge:import:telegram';
       file: string;
+      useAgent?: boolean;
     }
   | {
       command: 'knowledge:list';
       limit: number;
       status?: KnowledgeCandidateStatus;
+    }
+  | {
+      activeAt?: string;
+      chatId?: string;
+      command: 'knowledge:author:list';
+      limit: number;
+    }
+  | {
+      chatId: string;
+      command: 'knowledge:author:trust';
+      role: TrustedAuthorRole;
+      userId: string;
+      validFrom: string;
+      verificationSource: TrustedAuthorVerificationSource;
+      verifiedBy: string;
+      validTo?: string;
+    }
+  | { command: 'knowledge:history'; id: string }
+  | {
+      command: 'knowledge:revise';
+      editedBy: string;
+      id: string;
+      canonicalAnswer?: string;
+      evidence?: string;
+      proposedModule?: string;
+      proposedTitle?: string;
+      question?: string;
+      reason?: string;
     }
   | {
       command: 'knowledge:approve';
@@ -147,13 +186,20 @@ interface SyncXUpdatesSummary {
 }
 
 interface TelegramKnowledgeImportSummary {
+  agentCandidateCount: number;
   adminReplyCount: number;
   candidateCount: number;
   createdCount: number;
+  deterministicCandidateCount: number;
   duplicateCount: number;
   messageCount: number;
+  rejectedAgentProposalCount: number;
+  runId: string;
   skippedBoundaryCount: number;
   skippedMissingReplyCount: number;
+  threadCount: number;
+  unverifiedAuthorMessageCount: number;
+  verifiedAuthorMessageCount: number;
 }
 
 interface KnowledgePublicationSummary {
@@ -192,8 +238,12 @@ const HELP_TEXT = [
   '  pnpm rag:stats',
   '  pnpm rag:evaluate [--provider] [--retrieval-only] [--judge] [--failures-out .rag/failures.jsonl]',
   '  pnpm rag:feedback:backlog',
-  '  pnpm rag:knowledge:import:telegram -- export.json --admin-id 123456789',
+  '  pnpm rag:knowledge:import:telegram -- export.json [--admin-id 123456789] [--agent]',
+  '  pnpm rag:knowledge:author:trust -- --chat-id <id> --user-id <id> --role <role> --valid-from <date> --reviewer <id>',
+  '  pnpm rag:knowledge:author:list -- [--chat-id <id>] [--active-at <date>] [--limit 100]',
   '  pnpm rag:knowledge:list -- --status pending --limit 20',
+  '  pnpm rag:knowledge:history -- <id>',
+  '  pnpm rag:knowledge:revise -- <id> --editor <id> [--question <text>] [--answer <text>]',
   '  pnpm rag:knowledge:approve -- <id> --reviewer <id> [--effective-at <date>] [--source-url <url>]',
   '  pnpm rag:knowledge:reject -- <id> --reviewer <id> [--note <reason>]',
   '  pnpm rag:knowledge:publish -- <id>',
@@ -235,6 +285,22 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
     return parseKnowledgeListArgs(rawRest);
   }
 
+  if (command === 'knowledge:author:list') {
+    return parseKnowledgeAuthorListArgs(rawRest);
+  }
+
+  if (command === 'knowledge:author:trust') {
+    return parseKnowledgeAuthorTrustArgs(rawRest);
+  }
+
+  if (command === 'knowledge:history') {
+    return parseKnowledgeHistoryArgs(rawRest);
+  }
+
+  if (command === 'knowledge:revise') {
+    return parseKnowledgeReviseArgs(rawRest);
+  }
+
   if (command === 'knowledge:approve' || command === 'knowledge:reject') {
     return parseKnowledgeReviewArgs(command, rawRest);
   }
@@ -254,12 +320,17 @@ function parseKnowledgeImportTelegramArgs(rawArgs: readonly string[]): CliComman
   const args = stripPnpmSeparator(rawArgs);
   const file = args[0];
   const adminUserIds: string[] = [];
+  let useAgent = false;
   if (file === undefined || file.startsWith('--')) {
     return { command: 'help', error: 'Missing Telegram export JSON path.' };
   }
 
   for (let index = 1; index < args.length; index += 1) {
     const arg = args[index];
+    if (arg === '--agent') {
+      useAgent = true;
+      continue;
+    }
     if (arg !== '--admin-id') {
       return { command: 'help', error: `Unknown Telegram import option: ${arg}` };
     }
@@ -271,10 +342,12 @@ function parseKnowledgeImportTelegramArgs(rawArgs: readonly string[]): CliComman
     index += 1;
   }
 
-  if (adminUserIds.length === 0) {
-    return { command: 'help', error: 'At least one --admin-id is required.' };
-  }
-  return { adminUserIds, command: 'knowledge:import:telegram', file };
+  return {
+    adminUserIds,
+    command: 'knowledge:import:telegram',
+    file,
+    ...(useAgent ? { useAgent: true } : {}),
+  };
 }
 
 function parseKnowledgeListArgs(rawArgs: readonly string[]): CliCommand {
@@ -309,6 +382,188 @@ function parseKnowledgeListArgs(rawArgs: readonly string[]): CliCommand {
     limit,
     ...(status === undefined ? {} : { status }),
   };
+}
+
+function parseKnowledgeAuthorListArgs(rawArgs: readonly string[]): CliCommand {
+  const args = stripPnpmSeparator(rawArgs);
+  let activeAt: string | undefined;
+  let chatId: string | undefined;
+  let limit = 100;
+
+  for (let index = 0; index < args.length; index += 2) {
+    const option = args[index];
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith('--')) {
+      return { command: 'help', error: `Missing value for ${option ?? 'knowledge:author:list'}.` };
+    }
+    if (option === '--active-at') {
+      activeAt = value;
+    } else if (option === '--chat-id') {
+      chatId = value;
+    } else if (option === '--limit') {
+      if (!/^\d+$/u.test(value) || Number(value) <= 0) {
+        return { command: 'help', error: '--limit must be a positive integer.' };
+      }
+      limit = Math.min(Number(value), 500);
+    } else {
+      return { command: 'help', error: `Unknown knowledge:author:list option: ${option}` };
+    }
+  }
+
+  return {
+    command: 'knowledge:author:list',
+    limit,
+    ...(activeAt === undefined ? {} : { activeAt }),
+    ...(chatId === undefined ? {} : { chatId }),
+  };
+}
+
+function parseKnowledgeAuthorTrustArgs(rawArgs: readonly string[]): CliCommand {
+  const args = stripPnpmSeparator(rawArgs);
+  const options = parseNamedValueOptions(
+    args,
+    new Set([
+      '--chat-id',
+      '--reviewer',
+      '--role',
+      '--source',
+      '--user-id',
+      '--valid-from',
+      '--valid-to',
+    ]),
+    'knowledge:author:trust',
+  );
+  if ('error' in options) {
+    return { command: 'help', error: options.error };
+  }
+  const chatId = options.values.get('--chat-id');
+  const role = options.values.get('--role');
+  const userId = options.values.get('--user-id');
+  const validFrom = options.values.get('--valid-from');
+  const verifiedBy = options.values.get('--reviewer');
+  if (
+    chatId === undefined ||
+    role === undefined ||
+    userId === undefined ||
+    validFrom === undefined ||
+    verifiedBy === undefined
+  ) {
+    return {
+      command: 'help',
+      error:
+        'knowledge:author:trust requires --chat-id, --user-id, --role, --valid-from, and --reviewer.',
+    };
+  }
+  if (!isTrustedAuthorRole(role)) {
+    return { command: 'help', error: 'Invalid trusted author role.' };
+  }
+  const source = options.values.get('--source') ?? 'manual';
+  if (!isTrustedAuthorVerificationSource(source)) {
+    return { command: 'help', error: 'Invalid trusted author verification source.' };
+  }
+  const validTo = options.values.get('--valid-to');
+  return {
+    chatId,
+    command: 'knowledge:author:trust',
+    role,
+    userId,
+    validFrom,
+    verificationSource: source,
+    verifiedBy,
+    ...(validTo === undefined ? {} : { validTo }),
+  };
+}
+
+function parseKnowledgeHistoryArgs(rawArgs: readonly string[]): CliCommand {
+  const args = stripPnpmSeparator(rawArgs);
+  if (args.length !== 1 || args[0] === undefined || args[0].startsWith('--')) {
+    return { command: 'help', error: 'knowledge:history requires exactly one candidate id.' };
+  }
+  return { command: 'knowledge:history', id: args[0] };
+}
+
+function parseKnowledgeReviseArgs(rawArgs: readonly string[]): CliCommand {
+  const args = stripPnpmSeparator(rawArgs);
+  const id = args[0];
+  if (id === undefined || id.startsWith('--')) {
+    return { command: 'help', error: 'Missing candidate id for knowledge:revise.' };
+  }
+  const options = parseNamedValueOptions(
+    args.slice(1),
+    new Set([
+      '--answer',
+      '--editor',
+      '--evidence',
+      '--module',
+      '--question',
+      '--reason',
+      '--title',
+    ]),
+    'knowledge:revise',
+  );
+  if ('error' in options) {
+    return { command: 'help', error: options.error };
+  }
+  const editedBy = options.values.get('--editor');
+  if (editedBy === undefined) {
+    return { command: 'help', error: '--editor is required.' };
+  }
+  const canonicalAnswer = options.values.get('--answer');
+  const evidence = options.values.get('--evidence');
+  const proposedModule = options.values.get('--module');
+  const proposedTitle = options.values.get('--title');
+  const question = options.values.get('--question');
+  if (
+    canonicalAnswer === undefined &&
+    evidence === undefined &&
+    proposedModule === undefined &&
+    proposedTitle === undefined &&
+    question === undefined
+  ) {
+    return { command: 'help', error: 'knowledge:revise requires at least one editable field.' };
+  }
+  const reason = options.values.get('--reason');
+  return {
+    command: 'knowledge:revise',
+    editedBy,
+    id,
+    ...(canonicalAnswer === undefined ? {} : { canonicalAnswer }),
+    ...(evidence === undefined ? {} : { evidence }),
+    ...(proposedModule === undefined ? {} : { proposedModule }),
+    ...(proposedTitle === undefined ? {} : { proposedTitle }),
+    ...(question === undefined ? {} : { question }),
+    ...(reason === undefined ? {} : { reason }),
+  };
+}
+
+function parseNamedValueOptions(
+  args: readonly string[],
+  allowed: ReadonlySet<string>,
+  command: string,
+): { values: Map<string, string> } | { error: string } {
+  const values = new Map<string, string>();
+  for (let index = 0; index < args.length; index += 2) {
+    const option = args[index];
+    const value = args[index + 1];
+    if (option === undefined || !allowed.has(option)) {
+      return { error: `Unknown ${command} option: ${option ?? ''}` };
+    }
+    if (value === undefined || value.startsWith('--')) {
+      return { error: `Missing value for ${option}.` };
+    }
+    values.set(option, value);
+  }
+  return { values };
+}
+
+function isTrustedAuthorRole(value: string): value is TrustedAuthorRole {
+  return ['administrator', 'knowledge_editor', 'owner'].includes(value);
+}
+
+function isTrustedAuthorVerificationSource(
+  value: string,
+): value is TrustedAuthorVerificationSource {
+  return ['import', 'manual', 'telegram_api'].includes(value);
 }
 
 function parseKnowledgeReviewArgs(
@@ -516,15 +771,20 @@ export function formatTelegramKnowledgeImportSummary(
   return [
     `Scanned ${summary.messageCount} Telegram messages and ${summary.adminReplyCount} administrator messages.`,
     `Extracted ${summary.candidateCount} candidates: ${summary.createdCount} created, ${summary.duplicateCount} duplicates.`,
+    `Curator ${summary.runId}: ${summary.deterministicCandidateCount} deterministic, ${summary.agentCandidateCount} agent-assisted, ${summary.rejectedAgentProposalCount} rejected agent proposals across ${summary.threadCount} threads.`,
+    `Verified ${summary.verifiedAuthorMessageCount} author messages; ${summary.unverifiedAuthorMessageCount} other messages were not treated as authoritative.`,
     `Skipped ${summary.skippedBoundaryCount} boundary replies and ${summary.skippedMissingReplyCount} messages without a direct user reply.`,
   ].join('\n');
 }
 
 export function formatKnowledgeCandidateList(candidates: KnowledgeCandidate[]): string {
-  if (candidates.length === 0) {
-    return 'No knowledge candidates.';
-  }
-  return candidates.map((candidate) => JSON.stringify(candidate)).join('\n');
+  return formatJsonLines(candidates, 'No knowledge candidates.');
+}
+
+function formatJsonLines(values: readonly unknown[], emptyMessage: string): string {
+  return values.length === 0
+    ? emptyMessage
+    : values.map((value) => JSON.stringify(value)).join('\n');
 }
 
 export function formatKnowledgePublicationSummary(summary: KnowledgePublicationSummary): string {
@@ -546,10 +806,17 @@ export function formatAdminVerifiedKnowledgeDocument(candidate: KnowledgeCandida
     throw new Error(`Knowledge candidate ${candidate.id} requires effectiveAt before publication.`);
   }
 
-  const title = candidate.question.replace(/\s+/gu, ' ').trim().slice(0, 120);
+  const title = (candidate.proposedTitle ?? candidate.question)
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 120);
   const frontmatter = [
     '---',
+    `title: ${JSON.stringify(title)}`,
     'section: "XXYY 客服群审核知识"',
+    ...(candidate.proposedModule === undefined
+      ? []
+      : [`category: ${JSON.stringify(candidate.proposedModule)}`]),
     `effective_at: ${JSON.stringify(candidate.effectiveAt)}`,
     ...(candidate.sourceUrl === undefined
       ? []
@@ -906,6 +1173,58 @@ export async function runCli(
     try {
       const candidates = await listKnowledgeCandidates(config, parsed);
       writeLine(io.stdout, formatKnowledgeCandidateList(candidates));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'knowledge:author:list') {
+    try {
+      const authors = await listKnowledgeTrustedAuthors(config, parsed);
+      writeLine(io.stdout, formatJsonLines(authors, 'No trusted authors.'));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'knowledge:author:trust') {
+    try {
+      const author = await trustKnowledgeAuthor(config, parsed);
+      writeLine(io.stdout, JSON.stringify(author));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'knowledge:history') {
+    try {
+      const history = await getKnowledgeCandidateHistory(config, parsed.id);
+      writeLine(io.stdout, JSON.stringify(history));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'knowledge:revise') {
+    try {
+      const candidate = await reviseKnowledgeCandidate(config, parsed);
+      writeLine(io.stdout, JSON.stringify(candidate));
       return 0;
     } catch (error) {
       if (writeConfigurationError(io, error)) {
@@ -1493,23 +1812,76 @@ async function importTelegramKnowledgeCandidates(
     throw new Error('Telegram export must be a .json file.');
   }
   const rawExport = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
-  const extracted = extractTelegramKnowledgeCandidates(rawExport, {
-    adminUserIds: new Set(command.adminUserIds),
-  });
+  const normalizedExport = readTelegramKnowledgeExport(rawExport);
   const pool = createPgPool(config.databaseUrl);
 
   try {
     const store = createPgKnowledgeCandidateStore({ client: pool });
+    const trustedAuthorStore = createPgTrustedAuthorStore({ client: pool });
     await store.migrate();
-    const result = await store.createMany(extracted.candidates);
+    const trustedAuthors =
+      normalizedExport.chatId === undefined
+        ? []
+        : await trustedAuthorStore.list({ chatId: normalizedExport.chatId, limit: 500 });
+    let currentAdministratorUserIds = new Set<string>();
+    let currentAdministratorVerifiedAt: string | undefined;
+    if (
+      command.adminUserIds.length === 0 &&
+      normalizedExport.chatId !== undefined &&
+      io.env.TELEGRAM_BOT_TOKEN !== undefined
+    ) {
+      try {
+        currentAdministratorUserIds = await fetchTelegramCurrentAdministratorIds({
+          botToken: io.env.TELEGRAM_BOT_TOKEN,
+          chatId: normalizedExport.chatId,
+          ...(io.env.TELEGRAM_API_BASE_URL === undefined
+            ? {}
+            : { apiBaseUrl: io.env.TELEGRAM_API_BASE_URL }),
+        });
+        currentAdministratorVerifiedAt = new Date().toISOString();
+      } catch (error) {
+        if (trustedAuthors.length === 0) {
+          throw error;
+        }
+      }
+    }
+    const curatorModel =
+      command.useAgent === true
+        ? createOpenAiKnowledgeCuratorModel({
+            apiKey: config.openAiApiKey,
+            baseUrl: config.openAiBaseUrl,
+            model: config.openAiModel,
+            requestTimeoutMs: config.openAiRequestTimeoutMs,
+          })
+        : undefined;
+    const governance = createKnowledgeGovernanceService({
+      candidateStore: store,
+      inspector: createPgKnowledgeMatchInspector({ candidateStore: store, client: pool }),
+      trustedAuthorStore,
+      ...(curatorModel === undefined ? {} : { curatorModel }),
+    });
+    const result = await governance.importTelegram({
+      currentAdministratorUserIds,
+      ...(currentAdministratorVerifiedAt === undefined ? {} : { currentAdministratorVerifiedAt }),
+      explicitAdminUserIds: new Set(command.adminUserIds),
+      rawExport,
+      useAgent: command.useAgent === true,
+    });
     return {
-      adminReplyCount: extracted.adminReplyCount,
-      candidateCount: extracted.candidates.length,
+      adminReplyCount: result.adminReplyCount,
+      agentCandidateCount: result.agentCandidateCount,
+      candidateCount: result.candidateCount,
       createdCount: result.created.length,
+      deterministicCandidateCount: result.deterministicCandidateCount,
       duplicateCount: result.duplicateCount,
-      messageCount: extracted.messageCount,
-      skippedBoundaryCount: extracted.skippedBoundaryCount,
-      skippedMissingReplyCount: extracted.skippedMissingReplyCount,
+      messageCount: result.messageCount,
+      rejectedAgentProposalCount: result.rejectedAgentProposalCount,
+      runId: result.runId,
+      skippedBoundaryCount: result.skippedBoundaryCount,
+      skippedMissingReplyCount: result.skippedMissingReplyCount,
+      threadCount: result.threadCount,
+      unverifiedAuthorMessageCount: result.unverifiedAuthorMessageCount,
+      verifiedAuthorMessageCount: result.verifiedAuthorMessageCount,
     };
   } finally {
     await pool.end();
@@ -1527,6 +1899,85 @@ async function listKnowledgeCandidates(
     return await store.list({
       limit: command.limit,
       ...(command.status === undefined ? {} : { status: command.status }),
+    });
+  } finally {
+    await pool.end();
+  }
+}
+
+async function listKnowledgeTrustedAuthors(
+  config: ReturnType<typeof loadRagConfig>,
+  command: Extract<CliCommand, { command: 'knowledge:author:list' }>,
+): Promise<TrustedAuthor[]> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgTrustedAuthorStore({ client: pool });
+    await store.migrate();
+    return await store.list({
+      limit: command.limit,
+      ...(command.activeAt === undefined ? {} : { activeAt: command.activeAt }),
+      ...(command.chatId === undefined ? {} : { chatId: command.chatId }),
+    });
+  } finally {
+    await pool.end();
+  }
+}
+
+async function trustKnowledgeAuthor(
+  config: ReturnType<typeof loadRagConfig>,
+  command: Extract<CliCommand, { command: 'knowledge:author:trust' }>,
+): Promise<TrustedAuthor> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgTrustedAuthorStore({ client: pool });
+    await store.migrate();
+    return await store.trust({
+      chatId: command.chatId,
+      role: command.role,
+      userId: command.userId,
+      validFrom: command.validFrom,
+      verificationSource: command.verificationSource,
+      verifiedBy: command.verifiedBy,
+      ...(command.validTo === undefined ? {} : { validTo: command.validTo }),
+    });
+  } finally {
+    await pool.end();
+  }
+}
+
+async function getKnowledgeCandidateHistory(
+  config: ReturnType<typeof loadRagConfig>,
+  id: string,
+): Promise<KnowledgeCandidateHistory> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgKnowledgeCandidateStore({ client: pool });
+    await store.migrate();
+    return await store.getHistory(id);
+  } finally {
+    await pool.end();
+  }
+}
+
+async function reviseKnowledgeCandidate(
+  config: ReturnType<typeof loadRagConfig>,
+  command: Extract<CliCommand, { command: 'knowledge:revise' }>,
+): Promise<KnowledgeCandidate> {
+  const pool = createPgPool(config.databaseUrl);
+  try {
+    const store = createPgKnowledgeCandidateStore({ client: pool });
+    await store.migrate();
+    return await store.revise({
+      editedBy: command.editedBy,
+      id: command.id,
+      ...(command.canonicalAnswer === undefined
+        ? {}
+        : { canonicalAnswer: command.canonicalAnswer }),
+      ...(command.evidence === undefined ? {} : { evidence: command.evidence }),
+      ...(command.proposedModule === undefined ? {} : { proposedModule: command.proposedModule }),
+      ...(command.proposedTitle === undefined ? {} : { proposedTitle: command.proposedTitle }),
+      ...(command.question === undefined ? {} : { question: command.question }),
+      ...(command.reason === undefined ? {} : { reason: command.reason }),
     });
   } finally {
     await pool.end();

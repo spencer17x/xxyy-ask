@@ -97,6 +97,7 @@ describe('parseCliArgs', () => {
         'knowledge:import:telegram',
         '--',
         'group.json',
+        '--agent',
         '--admin-id',
         '123',
         '--admin-id',
@@ -106,6 +107,7 @@ describe('parseCliArgs', () => {
       adminUserIds: ['123', '456'],
       command: 'knowledge:import:telegram',
       file: 'group.json',
+      useAgent: true,
     });
     expect(parseCliArgs(['knowledge:list', '--status', 'pending', '--limit', '10'])).toEqual({
       command: 'knowledge:list',
@@ -152,12 +154,69 @@ describe('parseCliArgs', () => {
       command: 'knowledge:publish',
       id: 'knowledge_candidate_1',
     });
+    expect(
+      parseCliArgs([
+        'knowledge:author:trust',
+        '--chat-id',
+        '-100123',
+        '--user-id',
+        '123',
+        '--role',
+        'knowledge_editor',
+        '--valid-from',
+        '2026-07-01',
+        '--valid-to',
+        '2026-08-01',
+        '--reviewer',
+        'operator:alice',
+      ]),
+    ).toEqual({
+      chatId: '-100123',
+      command: 'knowledge:author:trust',
+      role: 'knowledge_editor',
+      userId: '123',
+      validFrom: '2026-07-01',
+      validTo: '2026-08-01',
+      verificationSource: 'manual',
+      verifiedBy: 'operator:alice',
+    });
+    expect(
+      parseCliArgs(['knowledge:author:list', '--chat-id', '-100123', '--active-at', '2026-07-15']),
+    ).toEqual({
+      activeAt: '2026-07-15',
+      chatId: '-100123',
+      command: 'knowledge:author:list',
+      limit: 100,
+    });
+    expect(parseCliArgs(['knowledge:history', 'knowledge_candidate_1'])).toEqual({
+      command: 'knowledge:history',
+      id: 'knowledge_candidate_1',
+    });
+    expect(
+      parseCliArgs([
+        'knowledge:revise',
+        'knowledge_candidate_1',
+        '--editor',
+        'operator:alice',
+        '--answer',
+        '修订后的答案',
+        '--reason',
+        '补充限制',
+      ]),
+    ).toEqual({
+      canonicalAnswer: '修订后的答案',
+      command: 'knowledge:revise',
+      editedBy: 'operator:alice',
+      id: 'knowledge_candidate_1',
+      reason: '补充限制',
+    });
   });
 
-  it('requires explicit administrator and reviewer identities', () => {
-    expect(parseCliArgs(['knowledge:import:telegram', 'group.json'])).toMatchObject({
-      command: 'help',
-      error: 'At least one --admin-id is required.',
+  it('allows automatic Telegram roles but still requires explicit reviewer identity', () => {
+    expect(parseCliArgs(['knowledge:import:telegram', 'group.json'])).toEqual({
+      adminUserIds: [],
+      command: 'knowledge:import:telegram',
+      file: 'group.json',
     });
     expect(parseCliArgs(['knowledge:approve', 'knowledge_candidate_1'])).toMatchObject({
       command: 'help',
@@ -267,13 +326,20 @@ describe('CLI output formatting', () => {
 
     expect(
       formatTelegramKnowledgeImportSummary({
+        agentCandidateCount: 1,
         adminReplyCount: 4,
         candidateCount: 2,
         createdCount: 1,
+        deterministicCandidateCount: 1,
         duplicateCount: 1,
         messageCount: 12,
+        rejectedAgentProposalCount: 0,
+        runId: 'curator_run_1',
         skippedBoundaryCount: 1,
         skippedMissingReplyCount: 1,
+        threadCount: 5,
+        unverifiedAuthorMessageCount: 8,
+        verifiedAuthorMessageCount: 4,
       }),
     ).toContain('Extracted 2 candidates: 1 created, 1 duplicates.');
     expect(formatKnowledgeCandidateList([candidate])).toContain(candidate.id);
@@ -289,6 +355,7 @@ describe('CLI output formatting', () => {
 
     const document = formatAdminVerifiedKnowledgeDocument(candidate);
     expect(document).toContain('section: "XXYY 客服群审核知识"');
+    expect(document).toContain('title: "XXYY 支持 Robinhood 吗？"');
     expect(document).toContain('effective_at: "2026-07-15T00:00:00.000Z"');
     expect(document).toContain('source_url: "https://docs.example.com/robinhood"');
     expect(document).toContain('supersedes: ["official_docs:old-robinhood"]');
