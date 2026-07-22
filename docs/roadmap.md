@@ -16,7 +16,7 @@
 ## Paused / Out of Scope
 
 - [ ] 实际 MCP adapter、MCP server 和 project skills：当前阶段仍不作为对外或本地调用入口；v0.6 只交付未接线的安全能力平面契约。
-- [ ] 公开交易分析、池子查询和链上取证入口：当前客服入口只做知识库产品回答，相关问题进入边界/澄清回复；离线 EVM core 不扩大运行面。
+- [ ] 公开交易分析、池子查询和链上取证入口：当前客服入口只做知识库产品回答，相关问题进入边界/澄清回复；离线 EVM core 和未接线 RPC data adapter 不扩大运行面。
 - [ ] 账户、订单、钱包余额、私有交易记录和投资建议：长期保持边界，不进入自动回答或自动操作链路。
 
 ## v0.2 RAG Trustworthiness
@@ -79,7 +79,7 @@
 - [x] 副作用硬门禁：外部写入和金融交易必须声明并提供确认与 idempotency key，即使替换自定义 policy 也不能绕过；持久化去重和 exactly-once 留给未来 adapter / coordinator。
 - [x] 脱敏审计：`agent.capability` 只记录固定 manifest/policy 元数据、值类型、字段/元素数量和输出大小，不记录字段名、payload 或 idempotency key 原文。
 - [x] 运行面隔离：当前 LangGraph、Web/API、Telegram、CLI 和 `ToolRegistry` 不创建或调用 CapabilityRegistry，生产业务工具仍只有 `search_product_docs`。
-- [ ] 实现第一个只读 MCP / Skill adapter，并通过显式 bridge 暴露给 Agent；需要单独目标、网络/RPC 安全审查和评测后再开启。
+- [ ] 实现第一个只读 Capability / Skill adapter，并通过显式 bridge 暴露给 Agent；底层 RPC data adapter 不会自动完成注册，仍需单独授权、运行面审查和评测后再开启。
 
 成功标准：未授权、版本漂移、来源/通道/数据范围不匹配和缺少确认/幂等的调用全部失败；超时、取消、超限与非 JSON 输出有稳定错误；当前客服行为和 Chat API 契约保持不变。详细设计见 [capability-plane.md](capability-plane.md)。
 
@@ -95,10 +95,26 @@
 - [x] 不完整/冲突处理：缺 transaction 返回 `insufficient_data`；缺 receipt、hash/block/source 不一致、来源冲突及 removed/重复/畸形日志返回 `partial`、warnings 和 diagnostics，不静默补全事实。
 - [x] 可重放 fixtures：覆盖成功原生+ERC-20、回滚、缺 receipt、双来源冲突+畸形日志和缺 transaction；fixtures 全部使用合成公开数据。
 - [x] 运行面隔离：领域包不包含网络、LLM、LangGraph 或 MCP 依赖，未被 Agent/API/Telegram/CLI/CapabilityRegistry 引用，当前交易问题仍走边界回复。
-- [ ] 实现 allowlisted 只读 EVM data adapter 和 provider contract tests，将真实 RPC/Indexer 数据转换为 normalized snapshot；完成前不注册 capability。
+- [x] 实现 allowlisted 只读 EVM data adapter 和 provider contract tests，将标准 RPC 数据转换为 normalized snapshot；adapter 没有真实 endpoint 配置且不注册 capability。
 - [ ] 增加 trace/internal transfer、协议 swap decoder、价格影响和 Sandwich 四态 verdict；LLM 不参与事实计算。
 
 成功标准：相同 snapshot 重放得到相同 lossless 结果；成功/回滚的 value、ERC-20 和 fee 计算正确；缺失、冲突和畸形数据安全降级；完整 `pnpm check` 与现有客服边界回归通过。详细范围见 [transaction-analysis-core.md](transaction-analysis-core.md)。
+
+## v0.8 Allowlisted Read-only EVM Data Adapter
+
+目标：用独立、未接线的数据边界把受控标准 JSON-RPC 转换为 v0.7 normalized snapshot，同时不让 URL、密钥、任意 RPC 方法或网络失败进入 Agent/LLM 边界。
+
+- [x] 启动时 allowlist：chain/provider 配置限制唯一 id、HTTPS endpoint、header 数量与保留 header；运行时只接受配置内的 chain/provider id，不接受 URL。
+- [x] SSRF 与密钥边界：默认拒绝 HTTP，仅显式允许 loopback 开发节点；拒绝 URL credentials/fragment 和 redirect；provenance 只输出 origin，错误不暴露底层 cause。
+- [x] 只读 RPC contract：只允许 transaction、receipt、chain id 和 block 四个方法；先验证 `eth_chainId`，配错链 fail closed。
+- [x] 有界 transport：限制 batch、timeout、retry/backoff、provider 数量和 chunked response bytes；区分 abort、timeout、transport、HTTP、size、JSON 和 JSON-RPC 错误。
+- [x] 无损归一化：canonical hex quantity 通过 `bigint` 转十进制，index 有界后才转 number；校验 uint256、receipt fee product、hash/block/index 关联。
+- [x] 多 provider 协调：按配置顺序确定 canonical 数据，保留 missing/invalid/present 状态、关键字段 conflicts、来源观测时间和响应 SHA-256。
+- [x] Adapter 状态：独立输出 `success | partial | insufficient_data` 和稳定 diagnostics；下游 core 仍独立生成领域 SkillResult。
+- [x] 可重放 provider contract tests：使用注入 fetch 和合成 JSON-RPC fixtures 覆盖成功、缺失、冲突、错误链、非法 payload、重试、timeout、abort、响应超限和公开边界隔离。
+- [ ] 配置生产 provider、共享 QPS/熔断/缓存/metrics，并实现内部 Capability bridge；需单独安全目标和授权后才能启用。
+
+成功标准：运行时不能注入 endpoint 或写 RPC；错误 chain fail closed，hash/block/index 关联不一致显式降级；相同 fixtures 生成字节一致、无精度损失且带 provenance 的 snapshot；provider 局部失败和冲突安全降级；现有 Agent/API/Telegram/CLI 行为不变。详细设计见 [evm-data-adapter.md](evm-data-adapter.md)。
 
 ## GitHub Planning Convention
 

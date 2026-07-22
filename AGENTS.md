@@ -31,6 +31,8 @@
 - `packages/knowledge`：产品文档加载、Markdown chunk、tokenize 和 OpenAI embedding provider。
 - `packages/rag-core`：意图分类、检索接口、pgvector store、LLM answer provider、边界回复和配置错误类型。
 - `packages/agent-core`：LangGraph 客服 Agent runtime、planner、tool registry 和产品问答工具定义。
+- `packages/transaction-analysis-core`：未接线、无网络依赖的 EVM transaction snapshot 领域分析。
+- `packages/evm-data-adapter`：未接线、启动时 allowlist 的只读 EVM JSON-RPC 获取、归一化和 provider 协调。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:evaluate`、`rag:ask`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/telegram-bot`：Telegram Bot long polling 入口。
