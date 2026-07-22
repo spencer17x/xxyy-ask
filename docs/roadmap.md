@@ -16,7 +16,7 @@
 ## Paused / Out of Scope
 
 - [ ] 实际 MCP adapter、MCP server 和 project skills：当前阶段仍不作为对外或本地调用入口；v0.6 只交付未接线的安全能力平面契约。
-- [ ] 交易分析、池子查询和链上取证：当前客服入口只做知识库产品回答，相关问题进入边界/澄清回复。
+- [ ] 公开交易分析、池子查询和链上取证入口：当前客服入口只做知识库产品回答，相关问题进入边界/澄清回复；离线 EVM core 不扩大运行面。
 - [ ] 账户、订单、钱包余额、私有交易记录和投资建议：长期保持边界，不进入自动回答或自动操作链路。
 
 ## v0.2 RAG Trustworthiness
@@ -82,6 +82,23 @@
 - [ ] 实现第一个只读 MCP / Skill adapter，并通过显式 bridge 暴露给 Agent；需要单独目标、网络/RPC 安全审查和评测后再开启。
 
 成功标准：未授权、版本漂移、来源/通道/数据范围不匹配和缺少确认/幂等的调用全部失败；超时、取消、超限与非 JSON 输出有稳定错误；当前客服行为和 Chat API 契约保持不变。详细设计见 [capability-plane.md](capability-plane.md)。
+
+## v0.7 Read-only EVM Transaction Analysis Core
+
+目标：先把交易事实计算实现为可测试、可重放、与 Agent/MCP/provider 解耦的领域包，为后续只读 adapter 和 Sandwich Skill 提供可信输入与证据。
+
+- [x] 统一领域契约：`packages/shared` 提供 Zod `EvidenceItem`、`SkillFinding`、`SkillDiagnostic` 和 `SkillResult`，校验 id 唯一性和 finding/evidence/diagnostic 引用完整性。
+- [x] Normalized EVM snapshot：校验 chain id、transaction/receipt/block、来源、source conflicts、address/hash/topics/bytes、canonical decimal 与 uint256 上限；金额和区块号不经过 JS number。
+- [x] 确定性交易事实：区分 success/reverted/pending/unknown；只有成功 receipt 才应用原生 value，回滚仍精确计算 fee。
+- [x] ERC-20 Transfer：按标准 topic 解码 from/to/raw amount 和 log index，识别 transfer/mint/burn，并聚合 signed raw asset delta。
+- [x] Evidence 与 timeline：transaction、receipt、log、block 和 fee calculation 都映射到稳定 evidence ids 与 findings；输出结构化 timeline 和资产变化。
+- [x] 不完整/冲突处理：缺 transaction 返回 `insufficient_data`；缺 receipt、hash/block/source 不一致、来源冲突及 removed/重复/畸形日志返回 `partial`、warnings 和 diagnostics，不静默补全事实。
+- [x] 可重放 fixtures：覆盖成功原生+ERC-20、回滚、缺 receipt、双来源冲突+畸形日志和缺 transaction；fixtures 全部使用合成公开数据。
+- [x] 运行面隔离：领域包不包含网络、LLM、LangGraph 或 MCP 依赖，未被 Agent/API/Telegram/CLI/CapabilityRegistry 引用，当前交易问题仍走边界回复。
+- [ ] 实现 allowlisted 只读 EVM data adapter 和 provider contract tests，将真实 RPC/Indexer 数据转换为 normalized snapshot；完成前不注册 capability。
+- [ ] 增加 trace/internal transfer、协议 swap decoder、价格影响和 Sandwich 四态 verdict；LLM 不参与事实计算。
+
+成功标准：相同 snapshot 重放得到相同 lossless 结果；成功/回滚的 value、ERC-20 和 fee 计算正确；缺失、冲突和畸形数据安全降级；完整 `pnpm check` 与现有客服边界回归通过。详细范围见 [transaction-analysis-core.md](transaction-analysis-core.md)。
 
 ## GitHub Planning Convention
 

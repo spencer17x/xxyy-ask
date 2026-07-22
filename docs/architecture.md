@@ -105,6 +105,12 @@ flowchart LR
 
 能力被注册不代表被授权，被授权也不代表会暴露给 Agent。外部写入和金融交易 manifest 必须声明确认与幂等要求，执行器会再次硬校验；当前没有任何实际 MCP/Skill、链上或交易能力注册。完整契约与后续接入顺序见 [capability-plane.md](capability-plane.md)。
 
+## Read-only EVM Transaction Analysis Core v0.1（离线领域层）
+
+`packages/transaction-analysis-core` 已建立框架无关的只读交易事实计算核心。它只消费 Zod 校验后的 normalized snapshot，使用 `bigint` 确定性生成执行状态、原生/ERC-20 资产变化、gas fee、timeline、Evidence、warnings 和 diagnostics。统一 Evidence/SkillResult 契约位于 `packages/shared`。
+
+该包没有 RPC/Indexer/Explorer client，也不依赖 LangGraph、LLM、CapabilityRegistry 或 MCP。当前没有 composition root 引用它，因此不会改变公开客服边界；真实数据 adapter、swap/protocol decoder、Sandwich 检测和 Agent bridge 都是后续独立阶段。详细设计与 fixture 见 [transaction-analysis-core.md](transaction-analysis-core.md)。
+
 ## 说明
 
 - `CustomerAgentRuntime` 是当前问答编排核心：先做策略边界；确定识别为 `product_qa` / `how_to` 的普通问题直接用完整原问题执行一次 `search_product_docs`，不增加 Planner 调用。模糊路由和证据不充分的复杂问题才调用 Planner。
@@ -117,7 +123,7 @@ flowchart LR
 - 上下文打包在总预算内为多个 chunk 公平保留空间，再按问题词、数字、完整句子、列表和限制/条件信号选择内容。只有无法继续拆分的单个内容单元才允许带省略号截短，并记录 included/omitted/quarantined/truncated 统计。
 - 模型回答完成后执行本地 claim grounding，不增加第二次模型调用。每个关键陈述都要与安全知识片段在数字、支持/不支持极性和有效词项上对齐；失败时返回 deterministic grounded answer。成功时引用只从实际支撑 claim 的 chunk 生成，并用问题和回答选择相关 excerpt。
 - 为避免流式 token 发出后无法撤回，answer provider 会先缓冲模型流、完成同一 grounding 校验，再发送原始有效 deltas 或安全降级回答。`status` 事件和公开 `ChatStreamEvent`/`ChatResponse` 契约保持不变；代价是 answer delta 的首包会晚于模型完成，但校验是本地线性计算，不引入额外网络往返。
-- 当前客服 `ToolRegistry` 只注册 `search_product_docs` 业务工具；独立 Capability Plane 不会改变 Planner 的工具列表，交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
+- 当前客服 `ToolRegistry` 只注册 `search_product_docs` 业务工具；独立 Capability Plane 和离线 EVM core 都不会改变 Planner 的工具列表，交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
 - LLM 超时、限流、模型路由不可用、非 JSON、不可用答案或 claim grounding 失败时，会降级为本地 grounded answer；embedding 对超时、429 和 5xx 做有界重试。
 - 知识库按来源分为 `official_docs`（仅 `docs.xxyy.io`）、`x_updates`（仅 `x.com/useXXYYio`）和 `admin_verified`（客服群审核知识，当前为空）；支持全量入库和 X 增量同步。
 - 图片 OCR、视频解析和官方 X 媒体会把原始媒体地址写入 chunk 元数据；被选为回答依据的 chunk 可同时返回相关截图、本地 MP4 或外部视频链接。

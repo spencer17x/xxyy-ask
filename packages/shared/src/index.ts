@@ -1,5 +1,26 @@
 import { z } from 'zod';
 
+export {
+  createSkillResultSchema,
+  evidenceItemSchema,
+  evidenceKinds,
+  jsonValueSchema,
+  skillDiagnosticSchema,
+  skillFindingSchema,
+  skillResultBaseShape,
+  skillResultSchema,
+  skillResultStatuses,
+} from './domain-contract.js';
+export type {
+  EvidenceItem,
+  EvidenceKind,
+  JsonValue,
+  SkillDiagnostic,
+  SkillFinding,
+  SkillResult,
+  SkillResultStatus,
+} from './domain-contract.js';
+
 export const supportedChannels = ['cli', 'web', 'telegram'] as const;
 
 export type ChatChannel = (typeof supportedChannels)[number];

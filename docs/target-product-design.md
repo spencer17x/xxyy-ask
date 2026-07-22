@@ -387,6 +387,8 @@ packages/skills/sandwich-detection-core
 packages/skills/onchain-analysis-core
 ```
 
+当前首个 v0.1 为保持现有 `packages/*` workspace 边界，先落在 `packages/transaction-analysis-core`；它只实现 normalized EVM snapshot 的离线确定性事实计算。真实 provider adapter、MCP transport、Sandwich 和通用链上 Skill 尚未接入。领域包增多后再统一迁移到 `packages/skills/*`，不提前重构 monorepo。
+
 核心算法不应依赖某个 Agent 框架。LangGraph、HTTP 和 MCP 都通过 adapter 调用同一份实现。
 
 ### 9.3 MCP：能力和数据边界
