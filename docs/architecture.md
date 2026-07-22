@@ -115,7 +115,7 @@ flowchart LR
 
 `packages/evm-data-adapter` 在独立包中实现标准 JSON-RPC 数据获取与 snapshot 归一化。endpoint 只能来自启动配置；请求只能选择已配置 chain/provider。它验证 `eth_chainId`，禁止重定向和非显式 loopback HTTP，限制只读方法、batch、timeout、retry 和响应字节，并把多个 provider 的差异保留为 conflicts 与稳定 diagnostics。hex quantity 通过 `bigint` 直接转十进制，不经过有损 number。
 
-该包没有真实 endpoint 配置，也未被任何 app、LangGraph、`ToolRegistry`、`CapabilityRegistry`、CLI 或 Telegram 引用，因此不会改变公开客服边界。它不是 MCP/Capability adapter，也不读取 trace 或 pool metadata；执行数据由权限更窄的独立 adapter 负责。生产 RPC 配额观测、Sandwich 检测和 Agent bridge 仍是后续独立阶段。详细设计见 [evm-data-adapter.md](evm-data-adapter.md)。
+该包没有真实 endpoint 配置，也未被任何 app、LangGraph、`ToolRegistry`、`CapabilityRegistry`、CLI 或 Telegram 引用，因此不会改变公开客服边界。它不是 MCP/Capability adapter，也不读取 trace 或 pool metadata；执行与 MEV observation 数据由权限更窄的独立 adapter 负责。真实 provider 运维、组合评测和 Agent bridge 仍是后续独立阶段。详细设计见 [evm-data-adapter.md](evm-data-adapter.md)。
 
 ## Allowlisted EVM Execution Data Adapter v0.1（未接线执行数据边界）
 
@@ -139,6 +139,14 @@ Sandwich 判定使用 `confirmed | likely | unlikely | insufficient_data` 四态
 
 该 core 不构建真实 block neighborhood，不获取 transaction-boundary archive state，不处理跨 tick/multi-hop/特殊代币，也不推断意图或扣除 gas/builder 成本。它没有 Capability/MCP/Agent/API/CLI/Telegram 引用，因此不会改变公开客服边界。详细设计见 [evm-price-impact-sandwich.md](evm-price-impact-sandwich.md)。
 
+## Allowlisted MEV Observation Data Adapter v0.1（未接线数据边界）
+
+`packages/evm-mev-observation-data-adapter` 使用启动时冻结的 chain/archive provider/pool allowlist，从目标交易的 canonical block 构建完整同 pool swap 顺序。专用 client 只允许标准 block、log、receipt 方法和固定 V2/V3 state selector；所有历史 state call 都使用带 `requireCanonical: true` 的 EIP-1898 block-hash reference，运行时不能注入 endpoint、method、calldata 或 block range。
+
+V2 以 parent reserves 为起点，按 `Sync` / `Swap` 顺序重放 transaction-boundary state，并用 block-end reserves 闭合；V3 读取 parent `slot0`、active liquidity、tick spacing、有限 bitmap words 和两端 initialized tick，以 Swap event 重放单 active-range state，再与 block-end state 对账。receipt 中 token0/token1 Transfer 只计算 transaction `from` 的直接 raw delta，不做 router beneficiary 或多地址 actor 聚类。
+
+每个 provider 独立生成完整 core input，并比较 block/order、swap、pool state 和 actor delta 语义指纹；分歧作为 source conflict 投影到 price-impact/Sandwich core，领域判断随即 fail closed。client 同时提供 provider-local QPS、并发、缓存、熔断、成本和脱敏 metrics 控制。该包仍没有真实 endpoint、环境变量、production composition root 或 Capability/MCP/Agent/API/CLI/Telegram 接线。详细设计见 [evm-mev-observation-data-adapter.md](evm-mev-observation-data-adapter.md)。
+
 ## 说明
 
 - `CustomerAgentRuntime` 是当前问答编排核心：先做策略边界；确定识别为 `product_qa` / `how_to` 的普通问题直接用完整原问题执行一次 `search_product_docs`，不增加 Planner 调用。模糊路由和证据不充分的复杂问题才调用 Planner。
@@ -151,7 +159,7 @@ Sandwich 判定使用 `confirmed | likely | unlikely | insufficient_data` 四态
 - 上下文打包在总预算内为多个 chunk 公平保留空间，再按问题词、数字、完整句子、列表和限制/条件信号选择内容。只有无法继续拆分的单个内容单元才允许带省略号截短，并记录 included/omitted/quarantined/truncated 统计。
 - 模型回答完成后执行本地 claim grounding，不增加第二次模型调用。每个关键陈述都要与安全知识片段在数字、支持/不支持极性和有效词项上对齐；失败时返回 deterministic grounded answer。成功时引用只从实际支撑 claim 的 chunk 生成，并用问题和回答选择相关 excerpt。
 - 为避免流式 token 发出后无法撤回，answer provider 会先缓冲模型流、完成同一 grounding 校验，再发送原始有效 deltas 或安全降级回答。`status` 事件和公开 `ChatStreamEvent`/`ChatResponse` 契约保持不变；代价是 answer delta 的首包会晚于模型完成，但校验是本地线性计算，不引入额外网络往返。
-- 当前客服 `ToolRegistry` 只注册 `search_product_docs` 业务工具；独立 Capability Plane、离线 EVM transaction/execution/MEV cores 和两个未接线 RPC adapter 都不会改变 Planner 的工具列表，交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
+- 当前客服 `ToolRegistry` 只注册 `search_product_docs` 业务工具；独立 Capability Plane、离线 EVM transaction/execution/MEV cores 和三个未接线 RPC adapter 都不会改变 Planner 的工具列表，交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
 - LLM 超时、限流、模型路由不可用、非 JSON、不可用答案或 claim grounding 失败时，会降级为本地 grounded answer；embedding 对超时、429 和 5xx 做有界重试。
 - 知识库按来源分为 `official_docs`（仅 `docs.xxyy.io`）、`x_updates`（仅 `x.com/useXXYYio`）和 `admin_verified`（客服群审核知识，当前为空）；支持全量入库和 X 增量同步。
 - 图片 OCR、视频解析和官方 X 媒体会把原始媒体地址写入 chunk 元数据；被选为回答依据的 chunk 可同时返回相关截图、本地 MP4 或外部视频链接。

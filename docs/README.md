@@ -9,6 +9,7 @@
 - [功能状态](feature-status.md)
 - [生产运行、安全与观测](production-readiness.md)
 - [受控知识演进与 Knowledge Curator](knowledge-evolution.md)
+- [Allowlisted MEV Observation Data Adapter](evm-mev-observation-data-adapter.md)
 - [Roadmap](roadmap.md)
 
 ## 完整官网与产品知识库

@@ -164,19 +164,33 @@
 
 成功标准：相同 replay 字节一致；官方 V2/V3 支持范围内 quote 与 post-state 精确一致；只有完整严格资产闭环才 confirmed；缺数据不输出假阴性 unlikely；结果 Evidence 引用闭合；完整 `pnpm check` 和客服边界回归通过。详细设计见 [evm-price-impact-sandwich.md](evm-price-impact-sandwich.md)。
 
-## v0.12 Allowlisted MEV Observation Data Adapter（计划）
+## v0.12 Allowlisted MEV Observation Data Adapter
 
 目标：在不注册 Capability 或改变客服运行面的前提下，为 v0.11 生成真实、受控、可审计的同区块 swap neighborhood、transaction-boundary pool state 和 actor token delta。
 
-- [ ] 定义独立于基础/trace clients 的最小 RPC/Indexer allowlist，运行时不能注入 endpoint、method、tracer、calldata 或任意 block range。
-- [ ] 获取并验证完整 block transaction order、成功 receipt、allowlisted pool Swap/Transfer logs 和 transaction actor；限制单 block transaction/log/token 数量。
-- [ ] 为 V2 获取每笔相关 swap 边界的 reserves；为 V3 获取 slot0、active liquidity、initialized tick boundary/liquidity net，并保留 exact block/transaction position provenance。
-- [ ] 由标准 Transfer/native facts计算 actor token delta，不做多地址聚类或从 router sender 猜最终受益人。
-- [ ] 多 provider/indexer 交叉验证 block hash、transaction order、state 与 delta fingerprint，冲突 fail closed。
-- [ ] 增加共享 QPS/并发预算、熔断、缓存、成本计量、metrics、告警、审计和 archive capability 启动检查。
-- [ ] 建立脱敏 provider replay、主网抽样人工标注和误报/漏报基线；保持无 Agent/MCP/API/CLI/Telegram 接线。
+- [x] 定义独立于基础/trace clients 的最小标准 JSON-RPC allowlist，运行时不能注入 endpoint、method、tracer、calldata 或任意 block range；历史 state call 固定使用 EIP-1898 canonical block hash。
+- [x] 获取并验证完整 block transaction order、成功 receipt、allowlisted pool Swap/Transfer logs 和 transaction actor；限制单 block transaction、pool log、relevant transaction 和 receipt log 数量。
+- [x] V2 用 parent/end reserves 锚定 `Sync` / `Swap` 顺序重放；V3 获取 parent/end slot0、active liquidity、tick spacing、bounded initialized tick range，并用 Swap event 重放单 active-range transaction-boundary state。
+- [x] 由 token0/token1 标准 Transfer 计算 transaction `from` 的直接 actor delta，并与 pool Swap delta 对账；不做多地址聚类或从 router/recipient 猜最终受益人。
+- [x] 最多四个 provider 独立构建输入，交叉验证 canonical block/order、swap、pool state 与 actor delta fingerprint；冲突投影到下游 core 并 fail closed。
+- [x] 增加 provider-local QPS/并发预算、熔断、immutable-call cache、成本/字节计量、脱敏 metrics 和 `archive: true` 启动门禁。
+- [x] 建立两组完全合成、脱敏的 V2/V3 provider replay 和 35 个 contract/integration/determinism/security tests；保持无 Agent/MCP/API/CLI/Telegram 接线。
+- [ ] 真实 provider 配置、跨实例共享配额、持久化审计、告警/SLA 和主网抽样人工标注不属于本 adapter v0.1，转入后续生产数据面与评测目标。
 
-只有 v0.12 数据面、内部授权、Capability adapter、运行面安全审查和端到端评测完成后，才考虑注册 `chain.detect_sandwich`。
+成功标准：任意 generic/write/debug RPC 或任意 calldata/block range 无法越过专用 schema；block/log/receipt/state 无法闭合或 provider 有分歧时不产生高置信结论；支持范围内的 V2/V3 replay 可直接、字节稳定地进入 v0.11 core；完整 `pnpm check` 与公开客服边界回归通过。详细设计见 [evm-mev-observation-data-adapter.md](evm-mev-observation-data-adapter.md)。
+
+## v0.13 Chain Analysis Composition & Evaluation Harness（计划）
+
+目标：在不配置生产 endpoint、不注册 Capability、也不改变客服运行面的前提下，把已有 transaction、execution 和 MEV 包组合成一个离线、可重放、可量化质量的完整分析 pipeline。
+
+- [ ] 定义 transport-neutral pipeline 输入/输出和阶段化 provenance，把 transaction snapshot、execution trace/metadata、MEV observation 与 price-impact/Sandwich result 串联，禁止阶段间隐式补值。
+- [ ] 对成功、partial、insufficient、provider conflict 和 unsupported semantics 建立稳定的组合状态矩阵与 diagnostic 映射。
+- [ ] 建立经人工审核、去隐私的 replay corpus schema，覆盖 V2/V3、router、reorg、复杂路由、特殊代币和明确反例；合成 fixture 与真实标注样本分层管理。
+- [ ] 输出 precision/recall、false-positive/false-negative、coverage、unsupported-rate、provider cost 和 replay determinism 报告，并设置进入内部试用前的质量门禁。
+- [ ] 定义未来 `chain.inspect_transaction` / `chain.detect_sandwich` Capability adapter 的最小 public-chain 输入、结构化输出和拒绝策略，但不注册 manifest、不创建授权 grant、不接入 LangGraph/MCP/API/CLI/Telegram。
+- [ ] 验证 package graph 与运行面隔离，完整 `pnpm check` 和客服边界回归持续通过。
+
+只有 v0.13 评测、真实 provider 安全与运维设计、内部授权、Capability adapter 和运行面安全审查都完成后，才考虑受限注册 `chain.detect_sandwich`。
 
 ## GitHub Planning Convention
 

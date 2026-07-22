@@ -91,4 +91,4 @@ provider contract tests 另外覆盖 missing result、错误 chain、hash/index/
 - Capability manifest/adapter、MCP client/server、LangGraph bridge 或任何用户可见入口；
 - 私有账户查询、签名、模拟、交易发送或其他写操作。
 
-受控 trace/debug RPC 与 pool metadata 验证已在独立 [EVM Execution Data Adapter](evm-execution-data-adapter.md) 实现，离线价格影响与四态判断已在 [EVM Price Impact / Sandwich Core](evm-price-impact-sandwich.md) 实现，二者都保持未接线。下一阶段是完整 block/transaction-boundary state 的 MEV observation adapter；只有完成生产 provider 配额与观测、内部 channel 授权、Capability bridge 和端到端评测后，才考虑注册链上能力。
+受控 trace/debug RPC 与 pool metadata 验证已在独立 [EVM Execution Data Adapter](evm-execution-data-adapter.md) 实现；[MEV Observation Data Adapter](evm-mev-observation-data-adapter.md) 已能用 canonical block、pool logs 和 V2/V3 state replay 构建同区块输入；离线价格影响与四态判断由 [EVM Price Impact / Sandwich Core](evm-price-impact-sandwich.md) 完成。各包仍保持未接线。下一阶段是离线组合与人工标注评测；只有完成真实 provider 运维、内部 channel 授权、Capability bridge 和端到端质量门禁后，才考虑注册链上能力。

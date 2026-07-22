@@ -26,7 +26,7 @@ flowchart LR
   Core --> Verdict["Four-state Sandwich Verdict"]
   Core --> Evidence["Evidence + Diagnostics"]
 
-  Provider["Future MEV Observation Adapter"] -. "尚未实现" .-> Block
+  Provider["MEV Observation Adapter"] --> Block
   Capability["CapabilityRegistry"] -. "未注册" .-> Core
   Agent["CustomerAgentRuntime"] -. "未接线" .-> Capability
 ```
@@ -166,12 +166,11 @@ deterministic tests 还覆盖 likely、source conflict、actor delta 反例、pa
 
 ## 明确未实现
 
-- 从真实 block 构建完整 swap neighborhood 的 adapter；
-- transaction-boundary archive state、V3 initialized tick bitmap/liquidity net、token Transfer delta 和 actor identity 的生产获取；
+- core 本身不访问网络；独立 [MEV Observation Data Adapter](evm-mev-observation-data-adapter.md) 已能用 allowlisted provider replay 构建 block neighborhood、V2/V3 单 active-range transaction-boundary state 和直接 actor delta，但尚无真实生产 endpoint/composition root；
 - V3 跨 tick、多 pool/multi-hop、aggregator、exact-output、fee-on-transfer 或 rebase 数学；
 - 多地址 actor clustering、private bundle / mempool attribution、intent 推断或真实 gas/builder payment 后的净利润；
 - token decimals、symbol、USD price、市场基准、交易建议或损失追偿结论；
-- 生产 provider QPS/并发预算、熔断、缓存、成本、metrics、告警和持久化审计；
+- 跨实例共享 provider 配额、持久化审计、告警、真实 provider SLA 和主网标注质量基线；
 - Capability adapter、授权 grant、MCP、LangGraph bridge、API/CLI/Telegram 入口。
 
-下一阶段需要独立实现 allowlisted MEV observation data adapter 和生产 provider 数据面，生成完整 block 相关交易、transaction-boundary pool state 与 actor token delta。完成内部授权、Capability bridge、安全审查和端到端误报评测前，不注册 `chain.detect_sandwich`，也不改变公开客服边界。
+下一阶段是离线 Chain Analysis Composition & Evaluation Harness，把 transaction、execution、observation 和本 core 串成可重放 pipeline，并建立人工标注 corpus、coverage matrix 与误报/漏报门禁。完成真实 provider 运维设计、内部授权、Capability bridge、安全审查和端到端评测前，不注册 `chain.detect_sandwich`，也不改变公开客服边界。
