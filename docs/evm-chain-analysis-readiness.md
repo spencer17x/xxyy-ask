@@ -7,7 +7,7 @@
 1. 公开主网 replay case 在进入 `@xxyy/evm-chain-analysis-harness` 前，如何经过可审计的采集、双人复核、修订、保留和删除流程；
 2. 未来真实 provider 数据面需要提交哪些预算、审计、告警、共享熔断、SLO、故障演练、安全和 runbook 证据，才能判断是否具备内部试用条件。
 
-本包没有真实主网样本、endpoint、credential、数据库、Redis、RPC client 或 provider backend，也不读取环境变量。它没有注册 Capability、MCP、Skill、LangGraph tool、API、CLI 或 Telegram 入口。当前公开客服仍只回答产品知识问题，交易哈希、Explorer、池子、链上取证和 MEV 请求继续返回边界或澄清回复。
+本契约包没有真实主网样本、endpoint、credential、数据库 client、Redis、RPC client 或 provider backend，也不读取环境变量。独立 companion `@xxyy/evm-chain-analysis-control-store` 已实现可注入 client 的 Postgres 治理、审计、共享 budget 和 circuit backend，但未部署、未配置生产 grant/worker/provider，也没有接入本包或任何运行面。两者都没有注册 Capability、MCP、Skill、LangGraph tool、API、CLI 或 Telegram 入口。当前公开客服仍只回答产品知识问题，交易哈希、Explorer、池子、链上取证和 MEV 请求继续返回边界或澄清回复。
 
 ## 总体流程
 
@@ -73,19 +73,19 @@ submitter 不能审核自己的候选。批准必须覆盖全部 `sourcePayloadH
 
 ## Production data-plane 契约
 
-本包只定义 transport-neutral artifact 和 evidence，不实现下面任何 backend。
+本包只定义 transport-neutral artifact 和 evidence。独立 control-store 包实现下表中 Postgres 可承担的持久化/协调部分；生产部署、身份映射和外部系统仍不在契约包内。
 
-| 范围             | 契约                                                                                     | 生产实现仍需负责                                  |
-| ---------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Provider 配置    | chain/adapter/provider/region、双人审批、配置指纹、`secretref:` endpoint/credential 引用 | secret manager、endpoint 解析、启动冻结和轮换     |
-| 跨实例预算       | policy、reservation、lease、usage settlement、coordinator interface                      | 原子预留、全局并发、租约过期、幂等结算和对账      |
-| 持久审计         | 只含 hash、计数、耗时、result code 和 usage 的 content-addressed event                   | append-only 存储、加密、访问控制和删除/保留任务   |
-| 共享熔断         | generation + state fingerprint、compare-and-set interface、closed/open/half-open 状态    | Redis/Postgres 原子状态、受控 probe 和故障恢复    |
-| 告警与 SLO       | SLO window、sample、availability/error/latency/cost/incident 和告警控制证据              | metrics backend、paging/on-call、真实窗口数据     |
-| 演练与事件响应   | timeout、rate limit、provider conflict、reorg、backend unavailable 等 drill evidence     | 定期故障注入、incident 记录、升级和回滚执行       |
-| 安全与供应商风险 | threat model、provider risk、retention、credential rotation 和 no-LLM-secret attestation | 安全评审、审批身份、真实 evidence artifact 的保管 |
+| 范围             | 契约                                                                                     | 生产实现仍需负责                                                                   |
+| ---------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Provider 配置    | chain/adapter/provider/region、双人审批、配置指纹、`secretref:` endpoint/credential 引用 | secret manager、endpoint 解析、启动冻结和轮换                                      |
+| 跨实例预算       | policy、reservation、lease、usage settlement、coordinator interface                      | control store 已实现 Postgres 原子预留/并发/幂等结算/过期对账；仍需部署与演练      |
+| 持久审计         | 只含 hash、计数、耗时、result code 和 usage 的 content-addressed event                   | control store 已实现 append-only hash chain；仍需加密、访问控制、备份和保留证明    |
+| 共享熔断         | generation + state fingerprint、compare-and-set interface、closed/open/half-open 状态    | control store 已实现 Postgres history/head CAS；仍需受控 probe、部署和故障恢复演练 |
+| 告警与 SLO       | SLO window、sample、availability/error/latency/cost/incident 和告警控制证据              | metrics backend、paging/on-call、真实窗口数据                                      |
+| 演练与事件响应   | timeout、rate limit、provider conflict、reorg、backend unavailable 等 drill evidence     | 定期故障注入、incident 记录、升级和回滚执行                                        |
+| 安全与供应商风险 | threat model、provider risk、retention、credential rotation 和 no-LLM-secret attestation | 安全评审、审批身份、真实 evidence artifact 的保管                                  |
 
-`materializeGrantedProviderBudgetLease()` 只在外部 coordinator 已完成原子 grant 后生成确定性 lease artifact；它本身不是分布式锁或配额 backend。相同地，shared circuit coordinator 只是接口，不声称仓库已有 Redis/Postgres 实现。
+`materializeGrantedProviderBudgetLease()` 仍然只是原子 grant 后的纯 artifact helper；真正的序列化由 companion control store 的 policy/window row lock、advisory lock 和事务完成。shared circuit 的接口由同一 companion 通过不可变 state history、head row lock 和 generation/fingerprint CAS 实现。实现存在不代表生产 backend、访问控制或故障演练已经完成。
 
 ## Readiness 判定
 
@@ -111,7 +111,7 @@ submitter 不能审核自己的候选。批准必须覆盖全部 `sourcePayloadH
 
 ## 运行面隔离
 
-生产源码不得：
+本契约包生产源码不得：
 
 - 使用 `fetch`、HTTP/TLS/socket 或读取 `process.env`；
 - 保存明文 endpoint、credential、header 或原始 provider body；
@@ -132,9 +132,9 @@ pnpm check
 下一阶段是 v0.14b 的真实证据建设，而不是能力接线：
 
 1. 选择目标 chain/protocol/router coverage 和合法公开主网样本来源；
-2. 接入真实 reviewer 授权、持久化候选/审核/墓碑存储与保留任务；
-3. 实现 secret manager、共享 budget/circuit、持久审计、metrics/alerting backend；
+2. 部署 companion Postgres backend，接入真实 reviewer 身份/grant 与 worker 调度，并采集候选/审核/墓碑；
+3. 实现 secret manager、metrics/alerting 和 provider failover，验证已实现的共享 budget/circuit/审计在真实故障下 fail closed；
 4. 运行故障演练并持续生成新鲜 SLO、安全和 runbook evidence；
 5. 让真实 reviewed corpus 实际通过 internal-readiness gate。
 
-完成这些条件后，是否实现内部受限 Capability Adapter & Authorization Bridge 仍是独立决策；公开客服接线还需要额外产品、安全与合规批准。
+companion backend 的设计与边界见 [Chain Analysis Governance Persistence & Shared Provider Controls](evm-chain-analysis-control-store.md)。完成这些条件后，是否实现内部受限 Capability Adapter & Authorization Bridge 仍是独立决策；公开客服接线还需要额外产品、安全与合规批准。

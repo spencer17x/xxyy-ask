@@ -161,7 +161,7 @@ V2 以 parent reserves 为起点，按 `Sync` / `Swap` 顺序重放 transaction-
 
 同一包定义只含 `secretref:` 的 provider descriptor、跨实例 budget lease/settlement、脱敏持久审计 event、共享 circuit state/coordinator interface、SLO/告警、故障演练、安全和 incident runbook evidence contract。综合 evaluator 把 governed corpus export、该 corpus 的 harness report 和生产证据闭合，并固定调用不可由 caller 弱化的 `internalReadinessQualityGate`，输出稳定的 `blocked | degraded | ready` 和逐项 reason。
 
-该控制面不实现 reviewer identity、数据库、retention worker、secret manager、Redis/Postgres coordinator、metrics/alerting 或真实 provider backend，也没有网络和环境变量读取。当前只有 contract-only 测试 fixture，没有 reviewed 主网 corpus，因此不会产生生产 `ready` 结论；它未被任何 app、Agent、Capability、MCP、CLI 或 Telegram 引用。详细设计见 [evm-chain-analysis-readiness.md](evm-chain-analysis-readiness.md)。
+readiness 契约包自身不实现 reviewer identity、数据库、worker 调度、secret manager、metrics/alerting 或真实 provider。独立的 `packages/evm-chain-analysis-control-store` 已实现可注入 client 的 Postgres 持久化层：不可变治理 artifact、authorization/revocation、retention job lease、哈希链 audit、budget window/lease/settlement/reconciliation 和 circuit history/head CAS。它不读取环境变量、不创建连接，也没有生产 grant、真实主网 corpus、worker deployment 或 provider endpoint；因此当前仍不会产生生产 `ready` 结论。两个包都未被任何 app、Agent、Capability、MCP、CLI 或 Telegram 引用。详细设计见 [evm-chain-analysis-readiness.md](evm-chain-analysis-readiness.md) 与 [evm-chain-analysis-control-store.md](evm-chain-analysis-control-store.md)。
 
 ## 说明
 
@@ -175,7 +175,7 @@ V2 以 parent reserves 为起点，按 `Sync` / `Swap` 顺序重放 transaction-
 - 上下文打包在总预算内为多个 chunk 公平保留空间，再按问题词、数字、完整句子、列表和限制/条件信号选择内容。只有无法继续拆分的单个内容单元才允许带省略号截短，并记录 included/omitted/quarantined/truncated 统计。
 - 模型回答完成后执行本地 claim grounding，不增加第二次模型调用。每个关键陈述都要与安全知识片段在数字、支持/不支持极性和有效词项上对齐；失败时返回 deterministic grounded answer。成功时引用只从实际支撑 claim 的 chunk 生成，并用问题和回答选择相关 excerpt。
 - 为避免流式 token 发出后无法撤回，answer provider 会先缓冲模型流、完成同一 grounding 校验，再发送原始有效 deltas 或安全降级回答。`status` 事件和公开 `ChatStreamEvent`/`ChatResponse` 契约保持不变；代价是 answer delta 的首包会晚于模型完成，但校验是本地线性计算，不引入额外网络往返。
-- 当前客服 `ToolRegistry` 只注册 `search_product_docs` 业务工具；独立 Capability Plane、离线 EVM transaction/execution/MEV cores、三个未接线 RPC adapter、组合评测 harness 和 readiness 控制面都不会改变 Planner 的工具列表，交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
+- 当前客服 `ToolRegistry` 只注册 `search_product_docs` 业务工具；独立 Capability Plane、离线 EVM transaction/execution/MEV cores、三个未接线 RPC adapter、组合评测 harness、readiness 控制面和 Postgres control backend 都不会改变 Planner 的工具列表，交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
 - LLM 超时、限流、模型路由不可用、非 JSON、不可用答案或 claim grounding 失败时，会降级为本地 grounded answer；embedding 对超时、429 和 5xx 做有界重试。
 - 知识库按来源分为 `official_docs`（仅 `docs.xxyy.io`）、`x_updates`（仅 `x.com/useXXYYio`）和 `admin_verified`（客服群审核知识，当前为空）；支持全量入库和 X 增量同步。
 - 图片 OCR、视频解析和官方 X 媒体会把原始媒体地址写入 chunk 元数据；被选为回答依据的 chunk 可同时返回相关截图、本地 MP4 或外部视频链接。

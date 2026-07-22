@@ -219,7 +219,7 @@ pnpm check
 
 ## 后续工作
 
-独立的 [Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md) 已实现 content-addressed intake、双人复核、revision/supersession、retention/tombstone、确定性 export，以及 provider budget/audit/alert/circuit/SLO/security evidence 和综合 readiness evaluator。它仍是未接线契约层，当前没有真实主网 reviewed case 或 provider backend。
+独立的 [Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md) 已实现 content-addressed intake、双人复核、revision/supersession、retention/tombstone、确定性 export，以及 provider budget/audit/alert/circuit/SLO/security evidence 和综合 readiness evaluator；[Postgres Control Store](evm-chain-analysis-control-store.md) 已实现未接线的治理持久化和共享 budget/circuit/audit backend。当前仍没有真实主网 reviewed case、已部署 control store 或真实 provider/composition backend。
 
 下一阶段不是直接接入客服，而是按该控制面实际采集经审批的公开主网样本，补 chain/router/protocol/反例 coverage，实现共享预算/circuit、持久审计、metrics/alerting 和安全演练 backend，并让 governed corpus 实际通过 internal readiness gate。
 

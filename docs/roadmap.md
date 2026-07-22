@@ -207,18 +207,32 @@
 
 成功标准：治理 artifact 可重新验证内容指纹；单人、重复 reviewer、证据/标签不闭合、过期或被篡改的候选不能晋升；明文 endpoint/credential 不能进入契约；caller 不能弱化 quality gate；没有真实 reviewed corpus 时稳定 `blocked`，不伪造 `ready`。详细设计见 [evm-chain-analysis-readiness.md](evm-chain-analysis-readiness.md)。
 
-## v0.14b Reviewed Mainnet Evidence & Provider Operations Validation（计划）
+## v0.14b1 Governance Persistence & Shared Provider Controls
 
-目标：使用 v0.14a 的契约接入真实治理和运维 backend，形成能够被独立审计的主网 corpus 与生产数据面证据；仍不注册 Capability 或改变客服运行面。
+目标：先把 v0.14a 的纯契约落到独立、可审计、跨实例一致的 Postgres backend，但不配置生产身份、provider、主网数据或运行面入口。
+
+- [x] 新增独立 control-store package 和幂等 migration；artifact JSONB 重新执行原始 schema，候选 revision、review、decision、promotion、tombstone、export 和 readiness 写入重新运行 readiness 纯状态机。
+- [x] 持久化 content-addressed authorization/revocation，按操作时间检查 submitter、independent reviewer、publisher、retention worker、readiness attestor 和 provider operator role；同一 candidate/reviewer 只能有一个不可变 review。
+- [x] candidate 入库原子创建 retention job；多 worker 用 `FOR UPDATE SKIP LOCKED` 和 lease 领取，到期后生成 retention decision，并对已晋升 case 生成 tombstone。
+- [x] 治理与 provider control 使用独立 append-only hash-chain audit stream；artifact/audit 同事务提交，event/head 使用 sequence 和 previous fingerprint 闭合。
+- [x] 实现 Postgres active budget policy CAS、滚动窗口原子 reservation、全局并发、幂等 lease/settlement、usage reconciliation 和 expired-lease worker contract。
+- [x] 实现不可变 circuit state history 与 current head；row lock、expected generation/state fingerprint 和 SQL CAS 双重 fencing，retry 到相同 next state 幂等。
+- [x] 增加 14 个 contract/store/migration/isolation tests；backend 不读取环境变量、不自行创建连接、不访问 RPC/HTTP，也未被 Agent/API/CLI/Telegram/RAG 导入。
+
+成功标准：非法角色或同一 reviewer 改写 fail closed；artifact 篡改不能通过重新解析；并发预算和 circuit 不退化为本地状态；backend unavailable 回滚；迁移可重复；没有真实主网 fixture、生产 grant 或伪造 readiness evidence。详细设计见 [evm-chain-analysis-control-store.md](evm-chain-analysis-control-store.md)。
+
+## v0.14b2 Reviewed Mainnet Evidence & Provider Operations Validation（计划）
+
+目标：部署 v0.14b1 backend 并形成能够被独立审计的真实主网 corpus 与生产数据面证据；仍不注册 Capability 或改变客服运行面。
 
 - [ ] 确定目标 chain、V2/V3、allowlisted router/direct pool、provider conflict、reorg、复杂路由、特殊 token 和正反例 sampling plan，并完成合法来源与数据保留评审。
-- [ ] 接入 reviewer 授权、候选/审核/墓碑持久化和 retention worker，采集真实公开主网样本；不把 contract-only fixture 当作 reviewed evidence。
-- [ ] 实现 secret manager 配置解析、共享 budget/circuit backend、append-only 审计、metrics/alerting 和 provider failover；验证 backend unavailable 时 fail closed。
+- [ ] 部署 Postgres、真实 reviewer identity/grant、retention/reconciliation workers，采集并双人复核公开主网样本；不把 contract-only fixture 当作 reviewed evidence。
+- [ ] 实现 secret manager 配置解析、metrics/alerting 和 provider failover；配置数据库最小权限、加密、备份、保留策略，并验证 budget/circuit/audit backend unavailable 时 fail closed。
 - [ ] 执行 timeout、rate limit、provider conflict、reorg、审计/预算/circuit backend unavailable 等演练，提交新鲜 SLO、告警、security 和 runbook evidence。
 - [ ] 在固定 governed corpus 上持续运行 harness，逐条审阅 false positive、false negative 和 positive abstention，实际达到并锁定 internal-readiness gate。
-- [ ] 输出 readiness attestation 和独立审计记录；只有 evaluator 为 `ready` 才能提出下一阶段内部 Capability Adapter & Authorization Bridge 方案。
+- [ ] 输出真实 readiness attestation 和独立审计记录；只有 evaluator 为 `ready` 才能提出下一阶段内部 Capability Adapter & Authorization Bridge 方案。
 
-只有 v0.14b 实际通过 internal-readiness gate，且真实 provider 安全与运维评审完成后，才进入内部 Capability Adapter & Authorization Bridge 目标；公开客服接入仍需另行决策。
+只有 v0.14b2 实际通过 internal-readiness gate，且真实 provider 安全与运维评审完成后，才进入内部 Capability Adapter & Authorization Bridge 目标；公开客服接入仍需另行决策。
 
 ## GitHub Planning Convention
 

@@ -130,6 +130,18 @@ importers:
         specifier: ^4.0.0
         version: 4.4.3
 
+  packages/evm-chain-analysis-control-store:
+    dependencies:
+      '@xxyy/evm-chain-analysis-harness':
+        specifier: workspace:*
+        version: link:../evm-chain-analysis-harness
+      '@xxyy/evm-chain-analysis-readiness':
+        specifier: workspace:*
+        version: link:../evm-chain-analysis-readiness
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+
   packages/evm-chain-analysis-harness:
     dependencies:
       '@xxyy/evm-execution-enrichment-core':

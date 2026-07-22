@@ -1,0 +1,290 @@
+import {
+  queryControlDatabase,
+  withControlTransaction,
+  type PgControlClientLike,
+} from './postgres.js';
+
+const IMMUTABLE_TABLES = [
+  'evm_chain_control_authorizations',
+  'evm_chain_control_authorization_revocations',
+  'evm_chain_control_replay_candidates',
+  'evm_chain_control_replay_reviews',
+  'evm_chain_control_replay_decisions',
+  'evm_chain_control_replay_promotions',
+  'evm_chain_control_replay_tombstones',
+  'evm_chain_control_corpus_exports',
+  'evm_chain_control_readiness_attestations',
+  'evm_chain_control_audit_events',
+  'evm_chain_control_budget_policies',
+  'evm_chain_control_budget_leases',
+  'evm_chain_control_budget_settlements',
+  'evm_chain_control_circuit_states',
+] as const;
+
+export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
+  `
+    create table if not exists evm_chain_control_authorizations (
+      authorization_id text primary key,
+      authorization_fingerprint text not null unique,
+      principal_id_hash text not null,
+      roles text[] not null,
+      granted_at timestamptz not null,
+      valid_until timestamptz,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create index if not exists evm_chain_control_authorizations_principal_idx
+      on evm_chain_control_authorizations (principal_id_hash, granted_at, valid_until)
+  `,
+  `
+    create table if not exists evm_chain_control_authorization_revocations (
+      revocation_id text primary key,
+      revocation_fingerprint text not null unique,
+      authorization_id text not null unique references evm_chain_control_authorizations(authorization_id),
+      revoked_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_replay_candidates (
+      candidate_id text primary key,
+      candidate_fingerprint text not null unique,
+      submitter_id_hash text not null,
+      revision integer not null check (revision > 0),
+      supersedes_candidate_id text references evm_chain_control_replay_candidates(candidate_id),
+      submitted_at timestamptz not null,
+      retain_until timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create unique index if not exists evm_chain_control_replay_candidates_supersedes_idx
+      on evm_chain_control_replay_candidates (supersedes_candidate_id)
+      where supersedes_candidate_id is not null
+  `,
+  `
+    create index if not exists evm_chain_control_replay_candidates_retention_idx
+      on evm_chain_control_replay_candidates (retain_until, candidate_id)
+  `,
+  `
+    create table if not exists evm_chain_control_replay_reviews (
+      review_id text primary key,
+      review_fingerprint text not null unique,
+      candidate_id text not null references evm_chain_control_replay_candidates(candidate_id),
+      reviewer_id_hash text not null,
+      reviewed_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object'),
+      unique (candidate_id, reviewer_id_hash)
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_replay_decisions (
+      decision_fingerprint text primary key,
+      candidate_id text not null references evm_chain_control_replay_candidates(candidate_id),
+      evaluated_at timestamptz not null,
+      status text not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create index if not exists evm_chain_control_replay_decisions_candidate_idx
+      on evm_chain_control_replay_decisions (candidate_id, evaluated_at desc)
+  `,
+  `
+    create table if not exists evm_chain_control_replay_promotions (
+      candidate_id text primary key references evm_chain_control_replay_candidates(candidate_id),
+      promotion_fingerprint text not null unique,
+      promoted_at timestamptz not null,
+      retain_until timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_replay_tombstones (
+      candidate_id text primary key references evm_chain_control_replay_candidates(candidate_id),
+      tombstone_id text not null unique,
+      tombstone_fingerprint text not null unique,
+      deleted_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_corpus_exports (
+      export_fingerprint text primary key,
+      exported_at timestamptz not null,
+      corpus_id text not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_readiness_attestations (
+      readiness_fingerprint text primary key,
+      actor_id_hash text not null,
+      evaluated_at timestamptz not null,
+      status text not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_retention_jobs (
+      job_id text primary key,
+      candidate_id text not null unique references evm_chain_control_replay_candidates(candidate_id),
+      retain_until timestamptz not null,
+      status text not null check (status in ('queued', 'running', 'completed')),
+      attempt_count integer not null default 0 check (attempt_count >= 0),
+      worker_id_hash text,
+      lease_expires_at timestamptz,
+      completed_at timestamptz,
+      outcome text check (outcome in ('expired_unpromoted', 'tombstoned')),
+      check (
+        (status = 'queued' and worker_id_hash is null and lease_expires_at is null and completed_at is null and outcome is null)
+        or (status = 'running' and worker_id_hash is not null and lease_expires_at is not null and completed_at is null and outcome is null)
+        or (status = 'completed' and worker_id_hash is not null and lease_expires_at is null and completed_at is not null and outcome is not null)
+      )
+    )
+  `,
+  `
+    create index if not exists evm_chain_control_retention_jobs_claim_idx
+      on evm_chain_control_retention_jobs (retain_until, job_id)
+      where status <> 'completed'
+  `,
+  `
+    create table if not exists evm_chain_control_audit_heads (
+      stream text primary key,
+      last_sequence bigint not null default 0 check (last_sequence >= 0),
+      last_event_fingerprint text,
+      check ((last_sequence = 0) = (last_event_fingerprint is null))
+    )
+  `,
+  `
+    insert into evm_chain_control_audit_heads (stream)
+    values ('governance'), ('provider_control')
+    on conflict (stream) do nothing
+  `,
+  `
+    create table if not exists evm_chain_control_audit_events (
+      event_id text primary key,
+      event_fingerprint text not null unique,
+      stream text not null references evm_chain_control_audit_heads(stream),
+      sequence bigint not null check (sequence > 0),
+      previous_event_fingerprint text,
+      event_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object'),
+      unique (stream, sequence)
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_budget_policies (
+      policy_fingerprint text primary key,
+      budget_id text not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_active_budget_policies (
+      budget_id text primary key,
+      policy_fingerprint text not null references evm_chain_control_budget_policies(policy_fingerprint),
+      generation bigint not null check (generation >= 0),
+      installed_at timestamptz not null
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_budget_windows (
+      budget_id text not null,
+      policy_fingerprint text not null references evm_chain_control_budget_policies(policy_fingerprint),
+      window_started_at timestamptz not null,
+      window_ends_at timestamptz not null,
+      reserved_cost_units bigint not null default 0 check (reserved_cost_units >= 0),
+      reserved_requests bigint not null default 0 check (reserved_requests >= 0),
+      reserved_response_bytes bigint not null default 0 check (reserved_response_bytes >= 0),
+      reserved_rpc_calls bigint not null default 0 check (reserved_rpc_calls >= 0),
+      used_cost_units bigint not null default 0 check (used_cost_units >= 0),
+      used_requests bigint not null default 0 check (used_requests >= 0),
+      used_response_bytes bigint not null default 0 check (used_response_bytes >= 0),
+      used_rpc_calls bigint not null default 0 check (used_rpc_calls >= 0),
+      primary key (budget_id, policy_fingerprint, window_started_at),
+      check (window_ends_at > window_started_at)
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_budget_leases (
+      lease_id text primary key,
+      lease_fingerprint text not null unique,
+      request_fingerprint text not null unique,
+      budget_id text not null,
+      policy_fingerprint text not null references evm_chain_control_budget_policies(policy_fingerprint),
+      window_started_at timestamptz not null,
+      issued_at timestamptz not null,
+      expires_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object'),
+      foreign key (budget_id, policy_fingerprint, window_started_at)
+        references evm_chain_control_budget_windows(budget_id, policy_fingerprint, window_started_at)
+    )
+  `,
+  `
+    create index if not exists evm_chain_control_budget_leases_active_idx
+      on evm_chain_control_budget_leases (budget_id, policy_fingerprint, expires_at)
+  `,
+  `
+    create table if not exists evm_chain_control_budget_settlements (
+      lease_id text primary key references evm_chain_control_budget_leases(lease_id),
+      settlement_fingerprint text not null unique,
+      settled_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_circuit_states (
+      state_fingerprint text primary key,
+      adapter text not null,
+      chain_id text not null,
+      provider_id text not null,
+      generation bigint not null check (generation >= 0),
+      payload jsonb not null check (jsonb_typeof(payload) = 'object'),
+      unique (adapter, chain_id, provider_id, generation)
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_circuit_heads (
+      adapter text not null,
+      chain_id text not null,
+      provider_id text not null,
+      generation bigint not null check (generation >= 0),
+      state_fingerprint text not null references evm_chain_control_circuit_states(state_fingerprint),
+      primary key (adapter, chain_id, provider_id)
+    )
+  `,
+  `
+    create or replace function reject_evm_chain_control_artifact_mutation()
+    returns trigger
+    language plpgsql
+    as $$
+    begin
+      raise exception 'evm chain control artifacts are append-only';
+    end;
+    $$
+  `,
+] as const;
+
+export async function migrateEvmChainAnalysisControlStore(
+  client: PgControlClientLike,
+): Promise<void> {
+  await withControlTransaction(client, async (transaction) => {
+    for (const migration of CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS) {
+      await queryControlDatabase(transaction, `/* control:migrate */ ${migration}`);
+    }
+    for (const table of IMMUTABLE_TABLES) {
+      const trigger = `${table}_append_only`;
+      await queryControlDatabase(transaction, `drop trigger if exists ${trigger} on ${table}`);
+      await queryControlDatabase(
+        transaction,
+        `
+          create trigger ${trigger}
+          before update or delete on ${table}
+          for each row execute function reject_evm_chain_control_artifact_mutation()
+        `,
+      );
+    }
+  });
+}

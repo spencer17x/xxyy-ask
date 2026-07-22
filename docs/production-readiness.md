@@ -133,7 +133,7 @@ pgvector 注意事项：
 - 每个 provider 有新鲜 SLO window 和 circuit snapshot，每类要求的故障演练有新鲜结果；
 - blocking evidence 缺口为 `blocked`，结构完整但实时 SLO/circuit/drill 失败为 `degraded`，全部通过才为 `ready`。
 
-当前仓库不提供真实 provider、secret manager、Redis/Postgres coordinator、metrics/alerting backend 或 reviewed 主网 corpus。contract-only 测试 fixture 不得写入生产 evidence store，也不得作为发布证明。详细边界与下一阶段见 [Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md)。
+仓库已在独立、未接线的 `packages/evm-chain-analysis-control-store` 中实现可注入 client 的 Postgres governance/budget/circuit/audit backend，但没有部署或配置它，也没有生产授权、真实 provider、secret manager、metrics/alerting backend、worker 调度或 reviewed 主网 corpus。实现存在不等于运维 evidence 已通过；仍需真实 backend-unavailable 演练、访问控制、加密/备份和告警证明。contract-only 测试 fixture 不得写入生产 evidence store，也不得作为发布证明。详细边界见 [Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md) 与 [Chain Analysis Governance Persistence & Shared Provider Controls](evm-chain-analysis-control-store.md)。
 
 ## Human Handoff And Tickets
 
