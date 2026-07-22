@@ -6,6 +6,7 @@ export const evidenceKinds = [
   'transaction',
   'log',
   'trace',
+  'metadata',
   'block',
   'calculation',
 ] as const;

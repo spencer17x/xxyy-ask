@@ -63,6 +63,20 @@ describe('domain evidence contract', () => {
     });
   });
 
+  it('represents independently sourced protocol metadata without calling it a document', () => {
+    expect(
+      evidenceItemSchema.parse({
+        chainId: '1',
+        confidence: 1,
+        id: 'pool:1:abc',
+        kind: 'metadata',
+        source: 'pool-registry',
+        structuredData: { protocol: 'uniswap_v3' },
+        supports: ['dex_swaps'],
+      }),
+    ).toMatchObject({ kind: 'metadata', source: 'pool-registry' });
+  });
+
   it('rejects out-of-range confidence and evidence without supported claims', () => {
     expect(() =>
       evidenceItemSchema.parse({

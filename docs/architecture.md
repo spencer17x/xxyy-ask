@@ -115,7 +115,13 @@ flowchart LR
 
 `packages/evm-data-adapter` 在独立包中实现标准 JSON-RPC 数据获取与 snapshot 归一化。endpoint 只能来自启动配置；请求只能选择已配置 chain/provider。它验证 `eth_chainId`，禁止重定向和非显式 loopback HTTP，限制只读方法、batch、timeout、retry 和响应字节，并把多个 provider 的差异保留为 conflicts 与稳定 diagnostics。hex quantity 通过 `bigint` 直接转十进制，不经过有损 number。
 
-该包没有真实 endpoint 配置，也未被任何 app、LangGraph、`ToolRegistry`、`CapabilityRegistry`、CLI 或 Telegram 引用，因此不会改变公开客服边界。它不是 MCP/Capability adapter；swap/protocol decoder、Sandwich 检测、生产 RPC 配额观测和 Agent bridge 仍是后续独立阶段。详细设计见 [evm-data-adapter.md](evm-data-adapter.md)。
+该包没有真实 endpoint 配置，也未被任何 app、LangGraph、`ToolRegistry`、`CapabilityRegistry`、CLI 或 Telegram 引用，因此不会改变公开客服边界。它不是 MCP/Capability adapter，也不读取 trace 或 pool metadata；生产 RPC 配额观测、trace/metadata adapter、Sandwich 检测和 Agent bridge 仍是后续独立阶段。详细设计见 [evm-data-adapter.md](evm-data-adapter.md)。
+
+## EVM Execution Enrichment Core v0.1（未接线离线语义层）
+
+`packages/evm-execution-enrichment-core` 消费现有 normalized snapshot、受限的扁平 call trace 和显式 pool metadata。它只用整数与 ABI 规则确定性提取已提交的 internal native transfer、Solidity `Error(string)` / `Panic(uint256)` / custom selector，以及 Uniswap V2/V3 单个 pool 的 swap balance delta。trace、log 和 pool metadata 都映射为统一 Evidence；缺失、畸形、来源不一致或无法安全判定的部分进入 coverage、warnings 和 diagnostics。
+
+该包不获取 trace，不查询 pool/token，不做价格、路由、滑点、利润或 Sandwich 判定，也没有网络、LLM、LangGraph、Capability 或 MCP 依赖。现有 RPC adapter 仍只提供 transaction/receipt/block，二者没有 composition root；公开运行面继续拒绝交易与链上分析请求。详细契约见 [evm-execution-enrichment.md](evm-execution-enrichment.md)。
 
 ## 说明
 
@@ -129,7 +135,7 @@ flowchart LR
 - 上下文打包在总预算内为多个 chunk 公平保留空间，再按问题词、数字、完整句子、列表和限制/条件信号选择内容。只有无法继续拆分的单个内容单元才允许带省略号截短，并记录 included/omitted/quarantined/truncated 统计。
 - 模型回答完成后执行本地 claim grounding，不增加第二次模型调用。每个关键陈述都要与安全知识片段在数字、支持/不支持极性和有效词项上对齐；失败时返回 deterministic grounded answer。成功时引用只从实际支撑 claim 的 chunk 生成，并用问题和回答选择相关 excerpt。
 - 为避免流式 token 发出后无法撤回，answer provider 会先缓冲模型流、完成同一 grounding 校验，再发送原始有效 deltas 或安全降级回答。`status` 事件和公开 `ChatStreamEvent`/`ChatResponse` 契约保持不变；代价是 answer delta 的首包会晚于模型完成，但校验是本地线性计算，不引入额外网络往返。
-- 当前客服 `ToolRegistry` 只注册 `search_product_docs` 业务工具；独立 Capability Plane、离线 EVM core 和未接线 RPC adapter 都不会改变 Planner 的工具列表，交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
+- 当前客服 `ToolRegistry` 只注册 `search_product_docs` 业务工具；独立 Capability Plane、离线 EVM transaction/enrichment cores 和未接线 RPC adapter 都不会改变 Planner 的工具列表，交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
 - LLM 超时、限流、模型路由不可用、非 JSON、不可用答案或 claim grounding 失败时，会降级为本地 grounded answer；embedding 对超时、429 和 5xx 做有界重试。
 - 知识库按来源分为 `official_docs`（仅 `docs.xxyy.io`）、`x_updates`（仅 `x.com/useXXYYio`）和 `admin_verified`（客服群审核知识，当前为空）；支持全量入库和 X 增量同步。
 - 图片 OCR、视频解析和官方 X 媒体会把原始媒体地址写入 chunk 元数据；被选为回答依据的 chunk 可同时返回相关截图、本地 MP4 或外部视频链接。

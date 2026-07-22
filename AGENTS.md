@@ -33,6 +33,7 @@
 - `packages/agent-core`：LangGraph 客服 Agent runtime、planner、tool registry 和产品问答工具定义。
 - `packages/transaction-analysis-core`：未接线、无网络依赖的 EVM transaction snapshot 领域分析。
 - `packages/evm-data-adapter`：未接线、启动时 allowlist 的只读 EVM JSON-RPC 获取、归一化和 provider 协调。
+- `packages/evm-execution-enrichment-core`：未接线、离线的 EVM call trace、revert 和 allowlisted DEX swap 语义增强。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:evaluate`、`rag:ask`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/telegram-bot`：Telegram Bot long polling 入口。

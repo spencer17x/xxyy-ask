@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-`@xxyy/evm-data-adapter` 是 `@xxyy/transaction-analysis-core` 之前的只读数据边界。它通过受控的标准 EVM JSON-RPC 获取公开 transaction、receipt、chain id 和 block，将 hex quantity 无精度损失地转换为 normalized `EvmTransactionSnapshot`，再由离线领域核心计算交易事实。
+`@xxyy/evm-data-adapter` 是 `@xxyy/transaction-analysis-core` 之前的只读数据边界。它通过受控的标准 EVM JSON-RPC 获取公开 transaction、receipt、chain id 和 block，将 hex quantity 无精度损失地转换为 normalized `EvmTransactionSnapshot`，再由离线领域核心计算交易事实。独立的 `@xxyy/evm-execution-enrichment-core` 已实现 trace/revert/Uniswap swap 的离线语义，但本 adapter 尚不获取它需要的 trace 或 pool metadata。
 
 该包已经实现，但仓库没有生产 RPC endpoint 配置，也没有任何 app、LangGraph、`ToolRegistry`、`CapabilityRegistry`、CLI、API 或 Telegram composition root 引用它。它不是 MCP server 或 capability adapter；公开客服收到交易、Explorer、链上取证或 MEV 问题时仍返回现有边界回复。
 
@@ -85,9 +85,10 @@ provider contract tests 另外覆盖 missing result、错误 chain、hash/index/
 
 - 在 `.env`、Docker、API、CLI 或后台任务中配置和启用真实 RPC provider；
 - provider 级 QPS 配额、共享熔断、缓存、持久化审计和生产 metrics；
-- Indexer、Explorer、trace/debug RPC 或 archive node adapter；
-- internal transfer、revert reason、DEX/protocol/swap、价格影响或 Sandwich 检测；
+- Indexer、Explorer、trace/debug RPC、pool metadata 或 archive node adapter；
+- adapter 内的 internal transfer、revert reason 或协议计算；这些确定性语义位于独立 enrichment core；
+- pool metadata 链上交叉验证、价格影响或 Sandwich 检测；
 - Capability manifest/adapter、MCP client/server、LangGraph bridge 或任何用户可见入口；
 - 私有账户查询、签名、模拟、交易发送或其他写操作。
 
-下一阶段若继续链上能力，应先扩展 trace/internal transfer 和协议解码的离线契约及 fixtures。只有完成生产 provider 配额与观测、内部 channel 授权、Capability bridge 和端到端评测后，才考虑注册 `chain.inspect_transaction`。
+下一阶段若继续链上能力，应先实现受控 trace/debug RPC 与 pool metadata adapter，把数据归一化到 [EVM Execution Enrichment Core](evm-execution-enrichment.md) 的输入契约。只有完成生产 provider 配额与观测、交叉验证、内部 channel 授权、Capability bridge 和端到端评测后，才考虑注册 `chain.inspect_transaction`。

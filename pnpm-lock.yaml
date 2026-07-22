@@ -139,6 +139,18 @@ importers:
         specifier: ^4.0.0
         version: 4.4.3
 
+  packages/evm-execution-enrichment-core:
+    dependencies:
+      '@xxyy/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@xxyy/transaction-analysis-core':
+        specifier: workspace:*
+        version: link:../transaction-analysis-core
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+
   packages/knowledge:
     dependencies:
       '@xxyy/shared':

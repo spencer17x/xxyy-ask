@@ -16,7 +16,7 @@
 ## Paused / Out of Scope
 
 - [ ] 实际 MCP adapter、MCP server 和 project skills：当前阶段仍不作为对外或本地调用入口；v0.6 只交付未接线的安全能力平面契约。
-- [ ] 公开交易分析、池子查询和链上取证入口：当前客服入口只做知识库产品回答，相关问题进入边界/澄清回复；离线 EVM core 和未接线 RPC data adapter 不扩大运行面。
+- [ ] 公开交易分析、池子查询和链上取证入口：当前客服入口只做知识库产品回答，相关问题进入边界/澄清回复；离线 EVM transaction/enrichment cores 和未接线 RPC data adapter 不扩大运行面。
 - [ ] 账户、订单、钱包余额、私有交易记录和投资建议：长期保持边界，不进入自动回答或自动操作链路。
 
 ## v0.2 RAG Trustworthiness
@@ -96,7 +96,8 @@
 - [x] 可重放 fixtures：覆盖成功原生+ERC-20、回滚、缺 receipt、双来源冲突+畸形日志和缺 transaction；fixtures 全部使用合成公开数据。
 - [x] 运行面隔离：领域包不包含网络、LLM、LangGraph 或 MCP 依赖，未被 Agent/API/Telegram/CLI/CapabilityRegistry 引用，当前交易问题仍走边界回复。
 - [x] 实现 allowlisted 只读 EVM data adapter 和 provider contract tests，将标准 RPC 数据转换为 normalized snapshot；adapter 没有真实 endpoint 配置且不注册 capability。
-- [ ] 增加 trace/internal transfer、协议 swap decoder、价格影响和 Sandwich 四态 verdict；LLM 不参与事实计算。
+- [x] 增加有界 trace/internal transfer、Solidity revert 和 Uniswap V2/V3 pool swap decoder；LLM 不参与事实计算。
+- [ ] 增加价格影响、邻近交易关联和 Sandwich 四态 verdict；缺关键池状态或 block 交易集合时不能输出 confirmed。
 
 成功标准：相同 snapshot 重放得到相同 lossless 结果；成功/回滚的 value、ERC-20 和 fee 计算正确；缺失、冲突和畸形数据安全降级；完整 `pnpm check` 与现有客服边界回归通过。详细范围见 [transaction-analysis-core.md](transaction-analysis-core.md)。
 
@@ -115,6 +116,22 @@
 - [ ] 配置生产 provider、共享 QPS/熔断/缓存/metrics，并实现内部 Capability bridge；需单独安全目标和授权后才能启用。
 
 成功标准：运行时不能注入 endpoint 或写 RPC；错误 chain fail closed，hash/block/index 关联不一致显式降级；相同 fixtures 生成字节一致、无精度损失且带 provenance 的 snapshot；provider 局部失败和冲突安全降级；现有 Agent/API/Telegram/CLI 行为不变。详细设计见 [evm-data-adapter.md](evm-data-adapter.md)。
+
+## v0.9 EVM Execution Enrichment Core
+
+目标：在不接入网络和客服运行面的前提下，为 normalized snapshot 增加可重放的执行 trace、revert 和首批 DEX 事件语义，作为后续价格影响与 Sandwich 检测的可信离线输入。
+
+- [x] 有界扁平 trace：最多 250 节点、32 层，每个 input/output 最多 8 KiB；要求唯一 path、单 root、完整 parent 和统一 source，并校验 root 与 transaction 的 chain/hash/from/to/value/input。
+- [x] Internal native transfer：排除已由 transaction core 处理的 root value；只有 receipt success、当前调用成功且全部祖先成功时，才对 call/create/create2/selfdestruct 应用转账；结果资产变化必须净和为零。
+- [x] Revert 语义：严格解码 canonical `Error(string)` 和 `Panic(uint256)`；未知 custom error 只保留 selector，不猜 ABI 名称；empty/畸形数据分别建模，Evidence 不保存原始 trace output。
+- [x] Allowlisted swap decoder：仅识别 Uniswap V2/V3 官方 `Swap` ABI；token0/token1 必须由显式、带来源的 pool metadata 提供，不从地址或模型推测。
+- [x] Lossless pool delta：V2 保留四个 in/out uint256 并计算 pool delta；V3 解码 signed int256 delta、uint160 price、uint128 liquidity 和 int24 tick；只有一正一负时才给出 token direction。
+- [x] Coverage 与降级：缺失/无效/不匹配 trace、receipt、metadata，removed/重复/畸形 log、来源缺口和超过 250 个 swap 时返回 `partial` 与稳定 diagnostics；缺 transaction 或 hash 不匹配返回 `insufficient_data`。
+- [x] 可重放测试：四组 JSON fixtures 和 30 个包级测试覆盖成功、整体回滚、被捕获子调用回滚、祖先回滚、V2/V3、ABI 边界、资源上限、元数据缺失和 Evidence/结果不变量。
+- [x] 运行面隔离：包不依赖网络、LLM、LangGraph、Capability、MCP 或 data adapter；没有 app/CLI/API/Telegram 导入。
+- [ ] 实现 trace/debug RPC 与 pool metadata 的受控 data adapter、生产配额/缓存/metrics 和交叉 provider 验证；本目标只消费离线 normalized 输入。
+
+成功标准：相同输入重放得到字节一致结果；回滚路径不产生已提交转账；Error/Panic/unknown selector 不混淆；swap 只有显式 token metadata 才产生 token 语义；所有引用和资产守恒由 schema 二次校验；完整 `pnpm check` 与公开客服边界回归通过。详细设计见 [evm-execution-enrichment.md](evm-execution-enrichment.md)。
 
 ## GitHub Planning Convention
 
