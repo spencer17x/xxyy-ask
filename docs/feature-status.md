@@ -20,6 +20,7 @@
 - [x] Read-only EVM Transaction Analysis Core v0.1：独立纯 TypeScript 包离线分析 normalized transaction snapshot，确定性输出 success/reverted/pending/unknown、原生/ERC-20 资产变化、精确 gas fee、timeline、统一 Evidence/SkillResult、warnings 和 diagnostics；没有网络/MCP/Agent 接线。
 - [x] Allowlisted Read-only EVM Data Adapter v0.1：独立包用启动时 chain/provider allowlist 调用四个标准只读 JSON-RPC，验证 chain/hash/block/index，限制 endpoint、redirect、header、batch、timeout、retry 和 response bytes，将多 provider 结果无损归一化为 snapshot 并保留 diagnostics/conflicts；没有生产 endpoint 或运行面接线。
 - [x] EVM Execution Enrichment Core v0.1：独立离线包校验最多 250 节点/32 层的扁平 call trace，只有成功 receipt 且调用及祖先均成功时才应用 internal native transfer；严格解码 Solidity Error/Panic/custom selector 和带显式 pool/token metadata 的 Uniswap V2/V3 swap，缺失或畸形输入显式降级；没有 trace provider、网络/MCP/Agent 接线。
+- [x] Allowlisted EVM Execution Data Adapter v0.1：独立未接线包用启动时 chain/provider/factory allowlist 获取固定 Geth callTracer，在精确 block 验证 pool/factory code、token、V3 fee 和 factory `getPair/getPool` 反查；限制 endpoint、method、calldata、timeout、响应、trace 和 pool 资源，保留脱敏 diagnostics 与 semantic provider conflicts；没有生产 provider 或运行面接线。
 - [x] 静态资产：`GET /assets/*` 返回产品文档视频、图片等静态资源。
 - [x] 服务保护：API 对 JSON 请求体大小、聊天 POST 请求频率和跨域来源做基础限制，配置项为 `API_MAX_BODY_BYTES`、`API_RATE_LIMIT_MAX`、`API_RATE_LIMIT_WINDOW_MS` 和 `API_CORS_ORIGIN`。
 - [x] 本地开发命令：启动入口统一为 `pnpm run app:dev`、`pnpm run api:dev`、`pnpm run web:dev` 和 `pnpm run telegram:dev`；知识库更新通过 `app:dev` 的 `--sync`、`--full-sync` 或 `--ingest` 参数显式触发。
@@ -36,7 +37,7 @@
 
 - [ ] 实际 MCP server / adapter 暂停：不再提供 `product:mcp:dev`、`tx:mcp:dev` 或 MCP smoke 脚本；Capability Plane 基础库不启动 server，也不连接远端 MCP。
 - [ ] Project skills 暂停：不再保留仓库内 `skills/` 目录，Capability Plane 当前没有注册本地 Skill。
-- [ ] 公开交易分析入口仍暂停：EVM transaction/enrichment cores 与 RPC adapter 都没有 app 配置、Capability 注册或 Agent bridge；聊天中交易、Explorer、链上取证和 MEV 问题继续进入边界/澄清回复。
+- [ ] 公开交易分析入口仍暂停：EVM transaction/enrichment cores 与两个 RPC adapter 都没有 app 配置、Capability 注册或 Agent bridge；聊天中交易、Explorer、链上取证和 MEV 问题继续进入边界/澄清回复。
 
 ## Planned Or Not Yet Complete
 
@@ -44,4 +45,4 @@
 - [ ] 更多渠道接入：在不改变客服 Agent 核心边界的前提下，继续接入更多入口。
 - [ ] Telegram Guest Mode 教学入口：在候选知识与审核权限模型之上接入 `/teach`、`/approve`、`/reject`，不直接自动发布群聊内容。
 - [ ] 安全与隐私增强：继续完善数据保留、删除策略和生产告警；Product RAG 的 prompt injection 隔离与敏感信息脱敏已落地。
-- [ ] 链上能力下一阶段：实现受控 trace/pool metadata 数据适配与交叉验证，再离线实现价格影响和 Sandwich 四态 verdict；在生产配额、内部授权和端到端评测完成前不接入运行面。
+- [ ] 链上能力下一阶段：离线实现价格影响和 Sandwich 四态 verdict，并补 block 邻近交易、pool state 和资产变化输入；在生产 QPS/熔断/缓存/metrics、内部授权和端到端评测完成前不接入运行面。

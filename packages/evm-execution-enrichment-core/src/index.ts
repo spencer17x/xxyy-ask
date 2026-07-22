@@ -15,6 +15,7 @@ export {
   evmCallTypes,
   evmExecutionEnrichmentInputSchema,
   evmExecutionEnrichmentResultSchema,
+  evmPoolMetadataEntrySchema,
   evmPoolMetadataSchema,
   traceAddressKey,
 } from './contracts.js';

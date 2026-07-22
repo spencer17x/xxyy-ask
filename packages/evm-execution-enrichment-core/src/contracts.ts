@@ -169,7 +169,7 @@ const poolMetadataSourceSchema = z
   })
   .strict();
 
-const poolMetadataEntrySchema = z
+export const evmPoolMetadataEntrySchema = z
   .object({
     chainId: evmChainIdSchema,
     poolAddress: evmAddressSchema,
@@ -185,7 +185,7 @@ const poolMetadataEntrySchema = z
   });
 
 export const evmPoolMetadataSchema = z
-  .array(poolMetadataEntrySchema)
+  .array(evmPoolMetadataEntrySchema)
   .max(MAX_SWAP_EVENTS)
   .superRefine((pools, context) => {
     const identities = new Set<string>();

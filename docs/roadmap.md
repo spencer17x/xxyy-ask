@@ -129,9 +129,36 @@
 - [x] Coverage 与降级：缺失/无效/不匹配 trace、receipt、metadata，removed/重复/畸形 log、来源缺口和超过 250 个 swap 时返回 `partial` 与稳定 diagnostics；缺 transaction 或 hash 不匹配返回 `insufficient_data`。
 - [x] 可重放测试：四组 JSON fixtures 和 30 个包级测试覆盖成功、整体回滚、被捕获子调用回滚、祖先回滚、V2/V3、ABI 边界、资源上限、元数据缺失和 Evidence/结果不变量。
 - [x] 运行面隔离：包不依赖网络、LLM、LangGraph、Capability、MCP 或 data adapter；没有 app/CLI/API/Telegram 导入。
-- [ ] 实现 trace/debug RPC 与 pool metadata 的受控 data adapter、生产配额/缓存/metrics 和交叉 provider 验证；本目标只消费离线 normalized 输入。
+- [x] 独立的受控 trace/pool metadata adapter 与交叉 provider replay 已在后续 v0.10 完成；本 core 仍只消费 normalized 输入。
 
 成功标准：相同输入重放得到字节一致结果；回滚路径不产生已提交转账；Error/Panic/unknown selector 不混淆；swap 只有显式 token metadata 才产生 token 语义；所有引用和资产守恒由 schema 二次校验；完整 `pnpm check` 与公开客服边界回归通过。详细设计见 [evm-execution-enrichment.md](evm-execution-enrichment.md)。
+
+## v0.10 Allowlisted EVM Execution Data Adapter
+
+目标：在不扩大基础 snapshot RPC client 权限、也不接入客服运行面的前提下，从启动时 allowlisted provider 获取 normalized call trace，并在精确 block 验证 Uniswap V2/V3 pool metadata。
+
+- [x] 专用 RPC contract：只允许 `eth_chainId`、固定 Geth `debug_traceTransaction/callTracer`、精确 block 的 `eth_getCode`，以及六个固定 pool/factory ABI selector；运行时不能注入 endpoint、tracer、method 或任意 calldata。
+- [x] Endpoint 与资源边界：复用受控 provider header schema，强制 HTTPS 或显式 loopback HTTP、禁止 redirect，限制 timeout、retry、response bytes、batch、provider 和 pool 数量。
+- [x] Trace 归一化：递归 call frame 用显式 stack 转成扁平 path；限制 250 节点、32 层和单 bytes 8 KiB，quantity 无损转十进制，provider error 只保留稳定脱敏 code。
+- [x] Pool/factory 验证：读取非空 code、factory/token0/token1/V3 fee；要求非零排序 token、protocol-specific factory allowlist，并用 factory `getPair/getPool` 反查候选地址。
+- [x] Provenance 与协调：结果保留观测时间、payload/code SHA-256、verified pool fact；最多四 provider 按配置顺序选 canonical 数据，semantic fingerprint 区分等价与真实 trace/metadata 冲突。
+- [x] 状态与降级：独立输出 `success | partial | insufficient_data`、稳定 diagnostics 和 conflicts；先验证 chain 再调用高成本 trace/metadata，provider 局部失败不丢弃健康来源。
+- [x] 可重放测试：两组 provider fixtures 和 31 个包级测试覆盖成功、冲突、错误链、transport、timeout、abort、响应超限、trace 资源、factory spoof、fee/protocol/pool 配额和 enrichment core 直连。
+- [x] 运行面隔离：没有真实 endpoint、环境变量 loader、生产 composition root、Capability/MCP/Agent/API/CLI/Telegram 引用。
+- [ ] 生产数据面：共享 QPS/并发预算、熔断、缓存、成本计量、metrics、告警、持久化审计和真实 provider 配置；需要后续独立安全目标。
+
+成功标准：任意 RPC/debug/eth_call 无法越过专用 schema；错误链不触发 trace 或 metadata 请求；伪造 getter 不能绕过 factory 反查；等价 provider 不产生伪冲突、差异来源显式降级；输出无需转换即可进入 enrichment core；完整 `pnpm check` 与公开客服边界回归通过。详细设计见 [evm-execution-data-adapter.md](evm-execution-data-adapter.md)。
+
+## v0.11 Price Impact / Sandwich Detection Core（计划）
+
+目标：先用离线、可重放的 block 邻近交易、pool state 和资产变化事实生成价格影响与 Sandwich 四态 verdict，不接入生产 provider 或用户运行面。
+
+- [ ] 定义 block transaction neighborhood、pre/post pool state、token delta 与来源冲突契约。
+- [ ] 对 allowlisted V2/V3 路径计算 lossless quote、execution price 和 price impact，不使用 LLM 猜价格。
+- [ ] 定义 `confirmed | likely | unlikely | insufficient_data` Sandwich verdict、必要证据和反例。
+- [ ] 处理 multi-hop、fee-on-transfer、rebase、聚合器和缺 archive state 的显式降级边界。
+- [ ] 建立合成/真实脱敏 replay corpus、deterministic golden tests 和误报/漏报基线。
+- [ ] 保持无网络、无 Capability/MCP/Agent 接线；生产数据面和授权另立目标。
 
 ## GitHub Planning Convention
 
