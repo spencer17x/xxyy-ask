@@ -185,9 +185,9 @@ fixtures 不含真实 endpoint、用户钱包、API key 或主网事实；它们
 
 - 真实 archive provider 配置、密钥注入、跨实例共享配额、持久化审计、告警和 SLA；
 - 由基础 transaction adapter、execution adapter 与 observation adapter 组成的生产 composition root；
-- 主网标注 corpus、router/chain 覆盖矩阵和误报/漏报阈值；
+- 经人工审核的主网 corpus、目标 router/chain 的实际覆盖和通过 internal-readiness 的误报/漏报基线；离线 corpus schema、合成矩阵与门禁已在独立 harness 中实现；
 - V3 跨 tick、Mint/Burn 等同区块 liquidity mutation、multi-pool/multi-hop、aggregator、fee-on-transfer 或 rebase；
 - 多地址 actor clustering、private bundle/mempool attribution、intent 判断、gas/builder payment 后净利润；
 - Capability adapter、授权 grant、MCP、LangGraph bridge、API、CLI 或 Telegram 入口。
 
-下一阶段是离线 Chain Analysis Composition & Evaluation Harness：在完全不接入客服运行面的前提下，把 transaction snapshot、execution enrichment、MEV observation 与 price-impact/Sandwich core 串成一个可重放 pipeline，建立人工标注 corpus、coverage matrix、false-positive/false-negative 基线和明确的 capability 输入/输出契约。完成真实 provider 安全评审、内部授权和端到端质量门禁前，不注册 `chain.detect_sandwich`。
+独立 [EVM Chain Analysis Composition & Evaluation Harness](evm-chain-analysis-harness.md) 已把 transaction snapshot、execution enrichment、MEV observation 与 price-impact/Sandwich core 串成可重放 pipeline，并建立 future capability projection、synthetic/reviewed corpus schema、coverage/误报/漏报指标和两层质量门禁。下一阶段是采集经审批和双人复核的公开主网样本、完善真实 provider 跨实例预算/审计/告警，并实际通过 internal-readiness gate。完成真实 provider 安全评审、内部授权和端到端质量门禁前，不注册 `chain.detect_sandwich`。

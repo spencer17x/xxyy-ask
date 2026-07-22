@@ -130,6 +130,27 @@ importers:
         specifier: ^4.0.0
         version: 4.4.3
 
+  packages/evm-chain-analysis-harness:
+    dependencies:
+      '@xxyy/evm-execution-enrichment-core':
+        specifier: workspace:*
+        version: link:../evm-execution-enrichment-core
+      '@xxyy/evm-mev-observation-data-adapter':
+        specifier: workspace:*
+        version: link:../evm-mev-observation-data-adapter
+      '@xxyy/evm-price-impact-sandwich-core':
+        specifier: workspace:*
+        version: link:../evm-price-impact-sandwich-core
+      '@xxyy/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@xxyy/transaction-analysis-core':
+        specifier: workspace:*
+        version: link:../transaction-analysis-core
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+
   packages/evm-data-adapter:
     dependencies:
       '@xxyy/transaction-analysis-core':

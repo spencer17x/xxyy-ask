@@ -23,6 +23,7 @@
 - [x] Allowlisted EVM Execution Data Adapter v0.1：独立未接线包用启动时 chain/provider/factory allowlist 获取固定 Geth callTracer，在精确 block 验证 pool/factory code、token、V3 fee 和 factory `getPair/getPool` 反查；限制 endpoint、method、calldata、timeout、响应、trace 和 pool 资源，保留脱敏 diagnostics 与 semantic provider conflicts；没有生产 provider 或运行面接线。
 - [x] EVM Price Impact / Sandwich Detection Core v0.1：独立离线包校验最多 256 笔同区块同 pool swap、pre/post state、actor token delta、coverage 和 conflicts；用 bigint 复刻 V2 exact-input 与 V3 单 active-range rounding，输出 price impact、counterfactual victim loss 和 `confirmed | likely | unlikely | insufficient_data` 四态 verdict；没有网络、LLM、MCP/Agent 接线。
 - [x] Allowlisted MEV Observation Data Adapter v0.1：独立未接线包从启动时冻结的 archive provider、chain 和 V2/V3 pool allowlist 验证 canonical block/order、精确 pool logs 与成功 receipts；用 parent/end state 锚定 V2 Sync 或 V3 单 active-range event replay，计算 transaction actor 的直接 token delta，并将多 provider block/swap/state/delta conflicts 投影到 price-impact/Sandwich core；具备进程内 QPS、并发、缓存、熔断、成本和脱敏 metrics 控制，没有真实 endpoint 或运行面接线。
+- [x] EVM Chain Analysis Composition & Evaluation Harness v0.1：独立离线包把 normalized snapshot、可选 execution trace/metadata、已验证 MEV observation 和 price-impact/Sandwich core 组合为阶段化、fail-closed、可重放结果；定义未来 `chain.inspect_transaction` / `chain.detect_sandwich` 最小契约，提供 synthetic/reviewed corpus 分层、precision/recall/abstention/coverage/cost/determinism 报告及 regression/internal-readiness 门禁；当前只有合成回归样本，未注册 Capability 或接入运行面。
 - [x] 静态资产：`GET /assets/*` 返回产品文档视频、图片等静态资源。
 - [x] 服务保护：API 对 JSON 请求体大小、聊天 POST 请求频率和跨域来源做基础限制，配置项为 `API_MAX_BODY_BYTES`、`API_RATE_LIMIT_MAX`、`API_RATE_LIMIT_WINDOW_MS` 和 `API_CORS_ORIGIN`。
 - [x] 本地开发命令：启动入口统一为 `pnpm run app:dev`、`pnpm run api:dev`、`pnpm run web:dev` 和 `pnpm run telegram:dev`；知识库更新通过 `app:dev` 的 `--sync`、`--full-sync` 或 `--ingest` 参数显式触发。
@@ -39,7 +40,7 @@
 
 - [ ] 实际 MCP server / adapter 暂停：不再提供 `product:mcp:dev`、`tx:mcp:dev` 或 MCP smoke 脚本；Capability Plane 基础库不启动 server，也不连接远端 MCP。
 - [ ] Project skills 暂停：不再保留仓库内 `skills/` 目录，Capability Plane 当前没有注册本地 Skill。
-- [ ] 公开交易分析入口仍暂停：EVM transaction/execution/MEV cores 与三个 RPC adapter 都没有 app 配置、Capability 注册或 Agent bridge；聊天中交易、Explorer、链上取证和 MEV 问题继续进入边界/澄清回复。
+- [ ] 公开交易分析入口仍暂停：EVM transaction/execution/MEV cores、三个 RPC adapter 与 composition/evaluation harness 都没有 app 配置、Capability 注册或 Agent bridge；聊天中交易、Explorer、链上取证和 MEV 问题继续进入边界/澄清回复。
 
 ## Planned Or Not Yet Complete
 
@@ -47,4 +48,4 @@
 - [ ] 更多渠道接入：在不改变客服 Agent 核心边界的前提下，继续接入更多入口。
 - [ ] Telegram Guest Mode 教学入口：在候选知识与审核权限模型之上接入 `/teach`、`/approve`、`/reject`，不直接自动发布群聊内容。
 - [ ] 安全与隐私增强：继续完善数据保留、删除策略和生产告警；Product RAG 的 prompt injection 隔离与敏感信息脱敏已落地。
-- [ ] 链上能力下一阶段：实现离线 Chain Analysis Composition & Evaluation Harness，把 snapshot、execution enrichment、MEV observation 和 price-impact/Sandwich core 串成可重放 pipeline，并建立人工标注 corpus、router/chain coverage matrix 与误报/漏报基线；真实 provider、跨实例配额/审计/告警、内部授权和端到端门禁完成前不接入运行面。
+- [ ] 链上能力下一阶段：建立经审批、双人复核且去隐私的公开主网 replay corpus，补足 chain/router/protocol/反例覆盖；完成真实 provider 的跨实例预算、持久审计、告警和 SLO，并实际通过 internal-readiness gate。完成内部授权、Capability adapter 和运行面安全审查前不接入运行面。

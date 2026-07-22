@@ -173,4 +173,4 @@ deterministic tests 还覆盖 likely、source conflict、actor delta 反例、pa
 - 跨实例共享 provider 配额、持久化审计、告警、真实 provider SLA 和主网标注质量基线；
 - Capability adapter、授权 grant、MCP、LangGraph bridge、API/CLI/Telegram 入口。
 
-下一阶段是离线 Chain Analysis Composition & Evaluation Harness，把 transaction、execution、observation 和本 core 串成可重放 pipeline，并建立人工标注 corpus、coverage matrix 与误报/漏报门禁。完成真实 provider 运维设计、内部授权、Capability bridge、安全审查和端到端评测前，不注册 `chain.detect_sandwich`，也不改变公开客服边界。
+[EVM Chain Analysis Composition & Evaluation Harness](evm-chain-analysis-harness.md) 已把 transaction、execution、observation 和本 core 串成可重放 pipeline，并建立 synthetic/reviewed corpus schema、coverage matrix 与误报/漏报门禁。下一阶段是经审批的 reviewed 主网 corpus 和真实 provider 运维设计；完成 internal-readiness gate、内部授权、Capability bridge、安全审查和端到端评测前，不注册 `chain.detect_sandwich`，也不改变公开客服边界。

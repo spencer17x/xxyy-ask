@@ -179,18 +179,32 @@
 
 成功标准：任意 generic/write/debug RPC 或任意 calldata/block range 无法越过专用 schema；block/log/receipt/state 无法闭合或 provider 有分歧时不产生高置信结论；支持范围内的 V2/V3 replay 可直接、字节稳定地进入 v0.11 core；完整 `pnpm check` 与公开客服边界回归通过。详细设计见 [evm-mev-observation-data-adapter.md](evm-mev-observation-data-adapter.md)。
 
-## v0.13 Chain Analysis Composition & Evaluation Harness（计划）
+## v0.13 Chain Analysis Composition & Evaluation Harness
 
 目标：在不配置生产 endpoint、不注册 Capability、也不改变客服运行面的前提下，把已有 transaction、execution 和 MEV 包组合成一个离线、可重放、可量化质量的完整分析 pipeline。
 
-- [ ] 定义 transport-neutral pipeline 输入/输出和阶段化 provenance，把 transaction snapshot、execution trace/metadata、MEV observation 与 price-impact/Sandwich result 串联，禁止阶段间隐式补值。
-- [ ] 对成功、partial、insufficient、provider conflict 和 unsupported semantics 建立稳定的组合状态矩阵与 diagnostic 映射。
-- [ ] 建立经人工审核、去隐私的 replay corpus schema，覆盖 V2/V3、router、reorg、复杂路由、特殊代币和明确反例；合成 fixture 与真实标注样本分层管理。
-- [ ] 输出 precision/recall、false-positive/false-negative、coverage、unsupported-rate、provider cost 和 replay determinism 报告，并设置进入内部试用前的质量门禁。
-- [ ] 定义未来 `chain.inspect_transaction` / `chain.detect_sandwich` Capability adapter 的最小 public-chain 输入、结构化输出和拒绝策略，但不注册 manifest、不创建授权 grant、不接入 LangGraph/MCP/API/CLI/Telegram。
-- [ ] 验证 package graph 与运行面隔离，完整 `pnpm check` 和客服边界回归持续通过。
+- [x] 定义 transport-neutral pipeline 输入/输出和阶段化 provenance，把 transaction snapshot、execution trace/metadata、MEV observation 与 price-impact/Sandwich result 串联，禁止阶段间隐式补值。
+- [x] 对成功、partial、insufficient、provider conflict 和 unsupported semantics 建立稳定的组合状态矩阵与 diagnostic 映射。
+- [x] 建立去隐私 replay corpus schema，把 synthetic fixture 与带 hashed reviewer/source provenance 的 reviewed 样本分层，并按 chain/protocol/router/data-state/tier 生成 coverage matrix；当前不伪造 reviewed 样本。
+- [x] 六个合成 case 覆盖 V2 confirmed、V3 unlikely、provider conflict、unsupported aggregator、observation 缺失和 execution inspection；复杂路由、特殊代币、reorg 及更多 chain 的主网 reviewed coverage 留给 v0.14。
+- [x] 输出 precision/recall、false-positive/false-negative、positive abstention、coverage、unsupported-rate、provider cost、expected-match 和 replay determinism 报告，并提供 synthetic regression 与 internal readiness 两层门禁。
+- [x] 定义未来 `chain.inspect_transaction` / `chain.detect_sandwich` Capability adapter 的最小 public-chain 输入、结构化输出和拒绝策略，但不注册 manifest、不创建授权 grant、不接入 LangGraph/MCP/API/CLI/Telegram。
+- [x] 验证 package graph 与运行面隔离，完整 `pnpm check` 和客服边界回归持续通过。
 
-只有 v0.13 评测、真实 provider 安全与运维设计、内部授权、Capability adapter 和运行面安全审查都完成后，才考虑受限注册 `chain.detect_sandwich`。
+成功标准：相同输入 byte-deterministic；跨阶段锚点不闭合时不运行 MEV core；provider conflict 和 unsupported 不产生假阴性；合成样本只通过 regression gate、不能通过 internal readiness；报告和 corpus 有稳定指纹；完整 `pnpm check` 与公开客服边界回归通过。详细设计见 [evm-chain-analysis-harness.md](evm-chain-analysis-harness.md)。
+
+## v0.14 Reviewed Replay Corpus & Production Data-plane Readiness（计划）
+
+目标：不接入公开客服、不注册 Capability，先用经审批的公开主网样本和可运营的真实 provider 数据面证明内部链上分析的质量、安全与成本边界。
+
+- [ ] 定义公开主网样本的采集审批、双人复核、标签争议、去隐私、payload hash、保留和删除流程；reviewer identity 只保存不可逆 hash。
+- [ ] 建立 reviewed replay corpus，补齐 V2/V3、目标 chain、allowlisted router/direct pool、provider conflict、reorg、复杂路由、特殊 token 和明确正反例覆盖。
+- [ ] 为三个只读 adapter 设计生产配置注入、跨实例 QPS/并发/成本预算、持久审计、metrics、告警、熔断状态共享、SLO 和 provider 故障演练。
+- [ ] 在固定版本 corpus 上持续运行 harness，审阅每个 false positive、false negative 和 positive abstention，达到并锁定 internal-readiness gate。
+- [ ] 完成数据保留、供应商风险、incident runbook 和内部 channel 威胁模型评审；不得把 endpoint、credential 或原始 provider body 暴露给 LLM。
+- [ ] 保持 Capability manifest/grant、MCP、LangGraph、API、CLI 和 Telegram 未接线；是否进入内部受限 capability adapter 作为下一阶段独立决策。
+
+只有 v0.14 实际通过 internal-readiness gate，且真实 provider 安全与运维评审完成后，才进入内部 Capability Adapter & Authorization Bridge 目标；公开客服接入仍需另行决策。
 
 ## GitHub Planning Convention
 

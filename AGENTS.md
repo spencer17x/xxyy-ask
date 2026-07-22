@@ -35,6 +35,7 @@
 - `packages/evm-data-adapter`：未接线、启动时 allowlist 的只读 EVM JSON-RPC 获取、归一化和 provider 协调。
 - `packages/evm-execution-enrichment-core`：未接线、离线的 EVM call trace、revert 和 allowlisted DEX swap 语义增强。
 - `packages/evm-execution-data-adapter`：未接线、启动时 allowlist 的 callTracer 获取和 Uniswap V2/V3 pool/factory 元数据验证。
+- `packages/evm-chain-analysis-harness`：未接线、不执行网络 I/O 的 transaction/execution/MEV 离线组合、replay corpus 评测和质量门禁。
 - `packages/evm-price-impact-sandwich-core`：未接线、离线的 lossless AMM price impact 和 Sandwich 四态判定。
 - `packages/evm-mev-observation-data-adapter`：未接线、启动时 allowlist 的同区块 swap、transaction-boundary pool state、actor token delta 和多 provider 冲突验证。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:evaluate`、`rag:ask`。

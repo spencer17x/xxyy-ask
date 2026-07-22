@@ -174,4 +174,4 @@ adapter 状态：
 - Capability manifest/adapter、内部授权 grant、MCP、LangGraph bridge、API/CLI/Telegram 入口；
 - 私有账户、签名、模拟、交易广播、投资建议或任何写链操作。
 
-独立 [MEV Observation Data Adapter](evm-mev-observation-data-adapter.md) 已能生成 [EVM Price Impact / Sandwich Core](evm-price-impact-sandwich.md) 所需的 block 邻近交易、pre/post pool state、actor token delta 和 source conflicts。下一阶段是离线组合与人工标注评测；生产接线仍须另行完成真实 provider 跨实例配额/审计/告警、内部 channel 授权、Capability bridge 和运行面安全审查。满足这些条件前，不注册链上 Capability。
+独立 [MEV Observation Data Adapter](evm-mev-observation-data-adapter.md) 已能生成 [EVM Price Impact / Sandwich Core](evm-price-impact-sandwich.md) 所需的 block 邻近交易、pre/post pool state、actor token delta 和 source conflicts；[Chain Analysis Harness](evm-chain-analysis-harness.md) 已完成离线组合、合成回放与质量门禁。下一阶段仍须建立 reviewed 主网 corpus，并另行完成真实 provider 跨实例配额/审计/告警、内部 channel 授权、Capability bridge 和运行面安全审查。满足这些条件前，不注册链上 Capability。

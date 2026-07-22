@@ -115,7 +115,7 @@ flowchart LR
 
 `packages/evm-data-adapter` 在独立包中实现标准 JSON-RPC 数据获取与 snapshot 归一化。endpoint 只能来自启动配置；请求只能选择已配置 chain/provider。它验证 `eth_chainId`，禁止重定向和非显式 loopback HTTP，限制只读方法、batch、timeout、retry 和响应字节，并把多个 provider 的差异保留为 conflicts 与稳定 diagnostics。hex quantity 通过 `bigint` 直接转十进制，不经过有损 number。
 
-该包没有真实 endpoint 配置，也未被任何 app、LangGraph、`ToolRegistry`、`CapabilityRegistry`、CLI 或 Telegram 引用，因此不会改变公开客服边界。它不是 MCP/Capability adapter，也不读取 trace 或 pool metadata；执行与 MEV observation 数据由权限更窄的独立 adapter 负责。真实 provider 运维、组合评测和 Agent bridge 仍是后续独立阶段。详细设计见 [evm-data-adapter.md](evm-data-adapter.md)。
+该包没有真实 endpoint 配置，也未被任何 app、LangGraph、`ToolRegistry`、`CapabilityRegistry`、CLI 或 Telegram 引用，因此不会改变公开客服边界。它不是 MCP/Capability adapter，也不读取 trace 或 pool metadata；执行与 MEV observation 数据由权限更窄的独立 adapter 负责。离线组合/合成评测已由独立 harness 完成；真实 provider 运维、reviewed 主网评测和 Agent bridge 仍是后续阶段。详细设计见 [evm-data-adapter.md](evm-data-adapter.md)。
 
 ## Allowlisted EVM Execution Data Adapter v0.1（未接线执行数据边界）
 
@@ -146,6 +146,14 @@ Sandwich 判定使用 `confirmed | likely | unlikely | insufficient_data` 四态
 V2 以 parent reserves 为起点，按 `Sync` / `Swap` 顺序重放 transaction-boundary state，并用 block-end reserves 闭合；V3 读取 parent `slot0`、active liquidity、tick spacing、有限 bitmap words 和两端 initialized tick，以 Swap event 重放单 active-range state，再与 block-end state 对账。receipt 中 token0/token1 Transfer 只计算 transaction `from` 的直接 raw delta，不做 router beneficiary 或多地址 actor 聚类。
 
 每个 provider 独立生成完整 core input，并比较 block/order、swap、pool state 和 actor delta 语义指纹；分歧作为 source conflict 投影到 price-impact/Sandwich core，领域判断随即 fail closed。client 同时提供 provider-local QPS、并发、缓存、熔断、成本和脱敏 metrics 控制。该包仍没有真实 endpoint、环境变量、production composition root 或 Capability/MCP/Agent/API/CLI/Telegram 接线。详细设计见 [evm-mev-observation-data-adapter.md](evm-mev-observation-data-adapter.md)。
+
+## EVM Chain Analysis Composition & Evaluation Harness v0.1（未接线离线组合层）
+
+`packages/evm-chain-analysis-harness` 是现有 transaction、execution 和 MEV 包之上的唯一离线 composition root。它消费已经归一化/验证的对象，按 transaction、execution、observation、MEV 固定阶段调用确定性 core；chain/hash/block/index/pool/provider block 或 execution swap 语义不能闭合时阻止 MEV core。每个阶段保留 input/output fingerprint、coverage、diagnostics 和统一 Evidence，顶层再投影未来 `chain.inspect_transaction` / `chain.detect_sandwich` 的最小结构化结果及 refusal code。
+
+同一包定义 synthetic/reviewed replay corpus、chain/protocol/router/data-state/tier coverage matrix，以及 precision、recall（包含 positive abstention）、false-positive/false-negative、unsupported rate、provider cost、expected match 和 byte determinism 报告。synthetic regression gate 只证明组合回归；internal readiness gate 强制 reviewed 样本量和更高质量阈值。当前六个合成 case 明确不能通过 internal readiness，不代表主网效果。
+
+该 harness 不实例化 RPC adapter，不读取环境变量或 endpoint，也未被 app、LangGraph、`ToolRegistry`、`CapabilityRegistry`、CLI、Telegram 或 MCP 引用。未来能力契约不等于能力已注册；公开客服边界保持不变。详细设计见 [evm-chain-analysis-harness.md](evm-chain-analysis-harness.md)。
 
 ## 说明
 
