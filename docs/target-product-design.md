@@ -387,7 +387,7 @@ packages/skills/sandwich-detection-core
 packages/skills/onchain-analysis-core
 ```
 
-当前领域实现为保持现有 `packages/*` workspace 边界，分别落在 `packages/transaction-analysis-core`、`packages/evm-data-adapter`、`packages/evm-execution-enrichment-core` 和 `packages/evm-execution-data-adapter`：transaction core 计算 normalized transaction/receipt 基础事实；标准 data adapter 实现四方法 JSON-RPC、chain 验证、资源限制、无损归一化与 provider 冲突保留；enrichment core 离线处理有界 call trace、internal transfer、Solidity revert 和带显式 pool metadata 的 Uniswap V2/V3 swap；execution data adapter 使用独立 allowlist 获取 callTracer，并用 pool/factory code、排序 token、V3 fee 和 factory 反查验证 metadata。它们都没有生产 endpoint/composition root；价格影响、生产 provider 数据面、MCP transport、Capability bridge、Sandwich 和通用链上 Skill 尚未接入。领域包增多后再统一迁移到 `packages/skills/*`，不提前重构 monorepo。
+当前领域实现为保持现有 `packages/*` workspace 边界，分别落在 `packages/transaction-analysis-core`、`packages/evm-data-adapter`、`packages/evm-execution-enrichment-core`、`packages/evm-execution-data-adapter` 和 `packages/evm-price-impact-sandwich-core`：transaction core 计算 normalized transaction/receipt 基础事实；标准 data adapter 实现四方法 JSON-RPC、chain 验证、资源限制、无损归一化与 provider 冲突保留；enrichment core 离线处理有界 call trace、internal transfer、Solidity revert 和带显式 pool metadata 的 Uniswap V2/V3 swap；execution data adapter 使用独立 allowlist 获取 callTracer，并用 pool/factory code、排序 token、V3 fee 和 factory 反查验证 metadata；price-impact/Sandwich core 用有界同区块 observation、pre/post state、counterfactual quote 和 actor token delta 输出四态 verdict。它们都没有生产 endpoint/composition root；完整 block/state observation adapter、生产 provider 数据面、MCP transport、Capability bridge 和通用链上 Skill 尚未接入。领域包增多后再统一迁移到 `packages/skills/*`，不提前重构 monorepo。
 
 核心算法不应依赖某个 Agent 框架。LangGraph、HTTP 和 MCP 都通过 adapter 调用同一份实现。
 

@@ -35,6 +35,7 @@
 - `packages/evm-data-adapter`：未接线、启动时 allowlist 的只读 EVM JSON-RPC 获取、归一化和 provider 协调。
 - `packages/evm-execution-enrichment-core`：未接线、离线的 EVM call trace、revert 和 allowlisted DEX swap 语义增强。
 - `packages/evm-execution-data-adapter`：未接线、启动时 allowlist 的 callTracer 获取和 Uniswap V2/V3 pool/factory 元数据验证。
+- `packages/evm-price-impact-sandwich-core`：未接线、离线的 lossless AMM price impact 和 Sandwich 四态判定。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:evaluate`、`rag:ask`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/telegram-bot`：Telegram Bot long polling 入口。

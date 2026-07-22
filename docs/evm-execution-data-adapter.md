@@ -170,8 +170,8 @@ adapter 状态：
 - 真实 provider `.env`、Docker 配置、后台 worker、持久化或生产 composition root；
 - 共享 QPS/并发预算、熔断、缓存、provider 成本计量、metrics、告警或审计存储；
 - Erigon/Parity `trace_transaction`、Indexer、Explorer、archive fallback 或 provider 自动发现；
-- block transaction 集合、pool reserve/state delta、价格、滑点、price impact、利润或 Sandwich verdict；
+- 本 adapter 内的 block transaction 集合、pool reserve/state delta、价格、滑点、price impact、利润或 Sandwich verdict；离线 price-impact/Sandwich core 已实现，但所需完整 observation 数据面尚未实现；
 - Capability manifest/adapter、内部授权 grant、MCP、LangGraph bridge、API/CLI/Telegram 入口；
 - 私有账户、签名、模拟、交易广播、投资建议或任何写链操作。
 
-下一阶段应先实现离线 price-impact / Sandwich detection core 所需的 block 邻近交易、pool state 和资产变化契约；生产接线必须另行完成 provider QPS/熔断/缓存/metrics、内部 channel 授权、Capability bridge 和端到端评测。满足这些条件前，不注册 `chain.inspect_transaction`。
+离线 [EVM Price Impact / Sandwich Core](evm-price-impact-sandwich.md) 已定义 block 邻近交易、pre/post pool state、actor token delta 和四态 verdict。下一阶段需要独立 MEV observation adapter 生成这些输入；生产接线仍须另行完成 provider QPS/熔断/缓存/metrics、内部 channel 授权、Capability bridge 和端到端评测。满足这些条件前，不注册链上 Capability。

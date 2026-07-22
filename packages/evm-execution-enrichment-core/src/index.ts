@@ -13,6 +13,7 @@ export {
   UNISWAP_V3_SWAP_TOPIC,
   evmCallTraceSchema,
   evmCallTypes,
+  evmDecodedSwapSchema,
   evmExecutionEnrichmentInputSchema,
   evmExecutionEnrichmentResultSchema,
   evmPoolMetadataEntrySchema,

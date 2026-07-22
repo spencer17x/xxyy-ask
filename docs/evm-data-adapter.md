@@ -87,8 +87,8 @@ provider contract tests 另外覆盖 missing result、错误 chain、hash/index/
 - provider 级 QPS 配额、共享熔断、缓存、持久化审计和生产 metrics；
 - 本包内的 Indexer、Explorer、trace/debug RPC、pool metadata 或 archive node adapter；trace/pool 已由权限隔离的独立 adapter 实现；
 - adapter 内的 internal transfer、revert reason 或协议计算；这些确定性语义位于独立 enrichment core；
-- 本包内的 pool metadata 链上交叉验证、价格影响或 Sandwich 检测；pool/factory 验证位于独立 execution adapter，后两项仍未实现；
+- 本包内的 pool metadata 链上交叉验证、价格影响或 Sandwich 检测；pool/factory 验证位于独立 execution adapter，price-impact/Sandwich 判定位于独立离线 core；
 - Capability manifest/adapter、MCP client/server、LangGraph bridge 或任何用户可见入口；
 - 私有账户查询、签名、模拟、交易发送或其他写操作。
 
-受控 trace/debug RPC 与 pool metadata 验证已在独立 [EVM Execution Data Adapter](evm-execution-data-adapter.md) 实现，并保持未接线。下一阶段是离线 price-impact/Sandwich 领域核心；只有完成生产 provider 配额与观测、内部 channel 授权、Capability bridge 和端到端评测后，才考虑注册 `chain.inspect_transaction`。
+受控 trace/debug RPC 与 pool metadata 验证已在独立 [EVM Execution Data Adapter](evm-execution-data-adapter.md) 实现，离线价格影响与四态判断已在 [EVM Price Impact / Sandwich Core](evm-price-impact-sandwich.md) 实现，二者都保持未接线。下一阶段是完整 block/transaction-boundary state 的 MEV observation adapter；只有完成生产 provider 配额与观测、内部 channel 授权、Capability bridge 和端到端评测后，才考虑注册链上能力。

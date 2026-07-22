@@ -16,7 +16,7 @@
 ## Paused / Out of Scope
 
 - [ ] 实际 MCP adapter、MCP server 和 project skills：当前阶段仍不作为对外或本地调用入口；v0.6 只交付未接线的安全能力平面契约。
-- [ ] 公开交易分析、池子查询和链上取证入口：当前客服入口只做知识库产品回答，相关问题进入边界/澄清回复；离线 EVM transaction/enrichment cores 和未接线 RPC data adapter 不扩大运行面。
+- [ ] 公开交易分析、池子查询和链上取证入口：当前客服入口只做知识库产品回答，相关问题进入边界/澄清回复；离线 EVM transaction/execution/MEV cores 和未接线 RPC data adapters 不扩大运行面。
 - [ ] 账户、订单、钱包余额、私有交易记录和投资建议：长期保持边界，不进入自动回答或自动操作链路。
 
 ## v0.2 RAG Trustworthiness
@@ -97,7 +97,7 @@
 - [x] 运行面隔离：领域包不包含网络、LLM、LangGraph 或 MCP 依赖，未被 Agent/API/Telegram/CLI/CapabilityRegistry 引用，当前交易问题仍走边界回复。
 - [x] 实现 allowlisted 只读 EVM data adapter 和 provider contract tests，将标准 RPC 数据转换为 normalized snapshot；adapter 没有真实 endpoint 配置且不注册 capability。
 - [x] 增加有界 trace/internal transfer、Solidity revert 和 Uniswap V2/V3 pool swap decoder；LLM 不参与事实计算。
-- [ ] 增加价格影响、邻近交易关联和 Sandwich 四态 verdict；缺关键池状态或 block 交易集合时不能输出 confirmed。
+- [x] 独立 price-impact/Sandwich core 已在 v0.11 实现：缺局部三笔关键池状态、来源一致性或 actor 资产闭环时不能输出 confirmed；更宽 block coverage 不完整时整体状态必须降为 partial。
 
 成功标准：相同 snapshot 重放得到相同 lossless 结果；成功/回滚的 value、ERC-20 和 fee 计算正确；缺失、冲突和畸形数据安全降级；完整 `pnpm check` 与现有客服边界回归通过。详细范围见 [transaction-analysis-core.md](transaction-analysis-core.md)。
 
@@ -149,16 +149,34 @@
 
 成功标准：任意 RPC/debug/eth_call 无法越过专用 schema；错误链不触发 trace 或 metadata 请求；伪造 getter 不能绕过 factory 反查；等价 provider 不产生伪冲突、差异来源显式降级；输出无需转换即可进入 enrichment core；完整 `pnpm check` 与公开客服边界回归通过。详细设计见 [evm-execution-data-adapter.md](evm-execution-data-adapter.md)。
 
-## v0.11 Price Impact / Sandwich Detection Core（计划）
+## v0.11 Price Impact / Sandwich Detection Core
 
 目标：先用离线、可重放的 block 邻近交易、pool state 和资产变化事实生成价格影响与 Sandwich 四态 verdict，不接入生产 provider 或用户运行面。
 
-- [ ] 定义 block transaction neighborhood、pre/post pool state、token delta 与来源冲突契约。
-- [ ] 对 allowlisted V2/V3 路径计算 lossless quote、execution price 和 price impact，不使用 LLM 猜价格。
-- [ ] 定义 `confirmed | likely | unlikely | insufficient_data` Sandwich verdict、必要证据和反例。
-- [ ] 处理 multi-hop、fee-on-transfer、rebase、聚合器和缺 archive state 的显式降级边界。
-- [ ] 建立合成/真实脱敏 replay corpus、deterministic golden tests 和误报/漏报基线。
-- [ ] 保持无网络、无 Capability/MCP/Agent 接线；生产数据面和授权另立目标。
+- [x] 有界输入契约：最多 256 笔同区块同 pool observation，要求唯一 hash/index、显式 actor、directional swap、pre/post state、route/mode/token behavior、coverage、provenance 和 source conflicts。
+- [x] Lossless V2：复刻官方 `997/1000` exact-input quote、uint112 reserve 与 uint256 中间边界，校验 event delta 后的 post-state 和 observed output。
+- [x] Lossless V3 单 active-range：复刻 exact-input fee、amount0/amount1 sqrt-price 舍入与 output delta；expected price/output 必须匹配 event/post-state，跨 initialized tick 显式不支持。
+- [x] Price impact：用约分分数输出 raw execution/spot price、expected output 和 signed ppm；不经过浮点、token decimals、USD 或 LLM。
+- [x] Sandwich 四态：`confirmed` 要求相邻排序、同一非 victim actor、方向反转、state continuity、counterfactual victim loss、pool-token 正收益和精确 actor asset loop；缺 delta 只能 `likely`，完整证据反驳才可 `unlikely`，冲突/缺口为 `insufficient_data`。
+- [x] 显式降级：multi-hop、aggregator、exact-output、fee-on-transfer、rebase、unknown token behavior、V3 tick crossing、quote/state mismatch 和 incomplete neighborhood 都不会进入高置信 verdict。
+- [x] 可重放基线：两组完全合成 V2/V3 fixtures 和 22 个包级 deterministic tests 覆盖四态、counterfactual loss、actor delta 反例、source conflict、unsupported 语义、资源与 Evidence 不变量。
+- [x] 运行面隔离：无网络、环境变量、LLM、Capability/MCP/Agent/API/CLI/Telegram 引用；公开客服边界不变。
+
+成功标准：相同 replay 字节一致；官方 V2/V3 支持范围内 quote 与 post-state 精确一致；只有完整严格资产闭环才 confirmed；缺数据不输出假阴性 unlikely；结果 Evidence 引用闭合；完整 `pnpm check` 和客服边界回归通过。详细设计见 [evm-price-impact-sandwich.md](evm-price-impact-sandwich.md)。
+
+## v0.12 Allowlisted MEV Observation Data Adapter（计划）
+
+目标：在不注册 Capability 或改变客服运行面的前提下，为 v0.11 生成真实、受控、可审计的同区块 swap neighborhood、transaction-boundary pool state 和 actor token delta。
+
+- [ ] 定义独立于基础/trace clients 的最小 RPC/Indexer allowlist，运行时不能注入 endpoint、method、tracer、calldata 或任意 block range。
+- [ ] 获取并验证完整 block transaction order、成功 receipt、allowlisted pool Swap/Transfer logs 和 transaction actor；限制单 block transaction/log/token 数量。
+- [ ] 为 V2 获取每笔相关 swap 边界的 reserves；为 V3 获取 slot0、active liquidity、initialized tick boundary/liquidity net，并保留 exact block/transaction position provenance。
+- [ ] 由标准 Transfer/native facts计算 actor token delta，不做多地址聚类或从 router sender 猜最终受益人。
+- [ ] 多 provider/indexer 交叉验证 block hash、transaction order、state 与 delta fingerprint，冲突 fail closed。
+- [ ] 增加共享 QPS/并发预算、熔断、缓存、成本计量、metrics、告警、审计和 archive capability 启动检查。
+- [ ] 建立脱敏 provider replay、主网抽样人工标注和误报/漏报基线；保持无 Agent/MCP/API/CLI/Telegram 接线。
+
+只有 v0.12 数据面、内部授权、Capability adapter、运行面安全审查和端到端评测完成后，才考虑注册 `chain.detect_sandwich`。
 
 ## GitHub Planning Convention
 

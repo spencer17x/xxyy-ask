@@ -129,7 +129,15 @@ adapter 把递归 call frame 迭代归一化为 250 节点、32 层、单 bytes 
 
 `packages/evm-execution-enrichment-core` 消费现有 normalized snapshot、受限的扁平 call trace 和显式 pool metadata。它只用整数与 ABI 规则确定性提取已提交的 internal native transfer、Solidity `Error(string)` / `Panic(uint256)` / custom selector，以及 Uniswap V2/V3 单个 pool 的 swap balance delta。trace、log 和 pool metadata 都映射为统一 Evidence；缺失、畸形、来源不一致或无法安全判定的部分进入 coverage、warnings 和 diagnostics。
 
-该包自身不获取 trace，不查询 pool/token，不做价格、路由、滑点、利润或 Sandwich 判定，也没有网络、LLM、LangGraph、Capability 或 MCP 依赖。独立 execution data adapter 已能生成它的输入，但两者仍没有生产 composition root；公开运行面继续拒绝交易与链上分析请求。详细契约见 [evm-execution-enrichment.md](evm-execution-enrichment.md)。
+该包自身不获取 trace，不查询 pool/token，不做价格、路由、滑点、利润或 Sandwich 判定，也没有网络、LLM、LangGraph、Capability 或 MCP 依赖。独立 execution data adapter 已能生成它的输入，price-impact/Sandwich core 可以继续消费它输出的 directional swap，但这些包仍没有生产 composition root；公开运行面继续拒绝交易与链上分析请求。详细契约见 [evm-execution-enrichment.md](evm-execution-enrichment.md)。
+
+## EVM Price Impact / Sandwich Detection Core v0.1（未接线离线 MEV 层）
+
+`packages/evm-price-impact-sandwich-core` 消费最多 256 个同区块、同 pool directional swap，以及每笔交易前后的带来源 pool state、transaction actor token delta、coverage 和 source conflicts。V2 逐项复刻官方 `997/1000` quote；V3 只在单一 active tick range 内复刻 exact-input fee、sqrt-price 和 amount delta 舍入。所有金额、价格和 ppm 使用 `bigint` 与约分分数，不经过浮点。
+
+Sandwich 判定使用 `confirmed | likely | unlikely | insufficient_data` 四态门禁。`confirmed` 必须同时具备相邻 front/victim/back 顺序、同一非 victim actor、方向反转、连续 pool state、受害者反事实损失、pool-token 正收益和精确 actor asset loop；缺 actor delta 最多为 `likely`，只有完整 coverage 和反例才可为 `unlikely`，来源冲突或不支持语义返回 `insufficient_data`。
+
+该 core 不构建真实 block neighborhood，不获取 transaction-boundary archive state，不处理跨 tick/multi-hop/特殊代币，也不推断意图或扣除 gas/builder 成本。它没有 Capability/MCP/Agent/API/CLI/Telegram 引用，因此不会改变公开客服边界。详细设计见 [evm-price-impact-sandwich.md](evm-price-impact-sandwich.md)。
 
 ## 说明
 
@@ -143,7 +151,7 @@ adapter 把递归 call frame 迭代归一化为 250 节点、32 层、单 bytes 
 - 上下文打包在总预算内为多个 chunk 公平保留空间，再按问题词、数字、完整句子、列表和限制/条件信号选择内容。只有无法继续拆分的单个内容单元才允许带省略号截短，并记录 included/omitted/quarantined/truncated 统计。
 - 模型回答完成后执行本地 claim grounding，不增加第二次模型调用。每个关键陈述都要与安全知识片段在数字、支持/不支持极性和有效词项上对齐；失败时返回 deterministic grounded answer。成功时引用只从实际支撑 claim 的 chunk 生成，并用问题和回答选择相关 excerpt。
 - 为避免流式 token 发出后无法撤回，answer provider 会先缓冲模型流、完成同一 grounding 校验，再发送原始有效 deltas 或安全降级回答。`status` 事件和公开 `ChatStreamEvent`/`ChatResponse` 契约保持不变；代价是 answer delta 的首包会晚于模型完成，但校验是本地线性计算，不引入额外网络往返。
-- 当前客服 `ToolRegistry` 只注册 `search_product_docs` 业务工具；独立 Capability Plane、离线 EVM transaction/enrichment cores 和两个未接线 RPC adapter 都不会改变 Planner 的工具列表，交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
+- 当前客服 `ToolRegistry` 只注册 `search_product_docs` 业务工具；独立 Capability Plane、离线 EVM transaction/execution/MEV cores 和两个未接线 RPC adapter 都不会改变 Planner 的工具列表，交易分析、池子查询、链上取证和 MCP adapter 暂不接入运行面。
 - LLM 超时、限流、模型路由不可用、非 JSON、不可用答案或 claim grounding 失败时，会降级为本地 grounded answer；embedding 对超时、429 和 5xx 做有界重试。
 - 知识库按来源分为 `official_docs`（仅 `docs.xxyy.io`）、`x_updates`（仅 `x.com/useXXYYio`）和 `admin_verified`（客服群审核知识，当前为空）；支持全量入库和 X 增量同步。
 - 图片 OCR、视频解析和官方 X 媒体会把原始媒体地址写入 chunk 元数据；被选为回答依据的 chunk 可同时返回相关截图、本地 MP4 或外部视频链接。

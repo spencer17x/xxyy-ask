@@ -309,7 +309,7 @@ const uniswapV3SwapSchema = z
   })
   .strict();
 
-const decodedSwapSchema = z
+export const evmDecodedSwapSchema = z
   .discriminatedUnion('protocol', [uniswapV2SwapSchema, uniswapV3SwapSchema])
   .superRefine((swap, context) => {
     const addIssue = (message: string, path: string[]) =>
@@ -395,7 +395,7 @@ export const evmExecutionEnrichmentResultSchema = createSkillResultSchema({
   nativeAssetChanges: z.array(nativeAssetChangeSchema).max(MAX_TRACE_NODES * 2),
   reverts: z.array(revertArtifactSchema).max(MAX_TRACE_NODES),
   skill: z.literal(EVM_EXECUTION_ENRICHMENT_SKILL),
-  swaps: z.array(decodedSwapSchema).max(MAX_SWAP_EVENTS),
+  swaps: z.array(evmDecodedSwapSchema).max(MAX_SWAP_EVENTS),
   transaction: transactionFactSchema,
   version: z.literal(EVM_EXECUTION_ENRICHMENT_VERSION),
 }).superRefine((result, context) => {
@@ -527,7 +527,7 @@ export type EvmExecutionEnrichmentResult = z.output<typeof evmExecutionEnrichmen
 export type EvmInternalTransfer = z.output<typeof internalTransferSchema>;
 export type EvmNativeAssetChange = z.output<typeof nativeAssetChangeSchema>;
 export type EvmRevertArtifact = z.output<typeof revertArtifactSchema>;
-export type EvmDecodedSwap = z.output<typeof decodedSwapSchema>;
+export type EvmDecodedSwap = z.output<typeof evmDecodedSwapSchema>;
 
 export function traceAddressKey(traceAddress: readonly number[]): string {
   return traceAddress.length === 0 ? 'root' : traceAddress.join('.');
