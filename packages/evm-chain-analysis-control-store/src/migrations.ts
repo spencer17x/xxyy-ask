@@ -19,6 +19,11 @@ const IMMUTABLE_TABLES = [
   'evm_chain_control_budget_leases',
   'evm_chain_control_budget_settlements',
   'evm_chain_control_circuit_states',
+  'evm_chain_control_sampling_approvals',
+  'evm_chain_control_sampling_policies',
+  'evm_chain_control_sampling_plans',
+  'evm_chain_control_sampling_manifests',
+  'evm_chain_control_sampling_runs',
 ] as const;
 
 export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
@@ -254,6 +259,114 @@ export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
       state_fingerprint text not null references evm_chain_control_circuit_states(state_fingerprint),
       primary key (adapter, chain_id, provider_id)
     )
+  `,
+  `
+    create table if not exists evm_chain_control_sampling_approvals (
+      approval_id text primary key,
+      approval_fingerprint text not null unique,
+      approved_at timestamptz not null,
+      valid_from timestamptz not null,
+      valid_until timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object'),
+      check (valid_until > valid_from)
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_sampling_policies (
+      policy_id text primary key,
+      policy_fingerprint text not null unique,
+      approval_fingerprint text not null
+        references evm_chain_control_sampling_approvals(approval_fingerprint),
+      created_at timestamptz not null,
+      sampling_starts_at timestamptz not null,
+      sampling_ends_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object'),
+      check (sampling_ends_at > sampling_starts_at)
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_sampling_plans (
+      plan_id text primary key,
+      plan_fingerprint text not null unique,
+      policy_fingerprint text not null
+        references evm_chain_control_sampling_policies(policy_fingerprint),
+      approval_fingerprint text not null
+        references evm_chain_control_sampling_approvals(approval_fingerprint),
+      planned_at timestamptz not null,
+      sampling_starts_at timestamptz not null,
+      sampling_ends_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object'),
+      check (sampling_ends_at > sampling_starts_at)
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_sampling_manifests (
+      manifest_id text primary key,
+      manifest_fingerprint text not null unique,
+      plan_id text not null references evm_chain_control_sampling_plans(plan_id),
+      slot_id text not null unique,
+      sample_identity_fingerprint text not null unique,
+      collected_at timestamptz not null,
+      retain_until timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object'),
+      check (retain_until > collected_at)
+    )
+  `,
+  `
+    create index if not exists evm_chain_control_sampling_manifests_plan_idx
+      on evm_chain_control_sampling_manifests (plan_id, manifest_id)
+  `,
+  `
+    create table if not exists evm_chain_control_sampling_runs (
+      run_id text primary key,
+      run_fingerprint text not null unique,
+      plan_id text not null references evm_chain_control_sampling_plans(plan_id),
+      evaluated_at timestamptz not null,
+      status text not null check (status in ('blocked', 'complete', 'in_progress', 'incomplete')),
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_sampling_jobs (
+      job_id text primary key,
+      plan_id text not null references evm_chain_control_sampling_plans(plan_id),
+      plan_fingerprint text not null,
+      slot_id text not null unique,
+      stratum_id text not null,
+      not_before timestamptz not null,
+      expires_at timestamptz not null,
+      status text not null check (status in ('failed', 'queued', 'running', 'succeeded')),
+      attempt_count integer not null default 0 check (attempt_count >= 0),
+      max_attempts integer not null default 3 check (max_attempts > 0),
+      worker_id_hash text,
+      lease_expires_at timestamptz,
+      completed_at timestamptz,
+      failed_at timestamptz,
+      failure_code_hash text,
+      manifest_id text references evm_chain_control_sampling_manifests(manifest_id),
+      manifest_fingerprint text,
+      check (expires_at > not_before),
+      check (attempt_count <= max_attempts),
+      check (
+        (status = 'queued' and worker_id_hash is null and lease_expires_at is null
+          and completed_at is null and failed_at is null and failure_code_hash is null
+          and manifest_id is null and manifest_fingerprint is null)
+        or (status = 'running' and worker_id_hash is not null and lease_expires_at is not null
+          and completed_at is null and failed_at is null and failure_code_hash is null
+          and manifest_id is null and manifest_fingerprint is null)
+        or (status = 'succeeded' and worker_id_hash is not null and lease_expires_at is null
+          and completed_at is not null and failed_at is null and failure_code_hash is null
+          and manifest_id is not null and manifest_fingerprint is not null)
+        or (status = 'failed' and worker_id_hash is not null and lease_expires_at is null
+          and completed_at is null and failed_at is not null and failure_code_hash is not null
+          and manifest_id is null and manifest_fingerprint is null)
+      )
+    )
+  `,
+  `
+    create index if not exists evm_chain_control_sampling_jobs_claim_idx
+      on evm_chain_control_sampling_jobs (not_before, expires_at, job_id)
+      where status in ('queued', 'running')
   `,
   `
     create or replace function reject_evm_chain_control_artifact_mutation()

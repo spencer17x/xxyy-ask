@@ -157,11 +157,11 @@ V2 以 parent reserves 为起点，按 `Sync` / `Swap` 顺序重放 transaction-
 
 ## Reviewed Replay & Production Readiness Control Plane v0.1（未接线）
 
-`packages/evm-chain-analysis-readiness` 位于 harness 评测之上的离线治理和生产证据控制面。reviewable case 先经过确定性敏感信息扫描和 content-addressed intake，再由两个不同 reviewer hash 独立核对 source、重放、隐私和标签；只有一致批准的候选可 promotion。revision/supersession、retention/delete tombstone 和 export lineage 保证进入 harness 的 reviewed corpus 可以追溯，synthetic fixture 不能直接晋升为主网证据。
+`packages/evm-chain-analysis-readiness` 位于 harness 评测之上的离线治理和生产证据控制面。真实采集之前，content-addressed approval/policy/plan 会固定来源/法律/保留 evidence hash、覆盖 strata 和确定性 quota slots；public-chain manifest 必须匹配 slot、来源、时间窗、provider conflict/reorg 证据，并按 chain/transaction 去重。manifest 不是 ground truth，仍要经过确定性敏感信息扫描和 content-addressed candidate intake，再由两个不同 reviewer hash 独立核对 source、重放、隐私和标签；只有一致批准的候选可 promotion。revision/supersession、retention/delete tombstone 和 export lineage 保证进入 harness 的 reviewed corpus 可以追溯，synthetic/contract-only fixture 不能直接晋升为主网证据。
 
 同一包定义只含 `secretref:` 的 provider descriptor、跨实例 budget lease/settlement、脱敏持久审计 event、共享 circuit state/coordinator interface、SLO/告警、故障演练、安全和 incident runbook evidence contract。综合 evaluator 把 governed corpus export、该 corpus 的 harness report 和生产证据闭合，并固定调用不可由 caller 弱化的 `internalReadinessQualityGate`，输出稳定的 `blocked | degraded | ready` 和逐项 reason。
 
-readiness 契约包自身不实现 reviewer identity、数据库、worker 调度、secret manager、metrics/alerting 或真实 provider。独立的 `packages/evm-chain-analysis-control-store` 已实现可注入 client 的 Postgres 持久化层：不可变治理 artifact、authorization/revocation、retention job lease、哈希链 audit、budget window/lease/settlement/reconciliation 和 circuit history/head CAS。它不读取环境变量、不创建连接，也没有生产 grant、真实主网 corpus、worker deployment 或 provider endpoint；因此当前仍不会产生生产 `ready` 结论。两个包都未被任何 app、Agent、Capability、MCP、CLI 或 Telegram 引用。详细设计见 [evm-chain-analysis-readiness.md](evm-chain-analysis-readiness.md) 与 [evm-chain-analysis-control-store.md](evm-chain-analysis-control-store.md)。
+readiness 契约包自身不实现 reviewer identity、数据库、worker 调度、secret manager、metrics/alerting 或真实 provider。独立的 `packages/evm-chain-analysis-control-store` 已实现可注入 client 的 Postgres 持久化层：不可变 sampling/governance artifact、authorization/revocation、sampling/retention job lease、哈希链 audit、budget window/lease/settlement/reconciliation 和 circuit history/head CAS。它不读取环境变量、不创建连接，也没有生产 grant、真实审批/主网 corpus、worker deployment 或 provider endpoint；因此当前仍不会产生生产 `ready` 结论。两个包都未被任何 app、Agent、Capability、MCP、CLI 或 Telegram 引用。详细设计见 [evm-chain-analysis-sampling.md](evm-chain-analysis-sampling.md)、[evm-chain-analysis-readiness.md](evm-chain-analysis-readiness.md) 与 [evm-chain-analysis-control-store.md](evm-chain-analysis-control-store.md)。
 
 ## 说明
 

@@ -16,6 +16,8 @@ export {
   retentionJobOutcomes,
   retentionJobSchema,
   retentionJobStatuses,
+  samplingIntakeJobSchema,
+  samplingIntakeJobStatuses,
   verifyChainAnalysisControlAuditEvents,
 } from './contracts.js';
 export type {
@@ -29,6 +31,7 @@ export type {
   GovernanceAuthorizationRevocation,
   GovernanceAuthorizationRevocationInput,
   RetentionJob,
+  SamplingIntakeJob,
 } from './contracts.js';
 export {
   createPgEvmChainAnalysisGovernanceStore,
@@ -47,3 +50,8 @@ export {
   createPgEvmChainAnalysisProviderControlStore,
   type PgEvmChainAnalysisProviderControlStore,
 } from './provider-control-store.js';
+export {
+  createPgEvmChainAnalysisSamplingStore,
+  type PgEvmChainAnalysisSamplingStore,
+  type SamplingIntakeCompletion,
+} from './sampling-store.js';

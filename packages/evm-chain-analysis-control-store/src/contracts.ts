@@ -19,6 +19,8 @@ export const chainAnalysisGovernanceRoles = [
   'provider_operator',
   'readiness_attestor',
   'retention_worker',
+  'sampling_planner',
+  'sampling_worker',
 ] as const;
 
 export const chainAnalysisControlAuditStreams = ['governance', 'provider_control'] as const;
@@ -39,6 +41,15 @@ export const chainAnalysisControlAuditEventKinds = [
   'retention_completed',
   'retention_job_claimed',
   'review_recorded',
+  'sampling_approval_recorded',
+  'sampling_job_claimed',
+  'sampling_job_completed',
+  'sampling_job_failed',
+  'sampling_job_retried',
+  'sampling_manifest_recorded',
+  'sampling_plan_recorded',
+  'sampling_policy_recorded',
+  'sampling_run_recorded',
   'tombstone_recorded',
 ] as const;
 
@@ -202,6 +213,7 @@ export const chainAnalysisControlAuditEventSchema = z
 
 export const retentionJobStatuses = ['completed', 'queued', 'running'] as const;
 export const retentionJobOutcomes = ['expired_unpromoted', 'tombstoned'] as const;
+export const samplingIntakeJobStatuses = ['failed', 'queued', 'running', 'succeeded'] as const;
 
 export const retentionJobSchema = z
   .object({
@@ -251,6 +263,107 @@ export const retentionJobSchema = z
     }
   });
 
+export const samplingIntakeJobSchema = z
+  .object({
+    attemptCount: z.number().int().nonnegative().max(1_000_000),
+    completedAt: z.string().datetime({ offset: true }).optional(),
+    expiresAt: z.string().datetime({ offset: true }),
+    failedAt: z.string().datetime({ offset: true }).optional(),
+    failureCodeHash: fingerprintSchema.optional(),
+    jobId: z.string().regex(/^sampling_job_[0-9a-f]{64}$/u),
+    leaseExpiresAt: z.string().datetime({ offset: true }).optional(),
+    manifestFingerprint: fingerprintSchema.optional(),
+    manifestId: z
+      .string()
+      .regex(/^sample_manifest_[0-9a-f]{64}$/u)
+      .optional(),
+    maxAttempts: z.number().int().positive().max(100),
+    notBefore: z.string().datetime({ offset: true }),
+    planFingerprint: fingerprintSchema,
+    planId: z.string().regex(/^sampling_plan_[0-9a-f]{64}$/u),
+    slotId: z.string().regex(/^sampling_slot_[0-9a-f]{64}$/u),
+    status: z.enum(samplingIntakeJobStatuses),
+    stratumId: z.string().regex(/^sampling_stratum_[0-9a-f]{64}$/u),
+    workerIdHash: fingerprintSchema.optional(),
+  })
+  .strict()
+  .superRefine((job, context) => {
+    if (Date.parse(job.expiresAt) <= Date.parse(job.notBefore)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Sampling job collection window must have a positive duration.',
+        path: ['expiresAt'],
+      });
+    }
+    if (job.attemptCount > job.maxAttempts) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Sampling job attempts cannot exceed the configured limit.',
+        path: ['attemptCount'],
+      });
+    }
+    if (job.status !== 'queued' && job.attemptCount === 0) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A claimed or completed sampling job must have at least one attempt.',
+        path: ['attemptCount'],
+      });
+    }
+    const hasCompletion = job.completedAt !== undefined;
+    const hasFailure = job.failedAt !== undefined || job.failureCodeHash !== undefined;
+    const hasManifest = job.manifestId !== undefined || job.manifestFingerprint !== undefined;
+    if (job.status === 'queued') {
+      if (
+        job.workerIdHash !== undefined ||
+        job.leaseExpiresAt !== undefined ||
+        hasCompletion ||
+        hasFailure ||
+        hasManifest
+      ) {
+        context.addIssue({ code: 'custom', message: 'Queued sampling jobs cannot carry outcome.' });
+      }
+    } else if (job.status === 'running') {
+      if (
+        job.workerIdHash === undefined ||
+        job.leaseExpiresAt === undefined ||
+        hasCompletion ||
+        hasFailure ||
+        hasManifest
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Running sampling jobs require only an active worker lease.',
+        });
+      }
+    } else if (job.status === 'succeeded') {
+      if (
+        job.workerIdHash === undefined ||
+        !hasCompletion ||
+        job.leaseExpiresAt !== undefined ||
+        hasFailure ||
+        job.manifestId === undefined ||
+        job.manifestFingerprint === undefined
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Succeeded sampling jobs require worker, completion, and manifest evidence.',
+        });
+      }
+    } else if (
+      job.workerIdHash === undefined ||
+      job.leaseExpiresAt !== undefined ||
+      hasCompletion ||
+      job.failedAt === undefined ||
+      job.failureCodeHash === undefined ||
+      hasManifest
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Failed sampling jobs require worker, failure time, and failure code hash.',
+      });
+    }
+  });
+
 export const chainAnalysisControlStoreErrorCodes = [
   'already_exists',
   'authorization_missing',
@@ -270,6 +383,11 @@ export const chainAnalysisControlStoreErrorCodes = [
   'lease_not_found',
   'retention_job_not_found',
   'reviewer_conflict',
+  'sample_duplicate',
+  'sampling_approval_not_found',
+  'sampling_job_not_found',
+  'sampling_plan_not_found',
+  'sampling_policy_not_found',
   'stale_generation',
 ] as const;
 
@@ -287,6 +405,7 @@ export type GovernanceAuthorizationRevocation = z.output<
 >;
 export type ChainAnalysisControlAuditEvent = z.output<typeof chainAnalysisControlAuditEventSchema>;
 export type RetentionJob = z.output<typeof retentionJobSchema>;
+export type SamplingIntakeJob = z.output<typeof samplingIntakeJobSchema>;
 export type ChainAnalysisControlStoreErrorCode =
   (typeof chainAnalysisControlStoreErrorCodes)[number];
 

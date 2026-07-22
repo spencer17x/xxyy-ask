@@ -5,6 +5,7 @@ import {
   createGovernanceAuthorization,
   createGovernanceAuthorizationRevocation,
   governanceAuthorizationSchema,
+  samplingIntakeJobSchema,
   verifyChainAnalysisControlAuditEvents,
   type ChainAnalysisControlStoreError,
 } from './index.js';
@@ -68,6 +69,36 @@ describe('chain-analysis control-store contracts', () => {
     expect(() => verifyChainAnalysisControlAuditEvents([second, first])).toThrowError(
       expectControlCode('invalid_audit_chain'),
     );
+  });
+
+  it('enforces mutually exclusive sampling job lease, success, and failure states', () => {
+    const base = {
+      attemptCount: 1,
+      expiresAt: '2026-07-30T00:00:00.000Z',
+      jobId: `sampling_job_${testHash('sampling-job').slice(7)}`,
+      maxAttempts: 3,
+      notBefore: '2026-07-23T00:00:00.000Z',
+      planFingerprint: testHash('sampling-plan'),
+      planId: `sampling_plan_${testHash('sampling-plan-id').slice(7)}`,
+      slotId: `sampling_slot_${testHash('sampling-slot').slice(7)}`,
+      stratumId: `sampling_stratum_${testHash('sampling-stratum').slice(7)}`,
+    };
+
+    expect(
+      samplingIntakeJobSchema.parse({
+        ...base,
+        leaseExpiresAt: '2026-07-24T00:05:00.000Z',
+        status: 'running',
+        workerIdHash: testHash('sampling-worker'),
+      }).status,
+    ).toBe('running');
+    expect(
+      samplingIntakeJobSchema.safeParse({
+        ...base,
+        failureCodeHash: testHash('failure'),
+        status: 'queued',
+      }).success,
+    ).toBe(false);
   });
 });
 

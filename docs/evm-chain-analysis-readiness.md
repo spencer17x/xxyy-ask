@@ -2,18 +2,23 @@
 
 ## 当前状态
 
-`@xxyy/evm-chain-analysis-readiness` 是一个未接线、无网络 I/O 的离线控制面包。它解决两个问题：
+`@xxyy/evm-chain-analysis-readiness` 是一个未接线、无网络 I/O 的离线控制面包。它解决三个问题：
 
-1. 公开主网 replay case 在进入 `@xxyy/evm-chain-analysis-harness` 前，如何经过可审计的采集、双人复核、修订、保留和删除流程；
-2. 未来真实 provider 数据面需要提交哪些预算、审计、告警、共享熔断、SLO、故障演练、安全和 runbook 证据，才能判断是否具备内部试用条件。
+1. 未来公开主网样本如何在真实采集前形成来源/保留审批、分层 sampling policy、确定性 quota plan 和 evidence manifest；
+2. 公开主网 replay case 在进入 `@xxyy/evm-chain-analysis-harness` 前，如何经过可审计的采集、双人复核、修订、保留和删除流程；
+3. 未来真实 provider 数据面需要提交哪些预算、审计、告警、共享熔断、SLO、故障演练、安全和 runbook 证据，才能判断是否具备内部试用条件。
 
-本契约包没有真实主网样本、endpoint、credential、数据库 client、Redis、RPC client 或 provider backend，也不读取环境变量。独立 companion `@xxyy/evm-chain-analysis-control-store` 已实现可注入 client 的 Postgres 治理、审计、共享 budget 和 circuit backend，但未部署、未配置生产 grant/worker/provider，也没有接入本包或任何运行面。两者都没有注册 Capability、MCP、Skill、LangGraph tool、API、CLI 或 Telegram 入口。当前公开客服仍只回答产品知识问题，交易哈希、Explorer、池子、链上取证和 MEV 请求继续返回边界或澄清回复。
+本契约包没有真实主网样本、真实来源/法务审批、endpoint、credential、数据库 client、Redis、RPC client 或 provider backend，也不读取环境变量。独立 companion `@xxyy/evm-chain-analysis-control-store` 已实现可注入 client 的 Postgres 治理、sampling intake、审计、共享 budget 和 circuit backend，但未部署、未配置生产 grant/worker/provider，也没有接入任何运行面。两者都没有注册 Capability、MCP、Skill、LangGraph tool、API、CLI 或 Telegram 入口。当前公开客服仍只回答产品知识问题，交易哈希、Explorer、池子、链上取证和 MEV 请求继续返回边界或澄清回复。
 
 ## 总体流程
 
 ```mermaid
 flowchart LR
-  Source["公开主网 source payload"] --> Scan["确定性敏感信息扫描"]
+  Approval["来源 / 法律 / 保留 approval evidence"] --> Policy["Sampling policy"]
+  Policy --> Plan["Deterministic quota slots"]
+  Plan --> Manifest["Public-chain sample manifest"]
+  Manifest --> Source["未来公开主网 source payload"]
+  Source --> Scan["确定性敏感信息扫描"]
   Scan --> Candidate["Content-addressed candidate"]
   Candidate --> ReviewA["独立 Reviewer A"]
   Candidate --> ReviewB["独立 Reviewer B"]
@@ -33,6 +38,18 @@ flowchart LR
 ```
 
 `ready` 不是配置开关。只有治理导出的 corpus 与评测报告指纹一致、固定的 `internalReadinessQualityGate` 实际通过，而且生产运维证据完整、有效且满足实时阈值时才会产生。调用方不能传入自定义弱化 gate。
+
+## Mainnet sampling planning 与 evidence intake
+
+v0.14b2a 已新增真实采集之前的离线规划层：
+
+- approval artifact 固定外部来源/法律/保留 evidence hash、至少两个 approver hash、允许来源类型、有效期和 public-only 数据边界；代码只验证结构和指纹，不验证真实身份，也不声称外部评审已完成；
+- policy 强制覆盖 V2/V3、direct/allowlisted/complex route、正例/反例/unsupported、完整/部分数据、provider conflict、reorg 和特殊 token；
+- plan 把 quota 确定性展开为稳定 slot；manifest 必须匹配 slot、来源和采样时间窗，并按 `(chainId, transactionHash)` 去重；
+- coverage evaluator 报告每个 stratum 的接受数与缺口；approval 不匹配、尚未生效或过期时 fail closed；
+- companion control store 用独立 sampling planner/worker role、不可变 artifact、`FOR UPDATE SKIP LOCKED`、lease/attempt fencing 和哈希链审计持久化该流程。
+
+manifest 不是 reviewed replay candidate，更不是 ground truth。真实 worker 未来仍须把受控 payload 交给本页后续的 scanner、candidate、双人 review 和 promotion 流程。完整契约、状态机与边界见 [Mainnet Sampling Plan & Evidence Intake Control Plane](evm-chain-analysis-sampling.md)。
 
 ## Reviewed replay 治理
 
@@ -129,10 +146,10 @@ pnpm check
 
 ## 下一阶段
 
-下一阶段是 v0.14b 的真实证据建设，而不是能力接线：
+下一阶段是 v0.14b2b 的真实证据建设，而不是能力接线：
 
-1. 选择目标 chain/protocol/router coverage 和合法公开主网样本来源；
-2. 部署 companion Postgres backend，接入真实 reviewer 身份/grant 与 worker 调度，并采集候选/审核/墓碑；
+1. 由有权人员完成真实来源/法律/保留审批，并将其映射到已定义的 approval/policy/plan；
+2. 部署 companion Postgres backend，接入真实 planner/sampling worker/reviewer 身份与 grant，并把受控 manifest 转入候选/审核/墓碑流程；
 3. 实现 secret manager、metrics/alerting 和 provider failover，验证已实现的共享 budget/circuit/审计在真实故障下 fail closed；
 4. 运行故障演练并持续生成新鲜 SLO、安全和 runbook evidence；
 5. 让真实 reviewed corpus 实际通过 internal-readiness gate。

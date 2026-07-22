@@ -19,6 +19,13 @@ import {
   recordReviewedReplayDecision,
   scanReviewedReplayPayload,
 } from '../reviewed-corpus-governance.js';
+import {
+  createMainnetSamplingPolicy,
+  createMainnetSamplingSourceApproval,
+  createPublicChainSampleManifest,
+  materializeMainnetSamplingPlan,
+} from '../mainnet-sampling.js';
+import type { MainnetSamplingChainCondition, MainnetSamplingPlan } from '../sampling-contracts.js';
 
 export const CONTRACT_FIXTURE_TIMES = {
   evaluatedAt: '2026-07-22T12:00:00.000Z',
@@ -28,6 +35,121 @@ export const CONTRACT_FIXTURE_TIMES = {
 
 export function contractHash(label: string): string {
   return sha256Fingerprint({ contractOnly: true, label });
+}
+
+export function contractEvmHash(label: string): `0x${string}` {
+  return `0x${contractHash(label).slice(7)}`;
+}
+
+/**
+ * Contract-only sampling artifacts. Hashes and chain dimensions are deliberately synthetic; this
+ * helper is not source/legal approval, a mainnet sample set, or evidence that collection occurred.
+ */
+export function createContractOnlySamplingFixture() {
+  const approval = createMainnetSamplingSourceApproval({
+    approvalName: 'contract-only-mainnet-sampling',
+    approvedAt: '2026-06-30T00:00:00.000Z',
+    approvedByHashes: [contractHash('sampling-approver-b'), contractHash('sampling-approver-a')],
+    credentialsAllowed: false,
+    legalReviewEvidenceHash: contractHash('contract-only-legal-review'),
+    privateDataAllowed: false,
+    publicChainDataOnly: true,
+    retentionDays: 30,
+    retentionPolicyId: 'contract-only-retention-30d',
+    retentionReviewEvidenceHash: contractHash('contract-only-retention-review'),
+    sourceApprovalEvidenceHashes: [contractHash('contract-only-source-review')],
+    sourceKinds: ['public_rpc', 'official_explorer_export'],
+    validFrom: '2026-07-01T00:00:00.000Z',
+    validUntil: '2026-09-01T00:00:00.000Z',
+  });
+  const policy = createMainnetSamplingPolicy(approval, {
+    createdAt: '2026-07-22T00:00:00.000Z',
+    policyName: 'contract-only-baseline-v1',
+    samplingEndsAt: '2026-07-30T00:00:00.000Z',
+    samplingStartsAt: '2026-07-23T00:00:00.000Z',
+    strata: [
+      {
+        chainCondition: 'canonical',
+        chainId: '1',
+        dataCompleteness: 'complete',
+        protocol: 'uniswap_v2',
+        routeClass: 'direct_pool',
+        targetLabel: 'positive',
+        targetSamples: 1,
+        tokenBehavior: 'standard',
+      },
+      {
+        chainCondition: 'provider_conflict',
+        chainId: '1',
+        dataCompleteness: 'partial',
+        protocol: 'uniswap_v3',
+        routeClass: 'allowlisted_router',
+        targetLabel: 'negative',
+        targetSamples: 1,
+        tokenBehavior: 'fee_on_transfer',
+      },
+      {
+        chainCondition: 'reorged',
+        chainId: '137',
+        dataCompleteness: 'unsupported',
+        protocol: 'uniswap_v2',
+        routeClass: 'complex_route',
+        targetLabel: 'unsupported',
+        targetSamples: 1,
+        tokenBehavior: 'rebasing',
+      },
+    ],
+  });
+  const plan = materializeMainnetSamplingPlan(approval, policy, '2026-07-22T12:00:00.000Z');
+  const manifests = plan.slots.map((slot, index) =>
+    createContractOnlyManifestForSlot(plan, slot.slotId, index),
+  );
+  return { approval, manifests, plan, policy };
+}
+
+export function createContractOnlyManifestForSlot(
+  plan: MainnetSamplingPlan,
+  slotId: string,
+  index: number,
+  transactionHash = contractEvmHash(`sampling-transaction-${index}`),
+) {
+  const slot = plan.slots.find((candidate) => candidate.slotId === slotId)!;
+  const stratum = plan.strata.find((candidate) => candidate.stratumId === slot.stratumId)!;
+  const blockHash = contractEvmHash(`sampling-block-${index}`);
+  return createPublicChainSampleManifest(plan, {
+    blockHash,
+    blockNumber: String(20_000_000 + index),
+    collectedAt: `2026-07-24T0${index}:00:00.000Z`,
+    credentialScan: 'passed',
+    privateDataScan: 'passed',
+    providerObservationHashes:
+      stratum.chainCondition === 'provider_conflict'
+        ? [contractHash(`provider-a-${index}`), contractHash(`provider-b-${index}`)]
+        : [contractHash(`provider-a-${index}`)],
+    ...(reorgEvidence(stratum.chainCondition, blockHash, index) ?? {}),
+    scannedAt: `2026-07-24T0${index}:00:00.000Z`,
+    scannerVersion: 'contract-only-scanner-v1',
+    slotId,
+    sourceKind: 'public_rpc',
+    sourcePayloadHashes: [contractHash(`source-payload-${index}`)],
+    transactionHash,
+    transactionIndex: index,
+  });
+}
+
+function reorgEvidence(
+  condition: MainnetSamplingChainCondition,
+  blockHash: `0x${string}`,
+  index: number,
+) {
+  return condition === 'reorged'
+    ? {
+        reorgEvidence: {
+          canonicalReplacementBlockHash: contractEvmHash(`replacement-block-${index}`),
+          orphanedBlockHash: blockHash,
+        },
+      }
+    : undefined;
 }
 
 /**

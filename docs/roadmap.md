@@ -221,18 +221,33 @@
 
 成功标准：非法角色或同一 reviewer 改写 fail closed；artifact 篡改不能通过重新解析；并发预算和 circuit 不退化为本地状态；backend unavailable 回滚；迁移可重复；没有真实主网 fixture、生产 grant 或伪造 readiness evidence。详细设计见 [evm-chain-analysis-control-store.md](evm-chain-analysis-control-store.md)。
 
-## v0.14b2 Reviewed Mainnet Evidence & Provider Operations Validation（计划）
+## v0.14b2a Mainnet Sampling Plan & Evidence Intake Control Plane
 
-目标：部署 v0.14b1 backend 并形成能够被独立审计的真实主网 corpus 与生产数据面证据；仍不注册 Capability 或改变客服运行面。
+目标：在不采集真实主网数据、不声称来源/法务审批已完成、也不接入运行面的前提下，把采样范围、quota、manifest 和 intake worker 定义为可审计、fail-closed 的离线契约与 Postgres 状态机。
 
-- [ ] 确定目标 chain、V2/V3、allowlisted router/direct pool、provider conflict、reorg、复杂路由、特殊 token 和正反例 sampling plan，并完成合法来源与数据保留评审。
-- [ ] 部署 Postgres、真实 reviewer identity/grant、retention/reconciliation workers，采集并双人复核公开主网样本；不把 contract-only fixture 当作 reviewed evidence。
+- [x] 定义 content-addressed 来源/法律/保留审批 evidence contract，固定双人 hash、source kinds、public-only/无 credential/无 private data、有效期、保留策略与外部 evidence hash；仓库只验证结构，不伪造真实审批。
+- [x] 定义分层 sampling policy，强制覆盖目标 chain、Uniswap V2/V3、direct/allowlisted/complex route、positive/negative/unsupported、complete/partial、provider conflict、reorg 和特殊 token。
+- [x] 将每个 stratum quota 确定性展开为最多 500 个稳定 slot；policy、plan、slot 与 approval fingerprint 全部闭合并可重算。
+- [x] 定义公开链 sample manifest：固定 chain/transaction/block、来源 payload hash、provider observation hash、scan、retention 和 slot 维度；provider conflict/reorg 有额外证据门禁，chain/transaction identity 跨 slot 去重。
+- [x] 实现 coverage/gap evaluator：foreign/dimension mismatch、重复 slot/identity 显式拒绝；审批未生效、过期或 anchor 不一致时 `blocked`，窗口结束仍缺 quota 时 `incomplete`。
+- [x] 扩展 Postgres control store：新增 sampling planner/worker RBAC、不可变 approval/policy/plan/manifest/run、确定性 job enqueue、`FOR UPDATE SKIP LOCKED` claim、lease fencing、fail/retry/complete、attempt limit 和 hash-chain audit。
+- [x] contract-only 单元/隔离测试和一次性真实 PostgreSQL 验证通过；迁移幂等、append-only trigger、失败重试、3 个 quota job 与 complete coverage 已验证，临时数据库已删除。
+- [x] 保持无 RPC/HTTP/provider、无真实主网样本/生产 grant/审批声明，且不被 Agent/Capability/MCP/API/CLI/Telegram 导入。
+
+成功标准：同一 policy/plannedAt 展开相同 slots；审批过期、manifest 越界、重复 transaction、非法角色、过期 lease 和数据库失败全部 fail closed；测试 fixture 不能被描述为真实审批、主网 evidence 或 reviewed corpus。详细设计见 [evm-chain-analysis-sampling.md](evm-chain-analysis-sampling.md)。
+
+## v0.14b2b Reviewed Mainnet Evidence & Provider Operations Validation（计划）
+
+目标：在包外部署 v0.14b1/v0.14b2a backend，完成真实审批并形成能够被独立审计的主网 corpus 与生产数据面证据；仍不注册 Capability 或改变客服运行面。
+
+- [ ] 由有权人员确定并批准实际目标 chain、来源、法律条件和数据保留策略，将真实审批 evidence 与 identity/grant 安全写入控制面；代码中的 contract-only artifact 不等于审批。
+- [ ] 部署最小权限 Postgres、真实 planner/worker/reviewer identity/grant、sampling/retention/reconciliation workers，按 plan 采集并双人复核公开主网样本；不把 manifest 或 contract-only fixture 直接当作 reviewed evidence。
 - [ ] 实现 secret manager 配置解析、metrics/alerting 和 provider failover；配置数据库最小权限、加密、备份、保留策略，并验证 budget/circuit/audit backend unavailable 时 fail closed。
 - [ ] 执行 timeout、rate limit、provider conflict、reorg、审计/预算/circuit backend unavailable 等演练，提交新鲜 SLO、告警、security 和 runbook evidence。
 - [ ] 在固定 governed corpus 上持续运行 harness，逐条审阅 false positive、false negative 和 positive abstention，实际达到并锁定 internal-readiness gate。
 - [ ] 输出真实 readiness attestation 和独立审计记录；只有 evaluator 为 `ready` 才能提出下一阶段内部 Capability Adapter & Authorization Bridge 方案。
 
-只有 v0.14b2 实际通过 internal-readiness gate，且真实 provider 安全与运维评审完成后，才进入内部 Capability Adapter & Authorization Bridge 目标；公开客服接入仍需另行决策。
+只有 v0.14b2b 实际通过 internal-readiness gate，且真实 provider 安全与运维评审完成后，才进入内部 Capability Adapter & Authorization Bridge 目标；公开客服接入仍需另行决策。
 
 ## GitHub Planning Convention
 
