@@ -193,18 +193,32 @@
 
 成功标准：相同输入 byte-deterministic；跨阶段锚点不闭合时不运行 MEV core；provider conflict 和 unsupported 不产生假阴性；合成样本只通过 regression gate、不能通过 internal readiness；报告和 corpus 有稳定指纹；完整 `pnpm check` 与公开客服边界回归通过。详细设计见 [evm-chain-analysis-harness.md](evm-chain-analysis-harness.md)。
 
-## v0.14 Reviewed Replay Corpus & Production Data-plane Readiness（计划）
+## v0.14a Reviewed Replay & Production Readiness Control Plane
 
-目标：不接入公开客服、不注册 Capability，先用经审批的公开主网样本和可运营的真实 provider 数据面证明内部链上分析的质量、安全与成本边界。
+目标：不接入公开客服、不注册 Capability，先把公开主网样本治理和真实 provider 生产证据定义为可校验、fail-closed 的离线控制面。
 
-- [ ] 定义公开主网样本的采集审批、双人复核、标签争议、去隐私、payload hash、保留和删除流程；reviewer identity 只保存不可逆 hash。
-- [ ] 建立 reviewed replay corpus，补齐 V2/V3、目标 chain、allowlisted router/direct pool、provider conflict、reorg、复杂路由、特殊 token 和明确正反例覆盖。
-- [ ] 为三个只读 adapter 设计生产配置注入、跨实例 QPS/并发/成本预算、持久审计、metrics、告警、熔断状态共享、SLO 和 provider 故障演练。
-- [ ] 在固定版本 corpus 上持续运行 harness，审阅每个 false positive、false negative 和 positive abstention，达到并锁定 internal-readiness gate。
-- [ ] 完成数据保留、供应商风险、incident runbook 和内部 channel 威胁模型评审；不得把 endpoint、credential 或原始 provider body 暴露给 LLM。
-- [ ] 保持 Capability manifest/grant、MCP、LangGraph、API、CLI 和 Telegram 未接线；是否进入内部受限 capability adapter 作为下一阶段独立决策。
+- [x] 定义 content-addressed intake 和确定性敏感信息扫描；reviewable payload 强制 public-chain、无 credential、无 private data，并用 scanner/source payload hash 固定证据。
+- [x] 实现双人独立复核、submitter/reviewer 分离、标签指纹、争议/拒绝/过期状态，以及 reviewer identity hash 和审核证据闭合。
+- [x] 实现 revision/supersession、retention/deletion tombstone、approved promotion 和带 promotion/approval lineage 的确定性 reviewed corpus export。
+- [x] 定义只接受 `secretref:` 的 provider descriptor、budget policy/reservation/lease/settlement、脱敏持久审计 event、共享 circuit state/coordinator、SLO/告警、故障演练、安全和 incident runbook evidence contract。
+- [x] 实现综合 readiness evaluator：治理 export 必须与 harness report 指纹一致，并使用不可由调用方替换的 `internalReadinessQualityGate`；provider/运维/安全证据缺失或过期为 `blocked`，实时 SLO/circuit/drill 失败为 `degraded`，全部满足才为 `ready`。
+- [x] 增加 contract-only fixtures、16 个治理/预算/运维/readiness/隔离测试和静态运行面 import 检查；fixture 明确不是 reviewed 主网样本或生产证明。
+- [x] 保持 Capability manifest/grant、MCP、LangGraph、API、CLI 和 Telegram 未接线，公开客服边界不变。
 
-只有 v0.14 实际通过 internal-readiness gate，且真实 provider 安全与运维评审完成后，才进入内部 Capability Adapter & Authorization Bridge 目标；公开客服接入仍需另行决策。
+成功标准：治理 artifact 可重新验证内容指纹；单人、重复 reviewer、证据/标签不闭合、过期或被篡改的候选不能晋升；明文 endpoint/credential 不能进入契约；caller 不能弱化 quality gate；没有真实 reviewed corpus 时稳定 `blocked`，不伪造 `ready`。详细设计见 [evm-chain-analysis-readiness.md](evm-chain-analysis-readiness.md)。
+
+## v0.14b Reviewed Mainnet Evidence & Provider Operations Validation（计划）
+
+目标：使用 v0.14a 的契约接入真实治理和运维 backend，形成能够被独立审计的主网 corpus 与生产数据面证据；仍不注册 Capability 或改变客服运行面。
+
+- [ ] 确定目标 chain、V2/V3、allowlisted router/direct pool、provider conflict、reorg、复杂路由、特殊 token 和正反例 sampling plan，并完成合法来源与数据保留评审。
+- [ ] 接入 reviewer 授权、候选/审核/墓碑持久化和 retention worker，采集真实公开主网样本；不把 contract-only fixture 当作 reviewed evidence。
+- [ ] 实现 secret manager 配置解析、共享 budget/circuit backend、append-only 审计、metrics/alerting 和 provider failover；验证 backend unavailable 时 fail closed。
+- [ ] 执行 timeout、rate limit、provider conflict、reorg、审计/预算/circuit backend unavailable 等演练，提交新鲜 SLO、告警、security 和 runbook evidence。
+- [ ] 在固定 governed corpus 上持续运行 harness，逐条审阅 false positive、false negative 和 positive abstention，实际达到并锁定 internal-readiness gate。
+- [ ] 输出 readiness attestation 和独立审计记录；只有 evaluator 为 `ready` 才能提出下一阶段内部 Capability Adapter & Authorization Bridge 方案。
+
+只有 v0.14b 实际通过 internal-readiness gate，且真实 provider 安全与运维评审完成后，才进入内部 Capability Adapter & Authorization Bridge 目标；公开客服接入仍需另行决策。
 
 ## GitHub Planning Convention
 

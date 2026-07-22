@@ -11,6 +11,7 @@
 - [受控知识演进与 Knowledge Curator](knowledge-evolution.md)
 - [Allowlisted MEV Observation Data Adapter](evm-mev-observation-data-adapter.md)
 - [EVM Chain Analysis Composition & Evaluation Harness](evm-chain-analysis-harness.md)
+- [Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md)
 - [Roadmap](roadmap.md)
 
 ## 完整官网与产品知识库
@@ -32,6 +33,7 @@
 - `packages/rag-core`：意图分类、检索、pgvector、可信作者、Knowledge Curator、知识治理服务、LLM answer provider 和边界回复。
 - `packages/agent-core`：LangGraph customer runtime、planner/state 合约和产品问答工具。
 - `packages/evm-chain-analysis-harness`：未接线的 transaction/execution/MEV 离线组合、replay corpus 评测和质量门禁。
+- `packages/evm-chain-analysis-readiness`：未接线的 reviewed replay 治理、生产运维证据契约和综合 readiness evaluator；当前不含真实主网 corpus 或 provider backend。
 - `apps/cli`：`rag:ask`、`rag:ingest`、`rag:migrate`、`rag:stats`、`rag:sync:x`，以及可信作者、Telegram 候选导入、修订、审核和发布命令。
 - `apps/api`：`GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream`、`GET /assets/*`。
 - `apps/telegram-bot`：Telegram Bot long polling 入口，复用 LangGraph 客服 Agent。

@@ -122,6 +122,19 @@ pgvector 注意事项：
 - 更换 embedding 模型和维度时，必须先备份、同步调整 `EMBEDDING_DIMENSION`，再运行 `pnpm rag:ingest -- --rebuild-embedding-schema`。该命令会在同一事务内清空知识 chunks、重建 embedding 列和向量索引、写入完整 chunks，并记录 ingestion run；任一步失败都会回滚。
 - 调整 `RAG_TOP_K`、索引参数或重建索引后，先跑 `pnpm check` 和 provider-backed eval 抽样，确认引用质量没有下降。
 
+## Future Chain-analysis Data-plane Readiness
+
+`packages/evm-chain-analysis-readiness` 已定义未来只读链上分析的 reviewed replay 治理和 production evidence 契约，但它不是当前产品服务的 health/readiness probe，也没有接入部署流程。它要求：
+
+- governed corpus export 与 harness evaluation report 的 corpus id/fingerprint/时间闭合；
+- 使用固定 `internalReadinessQualityGate`，调用方不能传入更弱阈值；
+- 每个目标 chain/adapter 有足够的双人审批 provider descriptor、`secretref:` 配置和 budget policy；
+- 跨实例预算、append-only 审计、告警、共享 circuit、安全和 runbook 控制有未过期 evidence；
+- 每个 provider 有新鲜 SLO window 和 circuit snapshot，每类要求的故障演练有新鲜结果；
+- blocking evidence 缺口为 `blocked`，结构完整但实时 SLO/circuit/drill 失败为 `degraded`，全部通过才为 `ready`。
+
+当前仓库不提供真实 provider、secret manager、Redis/Postgres coordinator、metrics/alerting backend 或 reviewed 主网 corpus。contract-only 测试 fixture 不得写入生产 evidence store，也不得作为发布证明。详细边界与下一阶段见 [Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md)。
+
 ## Human Handoff And Tickets
 
 当前服务不创建工单、不承诺人工接管，也不执行账户、订单或钱包操作。未来如果接入 ticketing / CRM，必须先满足这些边界：

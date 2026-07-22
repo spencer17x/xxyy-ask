@@ -151,6 +151,21 @@ importers:
         specifier: ^4.0.0
         version: 4.4.3
 
+  packages/evm-chain-analysis-readiness:
+    dependencies:
+      '@xxyy/evm-chain-analysis-harness':
+        specifier: workspace:*
+        version: link:../evm-chain-analysis-harness
+      '@xxyy/evm-data-adapter':
+        specifier: workspace:*
+        version: link:../evm-data-adapter
+      '@xxyy/transaction-analysis-core':
+        specifier: workspace:*
+        version: link:../transaction-analysis-core
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+
   packages/evm-data-adapter:
     dependencies:
       '@xxyy/transaction-analysis-core':

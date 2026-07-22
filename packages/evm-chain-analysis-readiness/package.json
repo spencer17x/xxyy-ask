@@ -1,0 +1,18 @@
+{
+  "name": "@xxyy/evm-chain-analysis-readiness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@xxyy/evm-chain-analysis-harness": "workspace:*",
+    "@xxyy/evm-data-adapter": "workspace:*",
+    "@xxyy/transaction-analysis-core": "workspace:*",
+    "zod": "^4.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}
