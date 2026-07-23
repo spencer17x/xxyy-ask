@@ -219,7 +219,7 @@ pnpm check
 
 ## 后续工作
 
-独立的 [Mainnet Sampling Plan & Evidence Intake Control Plane](evm-chain-analysis-sampling.md) 已定义来源/保留 approval、覆盖 strata、quota slots、public-chain manifest 和 gap evaluator；[Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md) 已实现 content-addressed candidate intake、双人复核、revision/supersession、retention/tombstone、确定性 export，以及 provider budget/audit/alert/circuit/SLO/security evidence 和综合 readiness evaluator；[Postgres Control Store](evm-chain-analysis-control-store.md) 已实现未接线的 sampling/治理持久化和共享 budget/circuit/audit backend。当前仍没有真实审批、主网 reviewed case、已部署 control store 或真实 provider/composition backend。
+独立的 [Mainnet Sampling Plan & Evidence Intake Control Plane](evm-chain-analysis-sampling.md) 已定义来源/保留 approval、覆盖 strata、quota slots、public-chain manifest 和 gap evaluator；[Sampling Manifest → Reviewed Replay Candidate Handoff](evm-chain-analysis-sampling-handoff.md) 已用 target-agnostic contract 闭合 manifest/candidate anchor、source/scan/retention lineage 与原子 Postgres 写入；[Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md) 已实现双人复核、revision/supersession、retention/tombstone、确定性 export，以及 provider budget/audit/alert/circuit/SLO/security evidence 和综合 readiness evaluator；[Postgres Control Store](evm-chain-analysis-control-store.md) 已实现未接线的 sampling/handoff/治理持久化和共享 budget/circuit/audit backend。当前仍没有真实审批、主网 reviewed case、已部署 control store 或真实 provider/composition backend。
 
 下一阶段不是直接接入客服，而是由有权人员先完成真实来源/法律/保留审批，再按已定义 plan 实际采集、重放和双人复核公开主网样本，实现共享预算/circuit、持久审计、metrics/alerting 和安全演练 backend，并让 governed corpus 实际通过 internal readiness gate。
 

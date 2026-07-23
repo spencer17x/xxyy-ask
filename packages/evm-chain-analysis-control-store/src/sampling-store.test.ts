@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { sha256Fingerprint } from '@xxyy/evm-chain-analysis-harness';
-import { createContractOnlySamplingFixture } from '@xxyy/evm-chain-analysis-readiness/test-fixtures';
+import { createSamplingCandidateHandoff } from '@xxyy/evm-chain-analysis-readiness';
+import {
+  createContractOnlySamplingFixture,
+  createContractOnlySamplingHandoffFixture,
+} from '@xxyy/evm-chain-analysis-readiness/test-fixtures';
 
 import { createGovernanceAuthorization, createPgEvmChainAnalysisSamplingStore } from './index.js';
 import { testHash } from './fixtures.test-helper.js';
@@ -215,6 +219,102 @@ describe('PostgreSQL mainnet sampling control store', () => {
     expect(client.auditEvents.map(eventKind)).toEqual(['sampling_run_recorded']);
   });
 
+  it('atomically persists a manifest handoff, initial candidate, and retention job', async () => {
+    const { handoff, manifest } = await createContractOnlySamplingHandoffFixture({
+      targetLabel: 'negative',
+    });
+    const submitter = handoff.candidate.submitterIdHash;
+    const client = new ScriptedPgClient();
+    client.enqueue('authorization-read', [authorizationRow(candidateAuthorization(submitter))]);
+    client.enqueue('sampling-manifest-read', [{ payload: manifest }]);
+    const store = createPgEvmChainAnalysisSamplingStore({ client });
+
+    await expect(
+      store.recordCandidateHandoff({ actorIdHash: submitter, handoff }),
+    ).resolves.toEqual(handoff);
+
+    expect(client.queries.some((query) => query.tag === 'sampling-candidate-insert')).toBe(true);
+    expect(client.queries.some((query) => query.tag === 'sampling-retention-enqueue')).toBe(true);
+    expect(client.queries.some((query) => query.tag === 'sampling-handoff-insert')).toBe(true);
+    expect(
+      client.queries.find((query) => query.tag === 'sampling-handoff-insert')?.values,
+    ).toContain('deviated');
+    expect(client.auditEvents.map(eventKind)).toEqual([
+      'candidate_recorded',
+      'sampling_candidate_handoff_recorded',
+    ]);
+    expect(client.transactionEvents).toEqual(['begin', 'commit']);
+  });
+
+  it('makes an identical handoff idempotent and rejects one-to-one conflicts', async () => {
+    const { handoff, manifest, payload } = await createContractOnlySamplingHandoffFixture();
+    const submitter = handoff.candidate.submitterIdHash;
+    const idempotentClient = new ScriptedPgClient();
+    idempotentClient.enqueue('authorization-read', [
+      authorizationRow(candidateAuthorization(submitter)),
+    ]);
+    idempotentClient.enqueue('sampling-manifest-read', [{ payload: manifest }]);
+    idempotentClient.enqueue('sampling-handoff-read', [{ payload: handoff }]);
+    const idempotentStore = createPgEvmChainAnalysisSamplingStore({ client: idempotentClient });
+
+    await expect(
+      idempotentStore.recordCandidateHandoff({ actorIdHash: submitter, handoff }),
+    ).resolves.toEqual(handoff);
+    expect(
+      idempotentClient.queries.some((query) => query.tag === 'sampling-candidate-insert'),
+    ).toBe(false);
+    expect(idempotentClient.auditEvents).toEqual([]);
+
+    const conflicting = createSamplingCandidateHandoff(manifest, {
+      additionalSourcePayloadHashes: [testHash('different-normalized-replay')],
+      payload,
+      scannedAt: handoff.candidate.scanner.scannedAt,
+      scannerVersion: handoff.candidate.scanner.scannerVersion,
+      submittedAt: handoff.candidate.submittedAt,
+      submitterIdHash: submitter,
+    });
+    const conflictClient = new ScriptedPgClient();
+    conflictClient.enqueue('authorization-read', [
+      authorizationRow(candidateAuthorization(submitter)),
+    ]);
+    conflictClient.enqueue('sampling-manifest-read', [{ payload: manifest }]);
+    conflictClient.enqueue('sampling-handoff-read', [{ payload: handoff }]);
+    const conflictStore = createPgEvmChainAnalysisSamplingStore({ client: conflictClient });
+
+    await expect(
+      conflictStore.recordCandidateHandoff({ actorIdHash: submitter, handoff: conflicting }),
+    ).rejects.toMatchObject({ code: 'immutable_conflict' });
+    expect(conflictClient.transactionEvents).toEqual(['begin', 'rollback']);
+  });
+
+  it('refuses to attach sampling lineage to a candidate persisted outside the handoff', async () => {
+    const { handoff, manifest } = await createContractOnlySamplingHandoffFixture();
+    const submitter = handoff.candidate.submitterIdHash;
+    const client = new ScriptedPgClient();
+    client.enqueue('authorization-read', [authorizationRow(candidateAuthorization(submitter))]);
+    client.enqueue('sampling-manifest-read', [{ payload: manifest }]);
+    client.enqueue('sampling-candidate-read', [{ payload: handoff.candidate }]);
+    const store = createPgEvmChainAnalysisSamplingStore({ client });
+
+    await expect(
+      store.recordCandidateHandoff({ actorIdHash: submitter, handoff }),
+    ).rejects.toMatchObject({ code: 'immutable_conflict' });
+    expect(client.queries.some((query) => query.tag === 'sampling-handoff-insert')).toBe(false);
+    expect(client.transactionEvents).toEqual(['begin', 'rollback']);
+  });
+
+  it('requires an explicit candidate submitter grant for handoff persistence', async () => {
+    const { handoff } = await createContractOnlySamplingHandoffFixture();
+    const store = createPgEvmChainAnalysisSamplingStore({ client: new ScriptedPgClient() });
+
+    await expect(
+      store.recordCandidateHandoff({
+        actorIdHash: handoff.candidate.submitterIdHash,
+        handoff,
+      }),
+    ).rejects.toMatchObject({ code: 'authorization_missing' });
+  });
+
   it('fails closed without an explicit sampling role grant', async () => {
     const { approval } = createContractOnlySamplingFixture();
     const store = createPgEvmChainAnalysisSamplingStore({ client: new ScriptedPgClient() });
@@ -243,6 +343,16 @@ function workerAuthorization(principalIdHash: string) {
     grantedByHash: testHash('governance-publisher'),
     principalIdHash,
     roles: ['sampling_worker'],
+    validUntil: '2026-09-01T00:00:00.000Z',
+  });
+}
+
+function candidateAuthorization(principalIdHash: string) {
+  return createGovernanceAuthorization({
+    grantedAt: '2026-06-01T00:00:00.000Z',
+    grantedByHash: testHash('governance-publisher'),
+    principalIdHash,
+    roles: ['candidate_submitter'],
     validUntil: '2026-09-01T00:00:00.000Z',
   });
 }

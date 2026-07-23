@@ -94,6 +94,7 @@ export function createMainnetSamplingPolicy(
     createdAt: parsed.createdAt,
     policyName: parsed.policyName,
     retentionDays: approval.retentionDays,
+    retentionPolicyId: approval.retentionPolicyId,
     samplingEndsAt: parsed.samplingEndsAt,
     samplingStartsAt: parsed.samplingStartsAt,
     sourceKinds: approval.sourceKinds,
@@ -120,6 +121,7 @@ export function materializeMainnetSamplingPlan(
   if (
     policy.approvalFingerprint !== approval.approvalFingerprint ||
     policy.retentionDays !== approval.retentionDays ||
+    policy.retentionPolicyId !== approval.retentionPolicyId ||
     policy.sourceKinds.join('|') !== approval.sourceKinds.join('|')
   ) {
     throw new MainnetSamplingError(
@@ -161,6 +163,7 @@ export function materializeMainnetSamplingPlan(
     policyFingerprint: policy.policyFingerprint,
     policyId: policy.policyId,
     retentionDays: policy.retentionDays,
+    retentionPolicyId: policy.retentionPolicyId,
     samplingEndsAt: policy.samplingEndsAt,
     samplingStartsAt: policy.samplingStartsAt,
     slots,
@@ -224,6 +227,7 @@ export function createPublicChainSampleManifest(
     policyFingerprint: plan.policyFingerprint,
     protocol: stratum.protocol,
     retainUntil: addUtcDays(parsed.collectedAt, plan.retentionDays),
+    retentionPolicyId: plan.retentionPolicyId,
     routeClass: stratum.routeClass,
     sampleIdentityFingerprint: sha256Fingerprint({
       chainId: stratum.chainId,

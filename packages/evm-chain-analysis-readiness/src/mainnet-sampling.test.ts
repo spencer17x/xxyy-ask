@@ -27,6 +27,8 @@ describe('mainnet sampling plan and evidence-intake contracts', () => {
     expect(policy.totalTargetSamples).toBe(3);
     expect(plan.slots).toHaveLength(3);
     expect(new Set(plan.slots.map((slot) => slot.slotId)).size).toBe(3);
+    expect(policy.retentionPolicyId).toBe(approval.retentionPolicyId);
+    expect(plan.retentionPolicyId).toBe(approval.retentionPolicyId);
     expect(reproduced).toEqual(plan);
   });
 
@@ -89,6 +91,9 @@ describe('mainnet sampling plan and evidence-intake contracts', () => {
       manifests.find((manifest) => manifest.chainCondition === 'reorged')?.reorgEvidence,
     ).toBeDefined();
     expect(manifests[0]!.retainUntil).toBe('2026-08-23T00:00:00.000Z');
+    expect(
+      manifests.every((manifest) => manifest.retentionPolicyId === plan.retentionPolicyId),
+    ).toBe(true);
   });
 
   it('fails closed when a manifest source or collection window is outside the plan', () => {

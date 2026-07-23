@@ -202,6 +202,7 @@ export const mainnetSamplingPolicySchema = z
     policyId: samplingPolicyIdSchema,
     policyName: stableIdSchema,
     retentionDays: z.number().int().positive().max(3_650),
+    retentionPolicyId: stableIdSchema,
     samplingEndsAt: z.string().datetime({ offset: true }),
     samplingStartsAt: z.string().datetime({ offset: true }),
     sourceKinds: z
@@ -291,6 +292,7 @@ export const mainnetSamplingPlanSchema = z
     policyFingerprint: fingerprintSchema,
     policyId: samplingPolicyIdSchema,
     retentionDays: z.number().int().positive().max(3_650),
+    retentionPolicyId: stableIdSchema,
     samplingEndsAt: z.string().datetime({ offset: true }),
     samplingStartsAt: z.string().datetime({ offset: true }),
     slots: z
@@ -463,6 +465,7 @@ export const publicChainSampleManifestSchema = z
     policyFingerprint: fingerprintSchema,
     protocol: z.enum(mainnetSamplingProtocols),
     retainUntil: z.string().datetime({ offset: true }),
+    retentionPolicyId: stableIdSchema,
     routeClass: z.enum(mainnetSamplingRouteClasses),
     sampleIdentityFingerprint: fingerprintSchema,
     stratumId: samplingStratumIdSchema,

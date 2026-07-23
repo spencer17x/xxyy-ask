@@ -1,5 +1,6 @@
 import { sha256Fingerprint } from '@xxyy/evm-chain-analysis-harness';
 import {
+  createSamplingCandidateHandoff,
   createPublicChainSampleManifest,
   createMainnetSamplingPolicy,
   evaluateMainnetSamplingCoverage,
@@ -9,11 +10,15 @@ import {
   mainnetSamplingSourceApprovalSchema,
   materializeMainnetSamplingPlan,
   publicChainSampleManifestSchema,
+  reviewedReplayCandidateSchema,
+  samplingCandidateHandoffSchema,
   type MainnetSamplingCoverageResult,
   type MainnetSamplingPlan,
   type MainnetSamplingPolicy,
   type MainnetSamplingSourceApproval,
   type PublicChainSampleManifest,
+  type ReviewedReplayCandidate,
+  type SamplingCandidateHandoff,
 } from '@xxyy/evm-chain-analysis-readiness';
 
 import {
@@ -24,6 +29,7 @@ import {
 } from './contracts.js';
 import {
   appendControlAuditEvent,
+  assertActor,
   assertGovernanceAuthorization,
   assertSameFingerprint,
 } from './control-store-internals.js';
@@ -88,6 +94,7 @@ export interface PgEvmChainAnalysisSamplingStore {
   }): Promise<SamplingIntakeJob>;
   getIntakeJob(jobId: string): Promise<SamplingIntakeJob | undefined>;
   getPlan(planId: string): Promise<MainnetSamplingPlan | undefined>;
+  getCandidateHandoff(manifestId: string): Promise<SamplingCandidateHandoff | undefined>;
   listManifests(planId: string): Promise<PublicChainSampleManifest[]>;
   migrate(): Promise<void>;
   recordCoverageRun(input: {
@@ -95,6 +102,10 @@ export interface PgEvmChainAnalysisSamplingStore {
     evaluatedAt: string;
     planId: string;
   }): Promise<MainnetSamplingCoverageResult>;
+  recordCandidateHandoff(input: {
+    actorIdHash: string;
+    handoff: unknown;
+  }): Promise<SamplingCandidateHandoff>;
   recordPlan(input: { actorIdHash: string; plan: unknown }): Promise<MainnetSamplingPlan>;
   recordPolicy(input: { actorIdHash: string; policy: unknown }): Promise<MainnetSamplingPolicy>;
   recordSourceApproval(input: {
@@ -392,6 +403,10 @@ export function createPgEvmChainAnalysisSamplingStore(options: {
       return readPlan(client, planId);
     },
 
+    async getCandidateHandoff(manifestId): Promise<SamplingCandidateHandoff | undefined> {
+      return readCandidateHandoffByManifest(client, manifestId);
+    },
+
     async listManifests(planId): Promise<PublicChainSampleManifest[]> {
       return readManifests(client, planId);
     },
@@ -459,6 +474,114 @@ export function createPgEvmChainAnalysisSamplingStore(options: {
           stream: 'governance',
         });
         return result;
+      });
+    },
+
+    async recordCandidateHandoff(input): Promise<SamplingCandidateHandoff> {
+      const handoff = samplingCandidateHandoffSchema.parse(input.handoff);
+      const candidate = handoff.candidate;
+      assertActor(candidate.submitterIdHash, input.actorIdHash, 'Candidate submitter');
+      return withControlTransaction(client, async (transaction) => {
+        await assertGovernanceAuthorization(transaction, {
+          at: candidate.submittedAt,
+          principalIdHash: input.actorIdHash,
+          role: 'candidate_submitter',
+        });
+        await acquireControlLock(transaction, `sampling-handoff:${handoff.manifest.manifestId}`);
+        await acquireControlLock(transaction, `candidate:${candidate.candidateId}`);
+        const manifest = await requireManifest(transaction, handoff.manifest.manifestId);
+        assertSameFingerprint(
+          handoff.manifest.manifestFingerprint,
+          manifest.manifestFingerprint,
+          'Sampling manifest',
+        );
+        const reproduced = createSamplingCandidateHandoff(manifest, {
+          additionalSourcePayloadHashes: handoff.additionalSourcePayloadHashes,
+          payload: candidate.payload,
+          scannedAt: candidate.scanner.scannedAt,
+          scannerVersion: candidate.scanner.scannerVersion,
+          submittedAt: candidate.submittedAt,
+          submitterIdHash: candidate.submitterIdHash,
+        });
+        assertSameFingerprint(
+          handoff.handoffFingerprint,
+          reproduced.handoffFingerprint,
+          'Sampling candidate handoff',
+        );
+        const existingHandoffs = await readCandidateHandoffsForPair(
+          transaction,
+          manifest.manifestId,
+          candidate.candidateId,
+          true,
+        );
+        if (existingHandoffs.length > 0) {
+          if (
+            existingHandoffs.length === 1 &&
+            existingHandoffs[0]!.handoffFingerprint === handoff.handoffFingerprint
+          ) {
+            return existingHandoffs[0]!;
+          }
+          throw new ChainAnalysisControlStoreError(
+            'immutable_conflict',
+            'Sampling manifest or replay candidate already belongs to another immutable handoff.',
+          );
+        }
+        const existingCandidate = await readReplayCandidate(
+          transaction,
+          candidate.candidateId,
+          true,
+        );
+        if (existingCandidate !== undefined) {
+          throw new ChainAnalysisControlStoreError(
+            'immutable_conflict',
+            'Replay candidate already exists outside the atomic sampling handoff.',
+          );
+        }
+        await insertInitialCandidate(transaction, candidate);
+        await enqueueCandidateRetention(transaction, candidate);
+        await queryControlDatabase(
+          transaction,
+          `
+            /* control:sampling-handoff-insert */
+            insert into evm_chain_control_sampling_candidate_handoffs (
+              handoff_id,
+              handoff_fingerprint,
+              manifest_id,
+              candidate_id,
+              handed_off_at,
+              target_disposition,
+              payload
+            ) values ($1, $2, $3, $4, $5::timestamptz, $6, $7::jsonb)
+          `,
+          [
+            handoff.handoffId,
+            handoff.handoffFingerprint,
+            manifest.manifestId,
+            candidate.candidateId,
+            candidate.submittedAt,
+            handoff.targetComparison.disposition,
+            JSON.stringify(handoff),
+          ],
+        );
+        await appendCandidateRecordedAudit(transaction, candidate, input.actorIdHash);
+        await appendControlAuditEvent(transaction, {
+          actorIdHash: input.actorIdHash,
+          entityFingerprint: handoff.handoffFingerprint,
+          entityId: handoff.handoffId,
+          entityType: 'sampling_candidate_handoff',
+          eventAt: candidate.submittedAt,
+          eventKind: 'sampling_candidate_handoff_recorded',
+          payload: {
+            candidateId: candidate.candidateId,
+            manifestId: manifest.manifestId,
+            proposedGroundTruth: handoff.targetComparison.proposedGroundTruth,
+            samplingTargetLabel: handoff.targetComparison.samplingTargetLabel,
+            selectionPolicy: handoff.selectionPolicy,
+            targetDisposition: handoff.targetComparison.disposition,
+          },
+          stream: 'governance',
+        });
+        return handoff;
       });
     },
 
@@ -820,6 +943,147 @@ function manifestInputOf(manifest: PublicChainSampleManifest) {
   };
 }
 
+async function readCandidateHandoffByManifest(
+  client: PgControlClientLike,
+  manifestId: string,
+): Promise<SamplingCandidateHandoff | undefined> {
+  const payload = await readPayloadByKey(
+    client,
+    `
+      /* control:sampling-handoff-by-manifest */
+      select payload
+      from evm_chain_control_sampling_candidate_handoffs
+      where manifest_id = $1
+    `,
+    manifestId,
+  );
+  return payload === undefined ? undefined : samplingCandidateHandoffSchema.parse(payload);
+}
+
+async function readCandidateHandoffsForPair(
+  client: PgControlClientLike,
+  manifestId: string,
+  candidateId: string,
+  forUpdate: boolean,
+): Promise<SamplingCandidateHandoff[]> {
+  const response = await queryControlDatabase<PayloadRow>(
+    client,
+    `
+      /* control:sampling-handoff-read */
+      select payload
+      from evm_chain_control_sampling_candidate_handoffs
+      where manifest_id = $1 or candidate_id = $2
+      order by handoff_id
+      limit 2
+      ${forUpdate ? 'for update' : ''}
+    `,
+    [manifestId, candidateId],
+  );
+  return response.rows.map((row) => samplingCandidateHandoffSchema.parse(row.payload));
+}
+
+async function readReplayCandidate(
+  client: PgControlClientLike,
+  candidateId: string,
+  forUpdate: boolean,
+): Promise<ReviewedReplayCandidate | undefined> {
+  const payload = await readPayloadByKey(
+    client,
+    `
+      /* control:sampling-candidate-read */
+      select payload
+      from evm_chain_control_replay_candidates
+      where candidate_id = $1
+      ${forUpdate ? 'for update' : ''}
+    `,
+    candidateId,
+  );
+  return payload === undefined ? undefined : reviewedReplayCandidateSchema.parse(payload);
+}
+
+async function insertInitialCandidate(
+  client: PgControlClientLike,
+  candidate: ReviewedReplayCandidate,
+): Promise<void> {
+  if (
+    candidate.revision !== 1 ||
+    candidate.supersedesCandidateId !== undefined ||
+    candidate.supersedesCandidateFingerprint !== undefined
+  ) {
+    throw new ChainAnalysisControlStoreError(
+      'invalid_state',
+      'Sampling handoff can persist only an initial replay candidate.',
+    );
+  }
+  await queryControlDatabase(
+    client,
+    `
+      /* control:sampling-candidate-insert */
+      insert into evm_chain_control_replay_candidates (
+        candidate_id,
+        candidate_fingerprint,
+        submitter_id_hash,
+        revision,
+        supersedes_candidate_id,
+        submitted_at,
+        retain_until,
+        payload
+      ) values ($1, $2, $3, $4, null, $5::timestamptz, $6::timestamptz, $7::jsonb)
+    `,
+    [
+      candidate.candidateId,
+      candidate.candidateFingerprint,
+      candidate.submitterIdHash,
+      candidate.revision,
+      candidate.submittedAt,
+      candidate.retainUntil,
+      JSON.stringify(candidate),
+    ],
+  );
+}
+
+async function enqueueCandidateRetention(
+  client: PgControlClientLike,
+  candidate: ReviewedReplayCandidate,
+): Promise<void> {
+  const jobId = `retention_${sha256Fingerprint({
+    candidateId: candidate.candidateId,
+    retainUntil: candidate.retainUntil,
+  }).slice(7)}`;
+  await queryControlDatabase(
+    client,
+    `
+      /* control:sampling-retention-enqueue */
+      insert into evm_chain_control_retention_jobs (
+        job_id, candidate_id, retain_until, status
+      ) values ($1, $2, $3::timestamptz, 'queued')
+    `,
+    [jobId, candidate.candidateId, candidate.retainUntil],
+  );
+}
+
+async function appendCandidateRecordedAudit(
+  client: PgControlClientLike,
+  candidate: ReviewedReplayCandidate,
+  actorIdHash: string,
+): Promise<void> {
+  await appendControlAuditEvent(client, {
+    actorIdHash,
+    entityFingerprint: candidate.candidateFingerprint,
+    entityId: candidate.candidateId,
+    entityType: 'replay_candidate',
+    eventAt: candidate.submittedAt,
+    eventKind: 'candidate_recorded',
+    payload: {
+      payloadFingerprint: candidate.payloadFingerprint,
+      retainUntil: candidate.retainUntil,
+      revision: candidate.revision,
+      supersedesCandidateId: null,
+    },
+    stream: 'governance',
+  });
+}
+
 function assertActiveWorkerLease(
   job: SamplingIntakeJob,
   workerIdHash: string,
@@ -954,8 +1218,8 @@ async function requireManifest(
   );
   if (payload === undefined) {
     throw new ChainAnalysisControlStoreError(
-      'invalid_state',
-      `Succeeded sampling manifest ${manifestId} was not found.`,
+      'sampling_manifest_not_found',
+      `Sampling manifest ${manifestId} was not found.`,
     );
   }
   return publicChainSampleManifestSchema.parse(payload);

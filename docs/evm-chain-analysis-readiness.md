@@ -17,9 +17,10 @@ flowchart LR
   Approval["来源 / 法律 / 保留 approval evidence"] --> Policy["Sampling policy"]
   Policy --> Plan["Deterministic quota slots"]
   Plan --> Manifest["Public-chain sample manifest"]
-  Manifest --> Source["未来公开主网 source payload"]
-  Source --> Scan["确定性敏感信息扫描"]
-  Scan --> Candidate["Content-addressed candidate"]
+  Manifest --> Handoff["Target-agnostic handoff"]
+  Source["未来公开主网 replay payload"] --> Scan["确定性敏感信息扫描"]
+  Scan --> Handoff
+  Handoff --> Candidate["Content-addressed candidate"]
   Candidate --> ReviewA["独立 Reviewer A"]
   Candidate --> ReviewB["独立 Reviewer B"]
   ReviewA --> Decision["Governance decision"]
@@ -47,9 +48,9 @@ v0.14b2a 已新增真实采集之前的离线规划层：
 - policy 强制覆盖 V2/V3、direct/allowlisted/complex route、正例/反例/unsupported、完整/部分数据、provider conflict、reorg 和特殊 token；
 - plan 把 quota 确定性展开为稳定 slot；manifest 必须匹配 slot、来源和采样时间窗，并按 `(chainId, transactionHash)` 去重；
 - coverage evaluator 报告每个 stratum 的接受数与缺口；approval 不匹配、尚未生效或过期时 fail closed；
-- companion control store 用独立 sampling planner/worker role、不可变 artifact、`FOR UPDATE SKIP LOCKED`、lease/attempt fencing 和哈希链审计持久化该流程。
+- companion control store 用独立 sampling planner/worker/submitter role、不可变 artifact、`FOR UPDATE SKIP LOCKED`、lease/attempt fencing、原子 candidate handoff 和哈希链审计持久化该流程。
 
-manifest 不是 reviewed replay candidate，更不是 ground truth。真实 worker 未来仍须把受控 payload 交给本页后续的 scanner、candidate、双人 review 和 promotion 流程。完整契约、状态机与边界见 [Mainnet Sampling Plan & Evidence Intake Control Plane](evm-chain-analysis-sampling.md)。
+manifest 不是 reviewed replay candidate，更不是 ground truth。v0.14b2a2 已定义显式 handoff：从持久化 manifest 继承 source/retention lineage，重新扫描 normalized replay payload，闭合 chain/transaction/block、protocol/route/data-state 和时间锚点，再在一个 Postgres 事务中创建初始 candidate、retention job 与审计 link。sampling target 与 proposed ground truth 不一致只记录 `deviated`，不会拒绝样本。真实 worker 和 reviewer 仍未部署，candidate 仍须经过双人 review 和 promotion。完整契约见 [Mainnet Sampling Plan & Evidence Intake Control Plane](evm-chain-analysis-sampling.md) 与 [Sampling Manifest → Reviewed Replay Candidate Handoff](evm-chain-analysis-sampling-handoff.md)。
 
 ## Reviewed replay 治理
 
@@ -149,7 +150,7 @@ pnpm check
 下一阶段是 v0.14b2b 的真实证据建设，而不是能力接线：
 
 1. 由有权人员完成真实来源/法律/保留审批，并将其映射到已定义的 approval/policy/plan；
-2. 部署 companion Postgres backend，接入真实 planner/sampling worker/reviewer 身份与 grant，并把受控 manifest 转入候选/审核/墓碑流程；
+2. 部署 companion Postgres backend，接入真实 planner/sampling worker/submitter/reviewer 身份与 grant，并通过已定义 handoff 把受控 manifest 转入候选/审核/墓碑流程；
 3. 实现 secret manager、metrics/alerting 和 provider failover，验证已实现的共享 budget/circuit/审计在真实故障下 fail closed；
 4. 运行故障演练并持续生成新鲜 SLO、安全和 runbook evidence；
 5. 让真实 reviewed corpus 实际通过 internal-readiness gate。

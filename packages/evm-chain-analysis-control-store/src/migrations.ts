@@ -23,6 +23,7 @@ const IMMUTABLE_TABLES = [
   'evm_chain_control_sampling_policies',
   'evm_chain_control_sampling_plans',
   'evm_chain_control_sampling_manifests',
+  'evm_chain_control_sampling_candidate_handoffs',
   'evm_chain_control_sampling_runs',
 ] as const;
 
@@ -315,6 +316,19 @@ export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
   `
     create index if not exists evm_chain_control_sampling_manifests_plan_idx
       on evm_chain_control_sampling_manifests (plan_id, manifest_id)
+  `,
+  `
+    create table if not exists evm_chain_control_sampling_candidate_handoffs (
+      handoff_id text primary key,
+      handoff_fingerprint text not null unique,
+      manifest_id text not null unique
+        references evm_chain_control_sampling_manifests(manifest_id),
+      candidate_id text not null unique
+        references evm_chain_control_replay_candidates(candidate_id),
+      handed_off_at timestamptz not null,
+      target_disposition text not null check (target_disposition in ('deviated', 'matched')),
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
   `,
   `
     create table if not exists evm_chain_control_sampling_runs (

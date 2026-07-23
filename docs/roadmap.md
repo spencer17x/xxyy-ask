@@ -236,12 +236,27 @@
 
 成功标准：同一 policy/plannedAt 展开相同 slots；审批过期、manifest 越界、重复 transaction、非法角色、过期 lease 和数据库失败全部 fail closed；测试 fixture 不能被描述为真实审批、主网 evidence 或 reviewed corpus。详细设计见 [evm-chain-analysis-sampling.md](evm-chain-analysis-sampling.md)。
 
+## v0.14b2a2 Sampling Manifest → Reviewed Replay Candidate Handoff
+
+目标：在不访问网络、不创建真实样本、不声称审核完成且不接入运行面的前提下，消除 persisted manifest 与 reviewed replay candidate 之间的人工拼接，建立无目标标签偏置、可重算、可审计的原子交接。
+
+- [x] 定义 self-contained content-addressed handoff，内嵌精确 manifest/candidate、additional source lineage、target comparison、固定 selection policy 和完整 fingerprint/id 闭合。
+- [x] 确定性验证 chain/transaction/block/index、protocol/route/data-state、snapshot source hash、payload re-scan、retention policy/deadline，以及 collection → scan → submission → expiry 时间链；complete 样本要求完整锚点。
+- [x] sampling target 仅作 planning bucket；`matched` 与 `deviated` 均生成 `pending_review` candidate，固定 `target_agnostic_no_exclusion`，禁止借 target 筛除 false positive/false negative/`not_applicable`。
+- [x] 将 retention policy id 从 approval 经 policy/plan 传播到 manifest 和 candidate，handoff 不允许调用方延长截止时间或替换策略。
+- [x] 扩展 Postgres control store：`candidate_submitter` 授权下，同一事务写入 revision-1 candidate、唯一 retention job、manifest/candidate 一对一 handoff，以及 candidate/handoff 两条 hash-chain event。
+- [x] 相同 handoff 幂等返回；同一 manifest/candidate 的冲突绑定、绕过 handoff 预先写入 candidate、非法 actor、来源/时间/锚点不闭合和数据库失败全部 fail closed。
+- [x] contract-only unit/store/migration/isolation tests 与一次性真实 PostgreSQL 验证通过；偏差 handoff、唯一行数、幂等 retry 和 append-only trigger 已验证，临时数据库已删除。
+- [x] 保持 readiness/control-store 不访问 RPC/HTTP/provider，不含真实主网 payload/审批/reviewer 结论，也不被 Agent/Capability/MCP/API/CLI/Telegram 导入。
+
+成功标准：handoff 可由 persisted manifest 和显式 payload 输入逐字节重算；target mismatch 不能阻止入候选；candidate、retention、handoff 和 audit 要么全部提交要么全部回滚；contract-only fixture 不得被描述为主网 reviewed evidence。详细设计见 [evm-chain-analysis-sampling-handoff.md](evm-chain-analysis-sampling-handoff.md)。
+
 ## v0.14b2b Reviewed Mainnet Evidence & Provider Operations Validation（计划）
 
 目标：在包外部署 v0.14b1/v0.14b2a backend，完成真实审批并形成能够被独立审计的主网 corpus 与生产数据面证据；仍不注册 Capability 或改变客服运行面。
 
 - [ ] 由有权人员确定并批准实际目标 chain、来源、法律条件和数据保留策略，将真实审批 evidence 与 identity/grant 安全写入控制面；代码中的 contract-only artifact 不等于审批。
-- [ ] 部署最小权限 Postgres、真实 planner/worker/reviewer identity/grant、sampling/retention/reconciliation workers，按 plan 采集并双人复核公开主网样本；不把 manifest 或 contract-only fixture 直接当作 reviewed evidence。
+- [ ] 部署最小权限 Postgres、真实 planner/worker/submitter/reviewer identity/grant、sampling/retention/reconciliation workers，按 plan 采集、通过 handoff 入候选并双人复核公开主网样本；不把 manifest、handoff 或 contract-only fixture 直接当作 reviewed evidence。
 - [ ] 实现 secret manager 配置解析、metrics/alerting 和 provider failover；配置数据库最小权限、加密、备份、保留策略，并验证 budget/circuit/audit backend unavailable 时 fail closed。
 - [ ] 执行 timeout、rate limit、provider conflict、reorg、审计/预算/circuit backend unavailable 等演练，提交新鲜 SLO、告警、security 和 runbook evidence。
 - [ ] 在固定 governed corpus 上持续运行 harness，逐条审阅 false positive、false negative 和 positive abstention，实际达到并锁定 internal-readiness gate。

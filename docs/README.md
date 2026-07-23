@@ -12,6 +12,7 @@
 - [Allowlisted MEV Observation Data Adapter](evm-mev-observation-data-adapter.md)
 - [EVM Chain Analysis Composition & Evaluation Harness](evm-chain-analysis-harness.md)
 - [Mainnet Sampling Plan & Evidence Intake Control Plane](evm-chain-analysis-sampling.md)
+- [Sampling Manifest → Reviewed Replay Candidate Handoff](evm-chain-analysis-sampling-handoff.md)
 - [Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md)
 - [Chain Analysis Governance Persistence & Shared Provider Controls](evm-chain-analysis-control-store.md)
 - [Roadmap](roadmap.md)
@@ -35,8 +36,8 @@
 - `packages/rag-core`：意图分类、检索、pgvector、可信作者、Knowledge Curator、知识治理服务、LLM answer provider 和边界回复。
 - `packages/agent-core`：LangGraph customer runtime、planner/state 合约和产品问答工具。
 - `packages/evm-chain-analysis-harness`：未接线的 transaction/execution/MEV 离线组合、replay corpus 评测和质量门禁。
-- `packages/evm-chain-analysis-readiness`：未接线的 sampling plan/evidence intake、reviewed replay 治理、生产运维证据契约和综合 readiness evaluator；当前不含真实审批、主网 corpus 或 provider backend。
-- `packages/evm-chain-analysis-control-store`：未接线的 Postgres sampling/治理 artifact、sampling/retention job、哈希链审计、共享 budget 和 circuit CAS backend；当前不含生产配置、真实授权/审批或主网证据。
+- `packages/evm-chain-analysis-readiness`：未接线的 sampling plan/evidence intake、manifest/candidate handoff、reviewed replay 治理、生产运维证据契约和综合 readiness evaluator；当前不含真实审批、主网 corpus 或 provider backend。
+- `packages/evm-chain-analysis-control-store`：未接线的 Postgres sampling/handoff/治理 artifact、sampling/retention job、哈希链审计、共享 budget 和 circuit CAS backend；当前不含生产配置、真实授权/审批或主网证据。
 - `apps/cli`：`rag:ask`、`rag:ingest`、`rag:migrate`、`rag:stats`、`rag:sync:x`，以及可信作者、Telegram 候选导入、修订、审核和发布命令。
 - `apps/api`：`GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream`、`GET /assets/*`。
 - `apps/telegram-bot`：Telegram Bot long polling 入口，复用 LangGraph 客服 Agent。

@@ -160,6 +160,22 @@ export type {
   ReviewedReplayGovernanceErrorCode,
 } from './reviewed-corpus-governance.js';
 export {
+  SAMPLING_CANDIDATE_SELECTION_POLICY,
+  SamplingCandidateHandoffError,
+  createSamplingCandidateHandoff,
+  samplingCandidateHandoffErrorCodes,
+  samplingCandidateHandoffInputSchema,
+  samplingCandidateHandoffSchema,
+  samplingCandidateTargetComparisonSchema,
+  samplingCandidateTargetDispositions,
+} from './sampling-candidate-handoff.js';
+export type {
+  SamplingCandidateHandoff,
+  SamplingCandidateHandoffErrorCode,
+  SamplingCandidateHandoffInput,
+  SamplingCandidateTargetDisposition,
+} from './sampling-candidate-handoff.js';
+export {
   MainnetSamplingError,
   createMainnetSamplingPolicy,
   createMainnetSamplingSourceApproval,

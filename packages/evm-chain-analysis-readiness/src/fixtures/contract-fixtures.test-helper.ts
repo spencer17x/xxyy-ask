@@ -25,7 +25,12 @@ import {
   createPublicChainSampleManifest,
   materializeMainnetSamplingPlan,
 } from '../mainnet-sampling.js';
-import type { MainnetSamplingChainCondition, MainnetSamplingPlan } from '../sampling-contracts.js';
+import { createSamplingCandidateHandoff } from '../sampling-candidate-handoff.js';
+import type {
+  MainnetSamplingChainCondition,
+  MainnetSamplingPlan,
+  MainnetSamplingTargetLabel,
+} from '../sampling-contracts.js';
 
 export const CONTRACT_FIXTURE_TIMES = {
   evaluatedAt: '2026-07-22T12:00:00.000Z',
@@ -45,7 +50,9 @@ export function contractEvmHash(label: string): `0x${string}` {
  * Contract-only sampling artifacts. Hashes and chain dimensions are deliberately synthetic; this
  * helper is not source/legal approval, a mainnet sample set, or evidence that collection occurred.
  */
-export function createContractOnlySamplingFixture() {
+export function createContractOnlySamplingFixture(options?: {
+  includeTargetDeviationStratum?: boolean;
+}) {
   const approval = createMainnetSamplingSourceApproval({
     approvalName: 'contract-only-mainnet-sampling',
     approvedAt: '2026-06-30T00:00:00.000Z',
@@ -98,6 +105,20 @@ export function createContractOnlySamplingFixture() {
         targetSamples: 1,
         tokenBehavior: 'rebasing',
       },
+      ...(options?.includeTargetDeviationStratum === true
+        ? [
+            {
+              chainCondition: 'canonical' as const,
+              chainId: '1',
+              dataCompleteness: 'complete' as const,
+              protocol: 'uniswap_v2' as const,
+              routeClass: 'direct_pool' as const,
+              targetLabel: 'negative' as const,
+              targetSamples: 1,
+              tokenBehavior: 'standard' as const,
+            },
+          ]
+        : []),
     ],
   });
   const plan = materializeMainnetSamplingPlan(approval, policy, '2026-07-22T12:00:00.000Z');
@@ -171,6 +192,81 @@ export async function createContractOnlyReviewedPayload(): Promise<ReviewedRepla
       redactionVersion: 'contract-only-v1',
     },
   };
+}
+
+/**
+ * Contract-only manifest-to-candidate lineage. The source case remains synthetic and this helper
+ * is not proof that a public-chain sample was collected, reviewed, or approved.
+ */
+export async function createContractOnlySamplingHandoffFixture(options?: {
+  targetLabel?: Extract<MainnetSamplingTargetLabel, 'negative' | 'positive'>;
+}) {
+  const targetLabel = options?.targetLabel ?? 'positive';
+  const { approval, plan, policy } = createContractOnlySamplingFixture({
+    includeTargetDeviationStratum: targetLabel === 'negative',
+  });
+  const payload = await createContractOnlyReviewedPayload();
+  const stratum = plan.strata.find(
+    (candidate) =>
+      candidate.chainCondition === 'canonical' &&
+      candidate.chainId === payload.dimensions.chainId &&
+      candidate.dataCompleteness === payload.dimensions.dataState &&
+      candidate.protocol === payload.dimensions.protocol &&
+      candidate.routeClass === payload.dimensions.router &&
+      candidate.targetLabel === targetLabel,
+  );
+  if (stratum === undefined) {
+    throw new Error('Contract-only handoff fixture requires a matching sampling stratum.');
+  }
+  const slot = plan.slots.find((candidate) => candidate.stratumId === stratum.stratumId)!;
+  const snapshot = payload.input.snapshot;
+  const transactionIndex =
+    snapshot.transaction?.transactionIndex ?? snapshot.receipt?.transactionIndex;
+  if (snapshot.block === undefined || transactionIndex === undefined) {
+    throw new Error(
+      'Contract-only handoff fixture requires complete block and transaction anchors.',
+    );
+  }
+  const sourcePayloadHashes = snapshot.sources.map((source) => {
+    if (source.payloadHash === undefined) {
+      throw new Error('Contract-only handoff fixture requires source payload hashes.');
+    }
+    return source.payloadHash.startsWith('0x')
+      ? `sha256:${source.payloadHash.slice(2).toLowerCase()}`
+      : source.payloadHash.toLowerCase();
+  });
+  const observedProviderHashes =
+    payload.input.observation?.providers.flatMap((provider) =>
+      provider.fingerprint === undefined ? [] : [provider.fingerprint],
+    ) ?? [];
+  const providerObservationHashes =
+    observedProviderHashes.length === 0
+      ? [contractHash('contract-only-provider-observation')]
+      : observedProviderHashes;
+  const manifest = createPublicChainSampleManifest(plan, {
+    blockHash: snapshot.block.hash,
+    blockNumber: snapshot.block.number,
+    collectedAt: '2026-07-24T10:00:00.000Z',
+    credentialScan: 'passed',
+    privateDataScan: 'passed',
+    providerObservationHashes,
+    scannedAt: '2026-07-24T10:00:00.000Z',
+    scannerVersion: 'contract-only-source-scanner-v1',
+    slotId: slot.slotId,
+    sourceKind: 'public_rpc',
+    sourcePayloadHashes,
+    transactionHash: snapshot.requestedTransactionHash,
+    transactionIndex,
+  });
+  const handoff = createSamplingCandidateHandoff(manifest, {
+    additionalSourcePayloadHashes: [contractHash('contract-only-normalized-replay')],
+    payload,
+    scannedAt: '2026-07-24T11:00:00.000Z',
+    scannerVersion: 'contract-only-replay-scanner-v1',
+    submittedAt: '2026-07-24T12:00:00.000Z',
+    submitterIdHash: contractHash('sampling-candidate-submitter'),
+  });
+  return { approval, handoff, manifest, payload, plan, policy };
 }
 
 export async function createGovernedContractCorpus() {
