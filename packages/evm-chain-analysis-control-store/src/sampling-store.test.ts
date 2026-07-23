@@ -219,7 +219,7 @@ describe('PostgreSQL mainnet sampling control store', () => {
     expect(client.auditEvents.map(eventKind)).toEqual(['sampling_run_recorded']);
   });
 
-  it('atomically persists a manifest handoff, initial candidate, and retention job', async () => {
+  it('atomically persists a handoff, candidate, retention job, and two review slots', async () => {
     const { handoff, manifest } = await createContractOnlySamplingHandoffFixture({
       targetLabel: 'negative',
     });
@@ -235,6 +235,10 @@ describe('PostgreSQL mainnet sampling control store', () => {
 
     expect(client.queries.some((query) => query.tag === 'sampling-candidate-insert')).toBe(true);
     expect(client.queries.some((query) => query.tag === 'sampling-retention-enqueue')).toBe(true);
+    const reviewJobs = client.queries.filter((query) => query.tag === 'review-job-enqueue');
+    expect(reviewJobs).toHaveLength(2);
+    expect(reviewJobs.map((query) => query.values[3])).toEqual([1, 2]);
+    expect(new Set(reviewJobs.map((query) => query.values[0])).size).toBe(2);
     expect(client.queries.some((query) => query.tag === 'sampling-handoff-insert')).toBe(true);
     expect(
       client.queries.find((query) => query.tag === 'sampling-handoff-insert')?.values,

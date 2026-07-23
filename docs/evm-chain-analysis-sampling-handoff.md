@@ -5,7 +5,7 @@
 本阶段补齐 public-chain sample manifest 与 reviewed replay candidate 之间原来依赖人工拼接的边界。实现仍位于未接线的离线控制面：
 
 - `@xxyy/evm-chain-analysis-readiness` 生成可独立重算的 content-addressed handoff；
-- `@xxyy/evm-chain-analysis-control-store` 在一个 Postgres 事务中写入 handoff、初始 candidate、retention job 和哈希链审计；
+- `@xxyy/evm-chain-analysis-control-store` 在一个 Postgres 事务中写入 handoff、初始 candidate、retention job、两个 review work slot 和哈希链审计；
 - handoff 只把已采集 manifest 转成 `pending_review` candidate，不代表 replay 正确、标签已批准或样本可进入 reviewed corpus；
 - 没有 worker、RPC、Explorer、Indexer、HTTP、provider endpoint、真实主网 payload 或生产身份；
 - 没有接入 Agent、Capability、MCP、Skill、API、CLI、Telegram 或公开客服。
@@ -25,9 +25,10 @@ flowchart LR
   Handoff --> Tx["One Postgres transaction"]
   Tx --> Candidate["Initial pending_review candidate"]
   Tx --> Retention["Unique retention job"]
+  Tx --> ReviewSlots["Two deterministic review slots"]
   Tx --> Audit["Candidate + handoff audit links"]
-  Candidate --> ReviewA["Future reviewer A"]
-  Candidate --> ReviewB["Future reviewer B"]
+  ReviewSlots --> ReviewA["Future reviewer worker A"]
+  ReviewSlots --> ReviewB["Future reviewer worker B"]
 
   style Payload stroke-dasharray: 5 5
   style ReviewA stroke-dasharray: 5 5
@@ -94,11 +95,12 @@ selectionPolicy = target_agnostic_no_exclusion
 4. 拒绝已经绕过 handoff 单独存在的 candidate，防止事后补挂来源；
 5. 插入 revision-1 candidate；
 6. 插入唯一 retention job；
-7. 插入 append-only handoff；
-8. 追加 `candidate_recorded` 与 `sampling_candidate_handoff_recorded` 两条 hash-chain event；
-9. 一次提交，任一步失败全部回滚。
+7. 插入两个由 candidate revision 与 slot ordinal 确定性派生的 queued review job；
+8. 插入 append-only handoff；
+9. 追加 `candidate_recorded` 与 `sampling_candidate_handoff_recorded` 两条 hash-chain event；
+10. 一次提交，任一步失败全部回滚。
 
-相同 handoff 重试返回既有 artifact，不重复 candidate、retention job 或审计事件。相同 manifest 指向不同 candidate、相同 candidate 指向不同 manifest、无授权 actor、数据库错误或指纹不闭合均 fail closed。handoff 表安装 `BEFORE UPDATE OR DELETE` 拒绝触发器。
+相同 handoff 重试返回既有 artifact，不重复 candidate、retention/review job 或审计事件。相同 manifest 指向不同 candidate、相同 candidate 指向不同 manifest、无授权 actor、数据库错误或指纹不闭合均 fail closed。handoff 表安装 `BEFORE UPDATE OR DELETE` 拒绝触发器。review slot 的领取、attempt fencing 与原子完成见 [Independent Review Work Queue](evm-chain-analysis-review-work-queue.md)。
 
 该 API 是显式存储原语，不是后台自动转换器。未来部署层必须在真实 manifest 成功持久化、payload 归一化和扫描完成后主动调用；当前仓库没有运行该 worker。
 
@@ -111,7 +113,7 @@ selectionPolicy = target_agnostic_no_exclusion
 - source hash、scan、retention policy/deadline 与时间 lineage；
 - target matched/deviated 都创建 candidate，偏差不会被筛除；
 - candidate submitter RBAC、manifest/candidate 一对一、幂等写入和事后补挂拒绝；
-- 单事务 candidate/handoff/retention/audit，以及运行面隔离。
+- 单事务 candidate/handoff/retention/双 review slot/audit，以及运行面隔离。
 
 ```bash
 pnpm exec vitest run packages/evm-chain-analysis-readiness/src/sampling-candidate-handoff.test.ts
@@ -119,7 +121,7 @@ pnpm exec vitest run packages/evm-chain-analysis-control-store/src/sampling-stor
 pnpm check
 ```
 
-本阶段还使用一次性真实 PostgreSQL 验证了迁移、偏差 handoff、单事务写入、幂等重试、唯一行数和 append-only trigger；临时数据库随后删除。该验证仍只使用 contract-only fixture。
+本阶段还使用一次性真实 PostgreSQL 验证了迁移、偏差 handoff、单事务写入、幂等重试、唯一行数和 append-only trigger；后续 review queue 阶段又验证了每个 handoff 精确生成两个 queued slot。临时数据库随后删除，验证仍只使用 contract-only fixture。
 
 ## 下一阶段
 

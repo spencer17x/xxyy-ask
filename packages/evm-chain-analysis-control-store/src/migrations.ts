@@ -85,6 +85,57 @@ export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
     )
   `,
   `
+    create table if not exists evm_chain_control_review_work_jobs (
+      job_id text primary key,
+      candidate_id text not null references evm_chain_control_replay_candidates(candidate_id),
+      candidate_fingerprint text not null,
+      slot_ordinal integer not null check (slot_ordinal between 1 and 2),
+      not_before timestamptz not null,
+      expires_at timestamptz not null,
+      status text not null check (status in ('failed', 'queued', 'running', 'succeeded')),
+      attempt_count integer not null default 0 check (attempt_count >= 0),
+      max_attempts integer not null default 3 check (max_attempts > 0),
+      reviewer_id_hash text,
+      lease_expires_at timestamptz,
+      completed_at timestamptz,
+      failed_at timestamptz,
+      failure_code_hash text,
+      review_id text references evm_chain_control_replay_reviews(review_id),
+      review_fingerprint text,
+      unique (candidate_id, slot_ordinal),
+      check (expires_at > not_before),
+      check (attempt_count <= max_attempts),
+      check (
+        (status = 'queued' and attempt_count = 0)
+        or (status <> 'queued' and attempt_count > 0)
+      ),
+      check (
+        (status = 'queued' and reviewer_id_hash is null and lease_expires_at is null
+          and completed_at is null and failed_at is null and failure_code_hash is null
+          and review_id is null and review_fingerprint is null)
+        or (status = 'running' and reviewer_id_hash is not null and lease_expires_at is not null
+          and completed_at is null and failed_at is null and failure_code_hash is null
+          and review_id is null and review_fingerprint is null)
+        or (status = 'succeeded' and reviewer_id_hash is not null and lease_expires_at is null
+          and completed_at is not null and failed_at is null and failure_code_hash is null
+          and review_id is not null and review_fingerprint is not null)
+        or (status = 'failed' and reviewer_id_hash is not null and lease_expires_at is null
+          and completed_at is null and failed_at is not null and failure_code_hash is not null
+          and review_id is null and review_fingerprint is null)
+      )
+    )
+  `,
+  `
+    create unique index if not exists evm_chain_control_review_work_jobs_reviewer_idx
+      on evm_chain_control_review_work_jobs (candidate_id, reviewer_id_hash)
+      where reviewer_id_hash is not null and status in ('running', 'succeeded')
+  `,
+  `
+    create index if not exists evm_chain_control_review_work_jobs_claim_idx
+      on evm_chain_control_review_work_jobs (not_before, expires_at, candidate_id, slot_ordinal)
+      where status in ('failed', 'queued', 'running')
+  `,
+  `
     create table if not exists evm_chain_control_replay_decisions (
       decision_fingerprint text primary key,
       candidate_id text not null references evm_chain_control_replay_candidates(candidate_id),

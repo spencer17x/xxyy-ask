@@ -251,12 +251,26 @@
 
 成功标准：handoff 可由 persisted manifest 和显式 payload 输入逐字节重算；target mismatch 不能阻止入候选；candidate、retention、handoff 和 audit 要么全部提交要么全部回滚；contract-only fixture 不得被描述为主网 reviewed evidence。详细设计见 [evm-chain-analysis-sampling-handoff.md](evm-chain-analysis-sampling-handoff.md)。
 
+## v0.14b2a3 Independent Review Work Queue
+
+目标：在不部署真实 reviewer、不创建主网审核结论且不接入运行面的前提下，把 sampling handoff candidate 的双人独立复核从“人工约定”变为可并发领取、可恢复、attempt-fenced 且可审计的 Postgres 工作队列。
+
+- [x] 每个新 handoff candidate 在原有单事务内创建两个由 candidate id/fingerprint 与 slot ordinal 派生的 queued review job；相同 handoff 幂等重试不重复入队。
+- [x] 新增 `independent_reviewer` claim store：操作时间 RBAC、submitter 排除、已有 review 排除、同 reviewer 另一槽排除、稳定排序和 `FOR UPDATE SKIP LOCKED`。
+- [x] claim 增加 attempt 并生成不越过 candidate expiry 的 lease；failed attempt 保存 hashed reason 并释放，未耗尽任务可重领，达到默认三次上限后终止领取。
+- [x] handoff review 强制携带 `jobId + attemptCount`；旧 generation、过期 lease、错误 reviewer/candidate fail closed。同一 reviewer 不能完成同 candidate 两槽。
+- [x] 不可变 review、job success、`review_recorded` 与 `review_job_completed` 在同一事务提交；普通非 handoff candidate 保留既有直接 review 契约。
+- [x] 补齐 schema/migration、unit/store/isolation tests 与文档；一次性真实 PostgreSQL 验证了双槽、双 reviewer 完成、同 reviewer 排除、三次失败终止和 hash-chain audit，临时数据库已删除。
+- [x] 保持无 RPC/HTTP/provider、无真实 reviewer/主网 evidence，且不被 Agent/Capability/MCP/API/CLI/Telegram 导入。
+
+成功标准：handoff、candidate、retention、两个 review slot 与原有 audit 原子提交；只有持有当前 attempt lease 的独立 reviewer 能提交；并发、失败重领和旧执行者不能产生重复或越权 review；contract-only 通过不能被描述为真实复核完成。详细设计见 [evm-chain-analysis-review-work-queue.md](evm-chain-analysis-review-work-queue.md)。
+
 ## v0.14b2b Reviewed Mainnet Evidence & Provider Operations Validation（计划）
 
 目标：在包外部署 v0.14b1/v0.14b2a backend，完成真实审批并形成能够被独立审计的主网 corpus 与生产数据面证据；仍不注册 Capability 或改变客服运行面。
 
 - [ ] 由有权人员确定并批准实际目标 chain、来源、法律条件和数据保留策略，将真实审批 evidence 与 identity/grant 安全写入控制面；代码中的 contract-only artifact 不等于审批。
-- [ ] 部署最小权限 Postgres、真实 planner/worker/submitter/reviewer identity/grant、sampling/retention/reconciliation workers，按 plan 采集、通过 handoff 入候选并双人复核公开主网样本；不把 manifest、handoff 或 contract-only fixture 直接当作 reviewed evidence。
+- [ ] 部署最小权限 Postgres、真实 planner/worker/submitter/reviewer identity/grant、sampling/review/retention/reconciliation workers，按 plan 采集、通过 handoff 入候选并由两个独立 reviewer 从 work queue 领取、重放和复核公开主网样本；不把 manifest、handoff、queued slot 或 contract-only fixture 直接当作 reviewed evidence。
 - [ ] 实现 secret manager 配置解析、metrics/alerting 和 provider failover；配置数据库最小权限、加密、备份、保留策略，并验证 budget/circuit/audit backend unavailable 时 fail closed。
 - [ ] 执行 timeout、rate limit、provider conflict、reorg、审计/预算/circuit backend unavailable 等演练，提交新鲜 SLO、告警、security 和 runbook evidence。
 - [ ] 在固定 governed corpus 上持续运行 harness，逐条审阅 false positive、false negative 和 positive abstention，实际达到并锁定 internal-readiness gate。

@@ -55,6 +55,11 @@ import {
   withControlTransaction,
   type PgControlClientLike,
 } from './postgres.js';
+import {
+  completeHandoffReviewWorkJob,
+  requireHandoffReviewLease,
+  type ReviewWorkLeaseReference,
+} from './review-work-store.js';
 
 interface PayloadRow {
   payload: unknown;
@@ -115,7 +120,11 @@ export interface EvmChainAnalysisGovernanceStore {
     actorIdHash: string;
     result: unknown;
   }): Promise<ProductionReadinessResult>;
-  recordReview(input: { actorIdHash: string; review: unknown }): Promise<ReviewedReplayReview>;
+  recordReview(input: {
+    actorIdHash: string;
+    review: unknown;
+    reviewWorkLease?: ReviewWorkLeaseReference;
+  }): Promise<ReviewedReplayReview>;
   revokeAuthorization(
     input: GovernanceAuthorizationRevocationInput,
   ): Promise<GovernanceAuthorizationRevocation>;
@@ -745,6 +754,10 @@ export function createPgEvmChainAnalysisGovernanceStore(options: {
           }
           return existing;
         }
+        const reviewWorkJob = await requireHandoffReviewLease(transaction, {
+          review: supplied,
+          ...(input.reviewWorkLease === undefined ? {} : { lease: input.reviewWorkLease }),
+        });
         await queryControlDatabase(
           transaction,
           `
@@ -781,6 +794,13 @@ export function createPgEvmChainAnalysisGovernanceStore(options: {
           },
           stream: 'governance',
         });
+        if (reviewWorkJob !== undefined) {
+          await completeHandoffReviewWorkJob(transaction, {
+            actorIdHash: input.actorIdHash,
+            job: reviewWorkJob,
+            review: supplied,
+          });
+        }
         return supplied;
       });
     },

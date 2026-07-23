@@ -5,6 +5,8 @@ import {
   createGovernanceAuthorization,
   createGovernanceAuthorizationRevocation,
   governanceAuthorizationSchema,
+  reviewWorkJobId,
+  reviewWorkJobSchema,
   samplingIntakeJobSchema,
   verifyChainAnalysisControlAuditEvents,
   type ChainAnalysisControlStoreError,
@@ -97,6 +99,55 @@ describe('chain-analysis control-store contracts', () => {
         ...base,
         failureCodeHash: testHash('failure'),
         status: 'queued',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('content-addresses two-slot review work and enforces fenced state shapes', () => {
+    const candidateFingerprint = testHash('review-work-candidate');
+    const candidateId = `reviewed_${candidateFingerprint.slice(7)}`;
+    const base = {
+      attemptCount: 1,
+      candidateFingerprint,
+      candidateId,
+      expiresAt: '2026-08-24T12:00:00.000Z',
+      jobId: reviewWorkJobId({ candidateFingerprint, candidateId, slotOrdinal: 1 }),
+      maxAttempts: 3,
+      notBefore: '2026-07-24T12:00:00.000Z',
+      slotOrdinal: 1,
+    };
+    const reviewerIdHash = testHash('review-work-reviewer');
+
+    expect(
+      reviewWorkJobSchema.parse({
+        ...base,
+        leaseExpiresAt: '2026-07-24T12:05:00.000Z',
+        reviewerIdHash,
+        status: 'running',
+      }).status,
+    ).toBe('running');
+    expect(
+      reviewWorkJobSchema.safeParse({
+        ...base,
+        reviewerIdHash,
+        status: 'succeeded',
+      }).success,
+    ).toBe(false);
+    expect(
+      reviewWorkJobSchema.safeParse({
+        ...base,
+        jobId: reviewWorkJobId({ candidateFingerprint, candidateId, slotOrdinal: 2 }),
+        leaseExpiresAt: '2026-07-24T12:05:00.000Z',
+        reviewerIdHash,
+        status: 'running',
+      }).success,
+    ).toBe(false);
+    expect(
+      reviewWorkJobSchema.safeParse({
+        ...base,
+        leaseExpiresAt: '2026-09-24T12:05:00.000Z',
+        reviewerIdHash,
+        status: 'running',
       }).success,
     ).toBe(false);
   });

@@ -41,6 +41,7 @@ import {
   withControlTransaction,
   type PgControlClientLike,
 } from './postgres.js';
+import { enqueueRequiredReviewWorkJobs } from './review-work-store.js';
 
 const ISO_TIMESTAMP_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"';
 const DEFAULT_SAMPLING_MAX_ATTEMPTS = 3;
@@ -539,6 +540,7 @@ export function createPgEvmChainAnalysisSamplingStore(options: {
         }
         await insertInitialCandidate(transaction, candidate);
         await enqueueCandidateRetention(transaction, candidate);
+        await enqueueRequiredReviewWorkJobs(transaction, candidate);
         await queryControlDatabase(
           transaction,
           `

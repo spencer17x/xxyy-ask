@@ -16,6 +16,10 @@ export {
   retentionJobOutcomes,
   retentionJobSchema,
   retentionJobStatuses,
+  REQUIRED_REVIEW_WORK_SLOTS,
+  reviewWorkJobId,
+  reviewWorkJobSchema,
+  reviewWorkJobStatuses,
   samplingIntakeJobSchema,
   samplingIntakeJobStatuses,
   verifyChainAnalysisControlAuditEvents,
@@ -31,6 +35,7 @@ export type {
   GovernanceAuthorizationRevocation,
   GovernanceAuthorizationRevocationInput,
   RetentionJob,
+  ReviewWorkJob,
   SamplingIntakeJob,
 } from './contracts.js';
 export {
@@ -50,6 +55,11 @@ export {
   createPgEvmChainAnalysisProviderControlStore,
   type PgEvmChainAnalysisProviderControlStore,
 } from './provider-control-store.js';
+export {
+  createPgEvmChainAnalysisReviewWorkStore,
+  type PgEvmChainAnalysisReviewWorkStore,
+  type ReviewWorkLeaseReference,
+} from './review-work-store.js';
 export {
   createPgEvmChainAnalysisSamplingStore,
   type PgEvmChainAnalysisSamplingStore,

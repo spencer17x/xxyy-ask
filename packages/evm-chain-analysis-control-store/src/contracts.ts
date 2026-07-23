@@ -41,6 +41,9 @@ export const chainAnalysisControlAuditEventKinds = [
   'retention_completed',
   'retention_job_claimed',
   'review_recorded',
+  'review_job_claimed',
+  'review_job_completed',
+  'review_job_failed',
   'sampling_approval_recorded',
   'sampling_candidate_handoff_recorded',
   'sampling_job_claimed',
@@ -215,6 +218,8 @@ export const chainAnalysisControlAuditEventSchema = z
 export const retentionJobStatuses = ['completed', 'queued', 'running'] as const;
 export const retentionJobOutcomes = ['expired_unpromoted', 'tombstoned'] as const;
 export const samplingIntakeJobStatuses = ['failed', 'queued', 'running', 'succeeded'] as const;
+export const reviewWorkJobStatuses = ['failed', 'queued', 'running', 'succeeded'] as const;
+export const REQUIRED_REVIEW_WORK_SLOTS = 2;
 
 export const retentionJobSchema = z
   .object({
@@ -365,6 +370,155 @@ export const samplingIntakeJobSchema = z
     }
   });
 
+export const reviewWorkJobSchema = z
+  .object({
+    attemptCount: z.number().int().nonnegative().max(1_000_000),
+    candidateFingerprint: fingerprintSchema,
+    candidateId: identifierSchema,
+    completedAt: z.string().datetime({ offset: true }).optional(),
+    expiresAt: z.string().datetime({ offset: true }),
+    failedAt: z.string().datetime({ offset: true }).optional(),
+    failureCodeHash: fingerprintSchema.optional(),
+    jobId: z.string().regex(/^review_job_[0-9a-f]{64}$/u),
+    leaseExpiresAt: z.string().datetime({ offset: true }).optional(),
+    maxAttempts: z.number().int().positive().max(100),
+    notBefore: z.string().datetime({ offset: true }),
+    reviewFingerprint: fingerprintSchema.optional(),
+    reviewId: z
+      .string()
+      .regex(/^review_[0-9a-f]{64}$/u)
+      .optional(),
+    reviewerIdHash: fingerprintSchema.optional(),
+    slotOrdinal: z.number().int().min(1).max(REQUIRED_REVIEW_WORK_SLOTS),
+    status: z.enum(reviewWorkJobStatuses),
+  })
+  .strict()
+  .superRefine((job, context) => {
+    if (Date.parse(job.expiresAt) <= Date.parse(job.notBefore)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Review work must have a positive candidate review window.',
+        path: ['expiresAt'],
+      });
+    }
+    if (job.attemptCount > job.maxAttempts) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Review work attempts cannot exceed the configured limit.',
+        path: ['attemptCount'],
+      });
+    }
+    if (
+      job.leaseExpiresAt !== undefined &&
+      (Date.parse(job.leaseExpiresAt) <= Date.parse(job.notBefore) ||
+        Date.parse(job.leaseExpiresAt) > Date.parse(job.expiresAt))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Review work lease must end inside the candidate review window.',
+        path: ['leaseExpiresAt'],
+      });
+    }
+    for (const [path, timestamp] of [
+      ['completedAt', job.completedAt],
+      ['failedAt', job.failedAt],
+    ] as const) {
+      if (
+        timestamp !== undefined &&
+        (Date.parse(timestamp) < Date.parse(job.notBefore) ||
+          Date.parse(timestamp) >= Date.parse(job.expiresAt))
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Review work transition must occur inside the candidate review window.',
+          path: [path],
+        });
+      }
+    }
+    if (job.status !== 'queued' && job.attemptCount === 0) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Claimed review work must have at least one attempt.',
+        path: ['attemptCount'],
+      });
+    }
+    const hasCompletion = job.completedAt !== undefined;
+    const hasFailure = job.failedAt !== undefined || job.failureCodeHash !== undefined;
+    const hasReview = job.reviewId !== undefined || job.reviewFingerprint !== undefined;
+    if (job.status === 'queued') {
+      if (
+        job.reviewerIdHash !== undefined ||
+        job.leaseExpiresAt !== undefined ||
+        hasCompletion ||
+        hasFailure ||
+        hasReview
+      ) {
+        context.addIssue({ code: 'custom', message: 'Queued review work cannot carry outcome.' });
+      }
+    } else if (job.status === 'running') {
+      if (
+        job.reviewerIdHash === undefined ||
+        job.leaseExpiresAt === undefined ||
+        hasCompletion ||
+        hasFailure ||
+        hasReview
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Running review work requires only an active reviewer lease.',
+        });
+      }
+    } else if (job.status === 'succeeded') {
+      if (
+        job.reviewerIdHash === undefined ||
+        !hasCompletion ||
+        job.leaseExpiresAt !== undefined ||
+        hasFailure ||
+        job.reviewId === undefined ||
+        job.reviewFingerprint === undefined
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Succeeded review work requires reviewer, completion, and review evidence.',
+        });
+      }
+    } else if (
+      job.reviewerIdHash === undefined ||
+      job.leaseExpiresAt !== undefined ||
+      hasCompletion ||
+      job.failedAt === undefined ||
+      job.failureCodeHash === undefined ||
+      hasReview
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Failed review work requires reviewer, failure time, and failure evidence.',
+      });
+    }
+    const expectedJobId = reviewWorkJobId({
+      candidateFingerprint: job.candidateFingerprint,
+      candidateId: job.candidateId,
+      slotOrdinal: job.slotOrdinal,
+    });
+    if (job.jobId !== expectedJobId) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Review work id must be derived from candidate revision and slot ordinal.',
+        path: ['jobId'],
+      });
+    }
+    if (
+      job.reviewFingerprint !== undefined &&
+      job.reviewId !== `review_${job.reviewFingerprint.slice(7)}`
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Completed review id must match its review fingerprint.',
+        path: ['reviewId'],
+      });
+    }
+  });
+
 export const chainAnalysisControlStoreErrorCodes = [
   'already_exists',
   'authorization_missing',
@@ -383,6 +537,8 @@ export const chainAnalysisControlStoreErrorCodes = [
   'lease_already_settled',
   'lease_not_found',
   'retention_job_not_found',
+  'review_job_not_found',
+  'review_lease_required',
   'reviewer_conflict',
   'sample_duplicate',
   'sampling_approval_not_found',
@@ -408,6 +564,7 @@ export type GovernanceAuthorizationRevocation = z.output<
 export type ChainAnalysisControlAuditEvent = z.output<typeof chainAnalysisControlAuditEventSchema>;
 export type RetentionJob = z.output<typeof retentionJobSchema>;
 export type SamplingIntakeJob = z.output<typeof samplingIntakeJobSchema>;
+export type ReviewWorkJob = z.output<typeof reviewWorkJobSchema>;
 export type ChainAnalysisControlStoreErrorCode =
   (typeof chainAnalysisControlStoreErrorCodes)[number];
 
@@ -419,6 +576,14 @@ export class ChainAnalysisControlStoreError extends Error {
     this.name = 'ChainAnalysisControlStoreError';
     this.code = code;
   }
+}
+
+export function reviewWorkJobId(input: {
+  candidateFingerprint: string;
+  candidateId: string;
+  slotOrdinal: number;
+}): string {
+  return `review_job_${sha256Fingerprint(input).slice(7)}`;
 }
 
 export function createGovernanceAuthorization(

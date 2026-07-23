@@ -28,6 +28,9 @@ describe('chain-analysis control-store migrations', () => {
       'create table if not exists evm_chain_control_sampling_candidate_handoffs',
     );
     expect(sql).toContain('create table if not exists evm_chain_control_sampling_jobs');
+    expect(sql).toContain('create table if not exists evm_chain_control_review_work_jobs');
+    expect(sql).toContain('evm_chain_control_review_work_jobs_reviewer_idx');
+    expect(sql).toContain("status in ('running', 'succeeded')");
     expect(sql).toContain('before update or delete');
     expect(sql).toContain('unique (candidate_id, reviewer_id_hash)');
     expect(CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS.length).toBeGreaterThan(20);
