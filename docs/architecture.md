@@ -41,6 +41,8 @@ flowchart LR
   end
 
   subgraph Knowledge["知识库与同步"]
+    Scheduler["外部 Scheduler"]
+    Refresh["rag:refresh 一次性 Job"]
     ProductDocs["产品文档 Markdown"]
     XUpdates["官方 X 更新"]
     Ingest["rag:ingest 全量入库"]
@@ -80,6 +82,11 @@ flowchart LR
   Response --> StreamApi
   Assets --> Web
 
+  Scheduler --> Refresh
+  Refresh --> ProductDocs
+  Refresh --> XUpdates
+  Refresh --> Ingest
+  Refresh --> SyncX
   ProductDocs --> Ingest
   XUpdates --> Ingest
   XUpdates --> SyncX

@@ -105,9 +105,11 @@ Docker / container 要求：
 1. 准备生产环境变量，使用密钥管理系统注入，不把 `.env` 打包进镜像。
 2. 运行 `pnpm rag:migrate`，只执行数据库迁移，不调用 embedding 或 LLM。
 3. 首次部署或全量重建时运行 `pnpm rag:ingest`。
-4. 日常同步官方 X / Twitter 更新时运行 `pnpm rag:sync:x`。
+4. 日常同步由外部 scheduler 运行 `pnpm rag:refresh`；低频官网/媒体全量重建运行 `pnpm rag:refresh -- --full`。先用 `--dry-run` 验证固定计划。
 5. 启动服务后用 `/health` 做 liveness，用 `/health/deep` 做发布或值班自检。
 6. 运行 `pnpm agent:smoke` 验证 health、产品问题路线和边界路线。
+
+刷新 Job 必须与 API/Telegram 进程分离，并在调度平台配置 single concurrency / `Forbid`。仓库侧还用 `.rag/knowledge-refresh/refresh.lock` 防止同一工作区重入，实际运行将脱敏步骤回执原子写入 `.rag/knowledge-refresh/latest.json` 和历史目录；非零退出或回执过期应触发告警。该本地锁不是分布式协调，不得用于替代多实例 scheduler 的并发策略。详见 [Scheduler-safe Knowledge Refresh](knowledge-refresh-operations.md)。
 
 备份要求：
 

@@ -187,6 +187,9 @@ pnpm docs:audit
 pnpm rag:ingest
 pnpm rag:ingest -- --rebuild-embedding-schema # 仅用于有意更换 embedding 维度
 pnpm rag:sync:x
+pnpm rag:refresh -- --dry-run
+pnpm rag:refresh
+pnpm rag:refresh -- --full
 pnpm rag:migrate
 pnpm rag:stats
 pnpm rag:evaluate
@@ -207,6 +210,7 @@ pnpm rag:knowledge:publication:work
 - `pnpm rag:ingest` 执行数据库迁移、重新生成 embeddings，并在同一事务内替换 pgvector chunks 和记录 ingestion run。
 - `pnpm rag:ingest -- --rebuild-embedding-schema` 会事务性清空知识 chunks、按当前 `EMBEDDING_DIMENSION` 重建 embedding 列和向量索引，再写入完整知识库；只在有意更换维度且已备份时使用。
 - `pnpm rag:sync:x` 只同步官方 X / Twitter 更新中新增或变更的 chunks，不会 prune 旧知识块。
+- `pnpm rag:refresh` 是供 cron/systemd/云调度器调用的一次性安全刷新 Job：默认执行 X 抓取与增量入库，`--full` 执行官网、媒体、审计、全量 X 和正式 ingest，`--dry-run` 只展示固定命令计划。实际运行使用 `.rag/knowledge-refresh/refresh.lock` 防止同工作区重入，并写入不含环境变量或异常原文的 latest/历史 JSON 回执；API 和 Telegram 进程不会自行调度。完整说明见 [Scheduler-safe Knowledge Refresh](docs/knowledge-refresh-operations.md)。
 - `pnpm rag:migrate` 只执行非破坏性数据库迁移，不调用 embedding 或 LLM；若检测到现有向量维度不匹配会明确失败，不会自动删列。
 - `pnpm rag:stats` 查看文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
 - `pnpm rag:evaluate` 运行便宜的 deterministic golden QA 子集；`pnpm rag:evaluate -- --provider` 使用正式 Agent/pgvector/OpenAI-compatible provider 做人工全链路评估。

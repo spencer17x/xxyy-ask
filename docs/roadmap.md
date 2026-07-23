@@ -27,6 +27,19 @@
 
 成功标准：无模型配置的默认导入仍可运行；auto 中一个 Agent 线程失败不会丢失确定性候选；required 不会静默降级；大导入不会产生无界模型调用；所有新知识仍只能停留在 `pending`。
 
+## Goal 22 Scheduler-safe Knowledge Refresh
+
+目标：把已有官网/X 刷新流水线变成可由外部 scheduler 安全调用的一次性 Job，不让 API 或 Telegram 进程承担抓取、迁移和知识写入。
+
+- [x] 暴露正式 `pnpm rag:refresh`：默认执行官方 X 抓取与增量 `rag:sync:x`，`--full` 固定执行官网同步、媒体 enrichment、文档审计、全量 X 和 `rag:ingest`。
+- [x] `--dry-run` 展示相同 allowlist 计划但不执行命令、不取写锁、不写回执；未知参数和任意 command 注入全部拒绝。
+- [x] 每次实际运行生成稳定 run id，按步骤记录 label、固定 `pnpm` 参数、时间、退出码及 `nonzero_exit | command_error`，失败立即停止。
+- [x] 回执只接受固定计划并丢弃未知字段，原子写入 `.rag/knowledge-refresh/latest.json` 和历史文件；不保存 stdout/stderr、异常原文、环境变量、endpoint 或 credential。
+- [x] 同一工作区使用 mode `0600` 排他锁；活跃同机 PID 阻止重入，死进程锁可恢复，跨主机锁使用 6 小时保守阈值，release token 防止旧执行器删除新锁。
+- [x] 明确外部 cron/systemd/CronJob 负责时间调度、single concurrency 和告警；本地锁不冒充分布式协调，命令不自动 commit/push 抓取结果。
+
+成功标准：同一工作区的增量/全量 Job 不重叠；失败产生非零退出和脱敏 receipt；dry-run 零副作用；API/Telegram 运行面无新写路径；调度平台可以基于退出码和 receipt 新鲜度告警。详细设计见 [Scheduler-safe Knowledge Refresh](knowledge-refresh-operations.md)。
+
 ## Paused / Out of Scope
 
 - [ ] 实际 MCP adapter、MCP server 和 project skills：当前阶段仍不作为对外或本地调用入口；v0.6 只交付未接线的安全能力平面契约。

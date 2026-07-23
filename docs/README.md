@@ -9,6 +9,7 @@
 - [功能状态](feature-status.md)
 - [生产运行、安全与观测](production-readiness.md)
 - [受控知识演进与 Knowledge Curator](knowledge-evolution.md)
+- [Scheduler-safe Knowledge Refresh](knowledge-refresh-operations.md)
 - [Allowlisted MEV Observation Data Adapter](evm-mev-observation-data-adapter.md)
 - [EVM Chain Analysis Composition & Evaluation Harness](evm-chain-analysis-harness.md)
 - [Mainnet Sampling Plan & Evidence Intake Control Plane](evm-chain-analysis-sampling.md)
@@ -46,6 +47,7 @@
 - `apps/api`：`GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream`、`GET /assets/*`。
 - `apps/telegram-bot`：Telegram Bot long polling 入口，复用 LangGraph 客服 Agent。
 - `apps/web`：静态聊天 UI。
+- `scripts/rag-refresh.mjs`：供外部 scheduler 调用的固定知识刷新 Job，提供 dry-run、同工作区锁和脱敏回执；不嵌入服务进程。
 
 ## 常用命令
 
@@ -69,12 +71,15 @@ pnpm docs:enrich:media
 pnpm docs:audit
 pnpm rag:ingest
 pnpm rag:sync:x
+pnpm rag:refresh -- --dry-run
+pnpm rag:refresh
+pnpm rag:refresh -- --full
 pnpm rag:stats
 pnpm rag:evaluate
 pnpm run telegram:dev
 ```
 
-`pnpm run app:dev -- --sync` 会执行增量 `x:scrape` 和 `rag:sync:x` 后启动服务；`--full-sync` 会同步官网、图片/视频可检索内容，执行文档审计和全量 X scrape，再正式 ingest。外部参考资料不进入正式知识库。
+`pnpm run app:dev -- --sync` 会执行增量 `x:scrape` 和 `rag:sync:x` 后启动服务；`--full-sync` 会同步官网、图片/视频可检索内容，执行文档审计和全量 X scrape，再正式 ingest。生产定时刷新使用独立 `pnpm rag:refresh` Job，不由 API/Telegram 自行运行。外部参考资料不进入正式知识库。
 
 ## HTTP 交互
 

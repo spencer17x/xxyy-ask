@@ -6,7 +6,7 @@
 
 - [x] LangGraph 客服 Runtime：`packages/agent-core` 使用 LangGraph JS 组织策略保护、planner、检索工具、证据观察和回答合成。当前只注册 `search_product_docs` 业务工具；账户、订单、钱包余额、私有交易记录、交易分析和投资建议请求会先进入边界或澄清回复。
 - [x] Product RAG：产品问题会检索 Postgres + pgvector 中的知识库 chunks，并通过 OpenAI-compatible chat completion 生成带引用回答。正式来源限定为 `docs.xxyy.io` 官方文档、`x.com/useXXYYio` 官方更新，以及未来经过审核的客服群知识；客服群来源当前为空。
-- [x] X / Twitter 增量同步：`pnpm run app:dev -- --sync` 执行增量抓取和 `rag:sync:x` 后启动服务；`pnpm run app:dev -- --full-sync` 用于低频全量抓取和重建后启动服务。
+- [x] Scheduler-safe 知识刷新：`pnpm rag:refresh` 提供外部 scheduler 可调用的 X 增量 Job，`--full` 执行官网/媒体/X 全量重建，`--dry-run` 验证固定计划；实际运行有同工作区锁、stale recovery、步骤级脱敏回执和失败退出，API/Telegram 不自行写库。
 - [x] HTTP 服务面：保留 `GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream` 和 `GET /assets/*`。
 - [x] Web UI：`GET /` 提供静态聊天界面，支持普通回答、流式回答、引用展示和产品知识库附件。
 - [x] Telegram Bot：`pnpm run telegram:dev` 通过 Telegram Bot API long polling 接收文本消息，并以 `channel: "telegram"` 复用同一套 LangGraph 客服 Agent。
@@ -32,7 +32,7 @@
 - [x] Reproducible Readiness Evidence Ledger v0.1：control store 按 publisher/operator/attestor 分权持久化不可变 policy、operations evidence 和由 persisted governed corpus 确定性生成的 evaluation report；attestation 只能引用这些精确指纹并在事务内重新执行 evaluator，旧的 caller-supplied result writer 已移除。contract-only 验证结果仍为 `blocked`，不是生产运维证明或 `ready` 声明。
 - [x] 静态资产：`GET /assets/*` 返回产品文档视频、图片等静态资源。
 - [x] 服务保护：API 对 JSON 请求体大小、聊天 POST 请求频率和跨域来源做基础限制，配置项为 `API_MAX_BODY_BYTES`、`API_RATE_LIMIT_MAX`、`API_RATE_LIMIT_WINDOW_MS` 和 `API_CORS_ORIGIN`。
-- [x] 本地开发命令：启动入口统一为 `pnpm run app:dev`、`pnpm run api:dev`、`pnpm run web:dev` 和 `pnpm run telegram:dev`；知识库更新通过 `app:dev` 的 `--sync`、`--full-sync` 或 `--ingest` 参数显式触发。
+- [x] 本地开发命令：启动入口统一为 `pnpm run app:dev`、`pnpm run api:dev`、`pnpm run web:dev` 和 `pnpm run telegram:dev`；启动前更新可用 `app:dev` 的 `--sync`、`--full-sync` 或 `--ingest`，独立调度使用 `pnpm rag:refresh`。
 
 ## Explicit Boundaries
 

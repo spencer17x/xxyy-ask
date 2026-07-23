@@ -44,6 +44,7 @@
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/telegram-bot`：Telegram Bot long polling 入口。
 - `apps/web`：静态聊天 UI。
+- `scripts/rag-refresh.mjs`：供外部 scheduler 调用的固定知识刷新 Job；提供 dry-run、同工作区锁和脱敏回执，不嵌入 API/Telegram 进程。
 - `docs/product-features`：知识库种子文档和静态资产。
 
 ## 运行模式
@@ -89,6 +90,7 @@ TRUST_PROXY=false
 - `pnpm run app:dev -- --sync`：启动前检查知识库，空库时 ingest，然后执行增量 X / Twitter 抓取和 `rag:sync:x`。
 - `pnpm run app:dev -- --full-sync`：启动前全量同步 `docs.xxyy.io` 中英文页面、图片 OCR、视频字幕/关键帧和 `x.com/useXXYYio` 更新，经审计后重建知识库。
 - `pnpm run app:dev -- --ingest`：启动前只执行知识库 ingest。
+- `pnpm rag:refresh`：独立增量刷新 Job；`--full` 执行官网/媒体/X 全量重建，`--dry-run` 只验证固定计划。生产定时任务优先使用该入口。
 - `NODE_ENV=production pnpm run app:dev`：生产模式跳过本地 Docker，默认不刷新知识库；可加 `--sync` 或 `--full-sync` 显式更新。
 - `pnpm run telegram:dev`：启动 Telegram Bot long polling。
 - `pnpm check`：lint、format check、typecheck、tests 和 deterministic golden QA。
@@ -136,6 +138,7 @@ pnpm run app:dev -- --full-sync
 - `pnpm docs:audit`：检查官网空页/404、资源 SHA、OCR、视频知识覆盖及其正文证据和英文兜底。
 - `pnpm rag:ingest`：执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run。
 - `pnpm rag:sync:x`：同步官方 X / Twitter 更新，只 embedding 新增或变更的 X chunks，不会 prune 旧 chunk。
+- `pnpm rag:refresh`：执行 scheduler-safe 知识刷新，使用 `.rag/knowledge-refresh/refresh.lock` 防止同工作区重入，并写入不含环境变量或异常原文的 latest/历史 receipt；外部 scheduler 仍需配置 single concurrency 和失败告警。
 - `pnpm admin:token:create -- <id> <role>`：生成只显示一次的管理令牌和 SHA-256 配置记录。
 - `pnpm rag:knowledge:publication:work`：领取一条持久化 PublicationJob，执行发布门禁与事务性 ingest；生产 API 不直接执行发布。
 - `pnpm rag:migrate`：只执行数据库迁移，不调用 embedding 或 LLM。
@@ -162,7 +165,7 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
 - 不要提交 `.rag/`、`.env`、数据库数据或密钥。
 - 不要在 `docker-compose.yml` 写死数据库密码；使用 `.env` 注入。
 - 不要把真实 API key 写入测试、README 或日志。
-- 生产 API 服务端不负责迁移；迁移和写库由 `pnpm run app:dev -- --sync`、`pnpm run app:dev -- --full-sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成。本地 `pnpm run app:dev -- --sync` 可以为空知识库做首次 bootstrap。
+- 生产 API 服务端不负责迁移；迁移和写库由独立 `pnpm rag:refresh` Job、`pnpm run app:dev -- --sync`、`pnpm run app:dev -- --full-sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成。本地 `pnpm run app:dev -- --sync` 可以为空知识库做首次 bootstrap。
 - 新增行为需要加测试；风险较高的改动跑 `pnpm check`。
 - 对外错误信息应清晰区分：
   - LLM 配置缺失

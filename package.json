@@ -43,6 +43,7 @@
     "rag:knowledge:reject": "pnpm --filter @xxyy/cli rag:knowledge:reject",
     "rag:knowledge:revise": "pnpm --filter @xxyy/cli rag:knowledge:revise",
     "rag:migrate": "pnpm --filter @xxyy/cli rag:migrate",
+    "rag:refresh": "node scripts/rag-refresh.mjs",
     "rag:stats": "pnpm --filter @xxyy/cli rag:stats",
     "rag:sync:x": "pnpm --filter @xxyy/cli rag:sync:x",
     "telegram:dev": "pnpm --filter @xxyy/telegram-bot start",
