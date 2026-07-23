@@ -544,6 +544,7 @@ export const chainAnalysisControlStoreErrorCodes = [
   'lease_not_found',
   'operations_evidence_not_found',
   'provisioning_conflict',
+  'provisioning_time_invalid',
   'provisioning_verification_failed',
   'readiness_policy_not_found',
   'retention_job_not_found',

@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
 import { sha256Fingerprint } from '@xxyy/evm-chain-analysis-harness';
-import { mainnetSamplingSourceApprovalSchema } from '@xxyy/evm-chain-analysis-readiness';
+import {
+  createMainnetSamplingSourceApproval,
+  mainnetSamplingSourceApprovalInputSchema,
+  mainnetSamplingSourceApprovalSchema,
+} from '@xxyy/evm-chain-analysis-readiness';
 
 import {
   EVM_CHAIN_ANALYSIS_CONTROL_STORE_VERSION,
@@ -97,6 +101,16 @@ export const productionProvisioningPlanInputSchema = z
   .object(productionProvisioningPlanInputShape)
   .strict()
   .superRefine(validateProductionProvisioningPlanInput);
+
+export const productionProvisioningPlanRequestSchema = z
+  .object({
+    approval: mainnetSamplingSourceApprovalInputSchema,
+    authorizationValidUntil: productionProvisioningPlanInputShape.authorizationValidUntil,
+    identities: productionProvisioningPlanInputShape.identities,
+    provisionedAt: productionProvisioningPlanInputShape.provisionedAt,
+    provisionedByHash: productionProvisioningPlanInputShape.provisionedByHash,
+  })
+  .strict();
 
 const productionProvisioningPlanCoreShape = {
   ...productionProvisioningPlanInputShape,
@@ -400,6 +414,9 @@ export type ProductionIdentityKind = (typeof productionIdentityKinds)[number];
 export type ProductionOwnerDomain = (typeof productionOwnerDomains)[number];
 export type ProductionProvisioningIdentity = z.output<typeof productionProvisioningIdentitySchema>;
 export type ProductionProvisioningPlanInput = z.input<typeof productionProvisioningPlanInputSchema>;
+export type ProductionProvisioningPlanRequest = z.input<
+  typeof productionProvisioningPlanRequestSchema
+>;
 export type ProductionProvisioningPlan = z.output<typeof productionProvisioningPlanSchema>;
 export type ProductionProvisioningVerificationClaimInput = z.input<
   typeof productionProvisioningVerificationClaimInputSchema
@@ -439,6 +456,16 @@ export function createProductionProvisioningPlan(
     ...body,
     planFingerprint,
     planId: `production_provisioning_plan_${planFingerprint.slice(7)}`,
+  });
+}
+
+export function createProductionProvisioningPlanFromRequest(
+  input: ProductionProvisioningPlanRequest,
+): ProductionProvisioningPlan {
+  const parsed = productionProvisioningPlanRequestSchema.parse(input);
+  return createProductionProvisioningPlan({
+    ...parsed,
+    approval: createMainnetSamplingSourceApproval(parsed.approval),
   });
 }
 

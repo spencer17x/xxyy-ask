@@ -1,5 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -8,6 +8,7 @@ import * as publicControlStoreApi from './index.js';
 
 const SOURCE_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = join(SOURCE_DIRECTORY, '../../..');
+const PRIVATE_CONTROL_APP_DIRECTORY = join(REPOSITORY_ROOT, 'apps/chain-control-cli');
 
 describe('chain-analysis control-store runtime isolation', () => {
   it('does not export unverified approval or authorization artifact writers', () => {
@@ -47,6 +48,9 @@ describe('chain-analysis control-store runtime isolation', () => {
       join(REPOSITORY_ROOT, 'packages/rag-core/src'),
     ]) {
       for (const path of await listTypeScriptFiles(directory)) {
+        if (path.startsWith(`${PRIVATE_CONTROL_APP_DIRECTORY}${sep}`)) {
+          continue;
+        }
         expect(await readFile(path, 'utf8'), path).not.toContain(
           '@xxyy/evm-chain-analysis-control-store',
         );

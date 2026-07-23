@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createProductionProvisioningPlan,
+  createProductionProvisioningPlanFromRequest,
   createProductionProvisioningVerificationClaim,
   productionProvisioningApplicationSchema,
   productionProvisioningPlanSchema,
@@ -14,7 +15,20 @@ import {
 
 describe('production approval and identity provisioning contracts', () => {
   it('content-addresses the single-owner baseline with eight role bindings', () => {
-    const { plan } = createContractOnlyProductionProvisioningFixture();
+    const { approval, identities, plan } = createContractOnlyProductionProvisioningFixture();
+    const {
+      approvalFingerprint: _approvalFingerprint,
+      approvalId: _approvalId,
+      version: _approvalVersion,
+      ...approvalRequest
+    } = approval;
+    const requestPlan = createProductionProvisioningPlanFromRequest({
+      approval: approvalRequest,
+      authorizationValidUntil: plan.authorizationValidUntil,
+      identities,
+      provisionedAt: plan.provisionedAt,
+      provisionedByHash: plan.provisionedByHash,
+    });
 
     expect(plan.targetChainIds).toEqual(['1']);
     expect(plan.protocols).toEqual(['uniswap_v2', 'uniswap_v3']);
@@ -72,6 +86,7 @@ describe('production approval and identity provisioning contracts', () => {
     expect(plan.planId).toBe(`production_provisioning_plan_${plan.planFingerprint.slice(7)}`);
     expect(JSON.stringify(plan)).not.toMatch(/\b(?:https?|wss?):|secretref:|endpoint/iu);
     expect(plan.approval.credentialsAllowed).toBe(false);
+    expect(requestPlan).toEqual(plan);
   });
 
   it('rejects changed retention, fixture markers, service collisions, and role-kind drift', () => {

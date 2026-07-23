@@ -40,6 +40,8 @@ interface ActiveAuthorizationRow extends PayloadRow {
   revocation_payload: unknown;
 }
 
+export const PRODUCTION_PROVISIONING_APPLICATION_WINDOW_SECONDS = 15 * 60;
+
 export interface ProductionProvisioningAuthorityVerifier {
   verify(input: {
     plan: ProductionProvisioningPlan;
@@ -56,8 +58,9 @@ export interface PgEvmChainAnalysisProductionProvisioningStore {
 export function createPgEvmChainAnalysisProductionProvisioningStore(options: {
   authorityVerifier: ProductionProvisioningAuthorityVerifier;
   client: PgControlClientLike;
+  clock?: () => Date;
 }): PgEvmChainAnalysisProductionProvisioningStore {
-  const { authorityVerifier, client } = options;
+  const { authorityVerifier, client, clock = () => new Date() } = options;
   return {
     async apply(input): Promise<ProductionProvisioningReceipt> {
       const application = productionProvisioningApplicationSchema.parse(input);
@@ -82,6 +85,7 @@ export function createPgEvmChainAnalysisProductionProvisioningStore(options: {
           );
           return existing;
         }
+        assertProvisioningApplicationWindow(application.plan, clock());
 
         await acquireControlLock(transaction, 'sampling-approval-schedule');
         for (const role of [
@@ -178,6 +182,24 @@ export function createPgEvmChainAnalysisProductionProvisioningStore(options: {
       await migrateEvmChainAnalysisControlStore(client);
     },
   };
+}
+
+function assertProvisioningApplicationWindow(
+  plan: ProductionProvisioningPlan,
+  appliedAt: Date,
+): void {
+  const appliedAtMs = appliedAt.getTime();
+  const scheduledAtMs = Date.parse(plan.provisionedAt);
+  if (
+    !Number.isFinite(appliedAtMs) ||
+    appliedAtMs < scheduledAtMs ||
+    appliedAtMs >= scheduledAtMs + PRODUCTION_PROVISIONING_APPLICATION_WINDOW_SECONDS * 1_000
+  ) {
+    throw new ChainAnalysisControlStoreError(
+      'provisioning_time_invalid',
+      'Production provisioning must start inside the approved application window.',
+    );
+  }
 }
 
 async function assertNoConflictingActiveApproval(

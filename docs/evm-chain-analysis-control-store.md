@@ -8,9 +8,9 @@
 
 - 不读取环境变量，也不创建数据库连接；composition root 必须显式注入 `PgControlClientLike`；
 - 不访问 RPC、Indexer、Explorer、HTTP、secret manager 或 provider endpoint；
-- 不导入 Agent、LangGraph、Capability、MCP、API、CLI 或 Telegram；
+- 不导入 Agent、LangGraph、Capability、MCP、API 或 Telegram；仅由隔离的 `apps/chain-control-cli` 注入 client，用于生产 provisioning；
 - 不包含真实主网样本、真实 reviewer 身份、生产 grant、provider credential 或生产 readiness evidence；
-- 未被 `apps/*`、`agent-core` 或 `rag-core` 引用，公开客服的链上问题边界保持不变。
+- 除隔离的 `apps/chain-control-cli` 外，不被 API、Web、Telegram、RAG CLI、`agent-core` 或 `rag-core` 引用，公开客服的链上问题边界保持不变。
 
 它是可部署 backend 实现，不是“已经部署并通过生产评审”的证明。包级 contract-only fixture、fake PostgreSQL client 和迁移测试不能作为主网 corpus、故障演练或 `ready` attestation。
 
@@ -19,7 +19,8 @@
 ```mermaid
 flowchart LR
   Contract["Readiness content-addressed contracts"] --> Store["Postgres control store"]
-  Identity["External identity / provisioning"] --> Grant["Immutable role grants"]
+  Identity["External identity / provisioning"] --> CLI["Private chain-control CLI"]
+  CLI --> Grant["Immutable role grants"]
   Grant --> Store
   Store --> Sampling["Approval / policy / plan / manifest"]
   Sampling --> Handoff["Manifest → candidate handoff"]
@@ -92,7 +93,7 @@ flowchart LR
 
 公共 governance/sampling store 不再暴露可直接写 grant 或 source approval 的 `recordAuthorization()` / `recordSourceApproval()`；对应 artifact writer 仅供包内 production provisioning 事务调用，不能通过 package export 绕过 automated authority verifier。生产部署应使用 `createPgEvmChainAnalysisProductionProvisioningStore()`：它把已确认的 chain/source/retention/owner baseline、八条 role binding、单 owner approval 和 authorization 固定为一个 content-addressed plan；至少 15 分钟确认窗口和自动验证通过后，才在一个事务内写入 approval、八个 grants、immutable receipt 和哈希链审计。活动 approval/grant 漂移、owner/service/verifier principal 分离失败、verifier/数据库/审计失败全部拒绝。完整设计见 [Chain Analysis Production Approval & Identity Provisioning](evm-chain-analysis-production-provisioning.md)。
 
-本仓库仍没有真实 evidence、受控账号登记、verifier、生产 grant 或 receipt。测试 verifier 和 contract-only hash 不能作为真实 provisioning。
+仓库现已提供独立 `apps/chain-control-cli` 和 Ed25519 verifier：owner request → immutable plan → machine attestation → bounded apply → receipt/audit verification。它要求独立数据库、固定 public key/authority id、受限文件和实际时钟窗口，且不被客服运行面导入。仓库仍没有真实 evidence、受控账号登记、部署后的 verifier identity、生产 grant 或 receipt；测试 key 和 contract-only hash 不能作为真实 provisioning。运维流程见 [Chain Control Production Provisioning Operations](chain-control-provisioning-operations.md)。
 
 ## Retention worker contract
 
@@ -181,11 +182,11 @@ owner 拒绝后使用既有 `rejected` 与 revision/supersession 流程；调用
 
 ## 使用与验证
 
-本包没有 CLI 或环境配置入口。未来内部 composition root 需要显式：
+本包本身仍不读取环境或创建连接；私有 `apps/chain-control-cli` 是当前唯一 composition root。生产操作需要显式：
 
-1. 创建并注入 PostgreSQL Pool/transaction client；
-2. 在部署 migration 阶段调用 `migrateEvmChainAnalysisControlStore()`；
-3. 注入真实 automated authority verifier，通过受保护 production provisioning store 原子写入 approval、identity grants 与 receipt；
+1. 通过 `CHAIN_CONTROL_DATABASE_URL` 连接与 Product RAG 分离的 PostgreSQL，远程连接验证 TLS；
+2. 用部署 migration 身份运行 `pnpm chain:control:migrate`；
+3. 用受保护 Ed25519 机器身份生成 attestation，并通过 runtime public key 验证后原子写入 approval、identity grants 与 receipt；
 4. 独立运行 sampling、review、retention 和 expired-lease reconciliation worker；
 5. 由受控 publisher/operator/attestor 分别提交真实 policy/evidence、生成 report 并重新计算 attestation；
 6. 把 backend unavailable、预算耗尽和 stale CAS 纳入真实故障演练。
@@ -195,9 +196,10 @@ owner 拒绝后使用既有 `rejected` 与 revision/supersession 流程；调用
 ```bash
 pnpm --filter @xxyy/evm-chain-analysis-control-store typecheck
 pnpm exec vitest run packages/evm-chain-analysis-control-store/src
+pnpm --filter @xxyy/chain-control-cli test
 pnpm check
 ```
 
-旧双槽 profile 的一次性 PostgreSQL 验证已被单 owner 设计取代，不能作为当前生产证据。readiness ledger 仍验证了 migration 二次执行、四类 artifact 单行幂等、精确 getter/lineage、无 lineage insert 拒绝及 contract-only `blocked` 结果；真实激活前需在目标 PostgreSQL 重跑单槽 handoff/review、三次失败终止、hash-chain audit、幂等和 append-only 验证。
+单 owner provisioning CLI 已在一次性真实 PostgreSQL 数据库验证 migration 二次执行、签名、apply/retry、receipt/normalized lineage、完整 audit chain 和 append-only trigger，随后删除测试数据库；它不是生产证据。readiness ledger 仍验证了四类 artifact 单行幂等、精确 getter/lineage、无 lineage insert 拒绝及 contract-only `blocked` 结果；真实激活前需在目标 PostgreSQL 重跑 provisioning、单槽 handoff/review、三次失败终止、hash-chain audit、幂等和 append-only 验证。
 
 下一阶段仍需：由 owner 完成真实 sampling source/legal-retention 审批和二次确认，部署 owner/service identities、数据库与 workers，配置 secret manager、metrics/alerting 和 provider failover，按 plan 采集并由 owner 复核主网 corpus，运行故障演练与长期 SLO，再由 readiness evaluator 生成可独立审计的结论。满足这些条件前不得接入 Capability 或客服运行面。

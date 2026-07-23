@@ -46,7 +46,7 @@
 
 - [ ] 实际 MCP server / adapter 暂停：不再提供 `product:mcp:dev`、`tx:mcp:dev` 或 MCP smoke 脚本；Capability Plane 基础库不启动 server，也不连接远端 MCP。
 - [ ] Project skills 暂停：不再保留仓库内 `skills/` 目录，Capability Plane 当前没有注册本地 Skill。
-- [ ] 公开交易分析入口仍暂停：EVM transaction/execution/MEV cores、三个 RPC adapter、composition/evaluation harness、readiness 控制面与 Postgres control backend 都没有 app 配置、Capability 注册或 Agent bridge；聊天中交易、Explorer、链上取证和 MEV 问题继续进入边界/澄清回复。
+- [ ] 公开交易分析入口仍暂停：EVM transaction/execution/MEV cores、三个 RPC adapter、composition/evaluation harness、readiness 控制面与 Postgres control backend 都没有 Capability 注册或 Agent bridge；新增的私有 `chain-control-cli` 只做生产 provisioning，不处理用户交易。聊天中交易、Explorer、链上取证和 MEV 问题继续进入边界/澄清回复。
 
 ## Planned Or Not Yet Complete
 
@@ -54,4 +54,4 @@
 - [ ] 更多渠道接入：在不改变客服 Agent 核心边界的前提下，继续接入更多入口。
 - [ ] Telegram Guest Mode 教学入口：在候选知识与审核权限模型之上接入 `/teach`、`/approve`、`/reject`，不直接自动发布群聊内容。
 - [ ] 安全与隐私增强：继续完善数据保留、删除策略和生产告警；Product RAG 的 prompt injection 隔离与敏感信息脱敏已落地。
-- [ ] 链上生产激活（Goal 20B）待 owner 执行：治理已改为一个真实 owner、四个隔离 service account 和一个 plan 外自动 verifier，不再依赖第二名真人。仍需接入受控人工账号与平台服务账号登记、生产 Postgres、Provider、evidence 与 workers，原子落 approval/grants/receipt，并实际通过 internal-readiness gate；完成前不接入运行面，也不声明 production ready。
+- [ ] 链上生产激活（Goal 20B）待 owner 执行：仓库已提供受控 request/plan、Ed25519 machine attestation、独立数据库 CLI、15 分钟 application window、receipt/8-grant lineage/audit verification，并通过一次性 PostgreSQL 集成验证。真实受控人工账号、四个 service account、authority key/policy evidence、目标生产 Postgres、Provider、workers、主网 corpus 和 readiness attestation 仍未部署；完成前不接入运行面，也不声明 production ready。

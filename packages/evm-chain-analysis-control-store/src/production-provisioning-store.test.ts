@@ -33,6 +33,7 @@ describe('PostgreSQL production approval and identity provisioning store', () =>
     const store = createPgEvmChainAnalysisProductionProvisioningStore({
       authorityVerifier,
       client,
+      clock: applicationClock,
     });
 
     const receipt = await store.apply({
@@ -106,6 +107,7 @@ describe('PostgreSQL production approval and identity provisioning store', () =>
     const conflictingApprovalStore = createPgEvmChainAnalysisProductionProvisioningStore({
       authorityVerifier: acceptingVerifier(),
       client: conflictingApprovalClient,
+      clock: applicationClock,
     });
 
     await expect(
@@ -136,6 +138,7 @@ describe('PostgreSQL production approval and identity provisioning store', () =>
     const conflictingAuthorizationStore = createPgEvmChainAnalysisProductionProvisioningStore({
       authorityVerifier: acceptingVerifier(),
       client: conflictingAuthorizationClient,
+      clock: applicationClock,
     });
 
     await expect(
@@ -162,6 +165,7 @@ describe('PostgreSQL production approval and identity provisioning store', () =>
     const revokedPlannedAuthorizationStore = createPgEvmChainAnalysisProductionProvisioningStore({
       authorityVerifier: acceptingVerifier(),
       client: revokedPlannedAuthorizationClient,
+      clock: applicationClock,
     });
 
     await expect(
@@ -194,6 +198,7 @@ describe('PostgreSQL production approval and identity provisioning store', () =>
         },
       },
       client,
+      clock: () => new Date('2026-07-25T01:00:00.000Z'),
     });
 
     await expect(
@@ -218,12 +223,36 @@ describe('PostgreSQL production approval and identity provisioning store', () =>
     const store = createPgEvmChainAnalysisProductionProvisioningStore({
       authorityVerifier: acceptingVerifier(),
       client,
+      clock: applicationClock,
     });
 
     await expect(
       store.apply({ plan: fixture.plan, verification: fixture.verification }),
     ).rejects.toMatchObject({ code: 'invalid_state' });
     expect(client.transactionEvents).toEqual(['begin', 'rollback']);
+  });
+
+  it('rejects a first application outside the scheduled provisioning window', async () => {
+    const fixture = createContractOnlyProductionProvisioningFixture();
+    for (const clock of [
+      () => new Date('2026-07-24T00:59:59.999Z'),
+      () => new Date('2026-07-24T01:15:00.000Z'),
+    ]) {
+      const client = new ScriptedPgClient();
+      const store = createPgEvmChainAnalysisProductionProvisioningStore({
+        authorityVerifier: acceptingVerifier(),
+        client,
+        clock,
+      });
+
+      await expect(
+        store.apply({ plan: fixture.plan, verification: fixture.verification }),
+      ).rejects.toMatchObject({ code: 'provisioning_time_invalid' });
+      expect(client.transactionEvents).toEqual(['begin', 'rollback']);
+      expect(
+        client.queries.some((query) => query.tag === 'production-provisioning-receipt-insert'),
+      ).toBe(false);
+    }
   });
 });
 
@@ -237,6 +266,10 @@ function acceptingVerifier(): ProductionProvisioningAuthorityVerifier {
 
 function eventKind(value: unknown): unknown {
   return (value as { eventKind?: unknown }).eventKind;
+}
+
+function applicationClock(): Date {
+  return new Date('2026-07-24T01:05:00.000Z');
 }
 
 function receiptAuthorizationRows(

@@ -352,6 +352,18 @@
 
 状态：`pending_owner_execution`。第二名真人不再是前置条件；当前仍缺少真实生产基础设施、Provider、evidence、workers、主网 corpus 和演练，因此继续阻止内部 Capability bridge 和任何 production-ready 声明。
 
+后续执行顺序固定为：
+
+1. **Goal 20B-1 / Real Production Provisioning**：仓库侧受控 request/plan、Ed25519 attestation、独立数据库 CLI、首次 apply 时间窗口、receipt/lineage/audit verification 和一次性 PostgreSQL 验证已完成；真实受控 owner/service identities、authority key/policy evidence、目标生产数据库和 production receipt 仍待 owner 执行。
+2. **Goal 20B-2 / Provider & Worker Data Plane**：为三个 adapter 配置双独立 Provider，接入 secret manager、共享 budget/circuit、cache/failover、metrics/alerting，并部署 sampling/review/retention/reconciliation workers。
+3. **Goal 20B-3 / Reviewed Mainnet Corpus**：按 plan 采集 Ethereum 主网公开样本，完成 manifest → candidate handoff，由唯一 owner 从单槽队列重放并批准/拒绝，形成真实 governed corpus。
+4. **Goal 20B-4 / Production Readiness Gate**：执行故障演练，形成 SLO/security/runbook evidence，在固定 corpus 上收敛误报、漏报与 abstention，并由 evidence ledger 重算真实 readiness attestation；成功标准只能是 canonical evaluator 返回 `ready`。
+5. **Goal 24 / First MCP-Skill Capability**：在 20B-4 `ready` 后，把 `chain.inspect_transaction` 与 `chain.detect_sandwich` 封装为内部只读能力，复用现有核心并增加显式授权、超时、成本、审计和结构化错误。
+6. **Goal 25 / Agent Multi-capability Orchestration**：Product RAG 继续处理产品知识，链上意图路由到已授权能力；LangGraph 负责有界工具循环、证据聚合、拒答和最终回答，输出来源、置信度、完整性与 unsupported reason。
+7. **Goal 26 / Product Entry & Continuous Operations**：在独立安全/产品评审后逐步开放 Web/Telegram 链上入口，并并行推进 Telegram 教学命令、知识质量、更多渠道、删除/保留、隐私和生产告警。
+
+依赖顺序不可跳过：`20B-1 → 20B-2 → 20B-3 → 20B-4 → 24 → 25 → 26`。仓库代码、fixture、空数据库集成测试或 Markdown 状态都不能替代真实生产证据。
+
 - [ ] owner 正式批准已选 Ethereum 主网、来源、法律条件和 90 天数据保留策略，将真实审批 evidence 与八条 role binding 安全写入控制面；contract-only artifact 不等于审批。
 - [ ] 提供真实 automated authority verifier，在确认窗口后核验精确 plan；在已迁移的生产 Postgres 中持久化并核对 receipt、八条 grant lineage 和 audit chain。
 - [ ] 部署最小权限 Postgres、一个受控 owner principal、四个隔离 service-account principal、对应 grant，以及 sampling/review/retention/reconciliation workers。

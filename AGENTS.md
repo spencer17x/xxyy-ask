@@ -41,6 +41,7 @@
 - `packages/evm-chain-analysis-control-store`：未接线、通过注入 client 执行 SQL 的 Postgres sampling/handoff/单 owner 治理证据存储、sampling/retention/review worker contract、可重算 readiness evidence ledger、哈希链审计、共享 provider budget 和 circuit CAS backend；不自行创建连接、不访问 RPC/HTTP、不含生产 grant/审批/真实证据。
 - `packages/evm-price-impact-sandwich-core`：未接线、离线的 lossless AMM price impact 和 Sandwich 四态判定。
 - `packages/evm-mev-observation-data-adapter`：未接线、启动时 allowlist 的同区块 swap、transaction-boundary pool state、actor token delta 和多 provider 冲突验证。
+- `apps/chain-control-cli`：与客服运行面隔离的生产 provisioning composition root；从受控 plan 与 Ed25519 attestation 写入独立 control Postgres，并重读 receipt/grant lineage/audit chain。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:evaluate`、`rag:ask`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/telegram-bot`：Telegram Bot long polling 入口。
@@ -58,6 +59,9 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_USER=xxyy
 POSTGRES_PASSWORD=replace_me_with_a_strong_password
+CHAIN_CONTROL_DATABASE_URL=
+CHAIN_CONTROL_AUTHORITY_SYSTEM_ID=
+CHAIN_CONTROL_AUTHORITY_PUBLIC_KEY_FILE=
 OPENAI_API_KEY=...
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=...
@@ -92,6 +96,7 @@ TRUST_PROXY=false
 - `pnpm run app:dev -- --full-sync`：启动前全量同步 `docs.xxyy.io` 中英文页面、图片 OCR、视频字幕/关键帧和 `x.com/useXXYYio` 更新，经审计后重建知识库。
 - `pnpm run app:dev -- --ingest`：启动前只执行知识库 ingest。
 - `pnpm rag:refresh`：独立增量刷新 Job；`--full` 执行官网/媒体/X 全量重建，`--dry-run` 只验证固定计划。生产定时任务优先使用该入口。
+- `pnpm chain:control:migrate` 与 `pnpm chain:provision:*`：只用于隔离的链上控制面 provisioning；不自动加载 `.env`，不接入客服或 Agent。
 - `NODE_ENV=production pnpm run app:dev`：生产模式跳过本地 Docker，默认不刷新知识库；可加 `--sync` 或 `--full-sync` 显式更新。
 - `pnpm run telegram:dev`：启动 Telegram Bot long polling。
 - `pnpm check`：lint、format check、typecheck、tests 和 deterministic golden QA。
@@ -147,6 +152,8 @@ pnpm run app:dev -- --full-sync
 - `pnpm rag:evaluate`：运行便宜的 deterministic golden QA 子集；`pnpm rag:evaluate -- --provider` 使用正式 Agent/pgvector/OpenAI-compatible provider 做人工全链路评估。
 - `pnpm rag:ask -- "问题"`：命令行临时调用客服 Agent。
 - `pnpm agent:smoke`：检查已启动服务的 health、产品问题路线和边界路线。
+- `pnpm chain:control:migrate`：迁移独立 chain-control PostgreSQL。
+- `pnpm chain:provision:plan/attest/apply/receipt/verify`：生成 plan、机器签名、窗口内原子 apply，并验证 receipt、八条 grant lineage 和治理 audit chain；真实输入不得提交到仓库。
 
 关键行为验证：
 
@@ -166,6 +173,7 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
 - 不要提交 `.rag/`、`.env`、数据库数据或密钥。
 - 不要在 `docker-compose.yml` 写死数据库密码；使用 `.env` 注入。
 - 不要把真实 API key 写入测试、README 或日志。
+- 不要提交 chain-control request、plan、attestation、receipt、authority private key 或真实 identity/evidence fingerprint；通过受保护的运维通道提供。远程 control DB 必须验证 TLS，且不能与 Product RAG 共库。
 - 生产 API 服务端不负责迁移；迁移和写库由独立 `pnpm rag:refresh` Job、`pnpm run app:dev -- --sync`、`pnpm run app:dev -- --full-sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成。本地 `pnpm run app:dev -- --sync` 可以为空知识库做首次 bootstrap。
 - 新增行为需要加测试；风险较高的改动跑 `pnpm check`。
 - 对外错误信息应清晰区分：
@@ -202,7 +210,7 @@ Codex Desktop、Codex CLI 和人工创建 Git 提交时统一使用 Conventional
 - `packages/rag-core`：`rag`
 - `packages/agent-core`：`agent`
 - `packages/shared`：`shared`
-- `apps/api`、`apps/web`、`apps/cli`、`apps/telegram-bot`：分别使用 `api`、`web`、`cli`、`telegram`
+- `apps/api`、`apps/web`、`apps/cli`、`apps/telegram-bot`：分别使用 `api`、`web`、`cli`、`telegram`；`apps/chain-control-cli` 使用 `infra`
 - 开发文档：`docs`；Docker、脚本和仓库工具链：`infra`；依赖更新：`deps`
 
 示例：
