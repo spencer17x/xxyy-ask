@@ -18,6 +18,7 @@
 - [Chain Analysis Governance Persistence & Shared Provider Controls](evm-chain-analysis-control-store.md)
 - [Reproducible Readiness Evidence Ledger](evm-chain-analysis-readiness-evidence-ledger.md)
 - [Chain Analysis Production Environment & Governance Decision Gate](evm-chain-analysis-production-decision-gate.md)
+- [Chain Analysis Production Approval & Identity Provisioning](evm-chain-analysis-production-provisioning.md)
 - [Roadmap](roadmap.md)
 
 ## 完整官网与产品知识库

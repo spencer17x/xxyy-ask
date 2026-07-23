@@ -24,7 +24,6 @@ import {
 
 import {
   ChainAnalysisControlStoreError,
-  createGovernanceAuthorization,
   createGovernanceAuthorizationRevocation,
   governanceAuthorizationRevocationSchema,
   governanceAuthorizationSchema,
@@ -33,7 +32,6 @@ import {
   type ChainAnalysisControlAuditEvent,
   type ChainAnalysisControlAuditStream,
   type GovernanceAuthorization,
-  type GovernanceAuthorizationInput,
   type GovernanceAuthorizationRevocation,
   type GovernanceAuthorizationRevocationInput,
   type RetentionJob,
@@ -109,7 +107,6 @@ export interface EvmChainAnalysisGovernanceStore {
     promotedAt: string;
   }): Promise<ReviewedReplayPromotion>;
   readAudit(stream: ChainAnalysisControlAuditStream): Promise<ChainAnalysisControlAuditEvent[]>;
-  recordAuthorization(input: GovernanceAuthorizationInput): Promise<GovernanceAuthorization>;
   recordCandidate(input: {
     actorIdHash: string;
     candidate: unknown;
@@ -483,69 +480,6 @@ export function createPgEvmChainAnalysisGovernanceStore(options: {
       return verifyChainAnalysisControlAuditEvents(await readControlAuditEvents(client, stream));
     },
 
-    async recordAuthorization(input): Promise<GovernanceAuthorization> {
-      const authorization = createGovernanceAuthorization(input);
-      return withControlTransaction(client, async (transaction) => {
-        await acquireControlLock(transaction, `authorization:${authorization.authorizationId}`);
-        const existing = await readPayloadByKey(
-          transaction,
-          `
-            /* control:authorization-by-id */
-            select payload from evm_chain_control_authorizations where authorization_id = $1
-          `,
-          authorization.authorizationId,
-        );
-        if (existing !== undefined) {
-          const parsed = governanceAuthorizationSchema.parse(existing);
-          assertSameFingerprint(
-            authorization.authorizationFingerprint,
-            parsed.authorizationFingerprint,
-            'Authorization',
-          );
-          return parsed;
-        }
-        await queryControlDatabase(
-          transaction,
-          `
-            /* control:authorization-insert */
-            insert into evm_chain_control_authorizations (
-              authorization_id,
-              authorization_fingerprint,
-              principal_id_hash,
-              roles,
-              granted_at,
-              valid_until,
-              payload
-            ) values ($1, $2, $3, $4::text[], $5::timestamptz, $6::timestamptz, $7::jsonb)
-          `,
-          [
-            authorization.authorizationId,
-            authorization.authorizationFingerprint,
-            authorization.principalIdHash,
-            authorization.roles,
-            authorization.grantedAt,
-            authorization.validUntil ?? null,
-            JSON.stringify(authorization),
-          ],
-        );
-        await appendControlAuditEvent(transaction, {
-          actorIdHash: authorization.grantedByHash,
-          entityFingerprint: authorization.authorizationFingerprint,
-          entityId: authorization.authorizationId,
-          entityType: 'authorization',
-          eventAt: authorization.grantedAt,
-          eventKind: 'authorization_recorded',
-          payload: {
-            principalIdHash: authorization.principalIdHash,
-            roles: authorization.roles,
-            validUntil: authorization.validUntil ?? null,
-          },
-          stream: 'governance',
-        });
-        return authorization;
-      });
-    },
-
     async recordCandidate(input): Promise<ReviewedReplayCandidate> {
       const candidate = reviewedReplayCandidateSchema.parse(input.candidate);
       assertActor(candidate.submitterIdHash, input.actorIdHash, 'Candidate submitter');
@@ -753,6 +687,7 @@ export function createPgEvmChainAnalysisGovernanceStore(options: {
         }
         const authorization = governanceAuthorizationSchema.parse(authorizationPayload);
         for (const role of authorization.roles) {
+          await acquireControlLock(transaction, `authorization-role-schedule:${role}`);
           await acquireControlLock(
             transaction,
             `authorization-role:${authorization.principalIdHash}:${role}`,
@@ -850,6 +785,73 @@ export function createPgEvmChainAnalysisGovernanceStore(options: {
       });
     },
   };
+}
+
+export async function recordGovernanceAuthorizationArtifact(
+  client: PgControlClientLike,
+  input: GovernanceAuthorization,
+): Promise<GovernanceAuthorization> {
+  const authorization = governanceAuthorizationSchema.parse(input);
+  for (const role of authorization.roles) {
+    await acquireControlLock(client, `authorization-role-schedule:${role}`);
+  }
+  await acquireControlLock(client, `authorization:${authorization.authorizationId}`);
+  const existing = await readPayloadByKey(
+    client,
+    `
+      /* control:authorization-by-id */
+      select payload from evm_chain_control_authorizations where authorization_id = $1
+    `,
+    authorization.authorizationId,
+  );
+  if (existing !== undefined) {
+    const parsed = governanceAuthorizationSchema.parse(existing);
+    assertSameFingerprint(
+      authorization.authorizationFingerprint,
+      parsed.authorizationFingerprint,
+      'Authorization',
+    );
+    return parsed;
+  }
+  await queryControlDatabase(
+    client,
+    `
+      /* control:authorization-insert */
+      insert into evm_chain_control_authorizations (
+        authorization_id,
+        authorization_fingerprint,
+        principal_id_hash,
+        roles,
+        granted_at,
+        valid_until,
+        payload
+      ) values ($1, $2, $3, $4::text[], $5::timestamptz, $6::timestamptz, $7::jsonb)
+    `,
+    [
+      authorization.authorizationId,
+      authorization.authorizationFingerprint,
+      authorization.principalIdHash,
+      authorization.roles,
+      authorization.grantedAt,
+      authorization.validUntil ?? null,
+      JSON.stringify(authorization),
+    ],
+  );
+  await appendControlAuditEvent(client, {
+    actorIdHash: authorization.grantedByHash,
+    entityFingerprint: authorization.authorizationFingerprint,
+    entityId: authorization.authorizationId,
+    entityType: 'authorization',
+    eventAt: authorization.grantedAt,
+    eventKind: 'authorization_recorded',
+    payload: {
+      principalIdHash: authorization.principalIdHash,
+      roles: authorization.roles,
+      validUntil: authorization.validUntil ?? null,
+    },
+    stream: 'governance',
+  });
+  return authorization;
 }
 
 async function validateCandidateTransition(

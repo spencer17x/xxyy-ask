@@ -23,6 +23,8 @@ const IMMUTABLE_TABLES = [
   'evm_chain_control_budget_settlements',
   'evm_chain_control_circuit_states',
   'evm_chain_control_sampling_approvals',
+  'evm_chain_control_production_provisioning_receipts',
+  'evm_chain_control_provisioning_receipt_grants',
   'evm_chain_control_sampling_policies',
   'evm_chain_control_sampling_plans',
   'evm_chain_control_sampling_manifests',
@@ -394,6 +396,41 @@ export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
       valid_until timestamptz not null,
       payload jsonb not null check (jsonb_typeof(payload) = 'object'),
       check (valid_until > valid_from)
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_production_provisioning_receipts (
+      receipt_id text primary key,
+      receipt_fingerprint text not null unique,
+      plan_id text not null unique,
+      plan_fingerprint text not null unique,
+      verification_fingerprint text not null unique,
+      approval_fingerprint text not null
+        references evm_chain_control_sampling_approvals(approval_fingerprint),
+      authorization_ids text[] not null check (cardinality(authorization_ids) = 9),
+      applied_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create unique index if not exists evm_chain_control_authorizations_id_fingerprint_idx
+      on evm_chain_control_authorizations (authorization_id, authorization_fingerprint)
+  `,
+  `
+    create table if not exists evm_chain_control_provisioning_receipt_grants (
+      receipt_id text not null
+        references evm_chain_control_production_provisioning_receipts(receipt_id),
+      ordinal integer not null check (ordinal between 1 and 9),
+      authorization_id text not null,
+      authorization_fingerprint text not null,
+      identity_evidence_hash text not null,
+      primary key (receipt_id, ordinal),
+      unique (receipt_id, authorization_id),
+      foreign key (authorization_id, authorization_fingerprint)
+        references evm_chain_control_authorizations(
+          authorization_id,
+          authorization_fingerprint
+        )
     )
   `,
   `

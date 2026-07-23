@@ -54,4 +54,4 @@
 - [ ] 更多渠道接入：在不改变客服 Agent 核心边界的前提下，继续接入更多入口。
 - [ ] Telegram Guest Mode 教学入口：在候选知识与审核权限模型之上接入 `/teach`、`/approve`、`/reject`，不直接自动发布群聊内容。
 - [ ] 安全与隐私增强：继续完善数据保留、删除策略和生产告警；Product RAG 的 prompt injection 隔离与敏感信息脱敏已落地。
-- [ ] 链上能力下一阶段：由有权人员完成真实来源/法律/保留审批，部署 sampling/review/control workers，并按已定义 plan 实际采集、通过 handoff 入候选、从双槽 work queue 领取、重放和双人复核公开主网 replay corpus；实现真实 provider 的 secret manager、跨实例预算/共享 circuit、持久审计、metrics/告警和 SLO backend，提交新鲜演练与安全证据，再由 evidence ledger 固定输入并实际通过 internal-readiness gate。完成内部授权、Capability adapter 和运行面安全审查前不接入运行面。
+- [ ] 链上生产激活（Goal 20B）延期：当前只有一名实际参与者，不能满足两名真实独立 approver/reviewer；已完成的 production provisioning boundary 保持 fail closed。增加真实协作者、组织 IdP/审批 verifier 和生产 Postgres 后，再原子落 approval/grants/receipt，部署 sampling/review/control workers、真实 Provider 运维面并实际通过 internal-readiness gate。完成前不接入运行面，也不声明 production ready。

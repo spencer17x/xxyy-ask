@@ -4,10 +4,17 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import * as publicControlStoreApi from './index.js';
+
 const SOURCE_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = join(SOURCE_DIRECTORY, '../../..');
 
 describe('chain-analysis control-store runtime isolation', () => {
+  it('does not export unverified approval or authorization artifact writers', () => {
+    expect(publicControlStoreApi).not.toHaveProperty('recordGovernanceAuthorizationArtifact');
+    expect(publicControlStoreApi).not.toHaveProperty('recordMainnetSamplingSourceApprovalArtifact');
+  });
+
   it('keeps the backend free of environment, raw network, RPC, Agent, MCP, and app dependencies', async () => {
     const sourceFiles = (await listTypeScriptFiles(SOURCE_DIRECTORY)).filter(
       (path) => !path.includes('.test.') && !path.includes('.test-helper.'),

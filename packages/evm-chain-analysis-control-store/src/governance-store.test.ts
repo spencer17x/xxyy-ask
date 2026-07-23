@@ -104,22 +104,42 @@ describe('PostgreSQL reviewed replay governance store', () => {
     expect(client.queries.some((query) => query.tag === 'retention-enqueue')).toBe(true);
   });
 
-  it('records canonical reviewer authorization as an immutable audited artifact', async () => {
+  it('does not expose unauthenticated grant bootstrap on the public governance store', () => {
     const client = new ScriptedPgClient();
     const store = createPgEvmChainAnalysisGovernanceStore({ client });
-    const input = {
+
+    expect(store).not.toHaveProperty('recordAuthorization');
+  });
+
+  it('revokes an authorization under the shared role schedule lock and audits the change', async () => {
+    const client = new ScriptedPgClient();
+    const store = createPgEvmChainAnalysisGovernanceStore({ client });
+    const authorization = createGovernanceAuthorization({
       grantedAt: '2026-07-22T00:00:00.000Z',
       grantedByHash: PUBLISHER,
-      principalIdHash: testHash('reviewer'),
-      roles: ['retention_worker', 'independent_reviewer'] as Array<
-        'retention_worker' | 'independent_reviewer'
-      >,
-    };
+      principalIdHash: testHash('revoked-sampling-worker'),
+      roles: ['sampling_worker'],
+      validUntil: '2027-07-22T00:00:00.000Z',
+    });
+    client.enqueue('authorization-read', [
+      authorizationRow(grant(PUBLISHER, ['governance_publisher'])),
+    ]);
+    client.enqueue('authorization-by-id', [{ payload: authorization }]);
 
-    const authorization = await store.recordAuthorization(input);
+    const revocation = await store.revokeAuthorization({
+      authorizationId: authorization.authorizationId,
+      reasonCode: 'identity_disabled',
+      revokedAt: '2026-07-23T00:00:00.000Z',
+      revokedByHash: PUBLISHER,
+    });
 
-    expect(authorization.roles).toEqual(['independent_reviewer', 'retention_worker']);
-    expect(client.auditEvents).toHaveLength(1);
+    expect(revocation.authorizationId).toBe(authorization.authorizationId);
+    expect(
+      client.queries
+        .filter((query) => query.tag === 'advisory-lock')
+        .map((query) => query.values[0]),
+    ).toContain('authorization-role-schedule:sampling_worker');
+    expect(client.auditEvents.map(eventKind)).toEqual(['authorization_revoked']);
     expect(client.transactionEvents).toEqual(['begin', 'commit']);
   });
 
@@ -273,6 +293,10 @@ function createGrants(fixture: Awaited<ReturnType<typeof createGovernanceStoreFi
     reviewerB: grant(fixture.reviews[1]!.reviewerIdHash, ['independent_reviewer']),
     submitter: grant(fixture.candidate.submitterIdHash, ['candidate_submitter']),
   };
+}
+
+function eventKind(value: unknown): unknown {
+  return (value as { eventKind?: unknown }).eventKind;
 }
 
 function grant(

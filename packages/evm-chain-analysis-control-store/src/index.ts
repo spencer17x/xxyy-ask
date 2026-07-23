@@ -56,6 +56,36 @@ export {
   type PgEvmChainAnalysisProviderControlStore,
 } from './provider-control-store.js';
 export {
+  createProductionProvisioningPlan,
+  createProductionProvisioningVerificationClaim,
+  productionIdentityKinds,
+  productionOwnerBaseline,
+  productionOwnerDomains,
+  productionProvisioningApplicationSchema,
+  productionProvisioningIdentitySchema,
+  productionProvisioningPlanInputSchema,
+  productionProvisioningPlanSchema,
+  productionProvisioningReceiptSchema,
+  productionProvisioningVerificationClaimInputSchema,
+  productionProvisioningVerificationClaimSchema,
+} from './production-provisioning-contracts.js';
+export type {
+  ProductionIdentityKind,
+  ProductionOwnerDomain,
+  ProductionProvisioningApplication,
+  ProductionProvisioningIdentity,
+  ProductionProvisioningPlan,
+  ProductionProvisioningPlanInput,
+  ProductionProvisioningReceipt,
+  ProductionProvisioningVerificationClaim,
+  ProductionProvisioningVerificationClaimInput,
+} from './production-provisioning-contracts.js';
+export {
+  createPgEvmChainAnalysisProductionProvisioningStore,
+  type PgEvmChainAnalysisProductionProvisioningStore,
+  type ProductionProvisioningAuthorityVerifier,
+} from './production-provisioning-store.js';
+export {
   createPgEvmChainAnalysisReadinessEvidenceStore,
   type PgEvmChainAnalysisReadinessEvidenceStore,
   type StoredProductionOperationsEvidence,

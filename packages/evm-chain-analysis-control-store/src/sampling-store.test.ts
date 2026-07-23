@@ -12,7 +12,7 @@ import { testHash } from './fixtures.test-helper.js';
 import { ScriptedPgClient, authorizationRow } from './scripted-pg.test-helper.js';
 
 describe('PostgreSQL mainnet sampling control store', () => {
-  it('records immutable approval/policy/plan artifacts and enqueues every quota slot', async () => {
+  it('records policy/plan from a persisted approval and enqueues every quota slot', async () => {
     const { approval, plan, policy } = createContractOnlySamplingFixture();
     const planner = testHash('sampling-planner');
     const authorization = plannerAuthorization(planner);
@@ -21,15 +21,11 @@ describe('PostgreSQL mainnet sampling control store', () => {
       'authorization-read',
       [authorizationRow(authorization)],
       [authorizationRow(authorization)],
-      [authorizationRow(authorization)],
     );
     client.enqueue('sampling-approval-read', [{ payload: approval }], [{ payload: approval }]);
     client.enqueue('sampling-policy-read', [{ payload: policy }]);
     const store = createPgEvmChainAnalysisSamplingStore({ client });
 
-    await expect(store.recordSourceApproval({ actorIdHash: planner, approval })).resolves.toEqual(
-      approval,
-    );
     await expect(store.recordPolicy({ actorIdHash: planner, policy })).resolves.toEqual(policy);
     await expect(store.recordPlan({ actorIdHash: planner, plan })).resolves.toEqual(plan);
 
@@ -37,18 +33,10 @@ describe('PostgreSQL mainnet sampling control store', () => {
       plan.totalTargetSamples,
     );
     expect(client.auditEvents.map(eventKind)).toEqual([
-      'sampling_approval_recorded',
       'sampling_policy_recorded',
       'sampling_plan_recorded',
     ]);
-    expect(client.transactionEvents).toEqual([
-      'begin',
-      'commit',
-      'begin',
-      'commit',
-      'begin',
-      'commit',
-    ]);
+    expect(client.transactionEvents).toEqual(['begin', 'commit', 'begin', 'commit']);
   });
 
   it('claims with SKIP LOCKED, records a fenced failure, and requires planner retry', async () => {
@@ -319,12 +307,13 @@ describe('PostgreSQL mainnet sampling control store', () => {
     ).rejects.toMatchObject({ code: 'authorization_missing' });
   });
 
-  it('fails closed without an explicit sampling role grant', async () => {
-    const { approval } = createContractOnlySamplingFixture();
+  it('does not expose source approval bootstrap and fails closed without a planner grant', async () => {
+    const { policy } = createContractOnlySamplingFixture();
     const store = createPgEvmChainAnalysisSamplingStore({ client: new ScriptedPgClient() });
 
+    expect(store).not.toHaveProperty('recordSourceApproval');
     await expect(
-      store.recordSourceApproval({ actorIdHash: testHash('unauthorized'), approval }),
+      store.recordPolicy({ actorIdHash: testHash('unauthorized'), policy }),
     ).rejects.toMatchObject({
       code: 'authorization_missing',
     });

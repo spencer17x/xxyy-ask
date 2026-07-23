@@ -109,10 +109,6 @@ export interface PgEvmChainAnalysisSamplingStore {
   }): Promise<SamplingCandidateHandoff>;
   recordPlan(input: { actorIdHash: string; plan: unknown }): Promise<MainnetSamplingPlan>;
   recordPolicy(input: { actorIdHash: string; policy: unknown }): Promise<MainnetSamplingPolicy>;
-  recordSourceApproval(input: {
-    actorIdHash: string;
-    approval: unknown;
-  }): Promise<MainnetSamplingSourceApproval>;
   retryIntakeJob(input: {
     actorIdHash: string;
     jobId: string;
@@ -744,64 +740,6 @@ export function createPgEvmChainAnalysisSamplingStore(options: {
       });
     },
 
-    async recordSourceApproval(input): Promise<MainnetSamplingSourceApproval> {
-      const approval = mainnetSamplingSourceApprovalSchema.parse(input.approval);
-      return withControlTransaction(client, async (transaction) => {
-        await assertGovernanceAuthorization(transaction, {
-          at: approval.approvedAt,
-          principalIdHash: input.actorIdHash,
-          role: 'sampling_planner',
-        });
-        await acquireControlLock(transaction, `sampling-approval:${approval.approvalId}`);
-        const existing = await readApprovalById(transaction, approval.approvalId);
-        if (existing !== undefined) {
-          assertSameFingerprint(
-            approval.approvalFingerprint,
-            existing.approvalFingerprint,
-            'Sampling source approval',
-          );
-          return existing;
-        }
-        await queryControlDatabase(
-          transaction,
-          `
-            /* control:sampling-approval-insert */
-            insert into evm_chain_control_sampling_approvals (
-              approval_id,
-              approval_fingerprint,
-              approved_at,
-              valid_from,
-              valid_until,
-              payload
-            ) values ($1, $2, $3::timestamptz, $4::timestamptz, $5::timestamptz, $6::jsonb)
-          `,
-          [
-            approval.approvalId,
-            approval.approvalFingerprint,
-            approval.approvedAt,
-            approval.validFrom,
-            approval.validUntil,
-            JSON.stringify(approval),
-          ],
-        );
-        await appendControlAuditEvent(transaction, {
-          actorIdHash: input.actorIdHash,
-          entityFingerprint: approval.approvalFingerprint,
-          entityId: approval.approvalId,
-          entityType: 'mainnet_sampling_source_approval',
-          eventAt: approval.approvedAt,
-          eventKind: 'sampling_approval_recorded',
-          payload: {
-            retentionPolicyId: approval.retentionPolicyId,
-            sourceKinds: approval.sourceKinds,
-            validUntil: approval.validUntil,
-          },
-          stream: 'governance',
-        });
-        return approval;
-      });
-    },
-
     async retryIntakeJob(input): Promise<SamplingIntakeJob> {
       return withControlTransaction(client, async (transaction) => {
         await assertGovernanceAuthorization(transaction, {
@@ -857,6 +795,62 @@ export function createPgEvmChainAnalysisSamplingStore(options: {
       });
     },
   };
+}
+
+export async function recordMainnetSamplingSourceApprovalArtifact(
+  client: PgControlClientLike,
+  input: MainnetSamplingSourceApproval,
+  actorIdHash: string,
+): Promise<MainnetSamplingSourceApproval> {
+  const approval = mainnetSamplingSourceApprovalSchema.parse(input);
+  await acquireControlLock(client, 'sampling-approval-schedule');
+  await acquireControlLock(client, `sampling-approval:${approval.approvalId}`);
+  const existing = await readApprovalById(client, approval.approvalId);
+  if (existing !== undefined) {
+    assertSameFingerprint(
+      approval.approvalFingerprint,
+      existing.approvalFingerprint,
+      'Sampling source approval',
+    );
+    return existing;
+  }
+  await queryControlDatabase(
+    client,
+    `
+      /* control:sampling-approval-insert */
+      insert into evm_chain_control_sampling_approvals (
+        approval_id,
+        approval_fingerprint,
+        approved_at,
+        valid_from,
+        valid_until,
+        payload
+      ) values ($1, $2, $3::timestamptz, $4::timestamptz, $5::timestamptz, $6::jsonb)
+    `,
+    [
+      approval.approvalId,
+      approval.approvalFingerprint,
+      approval.approvedAt,
+      approval.validFrom,
+      approval.validUntil,
+      JSON.stringify(approval),
+    ],
+  );
+  await appendControlAuditEvent(client, {
+    actorIdHash,
+    entityFingerprint: approval.approvalFingerprint,
+    entityId: approval.approvalId,
+    entityType: 'mainnet_sampling_source_approval',
+    eventAt: approval.approvedAt,
+    eventKind: 'sampling_approval_recorded',
+    payload: {
+      retentionPolicyId: approval.retentionPolicyId,
+      sourceKinds: approval.sourceKinds,
+      validUntil: approval.validUntil,
+    },
+    stream: 'governance',
+  });
+  return approval;
 }
 
 function policyInputOf(policy: MainnetSamplingPolicy) {

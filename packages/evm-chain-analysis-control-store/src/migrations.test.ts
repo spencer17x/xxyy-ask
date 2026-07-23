@@ -22,6 +22,13 @@ describe('chain-analysis control-store migrations', () => {
     expect(sql).toContain('create table if not exists evm_chain_control_budget_windows');
     expect(sql).toContain('create table if not exists evm_chain_control_circuit_heads');
     expect(sql).toContain('create table if not exists evm_chain_control_sampling_approvals');
+    expect(sql).toContain(
+      'create table if not exists evm_chain_control_production_provisioning_receipts',
+    );
+    expect(sql).toContain(
+      'create table if not exists evm_chain_control_provisioning_receipt_grants',
+    );
+    expect(sql).toContain('evm_chain_control_authorizations_id_fingerprint_idx');
     expect(sql).toContain('create table if not exists evm_chain_control_sampling_plans');
     expect(sql).toContain('create table if not exists evm_chain_control_sampling_manifests');
     expect(sql).toContain(
@@ -46,6 +53,8 @@ describe('chain-analysis control-store migrations', () => {
     expect(sql).toContain('evm_chain_control_operations_evidence_append_only');
     expect(sql).toContain('evm_chain_control_readiness_policies_append_only');
     expect(sql).toContain('evm_chain_control_readiness_attestations_lineage_required');
+    expect(sql).toContain('evm_chain_control_production_provisioning_receipts_append_only');
+    expect(sql).toContain('evm_chain_control_provisioning_receipt_grants_append_only');
     expect(sql).toContain('policy_fingerprint is not null\n          ) not valid');
     expect(sql).toContain('evm_chain_control_review_work_jobs_reviewer_idx');
     expect(sql).toContain("status in ('running', 'succeeded')");

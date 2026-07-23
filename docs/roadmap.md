@@ -293,14 +293,34 @@
 
 确认记录见 [Chain Analysis Production Environment & Governance Decision Gate](evm-chain-analysis-production-decision-gate.md)。该技术决策仍不等于真实审批、grant、Provider 配置、主网 evidence 或 `ready` 声明。
 
+已完成执行单元 **v0.14b2b2a / Goal 20A：Production Provisioning Boundary**：
+
+- [x] 固定 Ethereum chain 1、V2/V3、两类公开来源、90 天保留、已确认 owner baseline 和九个单角色/固定 owner-domain identity 的 content-addressed provisioning plan。
+- [x] 增加无默认实现的 external authority verifier、双 approver 四眼分离、identity evidence/principal hash 唯一性和有效期约束。
+- [x] 增加带 approval/role schedule advisory lock 的 active approval/grant preflight；预先撤销、并发漂移或数据库失败时回滚，原子写入 source approval、九个 grants、带规范化 FK lineage 的 immutable receipt 与治理 audit chain，并支持精确幂等。
+- [x] 将既有 authorization revocation 纳入相同 role schedule lock；撤销保持 append-only、可审计且不能被重复 provisioning 静默恢复。
+- [x] 从公共 governance store 移除未验证的 `recordAuthorization()` grant bootstrap；authorization artifact writer 仅在 package 内由 production provisioning 事务调用。
+- [x] 从公共 sampling store 移除可绕过 external verifier 的 `recordSourceApproval()`；sampling policy/plan 只能从已持久化、已验证 approval 开始。
+- [x] 保持无姓名/邮箱/证件/endpoint/credential/secret，无 Agent/Capability/MCP/API/CLI/Telegram 接线；contract-only verifier/hash 不被描述为真实授权。
+- [x] 一次性真实 PostgreSQL 验证 migration 幂等、owner baseline、1 approval / 9 grants / 1 receipt / 9 FK lineage、grant revocation、撤销后 fail closed 和 12 事件 audit chain；临时数据库与脚本已删除，输入仍为 contract-only。
+- [x] 单人开发阶段不伪造第二名 approver/reviewer；仓库边界完成后保持默认未激活，并把真实组织 provisioning 拆分为独立 Release Gate。
+
+仓库侧设计见 [Chain Analysis Production Approval & Identity Provisioning](evm-chain-analysis-production-provisioning.md)。
+
+延期发布门禁 **v0.14b2b2b / Goal 20B：Production Activation Gate**：
+
+状态：`deferred_single_owner`。它不阻塞知识库 Agent、MCP/Skill 设计和其他不连接真实链上数据面的开发，但阻止真实 sampling、生产 Provider、内部 Capability bridge 和任何 production-ready 声明。
+
+- [ ] 增加至少一名真实协作者，确保至少两名真实独立 approver/reviewer；不得由同一人控制多个账号替代独立性。
 - [ ] 由有权人员审查并正式批准已选 Ethereum 主网、来源、法律条件和 90 天数据保留策略，将真实审批 evidence 与 identity/grant 安全写入控制面；代码中的 contract-only artifact 不等于审批。
+- [ ] 提供组织 IdP/审批系统的真实 external verifier，在已迁移的生产 Postgres 中成功持久化并独立核验 receipt、九条 grant lineage 和 audit chain。
 - [ ] 部署最小权限 Postgres、真实 planner/worker/submitter/reviewer identity/grant、sampling/review/retention/reconciliation workers，按 plan 采集、通过 handoff 入候选并由两个独立 reviewer 从 work queue 领取、重放和复核公开主网样本；不把 manifest、handoff、queued slot 或 contract-only fixture 直接当作 reviewed evidence。
 - [ ] 实现 secret manager 配置解析、metrics/alerting 和 provider failover；配置数据库最小权限、加密、备份、保留策略，并验证 budget/circuit/audit backend unavailable 时 fail closed。
 - [ ] 执行 timeout、rate limit、provider conflict、reorg、审计/预算/circuit backend unavailable 等演练，提交新鲜 SLO、告警、security 和 runbook evidence。
 - [ ] 在固定 governed corpus 上持续运行 harness，逐条审阅 false positive、false negative 和 positive abstention，实际达到并锁定 internal-readiness gate。
 - [ ] 通过 evidence ledger 持久化精确 policy/evidence/report、重新计算真实 readiness attestation 并输出独立审计记录；只有 evaluator 为 `ready` 才能提出下一阶段内部 Capability Adapter & Authorization Bridge 方案。
 
-只有 v0.14b2b 实际通过 internal-readiness gate，且真实 provider 安全与运维评审完成后，才进入内部 Capability Adapter & Authorization Bridge 目标；公开客服接入仍需另行决策。
+只有 Goal 20B 和后续 v0.14b2b internal-readiness gate 实际通过，且真实 provider 安全与运维评审完成后，才进入内部 Capability Adapter & Authorization Bridge 的生产激活；公开客服接入仍需另行决策。
 
 ## GitHub Planning Convention
 
