@@ -1,16 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluateEvmChainAnalysisCorpus } from '@xxyy/evm-chain-analysis-harness';
 import {
-  evaluateProductionReadiness,
   fingerprintReviewedReplayLabel,
   recordReviewedReplayDecision,
 } from '@xxyy/evm-chain-analysis-readiness';
-import {
-  createContractOnlySamplingHandoffFixture,
-  createPassingOperationsEvidence,
-  createPassingReadinessPolicy,
-} from '@xxyy/evm-chain-analysis-readiness/test-fixtures';
+import { createContractOnlySamplingHandoffFixture } from '@xxyy/evm-chain-analysis-readiness/test-fixtures';
 
 import {
   createGovernanceAuthorization,
@@ -38,7 +32,6 @@ describe('PostgreSQL reviewed replay governance store', () => {
       [authorizationRow(grants.publisher)],
       [authorizationRow(grants.publisher)],
       [authorizationRow(grants.publisher)],
-      [authorizationRow(grants.attestor)],
     );
     client.enqueue(
       'candidate-read',
@@ -99,22 +92,6 @@ describe('PostgreSQL reviewed replay governance store', () => {
 
     expect(corpusExport.included).toHaveLength(1);
     expect(corpusExport.corpus.cases[0]?.id).toBe(fixture.candidate.payload.id);
-    const readiness = evaluateProductionReadiness({
-      corpusExport,
-      corpusReport: evaluateEvmChainAnalysisCorpus(corpusExport.corpus, {
-        evaluatedAt: '2026-07-22T11:45:00.000Z',
-      }),
-      evaluatedAt: '2026-07-22T12:00:00.000Z',
-      operationsEvidence: createPassingOperationsEvidence(),
-      policy: createPassingReadinessPolicy(),
-    });
-    client.enqueue('corpus-export-read', [{ payload: corpusExport }]);
-    expect(
-      await store.recordReadinessAttestation({
-        actorIdHash: grants.attestor.principalIdHash,
-        result: readiness,
-      }),
-    ).toEqual(readiness);
     expect((await store.readAudit('governance')).map((event) => event.eventKind)).toEqual([
       'candidate_recorded',
       'review_recorded',
@@ -122,9 +99,8 @@ describe('PostgreSQL reviewed replay governance store', () => {
       'governance_decision_recorded',
       'promotion_recorded',
       'corpus_export_recorded',
-      'readiness_attested',
     ]);
-    expect(client.transactionEvents.filter((event) => event === 'commit')).toHaveLength(7);
+    expect(client.transactionEvents.filter((event) => event === 'commit')).toHaveLength(6);
     expect(client.queries.some((query) => query.tag === 'retention-enqueue')).toBe(true);
   });
 
@@ -292,7 +268,6 @@ describe('PostgreSQL reviewed replay governance store', () => {
 
 function createGrants(fixture: Awaited<ReturnType<typeof createGovernanceStoreFixture>>) {
   return {
-    attestor: grant(testHash('readiness-attestor'), ['readiness_attestor']),
     publisher: grant(PUBLISHER, ['governance_publisher']),
     reviewerA: grant(fixture.reviews[0]!.reviewerIdHash, ['independent_reviewer']),
     reviewerB: grant(fixture.reviews[1]!.reviewerIdHash, ['independent_reviewer']),

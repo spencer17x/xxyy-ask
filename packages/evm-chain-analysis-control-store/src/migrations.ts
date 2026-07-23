@@ -13,7 +13,10 @@ const IMMUTABLE_TABLES = [
   'evm_chain_control_replay_promotions',
   'evm_chain_control_replay_tombstones',
   'evm_chain_control_corpus_exports',
+  'evm_chain_control_corpus_evaluation_reports',
+  'evm_chain_control_operations_evidence',
   'evm_chain_control_readiness_attestations',
+  'evm_chain_control_readiness_policies',
   'evm_chain_control_audit_events',
   'evm_chain_control_budget_policies',
   'evm_chain_control_budget_leases',
@@ -175,13 +178,83 @@ export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
     )
   `,
   `
+    create table if not exists evm_chain_control_readiness_policies (
+      policy_fingerprint text primary key,
+      actor_id_hash text not null,
+      recorded_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_operations_evidence (
+      evidence_fingerprint text primary key,
+      actor_id_hash text not null,
+      recorded_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create table if not exists evm_chain_control_corpus_evaluation_reports (
+      report_fingerprint text primary key,
+      corpus_export_fingerprint text not null
+        references evm_chain_control_corpus_exports(export_fingerprint),
+      corpus_fingerprint text not null,
+      corpus_id text not null,
+      actor_id_hash text not null,
+      evaluated_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object'),
+      unique (corpus_export_fingerprint, evaluated_at)
+    )
+  `,
+  `
     create table if not exists evm_chain_control_readiness_attestations (
       readiness_fingerprint text primary key,
+      corpus_report_fingerprint text not null
+        references evm_chain_control_corpus_evaluation_reports(report_fingerprint),
+      operations_evidence_fingerprint text not null
+        references evm_chain_control_operations_evidence(evidence_fingerprint),
+      policy_fingerprint text not null
+        references evm_chain_control_readiness_policies(policy_fingerprint),
       actor_id_hash text not null,
       evaluated_at timestamptz not null,
       status text not null,
       payload jsonb not null check (jsonb_typeof(payload) = 'object')
     )
+  `,
+  `
+    alter table evm_chain_control_readiness_attestations
+      add column if not exists corpus_report_fingerprint text
+        references evm_chain_control_corpus_evaluation_reports(report_fingerprint)
+  `,
+  `
+    alter table evm_chain_control_readiness_attestations
+      add column if not exists operations_evidence_fingerprint text
+        references evm_chain_control_operations_evidence(evidence_fingerprint)
+  `,
+  `
+    alter table evm_chain_control_readiness_attestations
+      add column if not exists policy_fingerprint text
+        references evm_chain_control_readiness_policies(policy_fingerprint)
+  `,
+  `
+    do $$
+    begin
+      if not exists (
+        select 1
+        from pg_constraint
+        where conname = 'evm_chain_control_readiness_attestations_lineage_required'
+          and conrelid = 'evm_chain_control_readiness_attestations'::regclass
+      ) then
+        alter table evm_chain_control_readiness_attestations
+          add constraint evm_chain_control_readiness_attestations_lineage_required
+          check (
+            corpus_report_fingerprint is not null
+            and operations_evidence_fingerprint is not null
+            and policy_fingerprint is not null
+          ) not valid;
+      end if;
+    end;
+    $$
   `,
   `
     create table if not exists evm_chain_control_retention_jobs (

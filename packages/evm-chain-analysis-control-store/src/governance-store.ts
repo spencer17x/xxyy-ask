@@ -4,7 +4,6 @@ import {
   createReviewedReplayCandidate,
   createReviewedReplayTombstone,
   evaluateReviewedReplayGovernance,
-  productionReadinessResultSchema,
   promoteReviewedReplayCandidate,
   recordReviewedReplayDecision,
   reviseReviewedReplayCandidate,
@@ -14,7 +13,6 @@ import {
   reviewedReplayPromotionSchema,
   reviewedReplayReviewSchema,
   reviewedReplayTombstoneSchema,
-  type ProductionReadinessResult,
   type ReviewedReplayCandidate,
   type ReviewedReplayCorpusExport,
   type ReviewedReplayGovernanceDecision,
@@ -116,10 +114,6 @@ export interface EvmChainAnalysisGovernanceStore {
     actorIdHash: string;
     candidate: unknown;
   }): Promise<ReviewedReplayCandidate>;
-  recordReadinessAttestation(input: {
-    actorIdHash: string;
-    result: unknown;
-  }): Promise<ProductionReadinessResult>;
   recordReview(input: {
     actorIdHash: string;
     review: unknown;
@@ -635,82 +629,6 @@ export function createPgEvmChainAnalysisGovernanceStore(options: {
           stream: 'governance',
         });
         return candidate;
-      });
-    },
-
-    async recordReadinessAttestation(input): Promise<ProductionReadinessResult> {
-      const result = productionReadinessResultSchema.parse(input.result);
-      return withControlTransaction(client, async (transaction) => {
-        await assertGovernanceAuthorization(transaction, {
-          at: result.evaluatedAt,
-          principalIdHash: input.actorIdHash,
-          role: 'readiness_attestor',
-        });
-        const corpus = await readPayloadByKey(
-          transaction,
-          `
-            /* control:corpus-export-read */
-            select payload from evm_chain_control_corpus_exports where export_fingerprint = $1
-          `,
-          result.corpusExportFingerprint,
-        );
-        if (corpus === undefined) {
-          throw new ChainAnalysisControlStoreError(
-            'invalid_state',
-            'Readiness attestation must reference a persisted governed corpus export.',
-          );
-        }
-        reviewedReplayCorpusExportSchema.parse(corpus);
-        await acquireControlLock(transaction, `readiness:${result.readinessFingerprint}`);
-        const existing = await readPayloadByKey(
-          transaction,
-          `
-            /* control:readiness-read */
-            select payload from evm_chain_control_readiness_attestations
-            where readiness_fingerprint = $1
-          `,
-          result.readinessFingerprint,
-        );
-        if (existing !== undefined) {
-          const parsed = productionReadinessResultSchema.parse(existing);
-          assertSameFingerprint(
-            result.readinessFingerprint,
-            parsed.readinessFingerprint,
-            'Readiness attestation',
-          );
-          return parsed;
-        }
-        await queryControlDatabase(
-          transaction,
-          `
-            /* control:readiness-insert */
-            insert into evm_chain_control_readiness_attestations (
-              readiness_fingerprint, actor_id_hash, evaluated_at, status, payload
-            ) values ($1, $2, $3::timestamptz, $4, $5::jsonb)
-          `,
-          [
-            result.readinessFingerprint,
-            input.actorIdHash,
-            result.evaluatedAt,
-            result.status,
-            JSON.stringify(result),
-          ],
-        );
-        await appendControlAuditEvent(transaction, {
-          actorIdHash: input.actorIdHash,
-          entityFingerprint: result.readinessFingerprint,
-          entityId: result.readinessFingerprint,
-          entityType: 'readiness_attestation',
-          eventAt: result.evaluatedAt,
-          eventKind: 'readiness_attested',
-          payload: {
-            corpusExportFingerprint: result.corpusExportFingerprint,
-            nextEvaluationAt: result.nextEvaluationAt,
-            status: result.status,
-          },
-          stream: 'governance',
-        });
-        return result;
       });
     },
 

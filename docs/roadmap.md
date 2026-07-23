@@ -211,7 +211,7 @@
 
 目标：先把 v0.14a 的纯契约落到独立、可审计、跨实例一致的 Postgres backend，但不配置生产身份、provider、主网数据或运行面入口。
 
-- [x] 新增独立 control-store package 和幂等 migration；artifact JSONB 重新执行原始 schema，候选 revision、review、decision、promotion、tombstone、export 和 readiness 写入重新运行 readiness 纯状态机。
+- [x] 新增独立 control-store package 和幂等 migration；artifact JSONB 重新执行原始 schema，候选 revision、review、decision、promotion、tombstone 和 export 写入重新运行 readiness 纯状态机。
 - [x] 持久化 content-addressed authorization/revocation，按操作时间检查 submitter、independent reviewer、publisher、retention worker、readiness attestor 和 provider operator role；同一 candidate/reviewer 只能有一个不可变 review。
 - [x] candidate 入库原子创建 retention job；多 worker 用 `FOR UPDATE SKIP LOCKED` 和 lease 领取，到期后生成 retention decision，并对已晋升 case 生成 tombstone。
 - [x] 治理与 provider control 使用独立 append-only hash-chain audit stream；artifact/audit 同事务提交，event/head 使用 sequence 和 previous fingerprint 闭合。
@@ -265,6 +265,21 @@
 
 成功标准：handoff、candidate、retention、两个 review slot 与原有 audit 原子提交；只有持有当前 attempt lease 的独立 reviewer 能提交；并发、失败重领和旧执行者不能产生重复或越权 review；contract-only 通过不能被描述为真实复核完成。详细设计见 [evm-chain-analysis-review-work-queue.md](evm-chain-analysis-review-work-queue.md)。
 
+## v0.14b2a4 Reproducible Readiness Evidence Ledger
+
+目标：在不创建真实运维证明、不产生 `ready` 声明且不接入运行面的前提下，移除 caller-supplied readiness result 的信任缺口，使每个 attestation 都能从已持久化的精确输入重新生成。
+
+- [x] 新增不可变、content-addressed readiness policy、production operations evidence 和 corpus evaluation report 表；report 必须引用 persisted governed corpus export。
+- [x] 移除 governance store 的 raw `recordReadinessAttestation(result)` 路径；调用方不能再提交自算结果。
+- [x] `evaluateCorpus()` 从 persisted export 确定性执行 harness evaluator；`evaluateReadiness()` 重读 export/report/evidence/policy、重新派生 report，并调用固定 `evaluateProductionReadiness()` 后原子写入 attestation。
+- [x] attestation 保存 report/evidence/policy 三个精确外键；fresh schema 强制 `NOT NULL`，升级 schema 用 `NOT VALID` check 阻止新无 lineage row，legacy null lineage 读取也 fail closed。
+- [x] 按 `governance_publisher`、`provider_operator`、`readiness_attestor` 分离角色；artifact/attestation 用 advisory lock、content fingerprint、lineage check 和 hash-chain audit 实现幂等与冲突拒绝。
+- [x] 补齐 missing artifact、wrong lineage、legacy lineage、角色缺失、数据库失败、幂等、migration 和 runtime isolation tests。
+- [x] 一次性真实 PostgreSQL 验证迁移二次执行、四类 artifact 单行幂等、getter 重读、七事件 hash chain、无 lineage insert 拒绝和 append-only update 拒绝；临时数据库与脚本已删除。
+- [x] contract-only operations bundle 不被描述为真实运维证据；综合结果保持 `blocked / corpus_quality_gate_failed`，没有创建生产 grant、真实 corpus 或 `ready` attestation。
+
+成功标准：任何 readiness 结论都只能由持久化 export、确定性 report、operations evidence 和 policy 的精确指纹重新计算；调用方不能绕过 evaluator 或替换 lineage；数据库/授权/指纹/lineage 失败全部回滚，正常但不达标的证据产生可审计 `blocked`。详细设计见 [evm-chain-analysis-readiness-evidence-ledger.md](evm-chain-analysis-readiness-evidence-ledger.md)。
+
 ## v0.14b2b Reviewed Mainnet Evidence & Provider Operations Validation（计划）
 
 目标：在包外部署 v0.14b1/v0.14b2a backend，完成真实审批并形成能够被独立审计的主网 corpus 与生产数据面证据；仍不注册 Capability 或改变客服运行面。
@@ -274,7 +289,7 @@
 - [ ] 实现 secret manager 配置解析、metrics/alerting 和 provider failover；配置数据库最小权限、加密、备份、保留策略，并验证 budget/circuit/audit backend unavailable 时 fail closed。
 - [ ] 执行 timeout、rate limit、provider conflict、reorg、审计/预算/circuit backend unavailable 等演练，提交新鲜 SLO、告警、security 和 runbook evidence。
 - [ ] 在固定 governed corpus 上持续运行 harness，逐条审阅 false positive、false negative 和 positive abstention，实际达到并锁定 internal-readiness gate。
-- [ ] 输出真实 readiness attestation 和独立审计记录；只有 evaluator 为 `ready` 才能提出下一阶段内部 Capability Adapter & Authorization Bridge 方案。
+- [ ] 通过 evidence ledger 持久化精确 policy/evidence/report、重新计算真实 readiness attestation 并输出独立审计记录；只有 evaluator 为 `ready` 才能提出下一阶段内部 Capability Adapter & Authorization Bridge 方案。
 
 只有 v0.14b2b 实际通过 internal-readiness gate，且真实 provider 安全与运维评审完成后，才进入内部 Capability Adapter & Authorization Bridge 目标；公开客服接入仍需另行决策。
 
