@@ -152,11 +152,32 @@ export interface TrustedAuthor {
   validTo?: string;
 }
 
+export type KnowledgeCurationMode = 'auto' | 'deterministic' | 'required';
+
+export interface KnowledgeCuratorAgentRunStats {
+  attemptedThreadCount: number;
+  eligibleThreadCount: number;
+  failedThreadCount: number;
+  failureCounts: {
+    invalid_output: number;
+    provider_error: number;
+    timeout: number;
+    unknown: number;
+  };
+  modelAvailable: boolean;
+  skippedBudgetThreadCount: number;
+  skippedByModeThreadCount: number;
+  skippedUnavailableThreadCount: number;
+  succeededThreadCount: number;
+}
+
 export interface TelegramImportResult {
   adminReplyCount: number;
   agentCandidateCount: number;
+  agentRunStats: KnowledgeCuratorAgentRunStats;
   candidateCount: number;
   created: KnowledgeCandidate[];
+  curationMode: KnowledgeCurationMode;
   deterministicCandidateCount: number;
   duplicateCount: number;
   messageCount: number;

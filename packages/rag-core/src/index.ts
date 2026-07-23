@@ -50,9 +50,12 @@ export type {
   ReviseKnowledgeCandidateInput,
 } from './knowledge-candidates.js';
 export {
+  DEFAULT_KNOWLEDGE_CURATOR_MAX_AGENT_THREADS,
   createKnowledgeMatchInspector,
   createPgKnowledgeMatchInspector,
   createOpenAiKnowledgeCuratorModel,
+  knowledgeCurationModes,
+  knowledgeCuratorAgentFailureCodes,
   runKnowledgeCurator,
 } from './knowledge-curator.js';
 export {
@@ -96,6 +99,9 @@ export type {
 export type {
   CuratorThreadInput,
   CuratorThreadMessage,
+  KnowledgeCurationMode,
+  KnowledgeCuratorAgentFailureCode,
+  KnowledgeCuratorAgentRunStats,
   KnowledgeCuratorModel,
   KnowledgeCuratorProposal,
   KnowledgeCuratorRunResult,

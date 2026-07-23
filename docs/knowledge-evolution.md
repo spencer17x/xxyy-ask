@@ -1,6 +1,6 @@
 # 受控知识演进与 Knowledge Curator
 
-当前实现不会让模型直接“学习群聊”或自动修改线上知识。Telegram 消息先经过作者验证、线程重建、确定性规则与可选 Knowledge Curator Agent，生成 `pending` 候选；只有人工审核和现有发布门禁全部通过后，才会进入 `admin_verified` 知识库。
+当前实现不会让模型直接“学习群聊”或自动修改线上知识。Telegram 消息先经过作者验证、线程重建、确定性规则与受控 Knowledge Curator Agent，生成 `pending` 候选；只有人工审核和现有发布门禁全部通过后，才会进入 `admin_verified` 知识库。
 
 Web、Telegram Bot、API 和 CLI 始终只读取已经发布到 pgvector 的正式知识。公开客服运行面没有候选写入、批准或发布工具。
 
@@ -9,7 +9,7 @@ flowchart LR
   Export["Telegram JSON 导出"] --> Role["作者角色与有效期验证"]
   Role --> Thread["reply 线程与相邻上下文重建"]
   Thread --> Rules["确定性直接回复提取"]
-  Thread --> Agent["可选 Curator Agent"]
+  Thread --> Agent["Auto / deterministic / required Curator"]
   Rules --> Guard["脱敏 / 边界 / 标准化"]
   Agent --> Guard
   Guard --> Match["候选与正式 chunk 去重、冲突检查"]
@@ -106,17 +106,26 @@ pnpm rag:knowledge:import:telegram -- /absolute/path/result.json \
   --admin-id 987654321
 ```
 
-默认只启用高精度确定性路径：管理员直接回复普通成员，问题属于 `product_qa` 或 `how_to`，且文本非空。导入器会重建完整 reply component，并附加最多一条相邻上下文用于审核。
+默认使用 `auto` 模式：先运行高精度确定性路径；如果 Chat 模型配置完整，只把包含已验证作者、尚未被确定性路径完整覆盖的多消息线程交给 Curator Agent。没有配置模型时自动安全退化为纯确定性提取，不会阻止管理员导入。
 
-需要识别跨多条消息、补全上下文或非直接回复时，显式开启 Agent：
+三种模式可由 CLI、管理 API 和管理后台统一选择：
 
 ```bash
-pnpm rag:knowledge:import:telegram -- /absolute/path/result.json --agent
+pnpm rag:knowledge:import:telegram -- /absolute/path/result.json \
+  --curation-mode auto
+pnpm rag:knowledge:import:telegram -- /absolute/path/result.json \
+  --curation-mode deterministic
+pnpm rag:knowledge:import:telegram -- /absolute/path/result.json \
+  --curation-mode required
 ```
 
-`--agent` 使用 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`。模型只处理包含已验证作者且确定性路径未完整覆盖的多消息线程；普通管理员直接回复不会为“使用 Agent”而重复调用模型。
+- `auto`（默认）：模型可用时自动处理复杂线程；模型缺失或单线程调用失败时保留确定性结果，并返回脱敏失败统计。
+- `deterministic`：完全不调用模型，适合离线导入、成本控制或故障排查；兼容别名为 `--no-agent`。
+- `required`：明确要求 Agent；模型缺失、任一线程失败或需要调用的线程超过单批上限时整批失败关闭；原有 `--agent` 继续作为该模式的兼容别名。
 
-导入摘要包含：消息/线程数、已验证和未验证作者消息数、确定性与 Agent 候选数、被拒绝的 Agent proposal、边界过滤数、重复数和 Curator run ID。
+Agent 使用 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`。普通管理员直接回复不会为了“使用 Agent”重复调用模型。每次导入按稳定线程顺序最多尝试 20 个 Agent 线程；`auto` 会统计因预算跳过的剩余线程，`required` 会拒绝超预算导入。自动模式按线程隔离错误，不保留 Provider 异常原文，只输出 `timeout`、`provider_error`、`invalid_output`、`unknown` 四类计数。
+
+导入摘要包含：模式、消息/线程数、已验证和未验证作者消息数、Agent eligible/attempted/succeeded/failed/跳过统计、确定性与 Agent 候选数、被拒绝的 Agent proposal、边界过滤数、重复数和 Curator run ID。
 
 ## 3. Curator 处理与风险
 
@@ -245,6 +254,7 @@ pnpm admin:token:create -- alice admin
 - 查看 revision、review、publication audit timeline。
 - 维护按 Chat、用户和有效期生效的可信作者。
 - 上传 Telegram Desktop JSON，默认自动使用可信名册和可用的 Telegram 当前管理员查询，不接受客户端伪造 `admin-id`。
+- Telegram 导入默认使用 Curator `auto` 模式，也可显式切换为纯确定性或 required；结果页显示不含消息原文的 Agent 调用、失败与跳过统计。
 - 查看发布任务、失败原因、尝试次数和安全重试。
 
 后台不能直接编辑 pgvector 行；候选 revision、审核记录、版本化 Markdown 和 ingestion run 是事实源，向量索引只是派生数据。
@@ -263,7 +273,7 @@ Worker 继续使用本节已有的 Markdown、边界、检索、Golden QA 和 in
 
 ## 验证
 
-相关单元测试覆盖：角色有效期、当前管理员历史风险、匿名/越权作者拒绝、线程重建、PII 脱敏、Agent Schema 与消息权限校验、重复/冲突识别、候选 revision/review、pending-only、管理认证/RBAC、actor 防伪、管理 body 限制以及 PublicationJob 状态机。`docs/eval/knowledge-curator-golden.jsonl` 还提供版本化的确定性 Curator 回归样本。
+相关单元测试覆盖：角色有效期、当前管理员历史风险、匿名/越权作者拒绝、线程重建、PII 脱敏、Agent Schema 与消息权限校验、自动路由、模型缺失降级、单线程失败隔离、required fail-closed、调用预算、重复/冲突识别、候选 revision/review、pending-only、管理认证/RBAC、actor 防伪、管理 body 限制以及 PublicationJob 状态机。`docs/eval/knowledge-curator-golden.jsonl` 还提供版本化的确定性 Curator 回归样本。
 
 ```bash
 pnpm check
@@ -277,5 +287,6 @@ pnpm check
 - 不根据高频发言、投票或用户共识自动改变产品事实。
 - 不抓取 Telegram 消息中的任意链接并自动发布。
 - 不自动批准高质量分候选。
+- `auto` 模式不会重试失败线程、自动提高调用上限或把参与者发言提升为权威来源。
 - 尚未提供 Telegram Guest Mode 的 `/teach`、`/approve`、`/reject`；这些入口必须复用当前服务与门禁。
 - 当前 Publication Worker 是显式 CLI 单任务执行器；常驻调度、跨重启长任务编排和 Temporal 属于后续规模化阶段。

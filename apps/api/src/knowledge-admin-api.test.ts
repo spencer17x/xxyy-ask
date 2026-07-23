@@ -243,8 +243,25 @@ describe('handleKnowledgeAdminApi', () => {
     const importTelegram = vi.fn<KnowledgeAdminServices['importTelegram']>().mockResolvedValue({
       adminReplyCount: 1,
       agentCandidateCount: 0,
+      agentRunStats: {
+        attemptedThreadCount: 0,
+        eligibleThreadCount: 0,
+        failedThreadCount: 0,
+        failureCounts: {
+          invalid_output: 0,
+          provider_error: 0,
+          timeout: 0,
+          unknown: 0,
+        },
+        modelAvailable: false,
+        skippedBudgetThreadCount: 0,
+        skippedByModeThreadCount: 0,
+        skippedUnavailableThreadCount: 0,
+        succeededThreadCount: 0,
+      },
       candidateCount: 1,
       created: [],
+      curationMode: 'auto',
       deterministicCandidateCount: 1,
       duplicateCount: 0,
       messageCount: 2,
@@ -279,6 +296,39 @@ describe('handleKnowledgeAdminApi', () => {
     expect(forged.statusCode).toBe(400);
     expect(tooLarge.statusCode).toBe(413);
     expect(importTelegram).not.toHaveBeenCalled();
+  });
+
+  it('defaults Telegram imports to auto curation and maps the legacy agent flag', async () => {
+    const importTelegram = vi
+      .fn<KnowledgeAdminServices['importTelegram']>()
+      .mockRejectedValue(new Error('stop after input capture'));
+    const services = knowledgeAdminServices({ importTelegram });
+
+    await callAdmin({
+      authenticator: authenticator('admin'),
+      body: { rawExport: { messages: [] } },
+      getServices: () => Promise.resolve(services),
+      method: 'POST',
+      token: TOKEN,
+      url: '/admin/api/imports/telegram',
+    });
+    await callAdmin({
+      authenticator: authenticator('admin'),
+      body: { rawExport: { messages: [] }, useAgent: true },
+      getServices: () => Promise.resolve(services),
+      method: 'POST',
+      token: TOKEN,
+      url: '/admin/api/imports/telegram',
+    });
+
+    expect(importTelegram).toHaveBeenNthCalledWith(1, {
+      curationMode: 'auto',
+      rawExport: { messages: [] },
+    });
+    expect(importTelegram).toHaveBeenNthCalledWith(2, {
+      curationMode: 'required',
+      rawExport: { messages: [] },
+    });
   });
 
   it('reports knowledge database connectivity failures as unavailable', async () => {

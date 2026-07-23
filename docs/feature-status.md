@@ -10,7 +10,7 @@
 - [x] HTTP 服务面：保留 `GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream` 和 `GET /assets/*`。
 - [x] Web UI：`GET /` 提供静态聊天界面，支持普通回答、流式回答、引用展示和产品知识库附件。
 - [x] Telegram Bot：`pnpm run telegram:dev` 通过 Telegram Bot API long polling 接收文本消息，并以 `channel: "telegram"` 复用同一套 LangGraph 客服 Agent。
-- [x] Knowledge Curator MVP：Telegram Desktop JSON 可按角色有效期验证作者、重建 reply 线程、脱敏、分类、标准化、去重、检查正式 chunk 冲突并生成质量/风险信息；默认确定性提取，`--agent` 可选处理多消息上下文。所有结果只进入 `pending`，必须人工批准并通过发布门禁才会写入 `admin_verified` 和 pgvector。
+- [x] Knowledge Curator Auto Mode：Telegram Desktop JSON 可按角色有效期验证作者、重建 reply 线程、脱敏、分类、标准化、去重、检查正式 chunk 冲突并生成质量/风险信息；默认 `auto` 只把确定性路径未覆盖的复杂线程交给已配置模型，模型缺失或单线程失败时安全降级并返回脱敏统计，同时保留 deterministic/required 模式和调用预算。所有结果只进入 `pending`，必须人工批准并通过发布门禁才会写入 `admin_verified` 和 pgvector。
 - [x] 知识治理管理面：`GET /admin` 提供独立 Bearer Token 认证和 `viewer/reviewer/publisher/admin` RBAC，支持候选上下文、重复/冲突对比、revision/history、批准、拒绝、可信作者和 Telegram 导入；公开客服 API 仍不暴露知识写入能力。
 - [x] 可靠发布任务：后台只创建 `PublicationJob`；CLI Worker 使用租约领取任务并复用既有发布门禁，支持失败状态、审计、幂等申请和安全重试，最终候选状态与 pgvector ingest 在同一数据库事务完成。
 - [x] 新旧规则策略：当前问题默认排除被 `supersedes` 替代的知识，历史追溯问题仍可检索旧版本。

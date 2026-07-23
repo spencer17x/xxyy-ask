@@ -20,6 +20,13 @@ describe('runKnowledgeCurator', () => {
 
     expect(result).toMatchObject({
       agentCandidateCount: 0,
+      agentRunStats: {
+        attemptedThreadCount: 0,
+        eligibleThreadCount: 0,
+        failedThreadCount: 0,
+        skippedUnavailableThreadCount: 0,
+      },
+      curationMode: 'auto',
       deterministicCandidateCount: 1,
       rejectedAgentProposalCount: 0,
       runId: 'curator_run_1',
@@ -70,6 +77,12 @@ describe('runKnowledgeCurator', () => {
       status: 'trusted_author',
     });
     expect(result.candidates[0]?.riskFlags).toContain('agent_generated');
+    expect(result.agentRunStats).toMatchObject({
+      attemptedThreadCount: 1,
+      eligibleThreadCount: 1,
+      failedThreadCount: 0,
+      succeededThreadCount: 1,
+    });
   });
 
   it('rejects a model proposal that cites a participant as the answer authority', async () => {
@@ -95,6 +108,84 @@ describe('runKnowledgeCurator', () => {
 
     expect(result.candidates).toEqual([]);
     expect(result.rejectedAgentProposalCount).toBe(1);
+  });
+
+  it('auto mode safely skips eligible threads when no model is configured', async () => {
+    const result = await runKnowledgeCurator({
+      extraction: multiMessageExtraction(),
+      runId: 'curator_run_auto_without_model',
+    });
+
+    expect(result.curationMode).toBe('auto');
+    expect(result.agentRunStats).toMatchObject({
+      attemptedThreadCount: 0,
+      eligibleThreadCount: 1,
+      modelAvailable: false,
+      skippedUnavailableThreadCount: 1,
+    });
+  });
+
+  it('isolates model failures in auto mode but fails closed in required mode', async () => {
+    const model: KnowledgeCuratorModel = {
+      model: 'curator-model',
+      promptVersion: 'curator-v1',
+      curateThread: () => Promise.reject(new Error('Knowledge Curator model timed out after 1ms.')),
+    };
+
+    const automatic = await runKnowledgeCurator({
+      extraction: mixedDirectAndMultiMessageExtraction(),
+      mode: 'auto',
+      model,
+      runId: 'curator_run_auto_failure',
+    });
+
+    expect(automatic.candidates).toHaveLength(1);
+    expect(automatic.candidates[0]?.extractionMethod).toBe('deterministic_direct_reply');
+    expect(automatic.agentRunStats).toMatchObject({
+      attemptedThreadCount: 1,
+      failedThreadCount: 1,
+      failureCounts: { timeout: 1 },
+      succeededThreadCount: 0,
+    });
+    await expect(
+      runKnowledgeCurator({
+        extraction: multiMessageExtraction(),
+        mode: 'required',
+        model,
+        runId: 'curator_run_required_failure',
+      }),
+    ).rejects.toThrow('timed out');
+  });
+
+  it('caps automatic model calls and rejects over-budget required imports', async () => {
+    const curateThread = vi.fn<KnowledgeCuratorModel['curateThread']>().mockResolvedValue([]);
+    const input = {
+      extraction: twoMultiMessageThreadsExtraction(),
+      maxAgentThreads: 1,
+      model: { curateThread, model: 'curator-model', promptVersion: 'curator-v1' },
+    };
+
+    const automatic = await runKnowledgeCurator({
+      ...input,
+      mode: 'auto',
+      runId: 'curator_run_auto_budget',
+    });
+
+    expect(curateThread).toHaveBeenCalledOnce();
+    expect(curateThread.mock.calls[0]?.[0].rootMessageId).toBe('1');
+    expect(automatic.agentRunStats).toMatchObject({
+      attemptedThreadCount: 1,
+      eligibleThreadCount: 2,
+      skippedBudgetThreadCount: 1,
+      succeededThreadCount: 1,
+    });
+    await expect(
+      runKnowledgeCurator({
+        ...input,
+        mode: 'required',
+        runId: 'curator_run_required_budget',
+      }),
+    ).rejects.toThrow('exceeding the per-import limit');
   });
 
   it('adds deterministic duplicate and conflict evidence before persistence', async () => {
@@ -209,6 +300,101 @@ function multiMessageExtraction() {
           id: 3,
           reply_to_message_id: 2,
           text: '在提醒设置中开启，保存后生效。',
+        },
+      ],
+    },
+    { trustedAuthors: [trustedAuthor()] },
+  );
+}
+
+function twoMultiMessageThreadsExtraction() {
+  return extractTelegramKnowledgeCandidates(
+    {
+      id: -100123,
+      messages: [
+        {
+          date: '2026-07-15T01:00:00Z',
+          from_id: 'user456',
+          id: 1,
+          text: 'XXYY 如何设置价格提醒？',
+        },
+        {
+          date: '2026-07-15T01:01:00Z',
+          from_id: 'user456',
+          id: 2,
+          reply_to_message_id: 1,
+          text: '具体入口在哪里？',
+        },
+        {
+          date: '2026-07-15T01:02:00Z',
+          from_id: 'user123',
+          id: 3,
+          reply_to_message_id: 2,
+          text: '在提醒设置中开启，保存后生效。',
+        },
+        {
+          date: '2026-07-15T02:00:00Z',
+          from_id: 'user789',
+          id: 4,
+          text: 'XXYY 如何开启 Telegram 通知？',
+        },
+        {
+          date: '2026-07-15T02:01:00Z',
+          from_id: 'user789',
+          id: 5,
+          reply_to_message_id: 4,
+          text: '是在哪个页面设置？',
+        },
+        {
+          date: '2026-07-15T02:02:00Z',
+          from_id: 'user123',
+          id: 6,
+          reply_to_message_id: 5,
+          text: '在监控设置中绑定 Telegram 后开启通知。',
+        },
+      ],
+    },
+    { trustedAuthors: [trustedAuthor()] },
+  );
+}
+
+function mixedDirectAndMultiMessageExtraction() {
+  return extractTelegramKnowledgeCandidates(
+    {
+      id: -100123,
+      messages: [
+        {
+          date: '2026-07-15T01:00:00Z',
+          from_id: 'user456',
+          id: 1,
+          text: 'XXYY 如何设置价格提醒？',
+        },
+        {
+          date: '2026-07-15T01:02:00Z',
+          from_id: 'user123',
+          id: 2,
+          reply_to_message_id: 1,
+          text: '在提醒设置中开启价格提醒，保存后生效。',
+        },
+        {
+          date: '2026-07-15T02:00:00Z',
+          from_id: 'user789',
+          id: 10,
+          text: 'XXYY 如何开启 Telegram 通知？',
+        },
+        {
+          date: '2026-07-15T02:01:00Z',
+          from_id: 'user789',
+          id: 11,
+          reply_to_message_id: 10,
+          text: '是在哪个页面设置？',
+        },
+        {
+          date: '2026-07-15T02:02:00Z',
+          from_id: 'user123',
+          id: 12,
+          reply_to_message_id: 11,
+          text: '在监控设置中绑定 Telegram 后开启通知。',
         },
       ],
     },

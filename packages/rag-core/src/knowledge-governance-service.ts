@@ -11,6 +11,7 @@ import type {
 } from './knowledge-governance-references.js';
 import {
   runKnowledgeCurator,
+  type KnowledgeCurationMode,
   type KnowledgeCuratorModel,
   type KnowledgeMatchInspector,
   type KnowledgeCuratorRunResult,
@@ -31,23 +32,28 @@ export interface KnowledgeGovernanceServiceOptions {
   trustedAuthorStore: PgTrustedAuthorStore;
   curatorModel?: KnowledgeCuratorModel;
   inspector?: KnowledgeMatchInspector;
+  maxAgentThreads?: number;
   referenceStore?: KnowledgeGovernanceReferenceStore;
 }
 
 export interface ImportTelegramKnowledgeInput {
+  curationMode?: KnowledgeCurationMode;
   rawExport: unknown;
   currentAdministratorUserIds?: ReadonlySet<string>;
   currentAdministratorVerifiedAt?: string;
   explicitAdminUserIds?: ReadonlySet<string>;
   runId?: string;
+  /** @deprecated Use curationMode. true maps to required; false maps to deterministic. */
   useAgent?: boolean;
 }
 
 export interface ImportTelegramKnowledgeResult {
   agentCandidateCount: number;
+  agentRunStats: KnowledgeCuratorRunResult['agentRunStats'];
   adminReplyCount: number;
   candidateCount: number;
   created: KnowledgeCandidate[];
+  curationMode: KnowledgeCurationMode;
   deterministicCandidateCount: number;
   duplicateCount: number;
   messageCount: number;
@@ -145,10 +151,9 @@ export function createKnowledgeGovernanceService(
     },
 
     async importTelegram(input): Promise<ImportTelegramKnowledgeResult> {
-      if (input.useAgent === true && options.curatorModel === undefined) {
-        throw new Error(
-          'Knowledge Curator Agent was requested but no curator model is configured.',
-        );
+      const curationMode = resolveCurationMode(input);
+      if (curationMode === 'required' && options.curatorModel === undefined) {
+        throw new Error('Knowledge Curator Agent is required but no curator model is configured.');
       }
       const normalizedExport = readTelegramKnowledgeExport(input.rawExport);
       const trustedAuthors =
@@ -176,11 +181,13 @@ export function createKnowledgeGovernanceService(
       const curated = await runKnowledgeCurator({
         extraction,
         ...(options.inspector === undefined ? {} : { inspector: options.inspector }),
+        ...(options.maxAgentThreads === undefined
+          ? {}
+          : { maxAgentThreads: options.maxAgentThreads }),
         ...(input.runId === undefined ? {} : { runId: input.runId }),
         ...(normalizedExport.chatId === undefined ? {} : { sourceChatId: normalizedExport.chatId }),
-        ...(input.useAgent === true && options.curatorModel !== undefined
-          ? { model: options.curatorModel }
-          : {}),
+        mode: curationMode,
+        ...(options.curatorModel === undefined ? {} : { model: options.curatorModel }),
       });
       const persisted = await options.candidateStore.createMany(curated.candidates);
       return createImportResult(extraction, curated, persisted);
@@ -225,8 +232,10 @@ function createImportResult(
   return {
     adminReplyCount: extraction.adminReplyCount,
     agentCandidateCount: curated.agentCandidateCount,
+    agentRunStats: curated.agentRunStats,
     candidateCount: curated.candidates.length,
     created: persisted.created,
+    curationMode: curated.curationMode,
     deterministicCandidateCount: curated.deterministicCandidateCount,
     duplicateCount: persisted.duplicateCount,
     messageCount: extraction.messageCount,
@@ -238,4 +247,17 @@ function createImportResult(
     unverifiedAuthorMessageCount: extraction.unverifiedAuthorMessageCount,
     verifiedAuthorMessageCount: extraction.verifiedAuthorMessageCount,
   };
+}
+
+function resolveCurationMode(input: ImportTelegramKnowledgeInput): KnowledgeCurationMode {
+  if (input.curationMode !== undefined && input.useAgent !== undefined) {
+    throw new Error('Specify curationMode or deprecated useAgent, not both.');
+  }
+  if (input.curationMode !== undefined) {
+    return input.curationMode;
+  }
+  if (input.useAgent !== undefined) {
+    return input.useAgent ? 'required' : 'deterministic';
+  }
+  return 'auto';
 }

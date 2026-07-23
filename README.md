@@ -193,7 +193,7 @@ pnpm rag:evaluate
 pnpm rag:ask -- "XXYY Pro 有哪些权益？"
 pnpm rag:knowledge:author:trust -- --chat-id -100123 --user-id 123 --role knowledge_editor --valid-from 2026-07-01 --reviewer ops:alice
 pnpm rag:knowledge:import:telegram -- export.json
-pnpm rag:knowledge:import:telegram -- export.json --agent
+pnpm rag:knowledge:import:telegram -- export.json --curation-mode required
 pnpm rag:knowledge:list -- --status pending
 pnpm admin:token:create -- alice admin
 pnpm rag:knowledge:publication:work
@@ -214,7 +214,7 @@ pnpm rag:knowledge:publication:work
 - `pnpm rag:evaluate -- --failures-out .rag/eval-failures.jsonl` 把失败项写成已脱敏、必须人工审核的 JSONL，不会直接修改 golden QA。
 - `pnpm rag:ask` 从命令行调用客服 Agent。
 - `pnpm rag:knowledge:author:trust/list` 维护按群和有效期生效的可信作者名册。导入默认先查名册，也可用 Telegram Bot API 识别当前管理员；只有当前角色却无法证明历史角色时会增加风险标签，不会伪装成历史已验证。
-- `pnpm rag:knowledge:import:telegram` 从 Telegram Desktop JSON 重建 reply 线程，执行脱敏、边界、去重、冲突与质量检查，只写入待审核候选区；`--agent` 可选处理多消息上下文，默认确定性路径不调用模型。
+- `pnpm rag:knowledge:import:telegram` 从 Telegram Desktop JSON 重建 reply 线程，执行脱敏、边界、去重、冲突与质量检查，只写入待审核候选区。默认 `auto`：配置模型时自动处理确定性规则未覆盖的复杂线程，否则安全退化；也可用 `--curation-mode deterministic|required`，原 `--agent` 等价于 required。
 - `pnpm rag:knowledge:list/revise/history/approve/reject/publish` 完成候选修订、审计和受控发布；未经人工批准不能入库，发布继续经过边界、检索命中和 deterministic golden QA 门禁。
 - `pnpm admin:token:create -- <id> <role>` 生成只显示一次的高熵管理令牌及其 SHA-256 配置记录；把记录写入 `KNOWLEDGE_ADMIN_TOKENS_JSON`，不要把明文令牌提交到仓库。
 - 管理后台在 `GET /admin`。后台申请发布只创建持久化 `PublicationJob`；`pnpm rag:knowledge:publication:work` 领取一条 queued 或租约过期的任务，执行现有门禁与事务性 ingest。失败任务可在后台安全重试。完整流程见 [受控知识演进](docs/knowledge-evolution.md)。

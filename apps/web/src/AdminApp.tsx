@@ -8,6 +8,7 @@ import type {
   CandidateDetail,
   CandidateStatus,
   KnowledgeCandidate,
+  KnowledgeCurationMode,
   PublicationJob,
   PublicationStatus,
   TelegramImportResult,
@@ -1027,7 +1028,7 @@ function TelegramImportPanel({
 }): ReactElement {
   const [rawExport, setRawExport] = useState<unknown>();
   const [fileName, setFileName] = useState<string>();
-  const [useAgent, setUseAgent] = useState(false);
+  const [curationMode, setCurationMode] = useState<KnowledgeCurationMode>('auto');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<TelegramImportResult>();
   const [error, setError] = useState<string>();
@@ -1057,7 +1058,7 @@ function TelegramImportPanel({
         token,
         '/imports/telegram',
         {
-          body: { rawExport, useAgent },
+          body: { curationMode, rawExport },
           method: 'POST',
         },
       );
@@ -1068,6 +1069,8 @@ function TelegramImportPanel({
       setBusy(false);
     }
   };
+  const agentRunNotice =
+    result === undefined ? undefined : formatKnowledgeCuratorAgentNotice(result.agentRunStats);
 
   return (
     <div className="admin-stack import-layout">
@@ -1087,14 +1090,20 @@ function TelegramImportPanel({
           />
         </label>
         <strong>{fileName ?? '尚未选择文件'}</strong>
-        <label className="admin-checkbox">
-          <input
-            checked={useAgent}
-            onChange={(event) => setUseAgent(event.target.checked)}
-            type="checkbox"
-          />
-          使用 Knowledge Curator Agent 处理多消息上下文
+        <label>
+          知识清洗模式
+          <select
+            onChange={(event) => setCurationMode(event.target.value as KnowledgeCurationMode)}
+            value={curationMode}
+          >
+            <option value="auto">自动（推荐）</option>
+            <option value="deterministic">仅确定性规则</option>
+            <option value="required">强制使用 Agent</option>
+          </select>
         </label>
+        <small>
+          自动模式只把尚未被规则覆盖的复杂线程交给已配置模型；模型不可用或单线程失败时安全保留确定性结果。强制模式遇到模型或预算错误会终止整批导入。
+        </small>
         <small>
           管理员身份优先使用时间有效的可信作者名册；配置 Bot Token 时可查询当前 Telegram
           管理员。不能验证时失败关闭。
@@ -1119,14 +1128,37 @@ function TelegramImportPanel({
             <Metric label="新建" value={result.created.length} />
             <Metric label="重复" value={result.duplicateCount} />
             <Metric label="未验证作者消息" value={result.unverifiedAuthorMessageCount} />
+            <Metric label="Agent 可处理线程" value={result.agentRunStats.eligibleThreadCount} />
+            <Metric label="Agent 已尝试" value={result.agentRunStats.attemptedThreadCount} />
+            <Metric label="Agent 失败" value={result.agentRunStats.failedThreadCount} />
           </div>
           <div className="admin-alert success">
             导入完成。所有新知识仍处于 pending，必须人工审核。
           </div>
+          {agentRunNotice === undefined ? undefined : (
+            <div className="admin-alert">{agentRunNotice}</div>
+          )}
         </section>
       )}
     </div>
   );
+}
+
+function formatKnowledgeCuratorAgentNotice(
+  stats: TelegramImportResult['agentRunStats'],
+): string | undefined {
+  const skippedCount =
+    stats.skippedBudgetThreadCount +
+    stats.skippedByModeThreadCount +
+    stats.skippedUnavailableThreadCount;
+  if (stats.failedThreadCount === 0 && skippedCount === 0) {
+    return undefined;
+  }
+  return [
+    `Agent 失败 ${stats.failedThreadCount} 条（超时 ${stats.failureCounts.timeout}、Provider ${stats.failureCounts.provider_error}、输出无效 ${stats.failureCounts.invalid_output}、其他 ${stats.failureCounts.unknown}）。`,
+    `跳过 ${skippedCount} 条（模型不可用 ${stats.skippedUnavailableThreadCount}、模式关闭 ${stats.skippedByModeThreadCount}、预算上限 ${stats.skippedBudgetThreadCount}）。`,
+    '这些统计不包含消息原文；请人工检查未生成候选的复杂线程。',
+  ].join(' ');
 }
 
 function StatusBadge({ status }: { status: string }): ReactElement {

@@ -83,8 +83,8 @@ export function createCachedKnowledgeAdminServicesLoader(options: {
           }
         }
         return governance.importTelegram({
+          curationMode: input.curationMode,
           rawExport: input.rawExport,
-          useAgent: input.useAgent,
           ...(currentAdministratorUserIds === undefined ? {} : { currentAdministratorUserIds }),
           ...(currentAdministratorVerifiedAt === undefined
             ? {}

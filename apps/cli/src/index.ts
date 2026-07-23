@@ -63,6 +63,8 @@ import type {
   KnowledgeCandidate,
   KnowledgeCandidateHistory,
   KnowledgeCandidateStatus,
+  KnowledgeCurationMode,
+  KnowledgeCuratorAgentRunStats,
   KnowledgePublicationJob,
   KnowledgeStats,
   RagEnv,
@@ -115,8 +117,8 @@ type CliCommand =
   | {
       adminUserIds: string[];
       command: 'knowledge:import:telegram';
+      curationMode: KnowledgeCurationMode;
       file: string;
-      useAgent?: boolean;
     }
   | {
       command: 'knowledge:list';
@@ -191,9 +193,11 @@ interface SyncXUpdatesSummary {
 
 interface TelegramKnowledgeImportSummary {
   agentCandidateCount: number;
+  agentRunStats: KnowledgeCuratorAgentRunStats;
   adminReplyCount: number;
   candidateCount: number;
   createdCount: number;
+  curationMode: KnowledgeCurationMode;
   deterministicCandidateCount: number;
   duplicateCount: number;
   messageCount: number;
@@ -243,7 +247,7 @@ const HELP_TEXT = [
   '  pnpm rag:stats',
   '  pnpm rag:evaluate [--provider] [--retrieval-only] [--judge] [--failures-out .rag/failures.jsonl]',
   '  pnpm rag:feedback:backlog',
-  '  pnpm rag:knowledge:import:telegram -- export.json [--admin-id 123456789] [--agent]',
+  '  pnpm rag:knowledge:import:telegram -- export.json [--admin-id 123456789] [--curation-mode auto|deterministic|required]',
   '  pnpm rag:knowledge:author:trust -- --chat-id <id> --user-id <id> --role <role> --valid-from <date> --reviewer <id>',
   '  pnpm rag:knowledge:author:list -- [--chat-id <id>] [--active-at <date>] [--limit 100]',
   '  pnpm rag:knowledge:list -- --status pending --limit 20',
@@ -330,15 +334,36 @@ function parseKnowledgeImportTelegramArgs(rawArgs: readonly string[]): CliComman
   const args = stripPnpmSeparator(rawArgs);
   const file = args[0];
   const adminUserIds: string[] = [];
-  let useAgent = false;
+  let curationMode: KnowledgeCurationMode = 'auto';
+  let curationModeWasExplicit = false;
   if (file === undefined || file.startsWith('--')) {
     return { command: 'help', error: 'Missing Telegram export JSON path.' };
   }
 
   for (let index = 1; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === '--agent') {
-      useAgent = true;
+    if (arg === '--agent' || arg === '--no-agent') {
+      if (curationModeWasExplicit) {
+        return { command: 'help', error: 'Specify only one knowledge curation mode.' };
+      }
+      curationMode = arg === '--agent' ? 'required' : 'deterministic';
+      curationModeWasExplicit = true;
+      continue;
+    }
+    if (arg === '--curation-mode') {
+      if (curationModeWasExplicit) {
+        return { command: 'help', error: 'Specify only one knowledge curation mode.' };
+      }
+      const value = args[index + 1];
+      if (value !== 'auto' && value !== 'deterministic' && value !== 'required') {
+        return {
+          command: 'help',
+          error: '--curation-mode must be auto, deterministic, or required.',
+        };
+      }
+      curationMode = value;
+      curationModeWasExplicit = true;
+      index += 1;
       continue;
     }
     if (arg !== '--admin-id') {
@@ -355,8 +380,8 @@ function parseKnowledgeImportTelegramArgs(rawArgs: readonly string[]): CliComman
   return {
     adminUserIds,
     command: 'knowledge:import:telegram',
+    curationMode,
     file,
-    ...(useAgent ? { useAgent: true } : {}),
   };
 }
 
@@ -800,7 +825,9 @@ export function formatTelegramKnowledgeImportSummary(
   return [
     `Scanned ${summary.messageCount} Telegram messages and ${summary.adminReplyCount} administrator messages.`,
     `Extracted ${summary.candidateCount} candidates: ${summary.createdCount} created, ${summary.duplicateCount} duplicates.`,
-    `Curator ${summary.runId}: ${summary.deterministicCandidateCount} deterministic, ${summary.agentCandidateCount} agent-assisted, ${summary.rejectedAgentProposalCount} rejected agent proposals across ${summary.threadCount} threads.`,
+    `Curator ${summary.runId} (${summary.curationMode}): ${summary.deterministicCandidateCount} deterministic, ${summary.agentCandidateCount} agent-assisted, ${summary.rejectedAgentProposalCount} rejected agent proposals across ${summary.threadCount} threads.`,
+    `Agent routing: ${summary.agentRunStats.eligibleThreadCount} eligible, ${summary.agentRunStats.attemptedThreadCount} attempted, ${summary.agentRunStats.succeededThreadCount} succeeded, ${summary.agentRunStats.failedThreadCount} failed; ${summary.agentRunStats.skippedUnavailableThreadCount} unavailable, ${summary.agentRunStats.skippedByModeThreadCount} mode-skipped, ${summary.agentRunStats.skippedBudgetThreadCount} budget-skipped.`,
+    `Agent failure categories: ${summary.agentRunStats.failureCounts.timeout} timeout, ${summary.agentRunStats.failureCounts.provider_error} provider, ${summary.agentRunStats.failureCounts.invalid_output} invalid-output, ${summary.agentRunStats.failureCounts.unknown} unknown (no raw error text).`,
     `Verified ${summary.verifiedAuthorMessageCount} author messages; ${summary.unverifiedAuthorMessageCount} other messages were not treated as authoritative.`,
     `Skipped ${summary.skippedBoundaryCount} boundary replies and ${summary.skippedMissingReplyCount} messages without a direct user reply.`,
   ].join('\n');
@@ -1902,7 +1929,9 @@ async function importTelegramKnowledgeCandidates(
       }
     }
     const curatorModel =
-      command.useAgent === true
+      command.curationMode !== 'deterministic' &&
+      config.openAiApiKey !== undefined &&
+      config.openAiModel !== undefined
         ? createOpenAiKnowledgeCuratorModel({
             apiKey: config.openAiApiKey,
             baseUrl: config.openAiBaseUrl,
@@ -1917,17 +1946,19 @@ async function importTelegramKnowledgeCandidates(
       ...(curatorModel === undefined ? {} : { curatorModel }),
     });
     const result = await governance.importTelegram({
+      curationMode: command.curationMode,
       currentAdministratorUserIds,
       ...(currentAdministratorVerifiedAt === undefined ? {} : { currentAdministratorVerifiedAt }),
       explicitAdminUserIds: new Set(command.adminUserIds),
       rawExport,
-      useAgent: command.useAgent === true,
     });
     return {
       adminReplyCount: result.adminReplyCount,
       agentCandidateCount: result.agentCandidateCount,
+      agentRunStats: result.agentRunStats,
       candidateCount: result.candidateCount,
       createdCount: result.created.length,
+      curationMode: result.curationMode,
       deterministicCandidateCount: result.deterministicCandidateCount,
       duplicateCount: result.duplicateCount,
       messageCount: result.messageCount,

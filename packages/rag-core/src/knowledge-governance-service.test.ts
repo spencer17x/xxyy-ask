@@ -5,6 +5,7 @@ import {
   createKnowledgeGovernanceService,
   UnverifiedTelegramKnowledgeAuthorError,
 } from './knowledge-governance-service.js';
+import type { KnowledgeCuratorModel } from './knowledge-curator.js';
 import type { PgTrustedAuthorStore, TrustedAuthor } from './trusted-authors.js';
 
 describe('createKnowledgeGovernanceService', () => {
@@ -35,7 +36,12 @@ describe('createKnowledgeGovernanceService', () => {
     });
 
     expect(result).toMatchObject({
+      agentRunStats: {
+        attemptedThreadCount: 0,
+        modelAvailable: false,
+      },
       candidateCount: 1,
+      curationMode: 'auto',
       deterministicCandidateCount: 1,
       runId: 'curator_run_1',
       verifiedAuthorMessageCount: 1,
@@ -47,6 +53,48 @@ describe('createKnowledgeGovernanceService', () => {
       authorVerification: { status: 'trusted_author' },
       curatorRunId: 'curator_run_1',
     });
+  });
+
+  it('automatically invokes a configured curator model for uncovered complex threads', async () => {
+    const curateThread = vi.fn<KnowledgeCuratorModel['curateThread']>().mockResolvedValue([]);
+    const service = createKnowledgeGovernanceService({
+      candidateStore: candidateStore(),
+      curatorModel: { curateThread, model: 'curator-model', promptVersion: 'curator-v1' },
+      trustedAuthorStore: trustedAuthorStore([trustedAuthor()]),
+    });
+
+    const result = await service.importTelegram({
+      rawExport: multiMessageTelegramExport(),
+      runId: 'curator_run_auto',
+    });
+
+    expect(curateThread).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      agentRunStats: {
+        attemptedThreadCount: 1,
+        eligibleThreadCount: 1,
+        succeededThreadCount: 1,
+      },
+      curationMode: 'auto',
+    });
+  });
+
+  it('keeps legacy useAgent semantics and rejects ambiguous mode inputs', async () => {
+    const service = createKnowledgeGovernanceService({
+      candidateStore: candidateStore(),
+      trustedAuthorStore: trustedAuthorStore([trustedAuthor()]),
+    });
+
+    await expect(
+      service.importTelegram({
+        curationMode: 'auto',
+        rawExport: telegramExport(),
+        useAgent: false,
+      }),
+    ).rejects.toThrow('Specify curationMode or deprecated useAgent');
+    await expect(
+      service.importTelegram({ rawExport: telegramExport(), useAgent: false }),
+    ).resolves.toMatchObject({ curationMode: 'deterministic' });
   });
 
   it('fails closed when no author can be verified', async () => {
@@ -139,6 +187,34 @@ function candidateStore(
     revise: () => Promise.reject(new Error('not used')),
     review: () => Promise.reject(new Error('not used')),
     ...overrides,
+  };
+}
+
+function multiMessageTelegramExport() {
+  return {
+    id: -100123,
+    messages: [
+      {
+        date: '2026-07-15T01:00:00Z',
+        from_id: 'user456',
+        id: 1,
+        text: 'XXYY 如何设置价格提醒？',
+      },
+      {
+        date: '2026-07-15T01:01:00Z',
+        from_id: 'user456',
+        id: 2,
+        reply_to_message_id: 1,
+        text: '入口在哪里？',
+      },
+      {
+        date: '2026-07-15T01:02:00Z',
+        from_id: 'user123',
+        id: 3,
+        reply_to_message_id: 2,
+        text: '在提醒设置中开启并保存。',
+      },
+    ],
   };
 }
 

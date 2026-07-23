@@ -10,6 +10,7 @@ import {
 } from '@xxyy/rag-core';
 import type {
   ImportTelegramKnowledgeResult,
+  KnowledgeCurationMode,
   KnowledgeGovernanceService,
   KnowledgePublicationJobStatus,
   PgKnowledgePublicationJobStore,
@@ -27,8 +28,8 @@ export interface KnowledgeAdminServices {
   governance: KnowledgeGovernanceService;
   publicationJobs: PgKnowledgePublicationJobStore;
   importTelegram(input: {
+    curationMode: KnowledgeCurationMode;
     rawExport: unknown;
-    useAgent: boolean;
   }): Promise<ImportTelegramKnowledgeResult>;
 }
 
@@ -103,10 +104,21 @@ const trustAuthorSchema = z
 
 const importTelegramSchema = z
   .object({
+    curationMode: z.enum(['auto', 'deterministic', 'required']).optional(),
     rawExport: z.unknown().refine((value) => value !== undefined, 'rawExport is required.'),
-    useAgent: z.boolean().default(false),
+    useAgent: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => value.curationMode === undefined || value.useAgent === undefined,
+    'Specify curationMode or legacy useAgent, not both.',
+  )
+  .transform((value) => ({
+    curationMode:
+      value.curationMode ??
+      (value.useAgent === undefined ? 'auto' : value.useAgent ? 'required' : 'deterministic'),
+    rawExport: value.rawExport,
+  }));
 
 export function isKnowledgeAdminApiPath(pathname: string): boolean {
   return pathname === '/admin/api' || pathname.startsWith('/admin/api/');

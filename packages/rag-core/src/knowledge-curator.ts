@@ -50,6 +50,29 @@ export interface KnowledgeCuratorModel {
   curateThread(input: CuratorThreadInput): Promise<KnowledgeCuratorProposal[]>;
 }
 
+export const knowledgeCurationModes = ['auto', 'deterministic', 'required'] as const;
+export type KnowledgeCurationMode = (typeof knowledgeCurationModes)[number];
+
+export const knowledgeCuratorAgentFailureCodes = [
+  'invalid_output',
+  'provider_error',
+  'timeout',
+  'unknown',
+] as const;
+export type KnowledgeCuratorAgentFailureCode = (typeof knowledgeCuratorAgentFailureCodes)[number];
+
+export interface KnowledgeCuratorAgentRunStats {
+  attemptedThreadCount: number;
+  eligibleThreadCount: number;
+  failedThreadCount: number;
+  failureCounts: Record<KnowledgeCuratorAgentFailureCode, number>;
+  modelAvailable: boolean;
+  skippedBudgetThreadCount: number;
+  skippedByModeThreadCount: number;
+  skippedUnavailableThreadCount: number;
+  succeededThreadCount: number;
+}
+
 export interface KnowledgeMatchInspection {
   conflictChunkIds: string[];
   duplicateCandidateIds: string[];
@@ -64,13 +87,17 @@ export interface RunKnowledgeCuratorInput {
   extraction: ExtractTelegramCandidateResult;
   sourceChatId?: string;
   inspector?: KnowledgeMatchInspector;
+  maxAgentThreads?: number;
+  mode?: KnowledgeCurationMode;
   model?: KnowledgeCuratorModel;
   runId?: string;
 }
 
 export interface KnowledgeCuratorRunResult {
   agentCandidateCount: number;
+  agentRunStats: KnowledgeCuratorAgentRunStats;
   candidates: CreateKnowledgeCandidateInput[];
+  curationMode: KnowledgeCurationMode;
   deterministicCandidateCount: number;
   rejectedAgentProposalCount: number;
   runId: string;
@@ -112,6 +139,8 @@ interface LexicalKnowledgeChunkRow {
 const CURATOR_PROMPT_VERSION = 'knowledge-curator-v1';
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_MODEL_CONTEXT_CHARS = 12_000;
+export const DEFAULT_KNOWLEDGE_CURATOR_MAX_AGENT_THREADS = 20;
+const MAX_KNOWLEDGE_CURATOR_AGENT_THREADS = 100;
 
 const knowledgeCuratorProposalSchema = z.object({
   canonicalAnswer: z.string().min(1).max(4_000),
@@ -229,31 +258,65 @@ export async function runKnowledgeCurator(
   input: RunKnowledgeCuratorInput,
 ): Promise<KnowledgeCuratorRunResult> {
   const runId = input.runId?.trim() || `curator_${randomUUID()}`;
+  const curationMode = normalizeCurationMode(input.mode);
+  const eligibleThreads = selectAgentThreads(input.extraction);
+  const maxAgentThreads = normalizeMaxAgentThreads(input.maxAgentThreads);
   const deterministicCandidates = input.extraction.candidates.map((candidate) => ({
     ...candidate,
     curatorRunId: candidate.curatorRunId ?? runId,
   }));
   const agentCandidates: CreateKnowledgeCandidateInput[] = [];
+  const agentRunStats = createAgentRunStats(eligibleThreads.length, input.model !== undefined);
   let rejectedAgentProposalCount = 0;
 
-  if (input.model !== undefined) {
-    for (const thread of selectAgentThreads(input.extraction)) {
-      const modelThread = createModelThread(thread, input.extraction.authorVerifications);
-      const proposals = await input.model.curateThread(modelThread);
-      for (const proposal of proposals) {
-        const candidate = validateAndCreateAgentCandidate({
-          authorVerifications: input.extraction.authorVerifications,
-          model: input.model,
-          proposal,
-          runId,
-          thread,
-          ...(input.sourceChatId === undefined ? {} : { sourceChatId: input.sourceChatId }),
-        });
-        if (candidate === undefined) {
-          rejectedAgentProposalCount += 1;
-        } else {
-          agentCandidates.push(candidate);
+  if (curationMode === 'required' && input.model === undefined) {
+    throw new Error('Knowledge Curator Agent is required but no curator model is configured.');
+  }
+  if (curationMode === 'required' && eligibleThreads.length > maxAgentThreads) {
+    throw new Error(
+      `Knowledge Curator Agent requires ${eligibleThreads.length} thread calls, exceeding the per-import limit of ${maxAgentThreads}.`,
+    );
+  }
+
+  if (curationMode === 'deterministic') {
+    agentRunStats.skippedByModeThreadCount = eligibleThreads.length;
+  } else if (input.model === undefined) {
+    agentRunStats.skippedUnavailableThreadCount = eligibleThreads.length;
+  } else {
+    const attemptedThreads = eligibleThreads.slice(0, maxAgentThreads);
+    agentRunStats.skippedBudgetThreadCount = eligibleThreads.length - attemptedThreads.length;
+    for (const thread of attemptedThreads) {
+      agentRunStats.attemptedThreadCount += 1;
+      try {
+        const modelThread = createModelThread(thread, input.extraction.authorVerifications);
+        const proposals = await input.model.curateThread(modelThread);
+        const threadCandidates: CreateKnowledgeCandidateInput[] = [];
+        let rejectedThreadProposalCount = 0;
+        for (const proposal of proposals) {
+          const candidate = validateAndCreateAgentCandidate({
+            authorVerifications: input.extraction.authorVerifications,
+            model: input.model,
+            proposal,
+            runId,
+            thread,
+            ...(input.sourceChatId === undefined ? {} : { sourceChatId: input.sourceChatId }),
+          });
+          if (candidate === undefined) {
+            rejectedThreadProposalCount += 1;
+          } else {
+            threadCandidates.push(candidate);
+          }
         }
+        agentCandidates.push(...threadCandidates);
+        rejectedAgentProposalCount += rejectedThreadProposalCount;
+        agentRunStats.succeededThreadCount += 1;
+      } catch (error) {
+        if (curationMode === 'required') {
+          throw error;
+        }
+        const failureCode = classifyAgentFailure(error);
+        agentRunStats.failedThreadCount += 1;
+        agentRunStats.failureCounts[failureCode] += 1;
       }
     }
   }
@@ -288,7 +351,9 @@ export async function runKnowledgeCurator(
     agentCandidateCount: inspectedCandidates.filter(
       (candidate) => candidate.extractionMethod === 'agent_assisted',
     ).length,
+    agentRunStats,
     candidates: inspectedCandidates,
+    curationMode,
     deterministicCandidateCount: inspectedCandidates.filter(
       (candidate) => candidate.extractionMethod === 'deterministic_direct_reply',
     ).length,
@@ -401,15 +466,17 @@ function selectAgentThreads(
       .map((candidate) => candidate.sourceAnswerMessageId)
       .filter((value): value is string => value !== undefined),
   );
-  return extraction.threads.filter((thread) => {
-    const verifiedIds = thread.messageIds.filter(
-      (messageId) => extraction.authorVerifications[messageId] !== undefined,
-    );
-    return (
-      verifiedIds.length > 0 &&
-      (thread.messageIds.length > 2 || verifiedIds.some((id) => !deterministicAnswerIds.has(id)))
-    );
-  });
+  return extraction.threads
+    .filter((thread) => {
+      const verifiedIds = thread.messageIds.filter(
+        (messageId) => extraction.authorVerifications[messageId] !== undefined,
+      );
+      return (
+        verifiedIds.length > 0 &&
+        (thread.messageIds.length > 2 || verifiedIds.some((id) => !deterministicAnswerIds.has(id)))
+      );
+    })
+    .sort((left, right) => compareTelegramMessageIds(left.rootMessageId, right.rootMessageId));
 }
 
 function createModelThread(
@@ -629,6 +696,78 @@ function uniqueIdentifiers(values: readonly string[]): string[] {
 
 function emptyKnowledgeMatchInspection(): KnowledgeMatchInspection {
   return { conflictChunkIds: [], duplicateCandidateIds: [], riskFlags: [] };
+}
+
+function compareTelegramMessageIds(left: string, right: string): number {
+  if (/^\d+$/u.test(left) && /^\d+$/u.test(right)) {
+    const leftNumber = BigInt(left);
+    const rightNumber = BigInt(right);
+    if (leftNumber !== rightNumber) {
+      return leftNumber < rightNumber ? -1 : 1;
+    }
+  }
+  return left === right ? 0 : left < right ? -1 : 1;
+}
+
+function createAgentRunStats(
+  eligibleThreadCount: number,
+  modelAvailable: boolean,
+): KnowledgeCuratorAgentRunStats {
+  return {
+    attemptedThreadCount: 0,
+    eligibleThreadCount,
+    failedThreadCount: 0,
+    failureCounts: {
+      invalid_output: 0,
+      provider_error: 0,
+      timeout: 0,
+      unknown: 0,
+    },
+    modelAvailable,
+    skippedBudgetThreadCount: 0,
+    skippedByModeThreadCount: 0,
+    skippedUnavailableThreadCount: 0,
+    succeededThreadCount: 0,
+  };
+}
+
+function classifyAgentFailure(error: unknown): KnowledgeCuratorAgentFailureCode {
+  if (error instanceof z.ZodError) {
+    return 'invalid_output';
+  }
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (/timed out|timeout|abort(?:ed)?/u.test(message)) {
+    return 'timeout';
+  }
+  if (/invalid json|no json content|invalid output|validation/u.test(message)) {
+    return 'invalid_output';
+  }
+  if (/failed with status|fetch failed|network|socket|connect/u.test(message)) {
+    return 'provider_error';
+  }
+  return 'unknown';
+}
+
+function normalizeCurationMode(value: KnowledgeCurationMode | undefined): KnowledgeCurationMode {
+  if (value === undefined) {
+    return 'auto';
+  }
+  if (!knowledgeCurationModes.includes(value)) {
+    throw new Error(`Unsupported knowledge curation mode: ${String(value)}`);
+  }
+  return value;
+}
+
+function normalizeMaxAgentThreads(value: number | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_KNOWLEDGE_CURATOR_MAX_AGENT_THREADS;
+  }
+  if (!Number.isInteger(value) || value <= 0 || value > MAX_KNOWLEDGE_CURATOR_AGENT_THREADS) {
+    throw new Error(
+      `maxAgentThreads must be an integer between 1 and ${MAX_KNOWLEDGE_CURATOR_AGENT_THREADS}.`,
+    );
+  }
+  return value;
 }
 
 function normalizeComparableText(value: string): string {

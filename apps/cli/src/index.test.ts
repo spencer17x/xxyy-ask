@@ -106,8 +106,22 @@ describe('parseCliArgs', () => {
     ).toEqual({
       adminUserIds: ['123', '456'],
       command: 'knowledge:import:telegram',
+      curationMode: 'required',
       file: 'group.json',
-      useAgent: true,
+    });
+    expect(parseCliArgs(['knowledge:import:telegram', 'group.json'])).toEqual({
+      adminUserIds: [],
+      command: 'knowledge:import:telegram',
+      curationMode: 'auto',
+      file: 'group.json',
+    });
+    expect(
+      parseCliArgs(['knowledge:import:telegram', 'group.json', '--curation-mode', 'deterministic']),
+    ).toEqual({
+      adminUserIds: [],
+      command: 'knowledge:import:telegram',
+      curationMode: 'deterministic',
+      file: 'group.json',
     });
     expect(parseCliArgs(['knowledge:list', '--status', 'pending', '--limit', '10'])).toEqual({
       command: 'knowledge:list',
@@ -225,6 +239,7 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['knowledge:import:telegram', 'group.json'])).toEqual({
       adminUserIds: [],
       command: 'knowledge:import:telegram',
+      curationMode: 'auto',
       file: 'group.json',
     });
     expect(parseCliArgs(['knowledge:approve', 'knowledge_candidate_1'])).toMatchObject({
@@ -336,9 +351,26 @@ describe('CLI output formatting', () => {
     expect(
       formatTelegramKnowledgeImportSummary({
         agentCandidateCount: 1,
+        agentRunStats: {
+          attemptedThreadCount: 2,
+          eligibleThreadCount: 3,
+          failedThreadCount: 1,
+          failureCounts: {
+            invalid_output: 1,
+            provider_error: 0,
+            timeout: 0,
+            unknown: 0,
+          },
+          modelAvailable: true,
+          skippedBudgetThreadCount: 1,
+          skippedByModeThreadCount: 0,
+          skippedUnavailableThreadCount: 0,
+          succeededThreadCount: 1,
+        },
         adminReplyCount: 4,
         candidateCount: 2,
         createdCount: 1,
+        curationMode: 'auto',
         deterministicCandidateCount: 1,
         duplicateCount: 1,
         messageCount: 12,

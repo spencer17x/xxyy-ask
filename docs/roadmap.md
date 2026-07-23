@@ -10,8 +10,22 @@
 - [x] 服务基础面：Web UI、health/deep health、chat/stream、static assets、请求体限制、基础限流和 CORS 配置已保留。
 - [x] Telegram Bot：long polling 入口复用同一套客服 Agent runtime。
 - [x] Knowledge Curator MVP：可信作者与角色有效期、Telegram 线程重建、确定性/可选 Agent 提取、脱敏、去重、冲突、质量评分、候选 revision/review/audit、管理 CLI 和发布门禁已具备。
+- [x] Knowledge Curator Auto Mode：默认自动识别确定性路径未覆盖的复杂可信作者线程，模型缺失/单线程失败安全降级，支持三态策略、调用预算和脱敏运行统计。
 - [x] Knowledge Governance Admin Console MVP：独立管理认证与 RBAC、候选上下文/冲突对比、可信作者、Telegram 导入、PublicationJob 状态/租约/安全重试和受控发布 Worker 已具备；公开客服接口保持无鉴权只读。
 - [x] 基础可信度建设：deterministic guard、planner route、tool registry、stream schema 校验、golden QA、基础 reranker extension point 已具备。
+
+## Goal 21 Knowledge Curator Auto Mode
+
+目标：让群聊知识清洗在不自动批准、不扩大作者权限的前提下自动使用 Curator Agent，同时把成本和 Provider 故障限制在单次导入内。
+
+- [x] `auto` 成为 CLI、管理 API 和后台默认模式；只选择包含已验证作者且未被确定性直接回复路径完整覆盖的复杂线程，模型未配置时保留确定性结果。
+- [x] 提供 `auto | deterministic | required` 三态策略；原 `--agent` 映射为 required，新增统一 `--curation-mode`，required 遇到模型缺失、调用失败或超预算时 fail closed。
+- [x] 单次导入最多尝试 20 个稳定排序的 Agent 线程；auto 模式按线程隔离失败并丢弃该线程的部分 proposal，不影响其他线程或确定性候选。
+- [x] 只返回 eligible/attempted/succeeded/failed/跳过计数和 `timeout | provider_error | invalid_output | unknown` 分类，不返回 Provider 异常或消息原文。
+- [x] 管理后台显示模式和脱敏运行统计；作者验证、PII 脱敏、产品边界、去重/冲突、pending-only、人工审核与 PublicationJob 发布门禁保持不变。
+- [x] 使用直接、受控的 Curator 模型调用作为固定流水线叶节点；该流程不需要新增 LangGraph 图，也不向模型暴露批准或发布工具。
+
+成功标准：无模型配置的默认导入仍可运行；auto 中一个 Agent 线程失败不会丢失确定性候选；required 不会静默降级；大导入不会产生无界模型调用；所有新知识仍只能停留在 `pending`。
 
 ## Paused / Out of Scope
 
