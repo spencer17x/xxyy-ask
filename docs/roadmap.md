@@ -284,7 +284,16 @@
 
 目标：在包外部署 v0.14b1/v0.14b2a backend，完成真实审批并形成能够被独立审计的主网 corpus 与生产数据面证据；仍不注册 Capability 或改变客服运行面。
 
-- [ ] 由有权人员确定并批准实际目标 chain、来源、法律条件和数据保留策略，将真实审批 evidence 与 identity/grant 安全写入控制面；代码中的 contract-only artifact 不等于审批。
+当前执行单元是 **v0.14b2b1 / Goal 19：Production Environment & Governance Decision Gate**：
+
+- [x] 审计现有 chain/protocol/adapter/source/role/drill/readiness 契约和 Product RAG 部署边界，确认仓库尚无链上生产 composition root、worker、Provider/secret 或身份映射。
+- [x] 建立不含密钥的决策记录；草案项在确认前保持 `proposed`，真实来源/法律/保留审批、Provider、grant、evidence 和 readiness 继续保持 `unapproved/pending`。
+- [x] 将最终决策映射到既有 canonical validators；不创建可携带 `TBD` 的平行配置 schema，避免草案被误当成真实 approval/provider/readiness artifact。
+- [x] 产品负责人确认首批 Ethereum 主网 full-chain-analysis、双独立 Provider、私有控制面/独立数据库、`public_rpc` 与 `official_explorer_export`、90 天保留期、平台 service account/受控人工账号及四类责任 owner。
+
+确认记录见 [Chain Analysis Production Environment & Governance Decision Gate](evm-chain-analysis-production-decision-gate.md)。该技术决策仍不等于真实审批、grant、Provider 配置、主网 evidence 或 `ready` 声明。
+
+- [ ] 由有权人员审查并正式批准已选 Ethereum 主网、来源、法律条件和 90 天数据保留策略，将真实审批 evidence 与 identity/grant 安全写入控制面；代码中的 contract-only artifact 不等于审批。
 - [ ] 部署最小权限 Postgres、真实 planner/worker/submitter/reviewer identity/grant、sampling/review/retention/reconciliation workers，按 plan 采集、通过 handoff 入候选并由两个独立 reviewer 从 work queue 领取、重放和复核公开主网样本；不把 manifest、handoff、queued slot 或 contract-only fixture 直接当作 reviewed evidence。
 - [ ] 实现 secret manager 配置解析、metrics/alerting 和 provider failover；配置数据库最小权限、加密、备份、保留策略，并验证 budget/circuit/audit backend unavailable 时 fail closed。
 - [ ] 执行 timeout、rate limit、provider conflict、reorg、审计/预算/circuit backend unavailable 等演练，提交新鲜 SLO、告警、security 和 runbook evidence。

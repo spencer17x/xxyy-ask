@@ -17,6 +17,7 @@
 - [Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md)
 - [Chain Analysis Governance Persistence & Shared Provider Controls](evm-chain-analysis-control-store.md)
 - [Reproducible Readiness Evidence Ledger](evm-chain-analysis-readiness-evidence-ledger.md)
+- [Chain Analysis Production Environment & Governance Decision Gate](evm-chain-analysis-production-decision-gate.md)
 - [Roadmap](roadmap.md)
 
 ## 完整官网与产品知识库
