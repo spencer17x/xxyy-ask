@@ -75,7 +75,8 @@ const HELP_TEXT = [
 const planIdSchema = z.string().regex(/^production_provisioning_plan_[0-9a-f]{64}$/u);
 
 export function parseChainControlCliArgs(args: readonly string[]): ChainControlCommand {
-  const [command, ...rest] = args;
+  const [command, ...rawRest] = args;
+  const rest = rawRest[0] === '--' ? rawRest.slice(1) : rawRest;
   if (command === undefined || command === 'help' || command === '--help' || command === '-h') {
     if (rest.length > 0) {
       throw new ChainControlCliError('invalid_command', 'Help does not accept arguments.');

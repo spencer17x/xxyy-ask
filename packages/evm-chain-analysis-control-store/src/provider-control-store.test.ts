@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { createProductionAuditEvent } from '@xxyy/evm-chain-analysis-readiness';
+
 import {
   createGovernanceAuthorization,
   createPgEvmChainAnalysisProviderControlStore,
@@ -64,18 +66,40 @@ describe('PostgreSQL shared provider controls', () => {
     client.enqueue('budget-lease-read', [
       { payload: lease, window_started_at: emptyWindow.window_started_at },
     ]);
+    client.enqueue('budget-policy-by-fingerprint', [{ payload: fixture.policy }]);
     client.enqueue('budget-window-lock', [reservedWindow]);
     client.enqueue('budget-window-update', [{ budget_id: fixture.policy.budgetId }]);
-    const settlement = await store.settle({
-      leaseId: lease.leaseId,
-      outcome: 'success',
-      settledAt: '2026-07-22T10:00:10.000Z',
+    const requestEvent = createProductionAuditEvent({
+      adapter: fixture.policy.adapter,
+      budgetLeaseId: lease.leaseId,
+      chainId: fixture.policy.chainId,
+      correlationHash: testHash('atomic-correlation'),
+      durationMs: 10,
+      eventAt: '2026-07-22T10:00:10.000Z',
+      eventKind: 'provider_request',
+      instanceIdHash: fixture.instanceIdHash,
+      manifestFingerprint: testHash('atomic-manifest'),
+      providerId: fixture.policy.providerId,
+      providerConfigurationFingerprint: testHash('atomic-provider-configuration'),
+      requestFingerprint: testHash('atomic-request'),
+      resultCode: 'success',
       usage: { costUnits: 40, requests: 4, responseBytes: 400, rpcCalls: 8 },
     });
-    expect(settlement).toMatchObject({
+    const completion = await store.completeProviderRequest({
+      actorIdHash: fixture.instanceIdHash,
+      event: requestEvent,
+      settlement: {
+        leaseId: lease.leaseId,
+        outcome: 'success',
+        settledAt: requestEvent.eventAt,
+        usage: requestEvent.usage,
+      },
+    });
+    expect(completion.settlement).toMatchObject({
       leaseFingerprint: lease.leaseFingerprint,
       outcome: 'success',
     });
+    expect(completion.event).toEqual(requestEvent);
 
     expect(
       await store.initializeCircuit({
@@ -114,6 +138,7 @@ describe('PostgreSQL shared provider controls', () => {
       'budget_policy_installed',
       'budget_reserved',
       'budget_settled',
+      'provider_request_recorded',
       'circuit_initialized',
       'circuit_transition',
     ]);
@@ -194,7 +219,7 @@ describe('PostgreSQL shared provider controls', () => {
     expect(client.transactionEvents).toEqual(['begin', 'rollback']);
   });
 
-  it('reconciles expired leases into idempotent zero-usage cancellation settlements', async () => {
+  it('reconciles expired leases into conservative reserved-usage cancellation settlements', async () => {
     const fixture = createProviderControlFixture();
     const client = new ScriptedPgClient();
     const store = createPgEvmChainAnalysisProviderControlStore({
@@ -240,8 +265,119 @@ describe('PostgreSQL shared provider controls', () => {
     expect(settlements).toHaveLength(1);
     expect(settlements[0]).toMatchObject({
       outcome: 'cancelled',
+      usage: lease.reserved,
+    });
+  });
+
+  it('persists redacted provider request events with authorization and hash-chain audit', async () => {
+    const fixture = createProviderControlFixture();
+    const client = new ScriptedPgClient();
+    const store = createPgEvmChainAnalysisProviderControlStore({
+      client,
+      coordinatorInstanceIdHash: fixture.instanceIdHash,
+    });
+    const event = createProductionAuditEvent({
+      adapter: fixture.circuit.adapter,
+      chainId: fixture.circuit.chainId,
+      correlationHash: testHash('correlation'),
+      durationMs: 25,
+      eventAt: '2026-07-22T10:00:10.000Z',
+      eventKind: 'provider_request',
+      instanceIdHash: fixture.instanceIdHash,
+      manifestFingerprint: testHash('provider-request-manifest'),
+      providerId: fixture.circuit.providerId,
+      providerConfigurationFingerprint: testHash('provider-request-configuration'),
+      requestFingerprint: testHash('provider-request'),
+      resultCode: 'cache_hit',
       usage: { costUnits: 0, requests: 0, responseBytes: 0, rpcCalls: 0 },
     });
+    client.enqueue('authorization-read', [
+      authorizationRow(createOperatorGrant(fixture.instanceIdHash)),
+    ]);
+
+    expect(
+      await store.recordProviderRequest({
+        actorIdHash: fixture.instanceIdHash,
+        event,
+      }),
+    ).toEqual(event);
+    expect(client.queries.some((query) => query.tag === 'provider-request-insert')).toBe(true);
+    expect((await store.readAudit()).map((entry) => entry.eventKind)).toEqual([
+      'provider_request_recorded',
+    ]);
+    expect(JSON.stringify(client.auditEvents)).not.toContain('https://');
+  });
+
+  it('rejects unleased usage and mismatched atomic completion outcomes before database access', async () => {
+    const fixture = createProviderControlFixture();
+    const client = new ScriptedPgClient();
+    const store = createPgEvmChainAnalysisProviderControlStore({
+      client,
+      coordinatorInstanceIdHash: fixture.instanceIdHash,
+    });
+    const baseEvent = {
+      adapter: fixture.policy.adapter,
+      chainId: fixture.policy.chainId,
+      correlationHash: testHash('invalid-correlation'),
+      durationMs: 10,
+      eventAt: '2026-07-22T10:00:10.000Z',
+      eventKind: 'provider_request' as const,
+      instanceIdHash: fixture.instanceIdHash,
+      manifestFingerprint: testHash('invalid-manifest'),
+      providerId: fixture.policy.providerId,
+      providerConfigurationFingerprint: testHash('invalid-provider-configuration'),
+      requestFingerprint: testHash('invalid-request'),
+    };
+    const unleasedUsage = createProductionAuditEvent({
+      ...baseEvent,
+      resultCode: 'success',
+      usage: { costUnits: 1, requests: 1, responseBytes: 100, rpcCalls: 1 },
+    });
+    await expect(
+      store.recordProviderRequest({
+        actorIdHash: fixture.instanceIdHash,
+        event: unleasedUsage,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_state' });
+
+    const budgetLeaseId = `lease_${'0'.repeat(64)}`;
+    const successfulEvent = createProductionAuditEvent({
+      ...baseEvent,
+      budgetLeaseId,
+      resultCode: 'success',
+      usage: { costUnits: 1, requests: 1, responseBytes: 100, rpcCalls: 1 },
+    });
+    await expect(
+      store.completeProviderRequest({
+        actorIdHash: fixture.instanceIdHash,
+        event: successfulEvent,
+        settlement: {
+          leaseId: budgetLeaseId,
+          outcome: 'failed',
+          settledAt: successfulEvent.eventAt,
+          usage: successfulEvent.usage,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_state' });
+    const failedEvent = createProductionAuditEvent({
+      ...baseEvent,
+      budgetLeaseId,
+      resultCode: 'transport_error',
+      usage: { costUnits: 1, requests: 1, responseBytes: 100, rpcCalls: 1 },
+    });
+    await expect(
+      store.completeProviderRequest({
+        actorIdHash: fixture.instanceIdHash,
+        event: failedEvent,
+        settlement: {
+          leaseId: budgetLeaseId,
+          outcome: 'cancelled',
+          settledAt: failedEvent.eventAt,
+          usage: failedEvent.usage,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_state' });
+    expect(client.queries).toHaveLength(0);
   });
 });
 

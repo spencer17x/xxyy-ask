@@ -17,6 +17,7 @@
 - [Single-owner Review Work Queue](evm-chain-analysis-review-work-queue.md)
 - [Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md)
 - [Chain Analysis Governance Persistence & Shared Provider Controls](evm-chain-analysis-control-store.md)
+- [Chain Analysis Provider & Worker Data Plane](chain-data-plane-operations.md)
 - [Reproducible Readiness Evidence Ledger](evm-chain-analysis-readiness-evidence-ledger.md)
 - [Chain Analysis Production Environment & Governance Decision Gate](evm-chain-analysis-production-decision-gate.md)
 - [Chain Analysis Production Approval & Identity Provisioning](evm-chain-analysis-production-provisioning.md)
@@ -43,6 +44,7 @@
 - `packages/evm-chain-analysis-harness`：未接线的 transaction/execution/MEV 离线组合、replay corpus 评测和质量门禁。
 - `packages/evm-chain-analysis-readiness`：未接线的 sampling plan/evidence intake、manifest/candidate handoff、reviewed replay 治理、生产运维证据契约和综合 readiness evaluator；当前不含真实审批、主网 corpus 或 provider backend。
 - `packages/evm-chain-analysis-control-store`：未接线的 Postgres sampling/handoff/治理 artifact、sampling/retention/review work queue、可重算 readiness evidence ledger、哈希链审计、共享 budget 和 circuit CAS backend；当前不含生产配置、真实授权/审批或主网证据。
+- `packages/evm-chain-analysis-data-plane`：未接线的双 Provider composition、opaque secret resolver、共享 budget/circuit、bounded cache、持久请求审计、metrics/alert 与四类 worker handler runtime；当前不含真实 credential、部署或 readiness 证明。
 - `apps/cli`：`rag:ask`、`rag:ingest`、`rag:migrate`、`rag:stats`、`rag:sync:x`，以及可信作者、Telegram 候选导入、修订、审核和发布命令。
 - `apps/api`：`GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream`、`GET /assets/*`。
 - `apps/telegram-bot`：Telegram Bot long polling 入口，复用 LangGraph 客服 Agent。

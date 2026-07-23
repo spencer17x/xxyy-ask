@@ -8,9 +8,9 @@
 
 - 不读取环境变量，也不创建数据库连接；composition root 必须显式注入 `PgControlClientLike`；
 - 不访问 RPC、Indexer、Explorer、HTTP、secret manager 或 provider endpoint；
-- 不导入 Agent、LangGraph、Capability、MCP、API 或 Telegram；仅由隔离的 `apps/chain-control-cli` 注入 client，用于生产 provisioning；
+- 不导入 Agent、LangGraph、Capability、MCP、API 或 Telegram；仅由隔离的 `apps/chain-control-cli` 与 `apps/chain-operations-cli` 注入 client；
 - 不包含真实主网样本、真实 reviewer 身份、生产 grant、provider credential 或生产 readiness evidence；
-- 除隔离的 `apps/chain-control-cli` 外，不被 API、Web、Telegram、RAG CLI、`agent-core` 或 `rag-core` 引用，公开客服的链上问题边界保持不变。
+- 除两个隔离的私有运维 app 外，不被 API、Web、Telegram、RAG CLI、`agent-core` 或 `rag-core` 引用，公开客服的链上问题边界保持不变。
 
 它是可部署 backend 实现，不是“已经部署并通过生产评审”的证明。包级 contract-only fixture、fake PostgreSQL client 和迁移测试不能作为主网 corpus、故障演练或 `ready` attestation。
 
@@ -47,7 +47,7 @@ flowchart LR
   Harness --> Attestation["Persisted result + exact lineage"]
 ```
 
-职责边界保持明确：readiness 包负责 schema 和纯状态机，本包负责 Postgres 一致性；未来 composition root 才负责连接池、secret manager、worker 调度、metrics/alerting 和真实 provider。
+职责边界保持明确：readiness 包负责 schema 和纯状态机，本包负责 Postgres 一致性；独立 data-plane 包与私有 operations CLI 负责连接池、opaque secret 解析、worker 执行、脱敏 metrics/alert 和 provider 请求。真实部署仍由平台环境负责。
 
 ## 数据模型
 
@@ -61,7 +61,8 @@ flowchart LR
 - sampling source approval、policy、plan、sample manifest、manifest/candidate handoff 和 coverage run；
 - audit event；
 - budget policy、lease 和 settlement；
-- circuit state history。
+- circuit state history；
+- 带 manifest、provider configuration、request fingerprint 和 budget lease lineage 的 provider request event。
 
 每次读取 JSONB payload 后都会重新执行原始 Zod schema；每次业务写入还会重新调用 readiness 纯函数，例如 `reviseReviewedReplayCandidate()`、`recordReviewedReplayDecision()`、`promoteReviewedReplayCandidate()`、`settleProviderBudgetLease()` 和 `transitionSharedProviderCircuitState()`。因此数据库中即使出现字段篡改、旧指纹复用或非法状态跳转，也不会被当成有效 artifact。
 
@@ -160,7 +161,7 @@ owner 拒绝后使用既有 `rejected` 与 revision/supersession 流程；调用
 - active policy 行锁串行化同一 budget 的窗口初始化、全局并发统计和 reserved usage 更新；
 - aggregate `used + reserved + requested` 不能超过 cost/request/bytes/RPC limits；
 - settlement 对 lease 唯一，先释放 reserved，再把实际 usage 计入原窗口；
-- `reconcileExpiredLeases()` 用 `FOR UPDATE SKIP LOCKED` 把未结算过期 lease 归档为零用量 `cancelled` settlement。
+- `reconcileExpiredLeases()` 用 `FOR UPDATE SKIP LOCKED` 把未结算过期 lease 归档为按完整 reserved usage 计费的保守 `cancelled` settlement，避免未知已发请求被低估。
 
 数据库不可用、active policy 不匹配、窗口额度不足、全局并发耗尽或对账失配都会抛出明确错误并回滚，不能退化为 provider-local 非原子额度。
 
@@ -182,7 +183,7 @@ owner 拒绝后使用既有 `rejected` 与 revision/supersession 流程；调用
 
 ## 使用与验证
 
-本包本身仍不读取环境或创建连接；私有 `apps/chain-control-cli` 是当前唯一 composition root。生产操作需要显式：
+本包本身仍不读取环境或创建连接；私有 `apps/chain-control-cli` 负责 provisioning，`apps/chain-operations-cli` 负责 provider/worker data plane。生产操作需要显式：
 
 1. 通过 `CHAIN_CONTROL_DATABASE_URL` 连接与 Product RAG 分离的 PostgreSQL，远程连接验证 TLS；
 2. 用部署 migration 身份运行 `pnpm chain:control:migrate`；

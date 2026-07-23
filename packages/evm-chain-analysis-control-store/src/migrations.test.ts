@@ -20,6 +20,12 @@ describe('chain-analysis control-store migrations', () => {
     expect(sql).toContain('create table if not exists evm_chain_control_retention_jobs');
     expect(sql).toContain('create table if not exists evm_chain_control_audit_events');
     expect(sql).toContain('create table if not exists evm_chain_control_budget_windows');
+    expect(sql).toContain('create table if not exists evm_chain_control_provider_request_events');
+    expect(sql).toContain('manifest_fingerprint text not null');
+    expect(sql).toContain('provider_configuration_fingerprint text not null');
+    expect(sql).toContain(
+      'provider request lineage migration requires archived or removed legacy events',
+    );
     expect(sql).toContain('create table if not exists evm_chain_control_circuit_heads');
     expect(sql).toContain('create table if not exists evm_chain_control_sampling_approvals');
     expect(sql).toContain(
@@ -52,6 +58,7 @@ describe('chain-analysis control-store migrations', () => {
     );
     expect(sql).toContain('evm_chain_control_corpus_evaluation_reports_append_only');
     expect(sql).toContain('evm_chain_control_operations_evidence_append_only');
+    expect(sql).toContain('evm_chain_control_provider_request_events_append_only');
     expect(sql).toContain('evm_chain_control_readiness_policies_append_only');
     expect(sql).toContain('evm_chain_control_readiness_attestations_lineage_required');
     expect(sql).toContain('evm_chain_control_production_provisioning_receipts_append_only');

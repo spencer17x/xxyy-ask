@@ -8,7 +8,7 @@
 2. 公开主网 replay case 在进入 `@xxyy/evm-chain-analysis-harness` 前，如何经过可审计的采集、单 owner 复核、修订、保留和删除流程；
 3. 未来真实 provider 数据面需要提交哪些预算、审计、告警、共享熔断、SLO、故障演练、安全和 runbook 证据，才能判断是否具备内部试用条件。
 
-本契约包没有真实主网样本、真实来源/法务审批、endpoint、credential、数据库 client、Redis、RPC client 或 provider backend，也不读取环境变量。独立 companion `@xxyy/evm-chain-analysis-control-store` 已实现可注入 client 的 Postgres 治理、sampling intake、可重算 readiness evidence ledger、审计、共享 budget 和 circuit backend，但未部署、未配置生产 grant/worker/provider，也没有接入任何运行面。两者都没有注册 Capability、MCP、Skill、LangGraph tool、API、CLI 或 Telegram 入口。当前公开客服仍只回答产品知识问题，交易哈希、Explorer、池子、链上取证和 MEV 请求继续返回边界或澄清回复。
+本契约包没有真实主网样本、真实来源/法务审批、endpoint、credential、数据库 client、Redis 或 RPC client，也不读取环境变量。独立 control-store 已实现 Postgres 治理与共享控制 backend，data-plane 包与私有 operations CLI 已实现 opaque secret、双 Provider composition、持久请求审计和 worker handler runtime；它们均未部署、未配置真实 grant/provider/credential，也没有注册 Capability、MCP、Skill、LangGraph tool、API、Web 或 Telegram 入口。当前公开客服仍只回答产品知识问题，交易哈希、Explorer、池子、链上取证和 MEV 请求继续返回边界或澄清回复。私有运行边界见 [Chain Analysis Provider & Worker Data Plane](chain-data-plane-operations.md)。
 
 ## 总体流程
 

@@ -76,6 +76,31 @@ importers:
         specifier: ^8.20.0
         version: 8.20.0
 
+  apps/chain-operations-cli:
+    dependencies:
+      '@xxyy/evm-chain-analysis-control-store':
+        specifier: workspace:*
+        version: link:../../packages/evm-chain-analysis-control-store
+      '@xxyy/evm-chain-analysis-data-plane':
+        specifier: workspace:*
+        version: link:../../packages/evm-chain-analysis-data-plane
+      '@xxyy/evm-chain-analysis-readiness':
+        specifier: workspace:*
+        version: link:../../packages/evm-chain-analysis-readiness
+      '@xxyy/transaction-analysis-core':
+        specifier: workspace:*
+        version: link:../../packages/transaction-analysis-core
+      pg:
+        specifier: ^8.21.0
+        version: 8.21.0
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+
   apps/cli:
     dependencies:
       '@xxyy/agent-core':
@@ -157,6 +182,37 @@ importers:
       zod:
         specifier: ^4.0.0
         version: 4.4.3
+
+  packages/evm-chain-analysis-data-plane:
+    dependencies:
+      '@xxyy/evm-chain-analysis-control-store':
+        specifier: workspace:*
+        version: link:../evm-chain-analysis-control-store
+      '@xxyy/evm-chain-analysis-harness':
+        specifier: workspace:*
+        version: link:../evm-chain-analysis-harness
+      '@xxyy/evm-chain-analysis-readiness':
+        specifier: workspace:*
+        version: link:../evm-chain-analysis-readiness
+      '@xxyy/evm-data-adapter':
+        specifier: workspace:*
+        version: link:../evm-data-adapter
+      '@xxyy/evm-execution-data-adapter':
+        specifier: workspace:*
+        version: link:../evm-execution-data-adapter
+      '@xxyy/evm-mev-observation-data-adapter':
+        specifier: workspace:*
+        version: link:../evm-mev-observation-data-adapter
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      pg:
+        specifier: ^8.21.0
+        version: 8.21.0
 
   packages/evm-chain-analysis-harness:
     dependencies:

@@ -39,9 +39,11 @@
 - `packages/evm-chain-analysis-harness`：未接线、不执行网络 I/O 的 transaction/execution/MEV 离线组合、replay corpus 评测和质量门禁。
 - `packages/evm-chain-analysis-readiness`：未接线、无网络 I/O 的 sampling plan/evidence intake、manifest/candidate handoff、单 owner reviewed replay 治理、生产数据面证据契约和综合 readiness evaluator；不含真实来源/法务审批、主网样本或 provider backend。
 - `packages/evm-chain-analysis-control-store`：未接线、通过注入 client 执行 SQL 的 Postgres sampling/handoff/单 owner 治理证据存储、sampling/retention/review worker contract、可重算 readiness evidence ledger、哈希链审计、共享 provider budget 和 circuit CAS backend；不自行创建连接、不访问 RPC/HTTP、不含生产 grant/审批/真实证据。
+- `packages/evm-chain-analysis-data-plane`：未接线、私有的双 Provider composition root；从 opaque secret resolver 构建三个只读 adapter，在 HTTP 外层执行共享 budget/circuit、bounded cache、持久脱敏审计、metrics/alert 以及四类 worker handler contract；不含真实 endpoint/credential 或生产部署证明。
 - `packages/evm-price-impact-sandwich-core`：未接线、离线的 lossless AMM price impact 和 Sandwich 四态判定。
 - `packages/evm-mev-observation-data-adapter`：未接线、启动时 allowlist 的同区块 swap、transaction-boundary pool state、actor token delta 和多 provider 冲突验证。
 - `apps/chain-control-cli`：与客服运行面隔离的生产 provisioning composition root；从受控 plan 与 Ed25519 attestation 写入独立 control Postgres，并重读 receipt/grant lineage/audit chain。
+- `apps/chain-operations-cli`：与客服运行面隔离的 Provider/worker 运维入口；验证 manifest/secret、初始化 budget/circuit、执行双 Provider snapshot probe 和 retention/reconciliation 单次 worker。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:evaluate`、`rag:ask`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
 - `apps/telegram-bot`：Telegram Bot long polling 入口。
@@ -210,7 +212,7 @@ Codex Desktop、Codex CLI 和人工创建 Git 提交时统一使用 Conventional
 - `packages/rag-core`：`rag`
 - `packages/agent-core`：`agent`
 - `packages/shared`：`shared`
-- `apps/api`、`apps/web`、`apps/cli`、`apps/telegram-bot`：分别使用 `api`、`web`、`cli`、`telegram`；`apps/chain-control-cli` 使用 `infra`
+- `apps/api`、`apps/web`、`apps/cli`、`apps/telegram-bot`：分别使用 `api`、`web`、`cli`、`telegram`；`apps/chain-control-cli` 与 `apps/chain-operations-cli` 使用 `infra`
 - 开发文档：`docs`；Docker、脚本和仓库工具链：`infra`；依赖更新：`deps`
 
 示例：

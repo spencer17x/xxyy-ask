@@ -1,6 +1,7 @@
 import {
   createSharedProviderCircuitState,
   materializeGrantedProviderBudgetLease,
+  productionAuditEventSchema,
   providerBudgetLeaseSchema,
   providerBudgetPolicySchema,
   providerBudgetReservationRequestSchema,
@@ -16,6 +17,7 @@ import {
   type ProviderBudgetReservationRequest,
   type ProviderBudgetSettlement,
   type ProviderBudgetSettlementInput,
+  type ProductionAuditEvent,
   type SharedCircuitStateCoordinator,
   type SharedCircuitTransitionRequest,
   type SharedProviderCircuitState,
@@ -78,6 +80,11 @@ interface CircuitHeadRow extends PayloadRow {
   state_fingerprint: string;
 }
 
+export interface ProviderRequestCompletion {
+  event: ProductionAuditEvent;
+  settlement: ProviderBudgetSettlement;
+}
+
 export interface PgEvmChainAnalysisProviderControlStore
   extends ProviderBudgetCoordinator, SharedCircuitStateCoordinator {
   initializeCircuit(input: {
@@ -90,8 +97,17 @@ export interface PgEvmChainAnalysisProviderControlStore
     installedAt: string;
     policy: unknown;
   }): Promise<ProviderBudgetPolicy>;
+  completeProviderRequest(input: {
+    actorIdHash: string;
+    event: unknown;
+    settlement: ProviderBudgetSettlementInput;
+  }): Promise<ProviderRequestCompletion>;
   migrate(): Promise<void>;
   readAudit(): Promise<ChainAnalysisControlAuditEvent[]>;
+  recordProviderRequest(input: {
+    actorIdHash: string;
+    event: unknown;
+  }): Promise<ProductionAuditEvent>;
   reconcileExpiredLeases(input: {
     asOf: string;
     limit?: number;
@@ -409,6 +425,110 @@ export function createPgEvmChainAnalysisProviderControlStore(options: {
       );
     },
 
+    async recordProviderRequest(input): Promise<ProductionAuditEvent> {
+      const event = validateProviderRequestEvent(input.event, input.actorIdHash);
+      if (event.budgetLeaseId !== undefined) {
+        throw new ChainAnalysisControlStoreError(
+          'invalid_state',
+          'Leased provider requests require atomic settlement and audit completion.',
+        );
+      }
+      if (event.resultCode !== 'cache_hit' || !sameUsage(event.usage, zeroUsage())) {
+        throw new ChainAnalysisControlStoreError(
+          'invalid_state',
+          'Unleased provider request events are restricted to zero-usage cache hits.',
+        );
+      }
+      return withControlTransaction(client, async (transaction) => {
+        await assertGovernanceAuthorization(transaction, {
+          at: event.eventAt,
+          principalIdHash: input.actorIdHash,
+          role: 'provider_operator',
+        });
+        return persistProviderRequestEvent(transaction, event, input.actorIdHash);
+      });
+    },
+
+    async completeProviderRequest(input): Promise<ProviderRequestCompletion> {
+      const event = validateProviderRequestEvent(input.event, input.actorIdHash);
+      if (
+        event.budgetLeaseId === undefined ||
+        event.budgetLeaseId !== input.settlement.leaseId ||
+        event.eventAt !== input.settlement.settledAt ||
+        !sameUsage(event.usage, input.settlement.usage) ||
+        input.settlement.outcome === 'cancelled' ||
+        (event.resultCode === 'success') !== (input.settlement.outcome === 'success')
+      ) {
+        throw new ChainAnalysisControlStoreError(
+          'invalid_state',
+          'Provider request event and budget settlement must have exact lease, time, usage, and outcome lineage.',
+        );
+      }
+      return withControlTransaction(client, async (transaction) => {
+        await acquireControlLock(transaction, `budget-lease:${input.settlement.leaseId}`);
+        const leaseRow = await readLeaseRow(transaction, input.settlement.leaseId, true);
+        if (leaseRow === undefined) {
+          throw new ChainAnalysisControlStoreError(
+            'lease_not_found',
+            `Budget lease ${input.settlement.leaseId} was not found.`,
+          );
+        }
+        const lease = providerBudgetLeaseSchema.parse(leaseRow.payload);
+        if (lease.instanceIdHash !== input.actorIdHash) {
+          throw new ChainAnalysisControlStoreError(
+            'invalid_actor',
+            'Provider request completion actor must own the budget lease.',
+          );
+        }
+        await assertGovernanceAuthorization(transaction, {
+          at: input.settlement.settledAt,
+          principalIdHash: input.actorIdHash,
+          role: 'provider_operator',
+        });
+        const policy = await readBudgetPolicy(transaction, lease.policyFingerprint);
+        if (
+          policy === undefined ||
+          policy.adapter !== event.adapter ||
+          policy.chainId !== event.chainId ||
+          policy.providerId !== event.providerId
+        ) {
+          throw new ChainAnalysisControlStoreError(
+            'invalid_state',
+            'Provider request event does not match the leased provider policy.',
+          );
+        }
+        const settlement = settleProviderBudgetLease(lease, input.settlement);
+        const existingSettlement = await readSettlement(transaction, lease.leaseId);
+        if (
+          existingSettlement !== undefined &&
+          existingSettlement.settlementFingerprint !== settlement.settlementFingerprint
+        ) {
+          throw new ChainAnalysisControlStoreError(
+            'lease_already_settled',
+            `Budget lease ${lease.leaseId} already has a different settlement.`,
+          );
+        }
+        if (existingSettlement === undefined) {
+          await persistSettlement(
+            transaction,
+            lease,
+            leaseRow.window_started_at,
+            settlement,
+            input.actorIdHash,
+          );
+        }
+        const storedEvent = await persistProviderRequestEvent(
+          transaction,
+          event,
+          input.actorIdHash,
+        );
+        return {
+          event: storedEvent,
+          settlement: existingSettlement ?? settlement,
+        };
+      });
+    },
+
     async reconcileExpiredLeases(input): Promise<ProviderBudgetSettlement[]> {
       const limit = normalizeReconcileLimit(input.limit);
       return withControlTransaction(client, async (transaction) => {
@@ -439,7 +559,7 @@ export function createPgEvmChainAnalysisProviderControlStore(options: {
             leaseId: lease.leaseId,
             outcome: 'cancelled',
             settledAt: input.asOf,
-            usage: zeroUsage(),
+            usage: lease.reserved,
           });
           await persistSettlement(
             transaction,
@@ -618,6 +738,120 @@ export function createPgEvmChainAnalysisProviderControlStore(options: {
       });
     },
   };
+}
+
+function validateProviderRequestEvent(input: unknown, actorIdHash: string): ProductionAuditEvent {
+  const event = productionAuditEventSchema.parse(input);
+  if (event.eventKind !== 'provider_request') {
+    throw new ChainAnalysisControlStoreError(
+      'invalid_state',
+      'Provider request storage only accepts provider_request audit events.',
+    );
+  }
+  if (event.instanceIdHash !== actorIdHash) {
+    throw new ChainAnalysisControlStoreError(
+      'invalid_actor',
+      'Provider request actor must match the redacted runtime instance identity.',
+    );
+  }
+  return event;
+}
+
+async function persistProviderRequestEvent(
+  client: PgControlClientLike,
+  event: ProductionAuditEvent,
+  actorIdHash: string,
+): Promise<ProductionAuditEvent> {
+  await acquireControlLock(client, `provider-request:${event.eventFingerprint}`);
+  const existing = await queryControlDatabase<PayloadRow>(
+    client,
+    `
+      /* control:provider-request-read */
+      select payload
+      from evm_chain_control_provider_request_events
+      where event_fingerprint = $1
+    `,
+    [event.eventFingerprint],
+  );
+  if (existing.rows[0] !== undefined) {
+    return productionAuditEventSchema.parse(existing.rows[0].payload);
+  }
+  await queryControlDatabase(
+    client,
+    `
+      /* control:provider-request-insert */
+      insert into evm_chain_control_provider_request_events (
+        event_id,
+        event_fingerprint,
+        adapter,
+        chain_id,
+        provider_id,
+        manifest_fingerprint,
+        provider_configuration_fingerprint,
+        event_at,
+        payload
+      ) values ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::jsonb)
+    `,
+    [
+      event.eventId,
+      event.eventFingerprint,
+      event.adapter,
+      event.chainId,
+      event.providerId,
+      event.manifestFingerprint,
+      event.providerConfigurationFingerprint,
+      event.eventAt,
+      JSON.stringify(event),
+    ],
+  );
+  await appendControlAuditEvent(client, {
+    actorIdHash,
+    entityFingerprint: event.eventFingerprint,
+    entityId: event.eventId,
+    entityType: 'provider_request_event',
+    eventAt: event.eventAt,
+    eventKind: 'provider_request_recorded',
+    payload: {
+      adapter: event.adapter,
+      budgetLeaseId: event.budgetLeaseId ?? null,
+      chainId: event.chainId,
+      manifestFingerprint: event.manifestFingerprint,
+      providerId: event.providerId,
+      providerConfigurationFingerprint: event.providerConfigurationFingerprint,
+      requestFingerprint: event.requestFingerprint,
+      resultCode: event.resultCode,
+      usage: event.usage,
+    },
+    stream: 'provider_control',
+  });
+  return event;
+}
+
+async function readBudgetPolicy(
+  client: PgControlClientLike,
+  policyFingerprint: string,
+): Promise<ProviderBudgetPolicy | undefined> {
+  const response = await queryControlDatabase<PayloadRow>(
+    client,
+    `
+      /* control:budget-policy-by-fingerprint */
+      select payload
+      from evm_chain_control_budget_policies
+      where policy_fingerprint = $1
+    `,
+    [policyFingerprint],
+  );
+  const row = response.rows[0];
+  return row === undefined ? undefined : providerBudgetPolicySchema.parse(row.payload);
+}
+
+function sameUsage(left: BudgetUsage, right: BudgetUsage): boolean {
+  return (
+    left.costUnits === right.costUnits &&
+    left.requests === right.requests &&
+    left.responseBytes === right.responseBytes &&
+    left.rpcCalls === right.rpcCalls
+  );
 }
 
 async function readActivePolicy(

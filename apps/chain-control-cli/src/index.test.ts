@@ -133,6 +133,11 @@ describe('chain-control CLI', () => {
   });
 
   it('rejects unknown, repeated, or malformed flags', () => {
+    expect(parseChainControlCliArgs(['plan', '--', '--input', 'a', '--out', 'b'])).toEqual({
+      command: 'plan',
+      input: 'a',
+      output: 'b',
+    });
     expect(() => parseChainControlCliArgs(['plan', '--input', 'a'])).toThrow(/--out/u);
     expect(() =>
       parseChainControlCliArgs(['plan', '--input', 'a', '--input', 'b', '--out', 'c']),

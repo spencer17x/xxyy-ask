@@ -54,6 +54,7 @@ export type {
 export {
   createPgEvmChainAnalysisProviderControlStore,
   type PgEvmChainAnalysisProviderControlStore,
+  type ProviderRequestCompletion,
 } from './provider-control-store.js';
 export {
   createEd25519ProductionProvisioningAuthorityAttestation,

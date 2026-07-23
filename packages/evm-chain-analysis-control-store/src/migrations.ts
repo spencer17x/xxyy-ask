@@ -21,6 +21,7 @@ const IMMUTABLE_TABLES = [
   'evm_chain_control_budget_policies',
   'evm_chain_control_budget_leases',
   'evm_chain_control_budget_settlements',
+  'evm_chain_control_provider_request_events',
   'evm_chain_control_circuit_states',
   'evm_chain_control_sampling_approvals',
   'evm_chain_control_production_provisioning_receipts',
@@ -365,6 +366,57 @@ export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
       settled_at timestamptz not null,
       payload jsonb not null check (jsonb_typeof(payload) = 'object')
     )
+  `,
+  `
+    create table if not exists evm_chain_control_provider_request_events (
+      event_id text primary key,
+      event_fingerprint text not null unique,
+      adapter text not null,
+      chain_id text not null,
+      provider_id text not null,
+      manifest_fingerprint text not null,
+      provider_configuration_fingerprint text not null,
+      event_at timestamptz not null,
+      payload jsonb not null check (jsonb_typeof(payload) = 'object')
+    )
+  `,
+  `
+    create index if not exists evm_chain_control_provider_request_events_provider_idx
+      on evm_chain_control_provider_request_events (
+        adapter,
+        chain_id,
+        provider_id,
+        event_at desc
+      )
+  `,
+  `
+    alter table evm_chain_control_provider_request_events
+      add column if not exists manifest_fingerprint text
+  `,
+  `
+    alter table evm_chain_control_provider_request_events
+      add column if not exists provider_configuration_fingerprint text
+  `,
+  `
+    do $$
+    begin
+      if exists (
+        select 1
+        from evm_chain_control_provider_request_events
+        where
+          manifest_fingerprint is null
+          or provider_configuration_fingerprint is null
+      ) then
+        raise exception
+          'provider request lineage migration requires archived or removed legacy events';
+      end if;
+    end
+    $$
+  `,
+  `
+    alter table evm_chain_control_provider_request_events
+      alter column manifest_fingerprint set not null,
+      alter column provider_configuration_fingerprint set not null
   `,
   `
     create table if not exists evm_chain_control_circuit_states (

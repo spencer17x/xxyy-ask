@@ -122,7 +122,7 @@ flowchart LR
 
 `packages/evm-data-adapter` 在独立包中实现标准 JSON-RPC 数据获取与 snapshot 归一化。endpoint 只能来自启动配置；请求只能选择已配置 chain/provider。它验证 `eth_chainId`，禁止重定向和非显式 loopback HTTP，限制只读方法、batch、timeout、retry 和响应字节，并把多个 provider 的差异保留为 conflicts 与稳定 diagnostics。hex quantity 通过 `bigint` 直接转十进制，不经过有损 number。
 
-该包没有真实 endpoint 配置，也未被任何 app、LangGraph、`ToolRegistry`、`CapabilityRegistry`、CLI 或 Telegram 引用，因此不会改变公开客服边界。它不是 MCP/Capability adapter，也不读取 trace 或 pool metadata；执行与 MEV observation 数据由权限更窄的独立 adapter 负责。离线组合/合成评测已由独立 harness 完成；真实 provider 运维、reviewed 主网评测和 Agent bridge 仍是后续阶段。详细设计见 [evm-data-adapter.md](evm-data-adapter.md)。
+该包没有内置真实 endpoint 配置，也未被公开 app、LangGraph、`ToolRegistry`、`CapabilityRegistry` 或 Telegram 引用，因此不会改变客服边界。私有 `packages/evm-chain-analysis-data-plane` / `apps/chain-operations-cli` 现可从 opaque secret mount 组合两个独立 provider，并在每次请求外层执行共享 budget/circuit、cache、持久审计和脱敏 metrics；真实 endpoint/credential 仍只存在于部署环境。它不是 MCP/Capability adapter，也不读取 trace 或 pool metadata。详细设计见 [evm-data-adapter.md](evm-data-adapter.md) 与 [chain-data-plane-operations.md](chain-data-plane-operations.md)。
 
 ## Allowlisted EVM Execution Data Adapter v0.1（未接线执行数据边界）
 
@@ -130,7 +130,7 @@ flowchart LR
 
 adapter 把递归 call frame 迭代归一化为 250 节点、32 层、单 bytes 8 KiB 的扁平 trace；pool metadata 必须通过 protocol-specific factory allowlist、非空 code、排序 token、V3 fee 和 factory `getPair/getPool` 反查。最多四个 provider 生成 semantic fingerprint，等价值不产生伪冲突，差异保留为脱敏 conflict；结果可以直接进入 execution enrichment core。
 
-该包同样没有真实 endpoint、生产 composition root、共享 QPS/熔断/缓存/metrics 或运行面引用。它没有注册 Capability/MCP，也不改变公开客服边界。详细设计见 [evm-execution-data-adapter.md](evm-execution-data-adapter.md)。
+该包同样没有内置 endpoint，也没有注册 Capability/MCP 或公开运行面引用。私有 data-plane composition root 现能为它解析双 provider、factory allowlist、共享 budget/circuit、cache、持久审计与 metrics；仓库没有真实 credential 或生产部署证明，公开客服边界不变。详细设计见 [evm-execution-data-adapter.md](evm-execution-data-adapter.md) 与 [chain-data-plane-operations.md](chain-data-plane-operations.md)。
 
 ## EVM Execution Enrichment Core v0.1（未接线离线语义层）
 
@@ -152,7 +152,7 @@ Sandwich 判定使用 `confirmed | likely | unlikely | insufficient_data` 四态
 
 V2 以 parent reserves 为起点，按 `Sync` / `Swap` 顺序重放 transaction-boundary state，并用 block-end reserves 闭合；V3 读取 parent `slot0`、active liquidity、tick spacing、有限 bitmap words 和两端 initialized tick，以 Swap event 重放单 active-range state，再与 block-end state 对账。receipt 中 token0/token1 Transfer 只计算 transaction `from` 的直接 raw delta，不做 router beneficiary 或多地址 actor 聚类。
 
-每个 provider 独立生成完整 core input，并比较 block/order、swap、pool state 和 actor delta 语义指纹；分歧作为 source conflict 投影到 price-impact/Sandwich core，领域判断随即 fail closed。client 同时提供 provider-local QPS、并发、缓存、熔断、成本和脱敏 metrics 控制。该包仍没有真实 endpoint、环境变量、production composition root 或 Capability/MCP/Agent/API/CLI/Telegram 接线。详细设计见 [evm-mev-observation-data-adapter.md](evm-mev-observation-data-adapter.md)。
+每个 provider 独立生成完整 core input，并比较 block/order、swap、pool state 和 actor delta 语义指纹；分歧作为 source conflict 投影到 price-impact/Sandwich core，领域判断随即 fail closed。client 保留 provider-local 防御；私有 data-plane composition root 额外强制两个独立 archive provider、跨实例 budget/circuit、bounded cache、持久审计与脱敏 metrics。仓库仍没有真实 endpoint/credential 或 Capability/MCP/Agent/API/Web/Telegram 接线。详细设计见 [evm-mev-observation-data-adapter.md](evm-mev-observation-data-adapter.md) 与 [chain-data-plane-operations.md](chain-data-plane-operations.md)。
 
 ## EVM Chain Analysis Composition & Evaluation Harness v0.1（未接线离线组合层）
 
@@ -168,7 +168,7 @@ V2 以 parent reserves 为起点，按 `Sync` / `Swap` 顺序重放 transaction-
 
 同一包定义只含 `secretref:` 的 provider descriptor、跨实例 budget lease/settlement、脱敏持久审计 event、共享 circuit state/coordinator interface、SLO/告警、故障演练、安全和 incident runbook evidence contract。综合 evaluator 把 governed corpus export、该 corpus 的 harness report 和生产证据闭合，并固定调用不可由 caller 弱化的 `internalReadinessQualityGate`，输出稳定的 `blocked | degraded | ready` 和逐项 reason。
 
-readiness 契约包自身不实现 owner identity、数据库、worker 调度、secret manager、metrics/alerting 或真实 provider。独立的 `packages/evm-chain-analysis-control-store` 已实现可注入 client 的 Postgres 持久化层：不可变 sampling/handoff/governance artifact、authorization/revocation、sampling/retention job lease、handoff 单槽 owner review work queue、可重算 readiness evidence ledger、哈希链 audit、budget window/lease/settlement/reconciliation 和 circuit history/head CAS。handoff 的 initial candidate、retention job、一个 review job 和 audit 在同一事务提交；handoff review 必须携带当前 `jobId + attemptCount` lease fence。readiness policy、operations evidence 和从 persisted export 确定性生成的 corpus report 分别入账，attestation 只能引用这些精确输入并重新执行 evaluator，不能提交 caller 自算 result。control store 不读取环境变量、不创建连接，也没有生产 grant、真实审批/主网 corpus、worker deployment 或 provider endpoint；contract-only readiness 结果保持 `blocked`。两个包都未被任何 app、Agent、Capability、MCP、CLI 或 Telegram 引用。详细设计见 [evm-chain-analysis-sampling.md](evm-chain-analysis-sampling.md)、[evm-chain-analysis-sampling-handoff.md](evm-chain-analysis-sampling-handoff.md)、[evm-chain-analysis-review-work-queue.md](evm-chain-analysis-review-work-queue.md)、[evm-chain-analysis-readiness.md](evm-chain-analysis-readiness.md)、[evm-chain-analysis-control-store.md](evm-chain-analysis-control-store.md) 与 [evm-chain-analysis-readiness-evidence-ledger.md](evm-chain-analysis-readiness-evidence-ledger.md)。
+readiness 契约包自身不实现 owner identity、数据库或真实 provider。独立的 `packages/evm-chain-analysis-control-store` 已实现可注入 client 的 Postgres 持久化层：不可变 sampling/handoff/governance artifact、authorization/revocation、sampling/retention job lease、handoff 单槽 owner review work queue、可重算 readiness evidence ledger、哈希链 audit、budget window/lease/settlement/reconciliation、provider request event 和 circuit history/head CAS。`packages/evm-chain-analysis-data-plane` 在包外组合三个 adapter，解析 opaque secret、执行双 provider/shared controls/cache/audit，并提供四类 worker handler runtime；私有 `apps/chain-control-cli` 与 `apps/chain-operations-cli` 是仅有的部署入口。它们都没有生产 grant、真实 endpoint/credential、主网 corpus 或 readiness 证明，也未被 Agent、Capability、MCP、API、Web 或 Telegram 引用；contract-only readiness 结果保持 `blocked`。详细设计见 [evm-chain-analysis-sampling.md](evm-chain-analysis-sampling.md)、[evm-chain-analysis-sampling-handoff.md](evm-chain-analysis-sampling-handoff.md)、[evm-chain-analysis-review-work-queue.md](evm-chain-analysis-review-work-queue.md)、[evm-chain-analysis-readiness.md](evm-chain-analysis-readiness.md)、[evm-chain-analysis-control-store.md](evm-chain-analysis-control-store.md)、[evm-chain-analysis-readiness-evidence-ledger.md](evm-chain-analysis-readiness-evidence-ledger.md) 与 [chain-data-plane-operations.md](chain-data-plane-operations.md)。
 
 ## 说明
 

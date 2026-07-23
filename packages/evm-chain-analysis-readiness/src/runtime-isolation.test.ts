@@ -1,11 +1,12 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
 const SOURCE_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = join(SOURCE_DIRECTORY, '../../..');
+const PRIVATE_OPERATIONS_APP_DIRECTORY = join(REPOSITORY_ROOT, 'apps/chain-operations-cli');
 
 describe('chain-analysis readiness runtime isolation', () => {
   it('keeps production modules free of network, environment, Agent, MCP, and app dependencies', async () => {
@@ -37,6 +38,9 @@ describe('chain-analysis readiness runtime isolation', () => {
     ];
     for (const directory of runtimeDirectories) {
       for (const path of await listTypeScriptFiles(directory)) {
+        if (path.startsWith(`${PRIVATE_OPERATIONS_APP_DIRECTORY}${sep}`)) {
+          continue;
+        }
         expect(await readFile(path, 'utf8'), path).not.toContain(
           '@xxyy/evm-chain-analysis-readiness',
         );

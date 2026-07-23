@@ -1,0 +1,22 @@
+{
+  "name": "@xxyy/chain-operations-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@xxyy/evm-chain-analysis-control-store": "workspace:*",
+    "@xxyy/evm-chain-analysis-data-plane": "workspace:*",
+    "@xxyy/evm-chain-analysis-readiness": "workspace:*",
+    "@xxyy/transaction-analysis-core": "workspace:*",
+    "pg": "^8.21.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

@@ -355,7 +355,7 @@
 后续执行顺序固定为：
 
 1. **Goal 20B-1 / Real Production Provisioning**：仓库侧受控 request/plan、Ed25519 attestation、独立数据库 CLI、首次 apply 时间窗口、receipt/lineage/audit verification 和一次性 PostgreSQL 验证已完成；真实受控 owner/service identities、authority key/policy evidence、目标生产数据库和 production receipt 仍待 owner 执行。
-2. **Goal 20B-2 / Provider & Worker Data Plane**：为三个 adapter 配置双独立 Provider，接入 secret manager、共享 budget/circuit、cache/failover、metrics/alerting，并部署 sampling/review/retention/reconciliation workers。
+2. **Goal 20B-2 / Provider & Worker Data Plane**：仓库侧已增加双独立 Provider manifest、mounted secret resolver、三个 adapter 的私有 composition root、共享 budget/circuit、bounded cache、failover/持久审计/脱敏 metrics-alert 契约、四类 worker handler runtime、bootstrap/probe/retention/reconciliation CLI，并通过一次性空库 PostgreSQL 原子结算/审计验证；真实两家 Provider、credential、scheduler/collector/on-call route 和 sampling/review handler 仍待生产部署与验证。
 3. **Goal 20B-3 / Reviewed Mainnet Corpus**：按 plan 采集 Ethereum 主网公开样本，完成 manifest → candidate handoff，由唯一 owner 从单槽队列重放并批准/拒绝，形成真实 governed corpus。
 4. **Goal 20B-4 / Production Readiness Gate**：执行故障演练，形成 SLO/security/runbook evidence，在固定 corpus 上收敛误报、漏报与 abstention，并由 evidence ledger 重算真实 readiness attestation；成功标准只能是 canonical evaluator 返回 `ready`。
 5. **Goal 24 / First MCP-Skill Capability**：在 20B-4 `ready` 后，把 `chain.inspect_transaction` 与 `chain.detect_sandwich` 封装为内部只读能力，复用现有核心并增加显式授权、超时、成本、审计和结构化错误。

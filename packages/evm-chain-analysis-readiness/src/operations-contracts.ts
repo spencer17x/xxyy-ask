@@ -262,7 +262,9 @@ export const productionAuditEventInputSchema = z
     eventAt: z.string().datetime({ offset: true }),
     eventKind: z.enum(productionAuditEventKinds),
     instanceIdHash: fingerprintSchema,
+    manifestFingerprint: fingerprintSchema.optional(),
     providerId: evmRpcProviderIdSchema,
+    providerConfigurationFingerprint: fingerprintSchema.optional(),
     requestFingerprint: fingerprintSchema.optional(),
     resultCode: stableIdSchema,
     usage: auditUsageSchema,
@@ -622,6 +624,8 @@ function addAuditEventIssues(
   event: {
     budgetLeaseId?: string | undefined;
     eventKind: (typeof productionAuditEventKinds)[number];
+    manifestFingerprint?: string | undefined;
+    providerConfigurationFingerprint?: string | undefined;
     requestFingerprint?: string | undefined;
   },
   context: z.RefinementCtx,
@@ -636,12 +640,20 @@ function addAuditEventIssues(
       path: ['budgetLeaseId'],
     });
   }
-  if (event.eventKind === 'provider_request' && event.requestFingerprint === undefined) {
-    context.addIssue({
-      code: 'custom',
-      message: 'Provider request audit events require a request fingerprint.',
-      path: ['requestFingerprint'],
-    });
+  if (event.eventKind === 'provider_request') {
+    for (const field of [
+      'manifestFingerprint',
+      'providerConfigurationFingerprint',
+      'requestFingerprint',
+    ] as const) {
+      if (event[field] === undefined) {
+        context.addIssue({
+          code: 'custom',
+          message: `Provider request audit events require ${field}.`,
+          path: [field],
+        });
+      }
+    }
   }
 }
 

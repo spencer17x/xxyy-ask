@@ -4,7 +4,7 @@
 
 `@xxyy/evm-mev-observation-data-adapter` 是一个未接线的只读 EVM 数据边界。它以启动时冻结的 chain、archive provider、Uniswap V2/V3 pool、排序 token、fee 和 exact-input route policy 为信任根，从精确目标交易构建同区块 pool swap neighborhood，并直接输出 `@xxyy/evm-price-impact-sandwich-core` 的输入。
 
-该包没有真实 RPC endpoint、环境变量 loader、后台任务或生产 composition root，也没有被 API、CLI、Telegram、LangGraph、`ToolRegistry`、`CapabilityRegistry` 或 MCP 引用。它不会改变公开客服边界；交易哈希、Explorer、池子查询、链上取证和 MEV 问题仍返回现有边界或澄清回复。
+该包没有内置 RPC endpoint 或环境变量 loader；隔离的私有 data-plane composition root 现可从 opaque secret mount 为它配置两个独立 archive provider 和共享控制，但仓库没有真实 credential/部署。它没有被 API、Web、Telegram、LangGraph、`ToolRegistry`、`CapabilityRegistry` 或 MCP 引用，不会改变公开客服边界；交易哈希、Explorer、池子查询、链上取证和 MEV 问题仍返回现有边界或澄清回复。私有接线路径见 [Chain Analysis Provider & Worker Data Plane](chain-data-plane-operations.md)。
 
 ## 数据流与信任边界
 
@@ -184,7 +184,7 @@ fixtures 不含真实 endpoint、用户钱包、API key 或主网事实；它们
 ## 明确未实现
 
 - 真实 archive provider 配置、密钥注入、跨实例共享配额、持久化审计、告警和 SLA；
-- 由基础 transaction adapter、execution adapter 与 observation adapter 组成的生产 composition root；
+- 已部署并配置真实 credential 的 transaction/execution/observation production composition root；仓库侧私有 composition 已实现；
 - 经人工审核的主网 corpus、目标 router/chain 的实际覆盖和通过 internal-readiness 的误报/漏报基线；离线 corpus schema、合成矩阵与门禁已在独立 harness 中实现；
 - V3 跨 tick、Mint/Burn 等同区块 liquidity mutation、multi-pool/multi-hop、aggregator、fee-on-transfer 或 rebase；
 - 多地址 actor clustering、private bundle/mempool attribution、intent 判断、gas/builder payment 后净利润；

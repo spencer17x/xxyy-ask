@@ -8,7 +8,10 @@ import * as publicControlStoreApi from './index.js';
 
 const SOURCE_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = join(SOURCE_DIRECTORY, '../../..');
-const PRIVATE_CONTROL_APP_DIRECTORY = join(REPOSITORY_ROOT, 'apps/chain-control-cli');
+const PRIVATE_CONTROL_APP_DIRECTORIES = [
+  join(REPOSITORY_ROOT, 'apps/chain-control-cli'),
+  join(REPOSITORY_ROOT, 'apps/chain-operations-cli'),
+];
 
 describe('chain-analysis control-store runtime isolation', () => {
   it('does not export unverified approval or authorization artifact writers', () => {
@@ -48,7 +51,11 @@ describe('chain-analysis control-store runtime isolation', () => {
       join(REPOSITORY_ROOT, 'packages/rag-core/src'),
     ]) {
       for (const path of await listTypeScriptFiles(directory)) {
-        if (path.startsWith(`${PRIVATE_CONTROL_APP_DIRECTORY}${sep}`)) {
+        if (
+          PRIVATE_CONTROL_APP_DIRECTORIES.some((privateDirectory) =>
+            path.startsWith(`${privateDirectory}${sep}`),
+          )
+        ) {
           continue;
         }
         expect(await readFile(path, 'utf8'), path).not.toContain(

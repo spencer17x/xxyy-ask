@@ -40,6 +40,7 @@ export const chainAnalysisControlAuditEventKinds = [
   'operations_evidence_recorded',
   'promotion_recorded',
   'production_provisioning_recorded',
+  'provider_request_recorded',
   'readiness_attested',
   'readiness_policy_recorded',
   'retention_completed',

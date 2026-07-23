@@ -4,7 +4,7 @@
 
 `@xxyy/evm-execution-data-adapter` 是未接线的公开链执行数据边界。它从启动时配置的 provider 获取 Geth `debug_traceTransaction` / `callTracer`，并在指定历史 block 上读取和验证 Uniswap V2/V3 pool metadata，输出可以直接交给 `@xxyy/evm-execution-enrichment-core` 的 `EvmCallTrace` 与 `EvmPoolMetadata`。
 
-该包没有真实 endpoint、环境变量 loader、后台任务或 composition root，也没有被 API、CLI、Telegram、LangGraph、`ToolRegistry`、`CapabilityRegistry` 或 MCP 引用。公开客服仍拒绝交易哈希、Explorer、链上取证和 MEV 分析；实现一个数据 adapter 不等于能力已注册、已授权或已对用户开放。
+该包没有内置 endpoint 或环境变量 loader；隔离的私有 data-plane composition root 现可从 opaque secret mount 为它配置双 provider 和共享控制，但仓库没有真实 credential/部署。它没有被 API、Web、Telegram、LangGraph、`ToolRegistry`、`CapabilityRegistry` 或 MCP 引用。公开客服仍拒绝交易哈希、Explorer、链上取证和 MEV 分析；实现一个数据 adapter 不等于能力已注册、已授权或已对用户开放。私有接线路径见 [Chain Analysis Provider & Worker Data Plane](chain-data-plane-operations.md)。
 
 现有 `@xxyy/evm-data-adapter` 的标准 RPC allowlist 仍保持 transaction、receipt、chain id 和 block 四个方法不变。执行数据使用独立包和独立 RPC call schema，避免把通用 `debug_*` 或任意 `eth_call` 权限加入基础 snapshot client。
 
@@ -167,8 +167,8 @@ adapter 状态：
 
 ## 明确未实现
 
-- 真实 provider `.env`、Docker 配置、后台 worker、持久化或生产 composition root；
-- 共享 QPS/并发预算、熔断、缓存、provider 成本计量、metrics、告警或审计存储；
+- 真实 provider credential、容器部署、scheduler 和生产运维 evidence；
+- 本 adapter 包内的共享 QPS/并发预算、熔断、缓存、provider 成本计量、metrics、告警或审计存储；这些由隔离 data-plane/control-store 包提供，但尚未真实部署；
 - Erigon/Parity `trace_transaction`、Indexer、Explorer、archive fallback 或 provider 自动发现；
 - 本 adapter 内的 block transaction 集合、pool reserve/state delta、价格、滑点、price impact、利润或 Sandwich verdict；这些由独立 MEV observation adapter 和离线 price-impact/Sandwich core 负责；
 - Capability manifest/adapter、内部授权 grant、MCP、LangGraph bridge、API/CLI/Telegram 入口；

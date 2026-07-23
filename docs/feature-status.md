@@ -46,7 +46,7 @@
 
 - [ ] 实际 MCP server / adapter 暂停：不再提供 `product:mcp:dev`、`tx:mcp:dev` 或 MCP smoke 脚本；Capability Plane 基础库不启动 server，也不连接远端 MCP。
 - [ ] Project skills 暂停：不再保留仓库内 `skills/` 目录，Capability Plane 当前没有注册本地 Skill。
-- [ ] 公开交易分析入口仍暂停：EVM transaction/execution/MEV cores、三个 RPC adapter、composition/evaluation harness、readiness 控制面与 Postgres control backend 都没有 Capability 注册或 Agent bridge；新增的私有 `chain-control-cli` 只做生产 provisioning，不处理用户交易。聊天中交易、Explorer、链上取证和 MEV 问题继续进入边界/澄清回复。
+- [ ] 公开交易分析入口仍暂停：EVM transaction/execution/MEV cores、三个 RPC adapter、composition/evaluation harness、readiness/control store 与私有双 Provider data plane 都没有 Capability 注册或 Agent bridge；`chain-control-cli` 只做 production provisioning，`chain-operations-cli` 只做受控 provider/worker 运维。聊天中交易、Explorer、链上取证和 MEV 问题继续进入边界/澄清回复。
 
 ## Planned Or Not Yet Complete
 
