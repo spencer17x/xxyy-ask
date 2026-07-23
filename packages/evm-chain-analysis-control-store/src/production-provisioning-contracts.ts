@@ -22,6 +22,8 @@ const stableIdSchema = z
 const productionMarkerPattern =
   /(?:^|[-_.:])(?:contract[-_.]?only|demo|example|fake|fixture|placeholder|test)(?=$|[-_.:])/iu;
 
+export const SINGLE_OWNER_PROVISIONING_CONFIRMATION_DELAY_SECONDS = 15 * 60;
+
 export const productionIdentityKinds = [
   'controlled_human_account',
   'platform_service_account',
@@ -38,6 +40,14 @@ export const productionOwnerBaseline = {
   legalAndRetentionOwner: 'product_owner',
   providerOperationsOwner: 'platform_operations',
   readinessPolicyOwner: 'technical_owner',
+} as const;
+
+export const productionGovernanceProfile = {
+  automatedAuthorityVerificationRequired: true,
+  humanApproverCount: 1,
+  humanReviewerCount: 1,
+  minimumConfirmationDelaySeconds: SINGLE_OWNER_PROVISIONING_CONFIRMATION_DELAY_SECONDS,
+  mode: 'single_owner',
 } as const;
 
 const serviceAccountRoles = new Set<ChainAnalysisGovernanceRole>([
@@ -78,7 +88,7 @@ export const productionProvisioningIdentitySchema = z
 const productionProvisioningPlanInputShape = {
   approval: mainnetSamplingSourceApprovalSchema,
   authorizationValidUntil: z.string().datetime({ offset: true }),
-  identities: z.array(productionProvisioningIdentitySchema).length(9),
+  identities: z.array(productionProvisioningIdentitySchema).length(8),
   provisionedAt: z.string().datetime({ offset: true }),
   provisionedByHash: fingerprintSchema,
 } as const;
@@ -90,7 +100,18 @@ export const productionProvisioningPlanInputSchema = z
 
 const productionProvisioningPlanCoreShape = {
   ...productionProvisioningPlanInputShape,
-  authorizations: z.array(governanceAuthorizationSchema).length(9),
+  authorizations: z.array(governanceAuthorizationSchema).length(8),
+  governanceProfile: z
+    .object({
+      automatedAuthorityVerificationRequired: z.literal(true),
+      humanApproverCount: z.literal(1),
+      humanReviewerCount: z.literal(1),
+      minimumConfirmationDelaySeconds: z.literal(
+        SINGLE_OWNER_PROVISIONING_CONFIRMATION_DELAY_SECONDS,
+      ),
+      mode: z.literal('single_owner'),
+    })
+    .strict(),
   ownerBaseline: z
     .object({
       governanceOwner: z.literal('product_owner'),
@@ -173,6 +194,7 @@ const productionProvisioningVerificationClaimCoreShape = {
   ),
   planFingerprint: fingerprintSchema,
   verificationEvidenceHash: fingerprintSchema,
+  verificationKind: z.literal('automated_policy_verifier'),
   verifiedAt: z.string().datetime({ offset: true }),
   verifiedByHash: fingerprintSchema,
   version: z.literal(EVM_CHAIN_ANALYSIS_CONTROL_STORE_VERSION),
@@ -235,27 +257,39 @@ export const productionProvisioningApplicationSchema = z
         path: ['verification', 'planFingerprint'],
       });
     }
-    if (!plan.approval.approvedByHashes.includes(verification.verifiedByHash)) {
+    if (verification.verificationKind !== 'automated_policy_verifier') {
       context.addIssue({
         code: 'custom',
-        message: 'External verifier must be one of the independently recorded approvers.',
-        path: ['verification', 'verifiedByHash'],
+        message: 'Single-owner provisioning requires the automated policy verifier.',
+        path: ['verification', 'verificationKind'],
       });
     }
     if (verification.verifiedByHash === plan.provisionedByHash) {
       context.addIssue({
         code: 'custom',
-        message: 'Plan application and external verification require two distinct identities.',
+        message: 'The automated verifier must be distinct from the human owner.',
         path: ['verification', 'verifiedByHash'],
       });
     }
     if (
-      Date.parse(verification.verifiedAt) < Date.parse(plan.approval.approvedAt) ||
+      plan.identities.some((identity) => identity.principalIdHash === verification.verifiedByHash)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'The automated verifier cannot reuse a runtime principal.',
+        path: ['verification', 'verifiedByHash'],
+      });
+    }
+    if (
+      Date.parse(verification.verifiedAt) <
+        Date.parse(plan.approval.approvedAt) +
+          SINGLE_OWNER_PROVISIONING_CONFIRMATION_DELAY_SECONDS * 1_000 ||
       Date.parse(verification.verifiedAt) > Date.parse(plan.provisionedAt)
     ) {
       context.addIssue({
         code: 'custom',
-        message: 'External verification must follow approval and precede plan application.',
+        message:
+          'Automated verification must follow the owner approval confirmation window and precede plan application.',
         path: ['verification', 'verifiedAt'],
       });
     }
@@ -267,11 +301,21 @@ export const productionProvisioningApplicationSchema = z
       ...plan.approval.approvedByHashes,
       ...plan.identities.map((identity) => identity.principalIdHash),
     ]);
-    if (existingEvidence.has(verification.verificationEvidenceHash)) {
+    if (existingEvidence.has(verification.verifiedByHash)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'The automated verifier principal must not reuse an evidence fingerprint.',
+        path: ['verification', 'verifiedByHash'],
+      });
+    }
+    if (
+      existingEvidence.has(verification.verificationEvidenceHash) ||
+      verification.verificationEvidenceHash === verification.verifiedByHash
+    ) {
       context.addIssue({
         code: 'custom',
         message:
-          'External verification evidence must be independent from source and identity evidence.',
+          'Automated verification evidence must be distinct from principals, source evidence, and identity evidence.',
         path: ['verification', 'verificationEvidenceHash'],
       });
     }
@@ -281,9 +325,9 @@ export const productionProvisioningReceiptSchema = z
   .object({
     appliedAt: z.string().datetime({ offset: true }),
     approvalFingerprint: fingerprintSchema,
-    authorizationFingerprints: z.array(fingerprintSchema).length(9),
-    authorizationIds: z.array(z.string().regex(/^authorization_[0-9a-f]{64}$/u)).length(9),
-    identityEvidenceHashes: z.array(fingerprintSchema).length(9),
+    authorizationFingerprints: z.array(fingerprintSchema).length(8),
+    authorizationIds: z.array(z.string().regex(/^authorization_[0-9a-f]{64}$/u)).length(8),
+    identityEvidenceHashes: z.array(fingerprintSchema).length(8),
     plan: productionProvisioningPlanSchema,
     receiptFingerprint: fingerprintSchema,
     receiptId: z.string().regex(/^production_provisioning_receipt_[0-9a-f]{64}$/u),
@@ -381,6 +425,7 @@ export function createProductionProvisioningPlan(
       provisionedAt: parsed.provisionedAt,
       provisionedByHash: parsed.provisionedByHash,
     }),
+    governanceProfile: { ...productionGovernanceProfile },
     identities,
     ownerBaseline: { ...productionOwnerBaseline },
     protocols: ['uniswap_v2', 'uniswap_v3'] as const,
@@ -403,6 +448,7 @@ export function createProductionProvisioningVerificationClaim(
   const parsed = productionProvisioningVerificationClaimInputSchema.parse(input);
   const body = {
     ...parsed,
+    verificationKind: 'automated_policy_verifier' as const,
     version: EVM_CHAIN_ANALYSIS_CONTROL_STORE_VERSION,
   };
   const verificationFingerprint = sha256Fingerprint(body);
@@ -445,6 +491,7 @@ function validateProductionProvisioningPlanInput(
   const approval = input.approval;
   if (
     !sameOrderedValues(approval.sourceKinds, ['official_explorer_export', 'public_rpc']) ||
+    approval.approvedByHashes.length !== 1 ||
     approval.retentionDays !== 90 ||
     approval.publicChainDataOnly !== true ||
     approval.credentialsAllowed !== false ||
@@ -491,16 +538,30 @@ function validateProductionProvisioningPlanInput(
   if (!approval.approvedByHashes.includes(input.provisionedByHash)) {
     context.addIssue({
       code: 'custom',
-      message: 'Provisioning actor must be one of the independently recorded approvers.',
+      message: 'Provisioning actor must be the single recorded human owner.',
       path: ['provisionedByHash'],
     });
   }
   const principalHashes = input.identities.map((identity) => identity.principalIdHash);
   const identityEvidenceHashes = input.identities.map((identity) => identity.identityEvidenceHash);
-  if (new Set(principalHashes).size !== principalHashes.length) {
+  const humanIdentities = input.identities.filter(
+    (identity) => identity.identityKind === 'controlled_human_account',
+  );
+  const serviceIdentities = input.identities.filter(
+    (identity) => identity.identityKind === 'platform_service_account',
+  );
+  const humanPrincipalHashes = new Set(humanIdentities.map((identity) => identity.principalIdHash));
+  const servicePrincipalHashes = serviceIdentities.map((identity) => identity.principalIdHash);
+  if (
+    humanPrincipalHashes.size !== 1 ||
+    !humanPrincipalHashes.has(input.provisionedByHash) ||
+    serviceIdentities.length !== new Set(servicePrincipalHashes).size ||
+    servicePrincipalHashes.includes(input.provisionedByHash)
+  ) {
     context.addIssue({
       code: 'custom',
-      message: 'Every production role requires a distinct principal.',
+      message:
+        'Single-owner provisioning requires one shared human owner principal and distinct service-account principals.',
       path: ['identities'],
     });
   }
@@ -525,15 +586,8 @@ function validateProductionProvisioningPlanInput(
       path: ['identities'],
     });
   }
-  if (approval.approvedByHashes.some((approverHash) => principalHashes.includes(approverHash))) {
-    context.addIssue({
-      code: 'custom',
-      message: 'Out-of-band approval identities cannot receive runtime roles in the same plan.',
-      path: ['identities'],
-    });
-  }
   for (const role of chainAnalysisGovernanceRoles) {
-    const expected = role === 'independent_reviewer' ? 2 : 1;
+    const expected = 1;
     const matches = input.identities.filter((identity) => identity.role === role);
     if (matches.length !== expected) {
       context.addIssue({

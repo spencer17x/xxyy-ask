@@ -41,16 +41,16 @@ export const secretReferenceSchema = z
     message: 'Secret references cannot contain traversal or empty path segments.',
   });
 
-const twoApproverHashesSchema = z
+const ownerApprovalHashesSchema = z
   .array(fingerprintSchema)
-  .min(2)
+  .min(1)
   .max(8)
-  .refine(uniqueValues, 'Control approvals require distinct reviewer hashes.');
+  .refine(uniqueValues, 'Control approvals require unique owner hashes.');
 
 const providerDeploymentCoreShape = {
   adapter: z.enum(chainDataAdapterKinds),
   approvedAt: z.string().datetime({ offset: true }),
-  approvedByHashes: twoApproverHashesSchema,
+  approvedByHashes: ownerApprovalHashesSchema,
   archiveRequired: z.boolean(),
   chainId: evmChainIdSchema,
   configurationFingerprint: fingerprintSchema,
@@ -413,7 +413,7 @@ export const productionAlertingControlEvidenceSchema = z
 
 export const incidentRunbookEvidenceSchema = z
   .object({
-    approvedByHashes: twoApproverHashesSchema,
+    approvedByHashes: ownerApprovalHashesSchema,
     escalationTestPassed: z.boolean(),
     evidenceHash: fingerprintSchema,
     reviewedAt: z.string().datetime({ offset: true }),
@@ -429,7 +429,7 @@ export const incidentRunbookEvidenceSchema = z
 
 export const productionSecurityEvidenceSchema = z
   .object({
-    approvedByHashes: twoApproverHashesSchema,
+    approvedByHashes: ownerApprovalHashesSchema,
     credentialRotationTestPassed: z.boolean(),
     dataRetentionPolicyHash: fingerprintSchema,
     evidenceHash: fingerprintSchema,

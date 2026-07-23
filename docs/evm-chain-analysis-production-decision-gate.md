@@ -24,7 +24,7 @@ readiness_status: not_evaluated
 - 生产 composition root 或独立进程；
 - sampling、review、retention、reconciliation worker 调度；
 - 真实 Provider endpoint/secret reference 配置；
-- 组织身份到八类 control-store role 的映射；
+- 受控人工账号和平台服务账号到八类 control-store role 的映射；
 - 正式 source/legal/retention approval evidence；
 - 真实主网 reviewed corpus、SLO、故障演练、安全或 runbook evidence。
 
@@ -52,6 +52,10 @@ database_boundary: dedicated_database
 selected_source_kinds: [public_rpc, official_explorer_export]
 retention_days: 90
 identity_source: [platform_service_accounts, controlled_human_accounts]
+governance_mode: single_owner
+human_owner_count: 1
+required_human_reviews_per_candidate: 1
+automated_authority_verification_required: true
 governance_owner: product_owner
 provider_operations_owner: platform_operations
 legal_and_retention_owner: product_owner
@@ -66,7 +70,7 @@ authorization_grants: pending
 operations_and_mainnet_evidence: pending
 ```
 
-`owner` 是责任域而不是真实 principal。后续 provisioning 必须把 service account 和受控人工账号映射为稳定 principal hash，并继续满足职责分离和双人复核约束。
+`owner` 是责任域，不代表不同的人。当前产品负责人、平台运维、法律与保留、技术负责人都由同一个真实 owner 承担。单 owner profile 将四个人工治理角色映射到这个稳定受控人工 principal，并将采集、Provider、保留等执行职责映射到不同 service-account principal；它不把同一人的多个账号描述为独立审批人。候选仍必须由服务账号提交、由 owner 复核，生产 plan 还必须经过确认窗口和自动 authority verifier。
 
 ## 已由代码固定的边界
 
@@ -80,7 +84,7 @@ operations_and_mainnet_evidence: pending
 | 路由覆盖           | `direct_pool`、`allowlisted_router`、`complex_route`；复杂路由主要用于 unsupported/coverage，不代表已支持高置信分析                                    | `fixed_by_code`  |
 | 样本来源类型       | `public_rpc`、`official_explorer_export`、`protocol_event_archive`                                                                                     | `fixed_by_code`  |
 | 样本维度           | positive/negative/unsupported、complete/partial/unsupported、canonical/provider conflict/reorg、standard/fee-on-transfer/rebasing/unknown              | `fixed_by_code`  |
-| 治理角色           | submitter、两名独立 reviewer、publisher、retention worker、sampling planner/worker、provider operator、readiness attestor                              | `fixed_by_code`  |
+| 治理角色           | 一个 owner 承担 planner、publisher、reviewer、attestor；submitter、sampling/provider/retention worker 使用隔离 service account                         | `fixed_by_code`  |
 | 故障演练类型       | audit、budget、circuit backend unavailable，malformed payload、provider conflict/rate limit/timeout、reorg                                             | `fixed_by_code`  |
 | Readiness 质量门禁 | 固定 internal gate，至少 20 cases、10 reviewed cases，并包含 V2/V3、provider conflict、allowlisted router 覆盖及固定 precision/recall/determinism 阈值 | `fixed_by_code`  |
 | 运行面             | 当前不得接入 Agent、Capability、MCP、API、CLI 或 Telegram                                                                                              | `fixed_by_scope` |
@@ -91,7 +95,7 @@ operations_and_mainnet_evidence: pending
 
 状态：`confirmed_decision / production_activation_unapproved`
 
-首批只选择 Ethereum 主网，并在真实采集、双人复核和故障演练闭环后再扩链：
+首批只选择 Ethereum 主网，并在真实采集、owner 复核和故障演练闭环后再扩链：
 
 ```text
 target_chain_ids: ["1"]
@@ -156,20 +160,20 @@ secrets: managed_secret_store
 
 状态：`confirmed_ownership / grants_unapproved`
 
-身份来源确认为平台 service account 与受控人工账号。后续必须将每个组织身份一对一映射为稳定 hash，并至少保持以下分离：
+身份来源确认为平台 service account 与受控人工账号，治理模式确认为 `single_owner`：
 
-| 职责                              | 最低要求                       | 已确认责任域            | 真实 grant |
-| --------------------------------- | ------------------------------ | ----------------------- | ---------- |
-| governance publisher              | 不兼任 readiness attestor      | `product_owner`         | `pending`  |
-| provider operator                 | 不自行批准 readiness policy    | `platform_operations`   | `pending`  |
-| readiness attestor                | 只引用 persisted evidence      | `technical_owner`       | `pending`  |
-| sampling planner                  | 不直接完成自己的 sample review | `product_owner`         | `pending`  |
-| sampling worker                   | 仅提交受 lease 约束的 manifest | `platform_operations`   | `pending`  |
-| candidate submitter               | 不能审核自己的 candidate       | `platform_operations`   | `pending`  |
-| independent reviewers             | 至少两名不同受控人工身份       | `governance_owner` 指派 | `pending`  |
-| retention/reconciliation operator | 独立 worker identity           | `platform_operations`   | `pending`  |
+| 职责                              | 最低要求                                     | 已确认责任域          | 真实 grant |
+| --------------------------------- | -------------------------------------------- | --------------------- | ---------- |
+| governance publisher              | 单一 owner；只发布 persisted governance 结果 | `product_owner`       | `pending`  |
+| provider operator                 | 隔离 service account，不生成 readiness 结论  | `platform_operations` | `pending`  |
+| readiness attestor                | 单一 owner；只引用 persisted evidence        | `technical_owner`     | `pending`  |
+| sampling planner                  | 单一 owner；只固定 policy/plan               | `product_owner`       | `pending`  |
+| sampling worker                   | 隔离 service account，仅执行有界采集         | `platform_operations` | `pending`  |
+| candidate submitter               | 隔离 service account，不能审核 candidate     | `platform_operations` | `pending`  |
+| independent reviewer              | 单一 owner，必须与 candidate submitter 分离  | `product_owner`       | `pending`  |
+| retention/reconciliation operator | 隔离、可撤销的 service-account identity      | `platform_operations` | `pending`  |
 
-法律与保留责任域为 `product_owner`；readiness policy 责任域为 `technical_owner`。本文档只记录角色名称；真实 principal hash、授权有效期和撤销状态必须通过受保护 provisioning 写入，不能从本表自动生成。
+四个人工角色共享同一个真实 owner principal，但保留不同的角色 grant、有效期、撤销和审计记录；四个执行角色使用不同 service-account principal。来源/法律/保留只需要 owner 一次批准，随后必须等待至少 15 分钟并由 plan 外的自动 authority verifier 核验精确 fingerprint。自动 verifier 是机器控制，不被描述为第二名审批人。
 
 ### DEC-06：来源、法律和保留策略
 
@@ -195,7 +199,7 @@ approval_valid_from: TBD
 approval_valid_until: TBD
 ```
 
-这里的 `selected_source_kinds` 和 90 天保留期是已确认的产品政策，不是法律意见或可执行 source approval。Provider 访问凭据只能来自 managed secret store，不得进入样本、manifest 或审批材料。真实 source/legal/retention evidence 必须由 `product_owner` 在组织批准系统中完成，control store 只保存其 SHA-256 fingerprint，不能用空值、示例 hash 或 contract fixture 替代。
+这里的 `selected_source_kinds` 和 90 天保留期是已确认的产品政策，不是法律意见或可执行 source approval。Provider 访问凭据只能来自 managed secret store，不得进入样本、manifest 或审批材料。真实 source/legal/retention evidence 必须由唯一 owner 通过受控审批记录完成，control store 只保存其 SHA-256 fingerprint，不能用空值、示例 hash 或 contract fixture 替代。
 
 ### DEC-07：SLO、成本和 Readiness policy
 
@@ -273,6 +277,10 @@ database_boundary: dedicated_database
 selected_source_kinds: [public_rpc, official_explorer_export]
 retention_days: 90
 identity_source: [platform_service_accounts, controlled_human_accounts]
+governance_mode: single_owner
+human_owner_count: 1
+required_human_reviews_per_candidate: 1
+automated_authority_verification_required: true
 governance_owner: product_owner
 provider_operations_owner: platform_operations
 legal_and_retention_owner: product_owner

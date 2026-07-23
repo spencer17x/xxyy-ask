@@ -11,7 +11,7 @@ import {
 import { testHash } from './fixtures.test-helper.js';
 import { authorizationRow, ScriptedPgClient } from './scripted-pg.test-helper.js';
 
-describe('PostgreSQL independent review work store', () => {
+describe('PostgreSQL single-owner review work store', () => {
   it('claims eligible work with authorization, reviewer separation, and SKIP LOCKED', async () => {
     const { handoff } = await createContractOnlySamplingHandoffFixture();
     const reviewer = testHash('review-work-reviewer-a');

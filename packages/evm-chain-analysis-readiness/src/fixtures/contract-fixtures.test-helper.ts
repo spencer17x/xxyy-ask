@@ -56,7 +56,7 @@ export function createContractOnlySamplingFixture(options?: {
   const approval = createMainnetSamplingSourceApproval({
     approvalName: 'contract-only-mainnet-sampling',
     approvedAt: '2026-06-30T00:00:00.000Z',
-    approvedByHashes: [contractHash('sampling-approver-b'), contractHash('sampling-approver-a')],
+    approvedByHashes: [contractHash('single-owner')],
     credentialsAllowed: false,
     legalReviewEvidenceHash: contractHash('contract-only-legal-review'),
     privateDataAllowed: false,
@@ -343,7 +343,7 @@ export function createPassingOperationsEvidence(): ProductionOperationsEvidenceB
   const provider = createProviderDeploymentDescriptor({
     adapter: 'snapshot',
     approvedAt: '2026-07-21T00:00:00.000Z',
-    approvedByHashes: [contractHash('provider-approver-b'), contractHash('provider-approver-a')],
+    approvedByHashes: [contractHash('single-owner')],
     archiveRequired: false,
     chainId: '1',
     configurationFingerprint: contractHash('provider-configuration'),
@@ -437,7 +437,7 @@ export function createPassingOperationsEvidence(): ProductionOperationsEvidenceB
     ],
     providers: [provider],
     runbook: {
-      approvedByHashes: [contractHash('runbook-approver-a'), contractHash('runbook-approver-b')],
+      approvedByHashes: [contractHash('single-owner')],
       escalationTestPassed: true,
       evidenceHash: contractHash('runbook-evidence'),
       reviewedAt: '2026-07-22T10:00:00.000Z',
@@ -446,7 +446,7 @@ export function createPassingOperationsEvidence(): ProductionOperationsEvidenceB
       validUntil: '2026-08-22T00:00:00.000Z',
     },
     security: {
-      approvedByHashes: [contractHash('security-approver-a'), contractHash('security-approver-b')],
+      approvedByHashes: [contractHash('single-owner')],
       credentialRotationTestPassed: true,
       dataRetentionPolicyHash: contractHash('retention-policy'),
       evidenceHash: contractHash('security-evidence'),

@@ -94,7 +94,7 @@ export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
       job_id text primary key,
       candidate_id text not null references evm_chain_control_replay_candidates(candidate_id),
       candidate_fingerprint text not null,
-      slot_ordinal integer not null check (slot_ordinal between 1 and 2),
+      slot_ordinal integer not null check (slot_ordinal = 1),
       not_before timestamptz not null,
       expires_at timestamptz not null,
       status text not null check (status in ('failed', 'queued', 'running', 'succeeded')),
@@ -407,7 +407,7 @@ export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
       verification_fingerprint text not null unique,
       approval_fingerprint text not null
         references evm_chain_control_sampling_approvals(approval_fingerprint),
-      authorization_ids text[] not null check (cardinality(authorization_ids) = 9),
+      authorization_ids text[] not null check (cardinality(authorization_ids) = 8),
       applied_at timestamptz not null,
       payload jsonb not null check (jsonb_typeof(payload) = 'object')
     )
@@ -420,7 +420,7 @@ export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
     create table if not exists evm_chain_control_provisioning_receipt_grants (
       receipt_id text not null
         references evm_chain_control_production_provisioning_receipts(receipt_id),
-      ordinal integer not null check (ordinal between 1 and 9),
+      ordinal integer not null check (ordinal between 1 and 8),
       authorization_id text not null,
       authorization_fingerprint text not null,
       identity_evidence_hash text not null,
@@ -542,6 +542,88 @@ export const CHAIN_ANALYSIS_CONTROL_STORE_MIGRATIONS = [
     create index if not exists evm_chain_control_sampling_jobs_claim_idx
       on evm_chain_control_sampling_jobs (not_before, expires_at, job_id)
       where status in ('queued', 'running')
+  `,
+  `
+    do $single_owner_profile$
+    declare
+      constraint_name text;
+    begin
+      if exists (
+        select 1
+        from evm_chain_control_review_work_jobs
+        where slot_ordinal <> 1
+      ) then
+        raise exception
+          'single-owner migration requires archived or removed legacy multi-slot review jobs';
+      end if;
+      if exists (
+        select 1
+        from evm_chain_control_production_provisioning_receipts
+        where cardinality(authorization_ids) <> 8
+      ) or exists (
+        select 1
+        from evm_chain_control_provisioning_receipt_grants
+        where ordinal not between 1 and 8
+      ) then
+        raise exception
+          'single-owner migration requires archived or removed legacy provisioning receipts';
+      end if;
+
+      for constraint_name in
+        select constraint_record.conname
+        from pg_constraint constraint_record
+        where
+          constraint_record.conrelid =
+            'evm_chain_control_review_work_jobs'::regclass
+          and constraint_record.contype = 'c'
+          and pg_get_constraintdef(constraint_record.oid) like '%slot_ordinal%'
+      loop
+        execute format(
+          'alter table evm_chain_control_review_work_jobs drop constraint %I',
+          constraint_name
+        );
+      end loop;
+      alter table evm_chain_control_review_work_jobs
+        add constraint evm_chain_control_review_work_jobs_single_owner_slot_check
+        check (slot_ordinal = 1);
+
+      for constraint_name in
+        select constraint_record.conname
+        from pg_constraint constraint_record
+        where
+          constraint_record.conrelid =
+            'evm_chain_control_production_provisioning_receipts'::regclass
+          and constraint_record.contype = 'c'
+          and pg_get_constraintdef(constraint_record.oid) like '%authorization_ids%'
+      loop
+        execute format(
+          'alter table evm_chain_control_production_provisioning_receipts drop constraint %I',
+          constraint_name
+        );
+      end loop;
+      alter table evm_chain_control_production_provisioning_receipts
+        add constraint evm_chain_control_provisioning_receipts_single_owner_grants_check
+        check (cardinality(authorization_ids) = 8);
+
+      for constraint_name in
+        select constraint_record.conname
+        from pg_constraint constraint_record
+        where
+          constraint_record.conrelid =
+            'evm_chain_control_provisioning_receipt_grants'::regclass
+          and constraint_record.contype = 'c'
+          and pg_get_constraintdef(constraint_record.oid) like '%ordinal%'
+      loop
+        execute format(
+          'alter table evm_chain_control_provisioning_receipt_grants drop constraint %I',
+          constraint_name
+        );
+      end loop;
+      alter table evm_chain_control_provisioning_receipt_grants
+        add constraint evm_chain_control_provisioning_receipt_grants_single_owner_ordinal_check
+        check (ordinal between 1 and 8);
+    end;
+    $single_owner_profile$
   `,
   `
     create or replace function reject_evm_chain_control_artifact_mutation()

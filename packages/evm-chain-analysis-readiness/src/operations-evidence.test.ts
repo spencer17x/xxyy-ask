@@ -65,11 +65,11 @@ describe('production data-plane evidence contracts', () => {
     ).toBe(false);
   });
 
-  it('normalizes provider approvals and content-addresses redacted audit records', () => {
+  it('accepts one owner approval and content-addresses redacted audit records', () => {
     const descriptor = createProviderDeploymentDescriptor({
       adapter: 'snapshot',
       approvedAt: '2026-07-21T00:00:00.000Z',
-      approvedByHashes: [contractHash('approver-b'), contractHash('approver-a')],
+      approvedByHashes: [contractHash('single-owner')],
       archiveRequired: false,
       chainId: '1',
       configurationFingerprint: contractHash('configuration'),
@@ -97,6 +97,7 @@ describe('production data-plane evidence contracts', () => {
     });
 
     expect(descriptor.approvedByHashes).toEqual([...descriptor.approvedByHashes].sort());
+    expect(descriptor.approvedByHashes).toEqual([contractHash('single-owner')]);
     expect(descriptor.credentialSecretRefs).toEqual([...descriptor.credentialSecretRefs].sort());
     expect(audit.eventId).toBe(`audit_${audit.eventFingerprint.slice(7)}`);
     expect(JSON.stringify(audit)).not.toContain('https://');

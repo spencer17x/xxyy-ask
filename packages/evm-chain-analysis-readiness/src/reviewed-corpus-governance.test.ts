@@ -56,14 +56,31 @@ describe('reviewed replay corpus governance', () => {
     ).toThrowError(expectGovernanceCode('scanner_fingerprint_mismatch'));
   });
 
-  it('requires two independent approvals and exports deterministic governance lineage', async () => {
+  it('accepts one owner approval and preserves deterministic governance lineage', async () => {
     const { candidate, corpusExport, promotion, reviews } = await createGovernedContractCorpus();
+    const ownerDecision = evaluateReviewedReplayGovernance(
+      candidate,
+      [reviews[0]!],
+      '2026-07-22T04:00:00.000Z',
+    );
+    const ownerPromotion = promoteReviewedReplayCandidate(
+      candidate,
+      [reviews[0]!],
+      '2026-07-22T04:00:00.000Z',
+    );
     const decision = evaluateReviewedReplayGovernance(
       candidate,
       [...reviews].reverse(),
       '2026-07-22T04:00:00.000Z',
     );
 
+    expect(ownerDecision).toMatchObject({
+      approvalCount: 1,
+      reasonCodes: [],
+      rejectionCount: 0,
+      status: 'approved',
+    });
+    expect(ownerPromotion.approvalReviewFingerprints).toEqual([reviews[0]!.reviewFingerprint]);
     expect(decision).toMatchObject({
       approvalCount: 2,
       reasonCodes: [],
@@ -134,6 +151,32 @@ describe('reviewed replay corpus governance', () => {
     ).toMatchObject({
       reasonCodes: ['duplicate_reviewer_identity'],
       status: 'disputed',
+    });
+  });
+
+  it('lets the owner reject a candidate without a second human decision', async () => {
+    const { candidate, payload, sourcePayloadHashes } = await createGovernedContractCorpus();
+    const review = recordReviewedReplayDecision(candidate, {
+      attestations: {
+        independentReview: true,
+        payloadReplayed: true,
+        privacyVerified: true,
+        sourceIntegrityVerified: true,
+      },
+      decision: 'reject',
+      evidencePayloadHashes: sourcePayloadHashes,
+      labelFingerprint: fingerprintReviewedReplayLabel(payload),
+      reasonCodes: ['evidence_insufficient'],
+      reviewedAt: '2026-07-22T02:00:00.000Z',
+      reviewerIdHash: contractHash('single-owner-reviewer'),
+    });
+
+    expect(
+      evaluateReviewedReplayGovernance(candidate, [review], '2026-07-22T04:00:00.000Z'),
+    ).toMatchObject({
+      reasonCodes: ['review_rejected'],
+      rejectionCount: 1,
+      status: 'rejected',
     });
   });
 

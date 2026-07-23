@@ -223,7 +223,7 @@ export const retentionJobStatuses = ['completed', 'queued', 'running'] as const;
 export const retentionJobOutcomes = ['expired_unpromoted', 'tombstoned'] as const;
 export const samplingIntakeJobStatuses = ['failed', 'queued', 'running', 'succeeded'] as const;
 export const reviewWorkJobStatuses = ['failed', 'queued', 'running', 'succeeded'] as const;
-export const REQUIRED_REVIEW_WORK_SLOTS = 2;
+export const REQUIRED_REVIEW_WORK_SLOTS = 1;
 
 export const retentionJobSchema = z
   .object({

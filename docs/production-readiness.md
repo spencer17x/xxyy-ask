@@ -130,12 +130,12 @@ pgvector 注意事项：
 
 - governed corpus export 与 harness evaluation report 的 corpus id/fingerprint/时间闭合；
 - 使用固定 `internalReadinessQualityGate`，调用方不能传入更弱阈值；
-- 每个目标 chain/adapter 有足够的双人审批 provider descriptor、`secretref:` 配置和 budget policy；
+- 每个目标 chain/adapter 有 owner 审批的 provider descriptor、`secretref:` 配置和 budget policy；
 - 跨实例预算、append-only 审计、告警、共享 circuit、安全和 runbook 控制有未过期 evidence；
 - 每个 provider 有新鲜 SLO window 和 circuit snapshot，每类要求的故障演练有新鲜结果；
 - blocking evidence 缺口为 `blocked`，结构完整但实时 SLO/circuit/drill 失败为 `degraded`，全部通过才为 `ready`。
 
-仓库已在独立、未接线的 `packages/evm-chain-analysis-readiness` / `packages/evm-chain-analysis-control-store` 中实现 sampling approval/policy/plan/manifest/coverage、target-agnostic manifest/candidate handoff、双槽 independent review work queue，以及可注入 client 的 Postgres sampling/governance/budget/circuit/audit backend，但没有部署或配置它，也没有真实来源/法务审批、生产授权、真实 reviewer/provider、secret manager、metrics/alerting backend、worker 调度或 reviewed 主网 corpus。实现存在不等于审批或运维 evidence 已通过；创建 review slot 也不等于 replay 或标签审核完成。仍需真实 backend-unavailable 演练、访问控制、加密/备份和告警证明。contract-only 测试 fixture 不得写入生产 evidence store，也不得作为发布证明。详细边界见 [Mainnet Sampling Plan & Evidence Intake Control Plane](evm-chain-analysis-sampling.md)、[Sampling Manifest → Reviewed Replay Candidate Handoff](evm-chain-analysis-sampling-handoff.md)、[Independent Review Work Queue](evm-chain-analysis-review-work-queue.md)、[Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md) 与 [Chain Analysis Governance Persistence & Shared Provider Controls](evm-chain-analysis-control-store.md)。
+仓库已在独立、未接线的 `packages/evm-chain-analysis-readiness` / `packages/evm-chain-analysis-control-store` 中实现 sampling approval/policy/plan/manifest/coverage、target-agnostic manifest/candidate handoff、单槽 owner review work queue，以及可注入 client 的 Postgres sampling/governance/budget/circuit/audit backend，但没有部署或配置它，也没有真实来源/法务审批、生产授权、真实 owner/provider、secret manager、metrics/alerting backend、worker 调度或 reviewed 主网 corpus。实现存在不等于审批或运维 evidence 已通过；创建 review slot 也不等于 replay 或标签审核完成。仍需真实 backend-unavailable 演练、访问控制、加密/备份和告警证明。contract-only 测试 fixture 不得写入生产 evidence store，也不得作为发布证明。详细边界见 [Mainnet Sampling Plan & Evidence Intake Control Plane](evm-chain-analysis-sampling.md)、[Sampling Manifest → Reviewed Replay Candidate Handoff](evm-chain-analysis-sampling-handoff.md)、[Single-owner Review Work Queue](evm-chain-analysis-review-work-queue.md)、[Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md) 与 [Chain Analysis Governance Persistence & Shared Provider Controls](evm-chain-analysis-control-store.md)。
 
 ## Human Handoff And Tickets
 

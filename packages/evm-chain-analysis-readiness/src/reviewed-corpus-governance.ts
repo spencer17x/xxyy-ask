@@ -236,18 +236,18 @@ export function evaluateReviewedReplayGovernance(
   if (reasonCodes.has('retention_expired')) {
     status = 'retention_expired';
   } else if (
-    approvals.length >= 2 &&
+    approvals.length >= 1 &&
     rejections.length === 0 &&
     uniqueReviewers.size === reviews.length
   ) {
     status = 'approved';
   } else if (
-    rejections.length >= 2 &&
+    rejections.length >= 1 &&
     approvals.length === 0 &&
     uniqueReviewers.size === reviews.length
   ) {
     status = 'rejected';
-    reasonCodes.add('two_rejections');
+    reasonCodes.add('review_rejected');
   } else if (rejections.length > 0 || reasonCodes.has('duplicate_reviewer_identity')) {
     status = 'disputed';
   } else {
@@ -304,7 +304,7 @@ export function promoteReviewedReplayCandidate(
   ) {
     throw new ReviewedReplayGovernanceError(
       'promotion_time_invalid',
-      'Promotion must happen after both approvals and before retention expiry.',
+      'Promotion must happen after the owner approval and before retention expiry.',
     );
   }
   const reviewerIdHash = sha256Fingerprint({

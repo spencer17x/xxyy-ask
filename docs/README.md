@@ -14,7 +14,7 @@
 - [EVM Chain Analysis Composition & Evaluation Harness](evm-chain-analysis-harness.md)
 - [Mainnet Sampling Plan & Evidence Intake Control Plane](evm-chain-analysis-sampling.md)
 - [Sampling Manifest → Reviewed Replay Candidate Handoff](evm-chain-analysis-sampling-handoff.md)
-- [Independent Review Work Queue](evm-chain-analysis-review-work-queue.md)
+- [Single-owner Review Work Queue](evm-chain-analysis-review-work-queue.md)
 - [Reviewed Replay Corpus Governance & Production Data-plane Readiness](evm-chain-analysis-readiness.md)
 - [Chain Analysis Governance Persistence & Shared Provider Controls](evm-chain-analysis-control-store.md)
 - [Reproducible Readiness Evidence Ledger](evm-chain-analysis-readiness-evidence-ledger.md)

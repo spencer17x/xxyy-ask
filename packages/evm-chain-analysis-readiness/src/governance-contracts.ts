@@ -334,7 +334,7 @@ export const reviewedReplayGovernanceReasonCodes = [
   'replay_rejected',
   'retention_expired',
   'source_integrity_rejected',
-  'two_rejections',
+  'review_rejected',
 ] as const;
 
 export const reviewedReplayGovernanceDecisionSchema = z
@@ -370,7 +370,7 @@ export const reviewedReplayPromotionSchema = z
   .object({
     approvalReviewFingerprints: z
       .array(fingerprintSchema)
-      .min(2)
+      .min(1)
       .max(MAX_REVIEWED_REPLAY_REVIEWS)
       .refine(uniqueValues, 'Promotion approvals must be unique.'),
     candidateFingerprint: fingerprintSchema,
@@ -480,7 +480,7 @@ const replayExportInclusionSchema = z
   .object({
     approvalReviewFingerprints: z
       .array(fingerprintSchema)
-      .min(2)
+      .min(1)
       .max(MAX_REVIEWED_REPLAY_REVIEWS)
       .refine(uniqueValues, 'Included promotion approvals must be unique.'),
     candidateFingerprint: fingerprintSchema,

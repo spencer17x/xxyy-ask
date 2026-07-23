@@ -53,9 +53,9 @@ export const mainnetSamplingSourceApprovalInputSchema = z
     approvedAt: z.string().datetime({ offset: true }),
     approvedByHashes: z
       .array(fingerprintSchema)
-      .min(2)
+      .min(1)
       .max(8)
-      .refine(uniqueValues, 'Approver identities must be independent and unique.'),
+      .refine(uniqueValues, 'Approver identities must be unique.'),
     legalReviewEvidenceHash: fingerprintSchema,
     publicChainDataOnly: z.literal(true),
     credentialsAllowed: z.literal(false),

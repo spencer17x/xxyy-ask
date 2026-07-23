@@ -158,7 +158,7 @@ reason: corpus_quality_gate_failed
 v0.14b2b 仍需由包外真实部署完成：
 
 1. 真实来源、法律、保留审批及最小权限 identity/grant；
-2. 真实 sampling/review/retention workers 和双人 reviewed mainnet corpus；
+2. 真实 sampling/review/retention workers 和由 owner 复核的 mainnet corpus；
 3. secret manager、provider failover、metrics/alerting、数据库加密/备份/保留；
 4. 新鲜 SLO、故障演练、安全与 runbook evidence；
 5. 由本 ledger 固定精确输入并重新计算的独立审计结论。

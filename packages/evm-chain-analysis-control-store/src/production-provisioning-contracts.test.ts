@@ -13,7 +13,7 @@ import {
 } from './production-provisioning.test-helper.js';
 
 describe('production approval and identity provisioning contracts', () => {
-  it('content-addresses the confirmed baseline with nine least-privilege identities', () => {
+  it('content-addresses the single-owner baseline with eight role bindings', () => {
     const { plan } = createContractOnlyProductionProvisioningFixture();
 
     expect(plan.targetChainIds).toEqual(['1']);
@@ -26,10 +26,16 @@ describe('production approval and identity provisioning contracts', () => {
       providerOperationsOwner: 'platform_operations',
       readinessPolicyOwner: 'technical_owner',
     });
+    expect(plan.governanceProfile).toEqual({
+      automatedAuthorityVerificationRequired: true,
+      humanApproverCount: 1,
+      humanReviewerCount: 1,
+      minimumConfirmationDelaySeconds: 900,
+      mode: 'single_owner',
+    });
     expect(plan.identities.map((identity) => identity.role)).toEqual([
       'candidate_submitter',
       'governance_publisher',
-      'independent_reviewer',
       'independent_reviewer',
       'provider_operator',
       'readiness_attestor',
@@ -37,11 +43,10 @@ describe('production approval and identity provisioning contracts', () => {
       'sampling_planner',
       'sampling_worker',
     ]);
-    expect(plan.authorizations).toHaveLength(9);
+    expect(plan.authorizations).toHaveLength(8);
     expect(plan.identities.map(({ ownerDomain, role }) => [role, ownerDomain])).toEqual([
       ['candidate_submitter', 'platform_operations'],
       ['governance_publisher', 'product_owner'],
-      ['independent_reviewer', 'product_owner'],
       ['independent_reviewer', 'product_owner'],
       ['provider_operator', 'platform_operations'],
       ['readiness_attestor', 'technical_owner'],
@@ -52,12 +57,24 @@ describe('production approval and identity provisioning contracts', () => {
     expect(plan.authorizations.every((authorization) => authorization.roles.length === 1)).toBe(
       true,
     );
+    expect(
+      new Set(
+        plan.identities
+          .filter((identity) => identity.identityKind === 'controlled_human_account')
+          .map((identity) => identity.principalIdHash),
+      ),
+    ).toEqual(new Set([plan.provisionedByHash]));
+    const servicePrincipalHashes = plan.identities
+      .filter((identity) => identity.identityKind === 'platform_service_account')
+      .map((identity) => identity.principalIdHash);
+    expect(servicePrincipalHashes).toHaveLength(4);
+    expect(new Set(servicePrincipalHashes).size).toBe(4);
     expect(plan.planId).toBe(`production_provisioning_plan_${plan.planFingerprint.slice(7)}`);
     expect(JSON.stringify(plan)).not.toMatch(/\b(?:https?|wss?):|secretref:|endpoint/iu);
     expect(plan.approval.credentialsAllowed).toBe(false);
   });
 
-  it('rejects changed retention, fixture markers, duplicate principals, and role-kind drift', () => {
+  it('rejects changed retention, fixture markers, service collisions, and role-kind drift', () => {
     const fixture = createContractOnlyProductionProvisioningFixture();
     const common = {
       approval: fixture.approval,
@@ -73,6 +90,13 @@ describe('production approval and identity provisioning contracts', () => {
     });
     expect(() =>
       createProductionProvisioningPlan({ ...common, approval: wrongRetention }),
+    ).toThrow();
+
+    const multipleApprovers = createContractOnlyProductionApproval({
+      approvedByHashes: [fixture.plan.provisionedByHash, testHash('second-human')],
+    });
+    expect(() =>
+      createProductionProvisioningPlan({ ...common, approval: multipleApprovers }),
     ).toThrow();
 
     const fixtureNamedApproval = createContractOnlyProductionApproval({
@@ -97,6 +121,15 @@ describe('production approval and identity provisioning contracts', () => {
     );
     expect(() =>
       createProductionProvisioningPlan({ ...common, identities: duplicatePrincipal }),
+    ).toThrow();
+
+    const multipleHumanPrincipals = fixture.identities.map((identity) =>
+      identity.role === 'readiness_attestor'
+        ? { ...identity, principalIdHash: testHash('second-human') }
+        : identity,
+    );
+    expect(() =>
+      createProductionProvisioningPlan({ ...common, identities: multipleHumanPrincipals }),
     ).toThrow();
 
     const wrongKind = fixture.identities.map((identity) =>
@@ -145,7 +178,7 @@ describe('production approval and identity provisioning contracts', () => {
     ).toBe(false);
   });
 
-  it('requires exact-plan external verification by a second approver with independent evidence', () => {
+  it('requires exact-plan automated verification after the owner confirmation window', () => {
     const fixture = createContractOnlyProductionProvisioningFixture();
 
     expect(
@@ -156,7 +189,7 @@ describe('production approval and identity provisioning contracts', () => {
     ).toBe(fixture.verification.verificationFingerprint);
 
     const selfVerified = createProductionProvisioningVerificationClaim({
-      authoritySystemId: 'org_approval_registry',
+      authoritySystemId: 'platform_policy_verifier',
       planFingerprint: fixture.plan.planFingerprint,
       verificationEvidenceHash: testHash('verification-self'),
       verifiedAt: '2026-07-24T00:30:00.000Z',
@@ -169,8 +202,50 @@ describe('production approval and identity provisioning contracts', () => {
       }).success,
     ).toBe(false);
 
+    const runtimePrincipalVerification = createProductionProvisioningVerificationClaim({
+      authoritySystemId: 'platform_policy_verifier',
+      planFingerprint: fixture.plan.planFingerprint,
+      verificationEvidenceHash: testHash('verification-runtime-principal'),
+      verifiedAt: '2026-07-24T00:30:00.000Z',
+      verifiedByHash: fixture.plan.identities[0]!.principalIdHash,
+    });
+    expect(
+      productionProvisioningApplicationSchema.safeParse({
+        plan: fixture.plan,
+        verification: runtimePrincipalVerification,
+      }).success,
+    ).toBe(false);
+
+    const verifierAsEvidence = createProductionProvisioningVerificationClaim({
+      authoritySystemId: 'platform_policy_verifier',
+      planFingerprint: fixture.plan.planFingerprint,
+      verificationEvidenceHash: fixture.verification.verifiedByHash,
+      verifiedAt: '2026-07-24T00:30:00.000Z',
+      verifiedByHash: fixture.verification.verifiedByHash,
+    });
+    expect(
+      productionProvisioningApplicationSchema.safeParse({
+        plan: fixture.plan,
+        verification: verifierAsEvidence,
+      }).success,
+    ).toBe(false);
+
+    const prematureVerification = createProductionProvisioningVerificationClaim({
+      authoritySystemId: 'platform_policy_verifier',
+      planFingerprint: fixture.plan.planFingerprint,
+      verificationEvidenceHash: testHash('verification-too-early'),
+      verifiedAt: '2026-07-23T23:05:00.000Z',
+      verifiedByHash: fixture.verification.verifiedByHash,
+    });
+    expect(
+      productionProvisioningApplicationSchema.safeParse({
+        plan: fixture.plan,
+        verification: prematureVerification,
+      }).success,
+    ).toBe(false);
+
     const reusedEvidence = createProductionProvisioningVerificationClaim({
-      authoritySystemId: 'org_approval_registry',
+      authoritySystemId: 'platform_policy_verifier',
       planFingerprint: fixture.plan.planFingerprint,
       verificationEvidenceHash: fixture.plan.approval.legalReviewEvidenceHash,
       verifiedAt: '2026-07-24T00:30:00.000Z',
@@ -184,7 +259,7 @@ describe('production approval and identity provisioning contracts', () => {
     ).toBe(false);
 
     const wrongPlan = createProductionProvisioningVerificationClaim({
-      authoritySystemId: 'org_approval_registry',
+      authoritySystemId: 'platform_policy_verifier',
       planFingerprint: testHash('other-plan'),
       verificationEvidenceHash: testHash('other-plan-verification'),
       verifiedAt: '2026-07-24T00:30:00.000Z',

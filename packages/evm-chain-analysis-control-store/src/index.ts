@@ -58,6 +58,7 @@ export {
 export {
   createProductionProvisioningPlan,
   createProductionProvisioningVerificationClaim,
+  productionGovernanceProfile,
   productionIdentityKinds,
   productionOwnerBaseline,
   productionOwnerDomains,
@@ -68,6 +69,7 @@ export {
   productionProvisioningReceiptSchema,
   productionProvisioningVerificationClaimInputSchema,
   productionProvisioningVerificationClaimSchema,
+  SINGLE_OWNER_PROVISIONING_CONFIRMATION_DELAY_SECONDS,
 } from './production-provisioning-contracts.js';
 export type {
   ProductionIdentityKind,

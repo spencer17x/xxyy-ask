@@ -103,7 +103,7 @@ describe('chain-analysis control-store contracts', () => {
     ).toBe(false);
   });
 
-  it('content-addresses two-slot review work and enforces fenced state shapes', () => {
+  it('content-addresses one-slot owner review work and enforces fenced state shapes', () => {
     const candidateFingerprint = testHash('review-work-candidate');
     const candidateId = `reviewed_${candidateFingerprint.slice(7)}`;
     const base = {

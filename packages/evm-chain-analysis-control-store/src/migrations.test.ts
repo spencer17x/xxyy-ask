@@ -36,6 +36,7 @@ describe('chain-analysis control-store migrations', () => {
     );
     expect(sql).toContain('create table if not exists evm_chain_control_sampling_jobs');
     expect(sql).toContain('create table if not exists evm_chain_control_review_work_jobs');
+    expect(sql).toContain('slot_ordinal integer not null check (slot_ordinal = 1)');
     expect(sql).toContain('create table if not exists evm_chain_control_readiness_policies');
     expect(sql).toContain('create table if not exists evm_chain_control_operations_evidence');
     expect(sql).toContain('create table if not exists evm_chain_control_corpus_evaluation_reports');
@@ -55,6 +56,14 @@ describe('chain-analysis control-store migrations', () => {
     expect(sql).toContain('evm_chain_control_readiness_attestations_lineage_required');
     expect(sql).toContain('evm_chain_control_production_provisioning_receipts_append_only');
     expect(sql).toContain('evm_chain_control_provisioning_receipt_grants_append_only');
+    expect(sql).toContain('cardinality(authorization_ids) = 8');
+    expect(sql).toContain(
+      'single-owner migration requires archived or removed legacy multi-slot review jobs',
+    );
+    expect(sql).toContain(
+      'single-owner migration requires archived or removed legacy provisioning receipts',
+    );
+    expect(sql).toContain('evm_chain_control_review_work_jobs_single_owner_slot_check');
     expect(sql).toContain('policy_fingerprint is not null\n          ) not valid');
     expect(sql).toContain('evm_chain_control_review_work_jobs_reviewer_idx');
     expect(sql).toContain("status in ('running', 'succeeded')");

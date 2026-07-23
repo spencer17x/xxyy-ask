@@ -14,6 +14,7 @@
 - 不直接查询用户账户、订单、钱包余额或私有交易记录。
 - 不提供投资建议。
 - 对边界问题必须返回边界回复，不要编造实时数据。
+- 未接线的链上生产准备采用 `single_owner`：一个受控人工 principal 承担 planner/publisher/reviewer/attestor，采集、Provider 和保留使用隔离 service account；自动 verifier 是补偿控制，不得描述为第二名人工审批人。
 
 ## 技术栈
 
@@ -36,8 +37,8 @@
 - `packages/evm-execution-enrichment-core`：未接线、离线的 EVM call trace、revert 和 allowlisted DEX swap 语义增强。
 - `packages/evm-execution-data-adapter`：未接线、启动时 allowlist 的 callTracer 获取和 Uniswap V2/V3 pool/factory 元数据验证。
 - `packages/evm-chain-analysis-harness`：未接线、不执行网络 I/O 的 transaction/execution/MEV 离线组合、replay corpus 评测和质量门禁。
-- `packages/evm-chain-analysis-readiness`：未接线、无网络 I/O 的 sampling plan/evidence intake、manifest/candidate handoff、reviewed replay 治理、生产数据面证据契约和综合 readiness evaluator；不含真实来源/法务审批、主网样本或 provider backend。
-- `packages/evm-chain-analysis-control-store`：未接线、通过注入 client 执行 SQL 的 Postgres sampling/handoff/治理证据存储、sampling/retention/review worker contract、可重算 readiness evidence ledger、哈希链审计、共享 provider budget 和 circuit CAS backend；不自行创建连接、不访问 RPC/HTTP、不含生产 grant/审批/真实证据。
+- `packages/evm-chain-analysis-readiness`：未接线、无网络 I/O 的 sampling plan/evidence intake、manifest/candidate handoff、单 owner reviewed replay 治理、生产数据面证据契约和综合 readiness evaluator；不含真实来源/法务审批、主网样本或 provider backend。
+- `packages/evm-chain-analysis-control-store`：未接线、通过注入 client 执行 SQL 的 Postgres sampling/handoff/单 owner 治理证据存储、sampling/retention/review worker contract、可重算 readiness evidence ledger、哈希链审计、共享 provider budget 和 circuit CAS backend；不自行创建连接、不访问 RPC/HTTP、不含生产 grant/审批/真实证据。
 - `packages/evm-price-impact-sandwich-core`：未接线、离线的 lossless AMM price impact 和 Sandwich 四态判定。
 - `packages/evm-mev-observation-data-adapter`：未接线、启动时 allowlist 的同区块 swap、transaction-boundary pool state、actor token delta 和多 provider 冲突验证。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:evaluate`、`rag:ask`。

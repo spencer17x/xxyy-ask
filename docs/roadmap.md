@@ -40,6 +40,19 @@
 
 成功标准：同一工作区的增量/全量 Job 不重叠；失败产生非零退出和脱敏 receipt；dry-run 零副作用；API/Telegram 运行面无新写路径；调度平台可以基于退出码和 receipt 新鲜度告警。详细设计见 [Scheduler-safe Knowledge Refresh](knowledge-refresh-operations.md)。
 
+## Goal 23 Single-owner Governance Profile
+
+目标：让链上分析生产准备流程符合当前只有一名真实 owner 的事实，不再把第二名真人作为硬依赖，同时保留服务账号隔离、自动验证、冷静期、不可变审计和 readiness fail-closed。
+
+- [x] 来源、Provider、runbook 和 security approval 允许一个唯一 owner hash；不会把自动 verifier 描述为第二名人工 approver。
+- [x] 每个 sampling handoff 只创建一个 owner review slot；candidate submitter 必须是不同的 service-account principal，一次 owner 批准或拒绝即可产生确定性治理结论。
+- [x] Production provisioning 固定 `single_owner` profile、一个人工 owner、四个隔离 service account、八条 role binding 和八条 authorization。
+- [x] 同一个 owner principal 可承载 planner/publisher/reviewer/attestor 四个独立 grant；角色证据、有效期、撤销和审计仍分别保存。
+- [x] 精确 plan 必须等待至少 15 分钟，并由 plan 外的自动 authority verifier 校验 fingerprint、证据和策略；verifier 不能复用 owner 或 runtime principal。
+- [x] 保持双 Provider、最小权限 Postgres、secret manager、故障演练、真实主网 corpus 和 canonical readiness evaluator 要求不变。
+
+成功标准：单人维护者可以真实完成审批与样本复核，不需要伪造第二个人；自动执行身份不能替代 owner 判断；没有真实 Provider、evidence、数据库、演练和质量门禁时仍不能声明 `ready`。
+
 ## Paused / Out of Scope
 
 - [ ] 实际 MCP adapter、MCP server 和 project skills：当前阶段仍不作为对外或本地调用入口；v0.6 只交付未接线的安全能力平面契约。
@@ -225,14 +238,14 @@
 目标：不接入公开客服、不注册 Capability，先把公开主网样本治理和真实 provider 生产证据定义为可校验、fail-closed 的离线控制面。
 
 - [x] 定义 content-addressed intake 和确定性敏感信息扫描；reviewable payload 强制 public-chain、无 credential、无 private data，并用 scanner/source payload hash 固定证据。
-- [x] 实现双人独立复核、submitter/reviewer 分离、标签指纹、争议/拒绝/过期状态，以及 reviewer identity hash 和审核证据闭合。
+- [x] 实现 owner 复核、submitter/reviewer 分离、标签指纹、争议/拒绝/过期状态，以及 reviewer identity hash 和审核证据闭合；后续单 owner profile 将必需审核数收敛为一。
 - [x] 实现 revision/supersession、retention/deletion tombstone、approved promotion 和带 promotion/approval lineage 的确定性 reviewed corpus export。
 - [x] 定义只接受 `secretref:` 的 provider descriptor、budget policy/reservation/lease/settlement、脱敏持久审计 event、共享 circuit state/coordinator、SLO/告警、故障演练、安全和 incident runbook evidence contract。
 - [x] 实现综合 readiness evaluator：治理 export 必须与 harness report 指纹一致，并使用不可由调用方替换的 `internalReadinessQualityGate`；provider/运维/安全证据缺失或过期为 `blocked`，实时 SLO/circuit/drill 失败为 `degraded`，全部满足才为 `ready`。
 - [x] 增加 contract-only fixtures、16 个治理/预算/运维/readiness/隔离测试和静态运行面 import 检查；fixture 明确不是 reviewed 主网样本或生产证明。
 - [x] 保持 Capability manifest/grant、MCP、LangGraph、API、CLI 和 Telegram 未接线，公开客服边界不变。
 
-成功标准：治理 artifact 可重新验证内容指纹；单人、重复 reviewer、证据/标签不闭合、过期或被篡改的候选不能晋升；明文 endpoint/credential 不能进入契约；caller 不能弱化 quality gate；没有真实 reviewed corpus 时稳定 `blocked`，不伪造 `ready`。详细设计见 [evm-chain-analysis-readiness.md](evm-chain-analysis-readiness.md)。
+成功标准：治理 artifact 可重新验证内容指纹；缺少 owner review、submitter 自审、重复 reviewer、证据/标签不闭合、过期或被篡改的候选不能晋升；明文 endpoint/credential 不能进入契约；caller 不能弱化 quality gate；没有真实 reviewed corpus 时稳定 `blocked`，不伪造 `ready`。详细设计见 [evm-chain-analysis-readiness.md](evm-chain-analysis-readiness.md)。
 
 ## v0.14b1 Governance Persistence & Shared Provider Controls
 
@@ -252,7 +265,7 @@
 
 目标：在不采集真实主网数据、不声称来源/法务审批已完成、也不接入运行面的前提下，把采样范围、quota、manifest 和 intake worker 定义为可审计、fail-closed 的离线契约与 Postgres 状态机。
 
-- [x] 定义 content-addressed 来源/法律/保留审批 evidence contract，固定双人 hash、source kinds、public-only/无 credential/无 private data、有效期、保留策略与外部 evidence hash；仓库只验证结构，不伪造真实审批。
+- [x] 定义 content-addressed 来源/法律/保留审批 evidence contract，固定 owner hash、source kinds、public-only/无 credential/无 private data、有效期、保留策略与外部 evidence hash；仓库只验证结构，不伪造真实审批。
 - [x] 定义分层 sampling policy，强制覆盖目标 chain、Uniswap V2/V3、direct/allowlisted/complex route、positive/negative/unsupported、complete/partial、provider conflict、reorg 和特殊 token。
 - [x] 将每个 stratum quota 确定性展开为最多 500 个稳定 slot；policy、plan、slot 与 approval fingerprint 全部闭合并可重算。
 - [x] 定义公开链 sample manifest：固定 chain/transaction/block、来源 payload hash、provider observation hash、scan、retention 和 slot 维度；provider conflict/reorg 有额外证据门禁，chain/transaction identity 跨 slot 去重。
@@ -278,19 +291,19 @@
 
 成功标准：handoff 可由 persisted manifest 和显式 payload 输入逐字节重算；target mismatch 不能阻止入候选；candidate、retention、handoff 和 audit 要么全部提交要么全部回滚；contract-only fixture 不得被描述为主网 reviewed evidence。详细设计见 [evm-chain-analysis-sampling-handoff.md](evm-chain-analysis-sampling-handoff.md)。
 
-## v0.14b2a3 Independent Review Work Queue
+## v0.14b2a3 Single-owner Review Work Queue
 
-目标：在不部署真实 reviewer、不创建主网审核结论且不接入运行面的前提下，把 sampling handoff candidate 的双人独立复核从“人工约定”变为可并发领取、可恢复、attempt-fenced 且可审计的 Postgres 工作队列。
+目标：在不部署真实 owner、不创建主网审核结论且不接入运行面的前提下，把 sampling handoff candidate 的 owner 复核变为可领取、可恢复、attempt-fenced 且可审计的 Postgres 工作队列。
 
-- [x] 每个新 handoff candidate 在原有单事务内创建两个由 candidate id/fingerprint 与 slot ordinal 派生的 queued review job；相同 handoff 幂等重试不重复入队。
-- [x] 新增 `independent_reviewer` claim store：操作时间 RBAC、submitter 排除、已有 review 排除、同 reviewer 另一槽排除、稳定排序和 `FOR UPDATE SKIP LOCKED`。
+- [x] 每个新 handoff candidate 在原有单事务内创建一个由 candidate id/fingerprint 与 slot ordinal 派生的 queued review job；相同 handoff 幂等重试不重复入队。
+- [x] 新增 `independent_reviewer` claim store：操作时间 RBAC、submitter 排除、已有 review 排除、稳定排序和 `FOR UPDATE SKIP LOCKED`。
 - [x] claim 增加 attempt 并生成不越过 candidate expiry 的 lease；failed attempt 保存 hashed reason 并释放，未耗尽任务可重领，达到默认三次上限后终止领取。
-- [x] handoff review 强制携带 `jobId + attemptCount`；旧 generation、过期 lease、错误 reviewer/candidate fail closed。同一 reviewer 不能完成同 candidate 两槽。
+- [x] handoff review 强制携带 `jobId + attemptCount`；旧 generation、过期 lease、错误 reviewer/candidate fail closed。
 - [x] 不可变 review、job success、`review_recorded` 与 `review_job_completed` 在同一事务提交；普通非 handoff candidate 保留既有直接 review 契约。
-- [x] 补齐 schema/migration、unit/store/isolation tests 与文档；一次性真实 PostgreSQL 验证了双槽、双 reviewer 完成、同 reviewer 排除、三次失败终止和 hash-chain audit，临时数据库已删除。
+- [x] 补齐 schema/migration、unit/store/isolation tests 与文档；旧双槽一次性 PostgreSQL 验证已被单 owner profile 取代，真实激活前需重跑单槽验证。
 - [x] 保持无 RPC/HTTP/provider、无真实 reviewer/主网 evidence，且不被 Agent/Capability/MCP/API/CLI/Telegram 导入。
 
-成功标准：handoff、candidate、retention、两个 review slot 与原有 audit 原子提交；只有持有当前 attempt lease 的独立 reviewer 能提交；并发、失败重领和旧执行者不能产生重复或越权 review；contract-only 通过不能被描述为真实复核完成。详细设计见 [evm-chain-analysis-review-work-queue.md](evm-chain-analysis-review-work-queue.md)。
+成功标准：handoff、candidate、retention、一个 review slot 与原有 audit 原子提交；只有持有当前 attempt lease 且不同于 submitter 的 owner 能提交；并发、失败重领和旧执行者不能产生重复或越权 review；contract-only 通过不能被描述为真实复核完成。详细设计见 [evm-chain-analysis-review-work-queue.md](evm-chain-analysis-review-work-queue.md)。
 
 ## v0.14b2a4 Reproducible Readiness Evidence Ledger
 
@@ -322,26 +335,27 @@
 
 已完成执行单元 **v0.14b2b2a / Goal 20A：Production Provisioning Boundary**：
 
-- [x] 固定 Ethereum chain 1、V2/V3、两类公开来源、90 天保留、已确认 owner baseline 和九个单角色/固定 owner-domain identity 的 content-addressed provisioning plan。
-- [x] 增加无默认实现的 external authority verifier、双 approver 四眼分离、identity evidence/principal hash 唯一性和有效期约束。
-- [x] 增加带 approval/role schedule advisory lock 的 active approval/grant preflight；预先撤销、并发漂移或数据库失败时回滚，原子写入 source approval、九个 grants、带规范化 FK lineage 的 immutable receipt 与治理 audit chain，并支持精确幂等。
+- [x] 固定 Ethereum chain 1、V2/V3、两类公开来源、90 天保留、已确认 owner baseline 和 `single_owner` content-addressed provisioning plan。
+- [x] 一个 owner principal 承担四个人工角色，四个执行角色使用隔离 service account；八条 role binding、evidence、有效期和撤销分别记录。
+- [x] 增加无默认实现的 automated authority verifier、至少 15 分钟确认窗口，以及 owner/runtime/verifier principal 分离。
+- [x] 增加带 approval/role schedule advisory lock 的 active approval/grant preflight；预先撤销、并发漂移或数据库失败时回滚，原子写入 source approval、八个 grants、带规范化 FK lineage 的 immutable receipt 与治理 audit chain，并支持精确幂等。
 - [x] 将既有 authorization revocation 纳入相同 role schedule lock；撤销保持 append-only、可审计且不能被重复 provisioning 静默恢复。
 - [x] 从公共 governance store 移除未验证的 `recordAuthorization()` grant bootstrap；authorization artifact writer 仅在 package 内由 production provisioning 事务调用。
 - [x] 从公共 sampling store 移除可绕过 external verifier 的 `recordSourceApproval()`；sampling policy/plan 只能从已持久化、已验证 approval 开始。
 - [x] 保持无姓名/邮箱/证件/endpoint/credential/secret，无 Agent/Capability/MCP/API/CLI/Telegram 接线；contract-only verifier/hash 不被描述为真实授权。
-- [x] 一次性真实 PostgreSQL 验证 migration 幂等、owner baseline、1 approval / 9 grants / 1 receipt / 9 FK lineage、grant revocation、撤销后 fail closed 和 12 事件 audit chain；临时数据库与脚本已删除，输入仍为 contract-only。
-- [x] 单人开发阶段不伪造第二名 approver/reviewer；仓库边界完成后保持默认未激活，并把真实组织 provisioning 拆分为独立 Release Gate。
+- [x] 旧双人 profile 的一次性 PostgreSQL 验证已明确作废；当前确定性测试覆盖 1 approval / 8 grants / 1 receipt / 8 FK lineage，真实激活前需在目标数据库重跑。
+- [x] 单人开发阶段不伪造第二名 approver/reviewer；自动 verifier 明确是机器补偿控制，不拥有人工审批语义。
 
 仓库侧设计见 [Chain Analysis Production Approval & Identity Provisioning](evm-chain-analysis-production-provisioning.md)。
 
-延期发布门禁 **v0.14b2b2b / Goal 20B：Production Activation Gate**：
+待执行发布门禁 **v0.14b2b2b / Goal 20B：Production Activation Gate**：
 
-状态：`deferred_single_owner`。它不阻塞知识库 Agent、MCP/Skill 设计和其他不连接真实链上数据面的开发，但阻止真实 sampling、生产 Provider、内部 Capability bridge 和任何 production-ready 声明。
+状态：`pending_owner_execution`。第二名真人不再是前置条件；当前仍缺少真实生产基础设施、Provider、evidence、workers、主网 corpus 和演练，因此继续阻止内部 Capability bridge 和任何 production-ready 声明。
 
-- [ ] 增加至少一名真实协作者，确保至少两名真实独立 approver/reviewer；不得由同一人控制多个账号替代独立性。
-- [ ] 由有权人员审查并正式批准已选 Ethereum 主网、来源、法律条件和 90 天数据保留策略，将真实审批 evidence 与 identity/grant 安全写入控制面；代码中的 contract-only artifact 不等于审批。
-- [ ] 提供组织 IdP/审批系统的真实 external verifier，在已迁移的生产 Postgres 中成功持久化并独立核验 receipt、九条 grant lineage 和 audit chain。
-- [ ] 部署最小权限 Postgres、真实 planner/worker/submitter/reviewer identity/grant、sampling/review/retention/reconciliation workers，按 plan 采集、通过 handoff 入候选并由两个独立 reviewer 从 work queue 领取、重放和复核公开主网样本；不把 manifest、handoff、queued slot 或 contract-only fixture 直接当作 reviewed evidence。
+- [ ] owner 正式批准已选 Ethereum 主网、来源、法律条件和 90 天数据保留策略，将真实审批 evidence 与八条 role binding 安全写入控制面；contract-only artifact 不等于审批。
+- [ ] 提供真实 automated authority verifier，在确认窗口后核验精确 plan；在已迁移的生产 Postgres 中持久化并核对 receipt、八条 grant lineage 和 audit chain。
+- [ ] 部署最小权限 Postgres、一个受控 owner principal、四个隔离 service-account principal、对应 grant，以及 sampling/review/retention/reconciliation workers。
+- [ ] 按 plan 采集、通过 handoff 入候选，并由 owner 从单槽 work queue 领取、重放和复核公开主网样本；manifest、handoff、queued slot 或 contract-only fixture 不能直接当作 reviewed evidence。
 - [ ] 实现 secret manager 配置解析、metrics/alerting 和 provider failover；配置数据库最小权限、加密、备份、保留策略，并验证 budget/circuit/audit backend unavailable 时 fail closed。
 - [ ] 执行 timeout、rate limit、provider conflict、reorg、审计/预算/circuit backend unavailable 等演练，提交新鲜 SLO、告警、security 和 runbook evidence。
 - [ ] 在固定 governed corpus 上持续运行 harness，逐条审阅 false positive、false negative 和 positive abstention，实际达到并锁定 internal-readiness gate。

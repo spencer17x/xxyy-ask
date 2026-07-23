@@ -19,7 +19,7 @@ import {
 import { ScriptedPgClient } from './scripted-pg.test-helper.js';
 
 describe('PostgreSQL production approval and identity provisioning store', () => {
-  it('externally verifies and atomically persists approval, nine grants, receipt, and audit', async () => {
+  it('verifies and atomically persists the single-owner approval, eight grants, receipt, and audit', async () => {
     const fixture = createContractOnlyProductionProvisioningFixture();
     const verified: ProductionProvisioningApplication[] = [];
     const authorityVerifier: ProductionProvisioningAuthorityVerifier = {
@@ -41,10 +41,10 @@ describe('PostgreSQL production approval and identity provisioning store', () =>
     });
 
     expect(verified).toHaveLength(1);
-    expect(receipt.plan.identities).toHaveLength(9);
-    expect(receipt.authorizationIds).toHaveLength(9);
+    expect(receipt.plan.identities).toHaveLength(8);
+    expect(receipt.authorizationIds).toHaveLength(8);
     expect(receipt.status).toBe('applied');
-    expect(client.queries.filter((query) => query.tag === 'authorization-insert')).toHaveLength(9);
+    expect(client.queries.filter((query) => query.tag === 'authorization-insert')).toHaveLength(8);
     expect(client.queries.filter((query) => query.tag === 'sampling-approval-insert')).toHaveLength(
       1,
     );
@@ -55,10 +55,10 @@ describe('PostgreSQL production approval and identity provisioning store', () =>
       client.queries.filter(
         (query) => query.tag === 'production-provisioning-receipt-authorization-insert',
       ),
-    ).toHaveLength(9);
+    ).toHaveLength(8);
     expect(client.auditEvents.map(eventKind)).toEqual([
       'sampling_approval_recorded',
-      ...Array.from({ length: 9 }, () => 'authorization_recorded'),
+      ...Array.from({ length: 8 }, () => 'authorization_recorded'),
       'production_provisioning_recorded',
     ]);
     const lockKeys = client.queries
