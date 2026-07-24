@@ -15,8 +15,11 @@ import {
 } from './bot.js';
 import { createTelegramChatRuntime } from './runtime.js';
 import { createTelegramApiClient } from './telegram-api.js';
+import { createTelegramKnowledgeAutomationRuntime } from './knowledge-automation.js';
 
-type TelegramEnv = RagEnv & TelegramBotEnv & Partial<Record<'INIT_CWD', string>>;
+type TelegramEnv = RagEnv &
+  TelegramBotEnv &
+  Partial<Record<'INIT_CWD' | 'TELEGRAM_API_BASE_URL', string>>;
 
 const logger = {
   error(message: string, error?: unknown) {
@@ -36,11 +39,24 @@ async function main(env: TelegramEnv = process.env): Promise<void> {
     config,
     createQualityTracerFromEnv({ ...workspaceEnv }),
   );
-  const api = createTelegramApiClient({ botToken: botConfig.botToken });
+  const knowledgeRuntime = createTelegramKnowledgeAutomationRuntime({
+    botToken: botConfig.botToken,
+    config,
+    ...(workspaceEnv.TELEGRAM_API_BASE_URL === undefined
+      ? {}
+      : { telegramApiBaseUrl: workspaceEnv.TELEGRAM_API_BASE_URL }),
+  });
+  const api = createTelegramApiClient({
+    botToken: botConfig.botToken,
+    ...(workspaceEnv.TELEGRAM_API_BASE_URL === undefined
+      ? {}
+      : { apiBaseUrl: workspaceEnv.TELEGRAM_API_BASE_URL }),
+  });
   const bot = createTelegramBot({
     api,
     chatService: runtime.service,
     config: botConfig,
+    knowledgeAutomation: knowledgeRuntime.automation,
     logger,
   });
   const abortController = new AbortController();
@@ -61,7 +77,7 @@ async function main(env: TelegramEnv = process.env): Promise<void> {
   } finally {
     process.off('SIGINT', stop);
     process.off('SIGTERM', stop);
-    await runtime.close();
+    await Promise.all([runtime.close(), knowledgeRuntime.close()]);
   }
 }
 

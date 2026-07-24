@@ -1,10 +1,15 @@
 import type {
   KnowledgeCandidate,
   KnowledgeCandidateHistory,
+  KnowledgeCandidateSourceChannel,
   KnowledgeCandidateStatus,
   PgKnowledgeCandidateStore,
   ReviseKnowledgeCandidateInput,
 } from './knowledge-candidates.js';
+import type {
+  KnowledgeAutomationController,
+  KnowledgeAutomationRunResult,
+} from './knowledge-automation.js';
 import type {
   KnowledgeConflictReference,
   KnowledgeGovernanceReferenceStore,
@@ -28,6 +33,7 @@ import type {
 } from './trusted-authors.js';
 
 export interface KnowledgeGovernanceServiceOptions {
+  automation?: KnowledgeAutomationController;
   candidateStore: PgKnowledgeCandidateStore;
   trustedAuthorStore: PgTrustedAuthorStore;
   curatorModel?: KnowledgeCuratorModel;
@@ -43,6 +49,7 @@ export interface ImportTelegramKnowledgeInput {
   currentAdministratorVerifiedAt?: string;
   explicitAdminUserIds?: ReadonlySet<string>;
   runId?: string;
+  sourceChannel?: Extract<KnowledgeCandidateSourceChannel, 'telegram' | 'telegram_export'>;
   /** @deprecated Use curationMode. true maps to required; false maps to deterministic. */
   useAgent?: boolean;
 }
@@ -64,6 +71,7 @@ export interface ImportTelegramKnowledgeResult {
   threadCount: number;
   unverifiedAuthorMessageCount: number;
   verifiedAuthorMessageCount: number;
+  automation?: KnowledgeAutomationRunResult;
 }
 
 export interface KnowledgeGovernanceService {
@@ -189,8 +197,19 @@ export function createKnowledgeGovernanceService(
         mode: curationMode,
         ...(options.curatorModel === undefined ? {} : { model: options.curatorModel }),
       });
-      const persisted = await options.candidateStore.createMany(curated.candidates);
-      return createImportResult(extraction, curated, persisted);
+      const candidates =
+        input.sourceChannel === undefined
+          ? curated.candidates
+          : curated.candidates.map((candidate) => ({
+              ...candidate,
+              sourceChannel: input.sourceChannel ?? candidate.sourceChannel,
+            }));
+      const persisted = await options.candidateStore.createMany(candidates);
+      const automation =
+        options.automation === undefined
+          ? undefined
+          : await options.automation.process(persisted.created);
+      return createImportResult(extraction, curated, persisted, automation);
     },
 
     listCandidates(input = {}) {
@@ -228,13 +247,18 @@ function createImportResult(
   extraction: ReturnType<typeof extractTelegramKnowledgeCandidates>,
   curated: KnowledgeCuratorRunResult,
   persisted: Awaited<ReturnType<PgKnowledgeCandidateStore['createMany']>>,
+  automation: KnowledgeAutomationRunResult | undefined,
 ): ImportTelegramKnowledgeResult {
+  const created =
+    automation === undefined
+      ? persisted.created
+      : automation.decisions.map((outcome) => outcome.candidate);
   return {
     adminReplyCount: extraction.adminReplyCount,
     agentCandidateCount: curated.agentCandidateCount,
     agentRunStats: curated.agentRunStats,
     candidateCount: curated.candidates.length,
-    created: persisted.created,
+    created,
     curationMode: curated.curationMode,
     deterministicCandidateCount: curated.deterministicCandidateCount,
     duplicateCount: persisted.duplicateCount,
@@ -246,6 +270,7 @@ function createImportResult(
     threadCount: extraction.threads.length,
     unverifiedAuthorMessageCount: extraction.unverifiedAuthorMessageCount,
     verifiedAuthorMessageCount: extraction.verifiedAuthorMessageCount,
+    ...(automation === undefined ? {} : { automation }),
   };
 }
 

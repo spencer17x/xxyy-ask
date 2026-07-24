@@ -32,6 +32,11 @@ describe('createRagRefreshPlan', () => {
         command: 'pnpm',
         label: 'sync X knowledge',
       },
+      {
+        args: ['rag:knowledge:automation:work', '--', '--limit', '20'],
+        command: 'pnpm',
+        label: 'automate governed knowledge',
+      },
     ]);
   });
 
@@ -62,6 +67,11 @@ describe('createRagRefreshPlan', () => {
         command: 'pnpm',
         label: 'ingest knowledge',
       },
+      {
+        args: ['rag:knowledge:automation:work', '--', '--limit', '20'],
+        command: 'pnpm',
+        label: 'automate governed knowledge',
+      },
     ]);
   });
 
@@ -71,6 +81,11 @@ describe('createRagRefreshPlan', () => {
         args: ['rag:ingest'],
         command: 'pnpm',
         label: 'ingest knowledge',
+      },
+      {
+        args: ['rag:knowledge:automation:work', '--', '--limit', '20'],
+        command: 'pnpm',
+        label: 'automate governed knowledge',
       },
     ]);
   });
@@ -181,7 +196,13 @@ describe('scheduled knowledge refresh state', () => {
         mode: 'incremental',
         runId,
         status: 'succeeded',
-        steps: [{ args: ['rag:sync:x'], command: 'pnpm' }],
+        steps: [
+          { args: ['rag:sync:x'], command: 'pnpm' },
+          {
+            args: ['rag:knowledge:automation:work', '--', '--limit', '20'],
+            command: 'pnpm',
+          },
+        ],
       });
       await expect(stat(path.join(stateDirectory, 'refresh.lock'))).rejects.toMatchObject({
         code: 'ENOENT',

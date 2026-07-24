@@ -72,6 +72,7 @@ interface ResolvedKnowledgeAuthor {
 }
 
 const DEFAULT_ADJACENT_CONTEXT_MESSAGES = 1;
+const MAX_CURRENT_ADMIN_VERIFICATION_AGE_MS = 10 * 60 * 1_000;
 const KNOWLEDGE_ROLES = new Set(['administrator', 'knowledge_editor', 'owner']);
 const OFFICIAL_SOURCE_HOSTS = new Set(['docs.xxyy.io', 'x.com']);
 
@@ -397,7 +398,13 @@ function createRiskFlags(input: {
   if (input.timestamp === undefined) {
     flags.add('missing_message_timestamp');
   }
-  if (input.authorVerification.status === 'telegram_api_current') {
+  if (
+    input.authorVerification.status === 'telegram_api_current' &&
+    !isContemporaneousAdministratorVerification(
+      input.timestamp,
+      input.authorVerification.verifiedAt,
+    )
+  ) {
     flags.add('historical_role_unverified');
   }
   if (input.authorVerification.status === 'explicit_admin_id') {
@@ -425,6 +432,17 @@ function createRiskFlags(input: {
     flags.add('non_official_source');
   }
   return [...flags].sort();
+}
+
+function isContemporaneousAdministratorVerification(
+  messageTimestamp: string | undefined,
+  verifiedAt: string | undefined,
+): boolean {
+  if (messageTimestamp === undefined || verifiedAt === undefined) {
+    return false;
+  }
+  const ageMs = Math.abs(Date.parse(verifiedAt) - Date.parse(messageTimestamp));
+  return Number.isFinite(ageMs) && ageMs <= MAX_CURRENT_ADMIN_VERIFICATION_AGE_MS;
 }
 
 function calculateCandidateQuality(riskFlags: readonly string[]): number {

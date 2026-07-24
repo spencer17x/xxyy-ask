@@ -8,24 +8,25 @@
 - [x] Product RAG：产品问题基于 Postgres + pgvector 检索产品文档和官方 X / Twitter 更新，再调用 OpenAI-compatible chat completion 生成带引用回答。
 - [x] 官方 X / Twitter 同步：`pnpm run app:dev -- --sync` 做增量抓取和入库后启动服务，`pnpm run app:dev -- --full-sync` 做低频全量重建后启动服务。
 - [x] 服务基础面：Web UI、health/deep health、chat/stream、static assets、请求体限制、基础限流和 CORS 配置已保留。
-- [x] Telegram Bot：long polling 入口复用同一套客服 Agent runtime。
+- [x] Telegram Bot：long polling 入口复用同一套客服 Agent runtime，并窄化采集群内当前管理员对用户问题的直接回复。
 - [x] Knowledge Curator MVP：可信作者与角色有效期、Telegram 线程重建、确定性/可选 Agent 提取、脱敏、去重、冲突、质量评分、候选 revision/review/audit、管理 CLI 和发布门禁已具备。
 - [x] Knowledge Curator Auto Mode：默认自动识别确定性路径未覆盖的复杂可信作者线程，模型缺失/单线程失败安全降级，支持三态策略、调用预算和脱敏运行统计。
-- [x] Knowledge Governance Admin Console MVP：独立管理认证与 RBAC、候选上下文/冲突对比、可信作者、Telegram 导入、PublicationJob 状态/租约/安全重试和受控发布 Worker 已具备；公开客服接口保持无鉴权只读。
+- [x] Knowledge Governance Admin Console MVP：独立管理认证与 RBAC、候选上下文/冲突对比、可信作者、Telegram 导入、自动决策原因、PublicationJob 状态/租约和紧急恢复已具备；公开客服接口保持无鉴权只读。
+- [x] Fully Automated Knowledge Governance：严格确定性策略自动批准或拒绝候选，批准项自动入队；对账 Worker 补建任务、最多重试三次并执行完整发布门禁，正常流程无需逐条人工审核。
 - [x] 基础可信度建设：deterministic guard、planner route、tool registry、stream schema 校验、golden QA、基础 reranker extension point 已具备。
 
 ## Goal 21 Knowledge Curator Auto Mode
 
-目标：让群聊知识清洗在不自动批准、不扩大作者权限的前提下自动使用 Curator Agent，同时把成本和 Provider 故障限制在单次导入内。
+目标：让群聊知识清洗在不扩大作者权限的前提下自动使用 Curator Agent，同时把成本和 Provider 故障限制在单次导入内；最终发布决定由独立确定性自动策略负责，不交给模型。
 
 - [x] `auto` 成为 CLI、管理 API 和后台默认模式；只选择包含已验证作者且未被确定性直接回复路径完整覆盖的复杂线程，模型未配置时保留确定性结果。
 - [x] 提供 `auto | deterministic | required` 三态策略；原 `--agent` 映射为 required，新增统一 `--curation-mode`，required 遇到模型缺失、调用失败或超预算时 fail closed。
 - [x] 单次导入最多尝试 20 个稳定排序的 Agent 线程；auto 模式按线程隔离失败并丢弃该线程的部分 proposal，不影响其他线程或确定性候选。
 - [x] 只返回 eligible/attempted/succeeded/failed/跳过计数和 `timeout | provider_error | invalid_output | unknown` 分类，不返回 Provider 异常或消息原文。
-- [x] 管理后台显示模式和脱敏运行统计；作者验证、PII 脱敏、产品边界、去重/冲突、pending-only、人工审核与 PublicationJob 发布门禁保持不变。
+- [x] 管理后台显示模式和脱敏运行统计；作者验证、PII 脱敏、产品边界、去重/冲突与 PublicationJob 发布门禁保持不变，后续严格策略取代逐条人工审核。
 - [x] 使用直接、受控的 Curator 模型调用作为固定流水线叶节点；该流程不需要新增 LangGraph 图，也不向模型暴露批准或发布工具。
 
-成功标准：无模型配置的默认导入仍可运行；auto 中一个 Agent 线程失败不会丢失确定性候选；required 不会静默降级；大导入不会产生无界模型调用；所有新知识仍只能停留在 `pending`。
+成功标准：无模型配置的默认导入仍可运行；auto 中一个 Agent 线程失败不会丢失确定性候选；required 不会静默降级；大导入不会产生无界模型调用；模型没有批准或发布能力。
 
 ## Goal 22 Scheduler-safe Knowledge Refresh
 
@@ -38,7 +39,7 @@
 - [x] 同一工作区使用 mode `0600` 排他锁；活跃同机 PID 阻止重入，死进程锁可恢复，跨主机锁使用 6 小时保守阈值，release token 防止旧执行器删除新锁。
 - [x] 明确外部 cron/systemd/CronJob 负责时间调度、single concurrency 和告警；本地锁不冒充分布式协调，命令不自动 commit/push 抓取结果。
 
-成功标准：同一工作区的增量/全量 Job 不重叠；失败产生非零退出和脱敏 receipt；dry-run 零副作用；API/Telegram 运行面无新写路径；调度平台可以基于退出码和 receipt 新鲜度告警。详细设计见 [Scheduler-safe Knowledge Refresh](knowledge-refresh-operations.md)。
+成功标准：同一工作区的增量/全量 Job 不重叠；失败产生非零退出和脱敏 receipt；dry-run 零副作用；Telegram 只写治理记录而不写 pgvector；调度平台可以基于退出码和 receipt 新鲜度告警。详细设计见 [Scheduler-safe Knowledge Refresh](knowledge-refresh-operations.md)。
 
 ## Goal 23 Single-owner Governance Profile
 
@@ -52,6 +53,19 @@
 - [x] 保持双 Provider、最小权限 Postgres、secret manager、故障演练、真实主网 corpus 和 canonical readiness evaluator 要求不变。
 
 成功标准：单人维护者可以真实完成审批与样本复核，不需要伪造第二个人；自动执行身份不能替代 owner 判断；没有真实 Provider、evidence、数据库、演练和质量门禁时仍不能声明 `ready`。
+
+## Goal 24 Fully Automated Knowledge Governance
+
+目标：移除客服群知识的逐条人工审核前置步骤，在不降低身份、安全和发布门禁的条件下闭合采集、决策、排队、重试和发布。
+
+- [x] `knowledge-automation-v1` 以确定性规则验证来源、提取方式、作者时效、最低 `0.8` 质量、重复/冲突、风险、Agent lineage 和 prompt injection。
+- [x] 合格候选以固定系统主体自动批准并幂等创建 `PublicationJob`；不合格候选自动拒绝并保存稳定原因码。
+- [x] Telegram Bot 实时采集 group/supergroup 中当前管理员的直接回复，管理员证据缓存 5 分钟，验证时间与消息时间最多相差 10 分钟。
+- [x] `rag:knowledge:automation:work` 对账遗留 `pending/approved/failed`，自动补建任务、最多重试三次并执行有租约和 fencing 的发布队列。
+- [x] `rag:refresh` 的增量、全量和 skip-scrape 固定计划都在最后运行自动治理 Worker。
+- [x] 管理后台改为自动治理可观测与紧急恢复面；正常流程不依赖登录、逐条批准或发布申请。
+
+成功标准：可信实时管理员回复可以在 scheduler 周期内自动进入正式知识库；任何身份不明、历史角色无法证明、低质量、重复、冲突、敏感或疑似注入内容都会自动拒绝；失败不会绕过门禁或无限重试。
 
 ## Paused / Out of Scope
 

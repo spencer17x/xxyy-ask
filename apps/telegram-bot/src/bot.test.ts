@@ -98,6 +98,42 @@ describe('createTelegramBot', () => {
     });
   });
 
+  it('silently captures verified group replies for automatic knowledge governance', async () => {
+    const ask = vi.fn(() => Promise.resolve(createResponse()));
+    const sendMessage = createSendMessageMock();
+    const captureReply = vi.fn(() => Promise.resolve(true));
+    const bot = createTelegramBot({
+      api: {
+        getUpdates: vi.fn(),
+        sendMessage,
+        sendPhoto: vi.fn(),
+      },
+      chatService: { ask },
+      config: loadTelegramBotConfig({ TELEGRAM_BOT_TOKEN: 'bot-token' }),
+      knowledgeAutomation: { captureReply },
+    });
+    const message = {
+      chat: { id: -100123, type: 'supergroup' as const },
+      date: 1_774_490_520,
+      from: { id: 123 },
+      message_id: 11,
+      reply_to_message: {
+        chat: { id: -100123, type: 'supergroup' as const },
+        date: 1_774_490_400,
+        from: { id: 456 },
+        message_id: 10,
+        text: 'XXYY 如何设置价格提醒？',
+      },
+      text: '在提醒设置中开启价格提醒，保存后生效。',
+    };
+
+    await bot.handleUpdate({ message, update_id: 10 });
+
+    expect(captureReply).toHaveBeenCalledWith(message);
+    expect(ask).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
   it('streams answer deltas through Telegram message drafts before sending the final reply', async () => {
     const ask = vi.fn(() => Promise.resolve(createResponse()));
     const stream = vi.fn(() =>

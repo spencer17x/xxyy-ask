@@ -188,4 +188,10 @@ export interface TelegramImportResult {
   threadCount: number;
   unverifiedAuthorMessageCount: number;
   verifiedAuthorMessageCount: number;
+  automation?: {
+    approvedCount: number;
+    policyVersion: string;
+    publicationQueuedCount: number;
+    rejectedCount: number;
+  };
 }

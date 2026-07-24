@@ -5,14 +5,15 @@
 ## Current First Slice
 
 - [x] LangGraph 客服 Runtime：`packages/agent-core` 使用 LangGraph JS 组织策略保护、planner、检索工具、证据观察和回答合成。当前只注册 `search_product_docs` 业务工具；账户、订单、钱包余额、私有交易记录、交易分析和投资建议请求会先进入边界或澄清回复。
-- [x] Product RAG：产品问题会检索 Postgres + pgvector 中的知识库 chunks，并通过 OpenAI-compatible chat completion 生成带引用回答。正式来源限定为 `docs.xxyy.io` 官方文档、`x.com/useXXYYio` 官方更新，以及未来经过审核的客服群知识；客服群来源当前为空。
-- [x] Scheduler-safe 知识刷新：`pnpm rag:refresh` 提供外部 scheduler 可调用的 X 增量 Job，`--full` 执行官网/媒体/X 全量重建，`--dry-run` 验证固定计划；实际运行有同工作区锁、stale recovery、步骤级脱敏回执和失败退出，API/Telegram 不自行写库。
+- [x] Product RAG：产品问题会检索 Postgres + pgvector 中的知识库 chunks，并通过 OpenAI-compatible chat completion 生成带引用回答。正式来源限定为 `docs.xxyy.io` 官方文档、`x.com/useXXYYio` 官方更新，以及通过严格自动治理发布的客服群知识。
+- [x] Scheduler-safe 知识刷新：`pnpm rag:refresh` 提供外部 scheduler 可调用的 X 增量 Job，`--full` 执行官网/媒体/X 全量重建，最后统一对账知识候选、补建/重试发布任务并执行队列；`--dry-run` 验证固定计划。实际运行有同工作区锁、stale recovery、步骤级脱敏回执和失败退出。
 - [x] HTTP 服务面：保留 `GET /`、`GET /health`、`GET /health/deep`、`POST /api/chat`、`POST /api/chat/stream` 和 `GET /assets/*`。
 - [x] Web UI：`GET /` 提供静态聊天界面，支持普通回答、流式回答、引用展示和产品知识库附件。
-- [x] Telegram Bot：`pnpm run telegram:dev` 通过 Telegram Bot API long polling 接收文本消息，并以 `channel: "telegram"` 复用同一套 LangGraph 客服 Agent。
-- [x] Knowledge Curator Auto Mode：Telegram Desktop JSON 可按角色有效期验证作者、重建 reply 线程、脱敏、分类、标准化、去重、检查正式 chunk 冲突并生成质量/风险信息；默认 `auto` 只把确定性路径未覆盖的复杂线程交给已配置模型，模型缺失或单线程失败时安全降级并返回脱敏统计，同时保留 deterministic/required 模式和调用预算。所有结果只进入 `pending`，必须人工批准并通过发布门禁才会写入 `admin_verified` 和 pgvector。
-- [x] 知识治理管理面：`GET /admin` 提供独立 Bearer Token 认证和 `viewer/reviewer/publisher/admin` RBAC，支持候选上下文、重复/冲突对比、revision/history、批准、拒绝、可信作者和 Telegram 导入；公开客服 API 仍不暴露知识写入能力。
-- [x] 可靠发布任务：后台只创建 `PublicationJob`；CLI Worker 使用租约领取任务并复用既有发布门禁，支持失败状态、审计、幂等申请和安全重试，最终候选状态与 pgvector ingest 在同一数据库事务完成。
+- [x] Telegram Bot：`pnpm run telegram:dev` 通过 Telegram Bot API long polling 接收文本消息，并以 `channel: "telegram"` 复用同一套 LangGraph 客服 Agent；在 group/supergroup 中还会窄化采集当前管理员对用户问题的直接回复，自动验证身份并进入知识治理。
+- [x] Knowledge Curator Auto Mode：Telegram 实时回复和 Desktop JSON 可按角色有效期验证作者、重建 reply 线程、脱敏、分类、标准化、去重、检查正式 chunk 冲突并生成质量/风险信息；默认 `auto` 只把确定性路径未覆盖的复杂线程交给已配置模型，模型缺失或单线程失败时安全降级并返回脱敏统计，同时保留 deterministic/required 模式和调用预算。
+- [x] 严格自动知识治理：`knowledge-automation-v1` 以确定性规则验证来源、提取方式、作者时效、最低质量、重复/冲突、风险、Agent lineage 和 prompt injection；合格候选自动批准并入队，其余自动拒绝。模型不能决定发布，正常流程没有逐条人工审核。
+- [x] 知识治理管理面：`GET /admin` 提供独立 Bearer Token 认证和 `viewer/reviewer/publisher/admin` RBAC，支持候选上下文、自动原因、重复/冲突对比、revision/history、可信作者、Telegram 导入和发布状态；人工操作只保留为有审计的紧急恢复面，公开客服 API 仍不暴露知识写入能力。
+- [x] 可靠自动发布任务：自动治理幂等创建 `PublicationJob`；`pnpm rag:knowledge:automation:work` 对账遗留状态、补建任务、最多重试三次并用租约执行现有发布门禁，最终候选状态与 pgvector ingest 在同一数据库事务完成。
 - [x] 新旧规则策略：当前问题默认排除被 `supersedes` 替代的知识，历史追溯问题仍可检索旧版本。
 - [x] RAG Trustworthiness v0.2：知识正文和标题/章节元数据先执行凭证脱敏与 prompt injection 隔离；回答上下文按 chunk、完整句子和限制条件打包；模型回答在返回前执行本地 claim grounding，未被安全证据支持的数字、限制、支持状态或操作事实会降级为确定性回答。流式路径先完成同一校验，避免无证据 token 已发送后无法撤回。
 - [x] Bounded Agent Loop v0.3：普通产品问题用完整原问题执行一次检索后直接合成；比较/多模块问题由 observation 识别缺失维度并允许一次或多次受限 query rewrite。max steps、重复输入和无新增证据共同阻止死循环，ask/stream 使用同一充分性与 composer 契约。
@@ -52,6 +53,6 @@
 
 - [ ] 产品知识质量增强：继续补官方文档、X / Twitter 更新和回归样本，让 Product RAG 对新功能更新更稳。
 - [ ] 更多渠道接入：在不改变客服 Agent 核心边界的前提下，继续接入更多入口。
-- [ ] Telegram Guest Mode 教学入口：在候选知识与审核权限模型之上接入 `/teach`、`/approve`、`/reject`，不直接自动发布群聊内容。
+- [ ] Telegram 知识覆盖增强：在保持严格自动决策与直接回复来源约束的前提下，评估多消息线程、编辑/删除事件和更完整的群上下文；不引入 `/approve`、`/reject` 逐条人工流程。
 - [ ] 安全与隐私增强：继续完善数据保留、删除策略和生产告警；Product RAG 的 prompt injection 隔离与敏感信息脱敏已落地。
 - [ ] 链上生产激活（Goal 20B）待 owner 执行：仓库已提供受控 request/plan、Ed25519 machine attestation、独立数据库 CLI、15 分钟 application window、receipt/8-grant lineage/audit verification，并通过一次性 PostgreSQL 集成验证。真实受控人工账号、四个 service account、authority key/policy evidence、目标生产 Postgres、Provider、workers、主网 corpus 和 readiness attestation 仍未部署；完成前不接入运行面，也不声明 production ready。

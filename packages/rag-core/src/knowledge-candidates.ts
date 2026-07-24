@@ -11,7 +11,7 @@ import {
 } from './trusted-authors.js';
 
 export type KnowledgeCandidateStatus = 'approved' | 'pending' | 'published' | 'rejected';
-type KnowledgeCandidateSourceChannel = 'telegram' | 'telegram_export' | 'web';
+export type KnowledgeCandidateSourceChannel = 'telegram' | 'telegram_export' | 'web';
 export type KnowledgeCandidateExtractionMethod =
   | 'agent_assisted'
   | 'deterministic_direct_reply'

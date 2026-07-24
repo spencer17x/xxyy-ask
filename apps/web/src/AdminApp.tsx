@@ -81,7 +81,7 @@ export function AdminApp(): ReactElement {
             <div className="admin-eyebrow">Knowledge Governance</div>
             <h1>{tabTitle(activeTab)}</h1>
           </div>
-          <div className="admin-boundary-badge">受保护管理面 · 发布由 Worker 执行</div>
+          <div className="admin-boundary-badge">受保护管理面 · 严格策略自动治理</div>
         </header>
         <div className="admin-content">
           {activeTab === 'candidates' ? (
@@ -159,10 +159,10 @@ function AdminSidebar({
   session: AdminSession;
 }): ReactElement {
   const tabs: Array<{ id: AdminTab; label: string; meta: string }> = [
-    { id: 'candidates', label: '知识候选', meta: '审核与冲突处理' },
-    { id: 'publications', label: '发布任务', meta: '状态与安全重试' },
+    { id: 'candidates', label: '知识候选', meta: '自动决策与冲突观察' },
+    { id: 'publications', label: '发布任务', meta: '自动队列与故障观察' },
     { id: 'authors', label: '可信作者', meta: 'Telegram 角色有效期' },
-    { id: 'imports', label: 'Telegram 导入', meta: '生成 Pending 候选' },
+    { id: 'imports', label: 'Telegram 导入', meta: '自动清洗、决策与入队' },
   ];
   return (
     <aside className="admin-sidebar">
@@ -208,7 +208,7 @@ function CandidatesPanel({
   permissions: ReadonlySet<AdminPermission>;
   token: string;
 }): ReactElement {
-  const [status, setStatus] = useState<CandidateStatus | ''>('pending');
+  const [status, setStatus] = useState<CandidateStatus | ''>('');
   const [candidates, setCandidates] = useState<KnowledgeCandidate[]>([]);
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [detail, setDetail] = useState<CandidateDetail | undefined>();
@@ -281,11 +281,11 @@ function CandidatesPanel({
             onChange={(event) => setStatus(event.target.value as CandidateStatus | '')}
             value={status}
           >
-            <option value="pending">待审核</option>
+            <option value="">全部</option>
+            <option value="pending">自动处理中</option>
             <option value="approved">已批准</option>
             <option value="rejected">已拒绝</option>
             <option value="published">已发布</option>
-            <option value="">全部</option>
           </select>
         </div>
         <div className="candidate-list">
@@ -420,7 +420,7 @@ function CandidateDetailPanel({
           { body, method: 'POST' },
         );
       },
-      decision === 'approve' ? '候选已批准，等待发布申请。' : '候选已拒绝。',
+      decision === 'approve' ? '紧急批准已记录，可修复发布任务。' : '紧急拒绝已记录。',
     );
 
   const requestPublication = (): Promise<void> =>
@@ -430,7 +430,7 @@ function CandidateDetailPanel({
         `/candidates/${encodeURIComponent(candidate.id)}/publication`,
         { method: 'POST' },
       );
-    }, '发布任务已进入队列。运行受控 publication worker 后会执行门禁与索引。');
+    }, '缺失的发布任务已修复。自动 Worker 会继续执行门禁与索引。');
 
   return (
     <div className="detail-stack">
@@ -453,7 +453,7 @@ function CandidateDetailPanel({
 
       <section className="admin-panel">
         <SectionHeading
-          description="Curator 标准化结果；保存会生成新 revision。"
+          description="Curator 标准化结果。自动治理会直接作出决定；编辑仅用于紧急纠错。"
           title="候选知识"
         />
         <div className="admin-form-grid">
@@ -552,7 +552,7 @@ function CandidateDetailPanel({
 
       <section className="admin-panel">
         <SectionHeading
-          description="批准前逐项检查相似候选和正式知识冲突。"
+          description="自动策略检测到重复或正式知识冲突时会失败关闭并拒绝候选。"
           title="重复与冲突对比"
         />
         {detail.duplicates.length === 0 && detail.conflicts.length === 0 ? (
@@ -583,8 +583,8 @@ function CandidateDetailPanel({
       {canReview ? (
         <section className="admin-panel review-panel">
           <SectionHeading
-            description="审批身份由服务端认证主体写入，浏览器不可指定。"
-            title="审核决策"
+            description="正常流程无需人工操作。这里只处理自动治理被中断后遗留的 pending 候选，并保留认证主体审计。"
+            title="紧急人工覆盖"
           />
           <div className="admin-form-grid">
             <label>
@@ -639,8 +639,11 @@ function CandidateDetailPanel({
       {canPublish ? (
         <section className="admin-panel publication-request-panel">
           <div>
-            <h3>申请受控发布</h3>
-            <p>这里只创建持久化任务。Worker 将执行边界、检索命中、Golden QA 和事务性 ingest。</p>
+            <h3>修复缺失的发布任务</h3>
+            <p>
+              正常情况下自动策略已经创建任务。这里只修复异常遗留；Worker
+              仍会执行边界、检索命中、Golden QA 和事务性 ingest。
+            </p>
           </div>
           <button
             className="admin-primary-button"
@@ -668,7 +671,7 @@ function CandidateDetailPanel({
 
       <section className="admin-panel">
         <SectionHeading
-          description="Revision、审核、发布请求和执行结果均不可变记录。"
+          description="自动决策、紧急覆盖、发布请求和执行结果均保留不可变记录。"
           title="版本与审计"
         />
         <div className="history-grid">
@@ -781,10 +784,13 @@ function PublicationsPanel({
     <div className="admin-stack">
       <section className="admin-panel publication-guide">
         <div>
-          <h2>可靠发布队列</h2>
-          <p>队列使用租约和幂等候选键。执行器崩溃后，过期任务可由下一个 Worker 接管。</p>
+          <h2>自动发布队列</h2>
+          <p>
+            自动治理负责批准、入队和最多三次失败重试。队列使用租约和幂等候选键，执行器崩溃后由下一个
+            Worker 接管。
+          </p>
         </div>
-        <code>pnpm rag:knowledge:publication:work</code>
+        <code>pnpm rag:knowledge:automation:work</code>
       </section>
       <section className="admin-panel">
         <div className="admin-panel-header">
@@ -839,7 +845,7 @@ function PublicationsPanel({
                         onClick={() => void retry(job.id)}
                         type="button"
                       >
-                        安全重试
+                        紧急重试
                       </button>
                     ) : (
                       <span>—</span>
@@ -1078,8 +1084,7 @@ function TelegramImportPanel({
         <div className="import-icon">JSON</div>
         <h2>导入 Telegram Desktop JSON</h2>
         <p>
-          导出内容不会直接进入正式知识库。系统只创建 pending
-          候选，并自动执行脱敏、边界、重复与冲突检查。
+          系统会自动执行身份验证、脱敏、边界、重复与冲突检查；符合严格策略的候选自动批准并进入发布队列，其余候选自动拒绝。
         </p>
         <label className="admin-file-button">
           选择 JSON 文件
@@ -1115,7 +1120,7 @@ function TelegramImportPanel({
           onClick={() => void submit()}
           type="button"
         >
-          {busy ? '正在清洗与提取…' : '生成知识候选'}
+          {busy ? '正在执行自动治理…' : '导入并自动治理'}
         </button>
       </section>
       {result === undefined ? undefined : (
@@ -1131,9 +1136,13 @@ function TelegramImportPanel({
             <Metric label="Agent 可处理线程" value={result.agentRunStats.eligibleThreadCount} />
             <Metric label="Agent 已尝试" value={result.agentRunStats.attemptedThreadCount} />
             <Metric label="Agent 失败" value={result.agentRunStats.failedThreadCount} />
+            <Metric label="自动批准" value={result.automation?.approvedCount ?? 0} />
+            <Metric label="自动拒绝" value={result.automation?.rejectedCount ?? 0} />
+            <Metric label="发布入队" value={result.automation?.publicationQueuedCount ?? 0} />
           </div>
           <div className="admin-alert success">
-            导入完成。所有新知识仍处于 pending，必须人工审核。
+            自动治理完成。通过项将由隔离 Worker 执行检索、Golden QA、Embedding
+            和事务发布；没有人工审核前置步骤。
           </div>
           {agentRunNotice === undefined ? undefined : (
             <div className="admin-alert">{agentRunNotice}</div>
@@ -1157,7 +1166,7 @@ function formatKnowledgeCuratorAgentNotice(
   return [
     `Agent 失败 ${stats.failedThreadCount} 条（超时 ${stats.failureCounts.timeout}、Provider ${stats.failureCounts.provider_error}、输出无效 ${stats.failureCounts.invalid_output}、其他 ${stats.failureCounts.unknown}）。`,
     `跳过 ${skippedCount} 条（模型不可用 ${stats.skippedUnavailableThreadCount}、模式关闭 ${stats.skippedByModeThreadCount}、预算上限 ${stats.skippedBudgetThreadCount}）。`,
-    '这些统计不包含消息原文；请人工检查未生成候选的复杂线程。',
+    '这些统计不包含消息原文；未生成候选的复杂线程会保持失败关闭，不进入正式知识库。',
   ].join(' ');
 }
 
@@ -1285,7 +1294,7 @@ function tabTitle(tab: AdminTab): string {
     case 'authors':
       return '可信作者与角色有效期';
     case 'candidates':
-      return '知识候选审核';
+      return '知识候选自动治理';
     case 'imports':
       return 'Telegram 知识导入';
     case 'publications':

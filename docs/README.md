@@ -8,7 +8,7 @@
 - [开发质量门禁](development-workflow.md)
 - [功能状态](feature-status.md)
 - [生产运行、安全与观测](production-readiness.md)
-- [受控知识演进与 Knowledge Curator](knowledge-evolution.md)
+- [全自动知识演进与 Knowledge Curator](knowledge-evolution.md)
 - [Scheduler-safe Knowledge Refresh](knowledge-refresh-operations.md)
 - [Allowlisted MEV Observation Data Adapter](evm-mev-observation-data-adapter.md)
 - [EVM Chain Analysis Composition & Evaluation Harness](evm-chain-analysis-harness.md)
@@ -103,7 +103,7 @@ POST /api/chat/stream
 pnpm run telegram:dev
 ```
 
-Bot 通过 Telegram Bot API long polling 接收文本消息，转成 `channel: "telegram"` 的客服请求。默认只需要配置 `TELEGRAM_BOT_TOKEN`。图片附件公网 URL、轮询超时和重试间隔都有默认处理，只有特殊部署才需要额外覆盖。
+Bot 通过 Telegram Bot API long polling 接收文本消息，转成 `channel: "telegram"` 的客服请求；在群内还会自动验证并治理当前管理员对用户问题的直接回复。默认只需要配置 `TELEGRAM_BOT_TOKEN`，采集普通群消息时需按部署需要关闭 BotFather Privacy Mode。图片附件公网 URL、轮询超时和重试间隔都有默认处理，只有特殊部署才需要额外覆盖。
 
 ## 边界
 

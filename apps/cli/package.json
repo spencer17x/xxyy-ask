@@ -15,6 +15,7 @@
     "rag:feedback:backlog": "tsx src/index.ts feedback:backlog",
     "rag:ingest": "tsx src/index.ts ingest",
     "rag:knowledge:approve": "tsx src/index.ts knowledge:approve",
+    "rag:knowledge:automation:work": "tsx src/index.ts knowledge:automation:work",
     "rag:knowledge:author:list": "tsx src/index.ts knowledge:author:list",
     "rag:knowledge:author:trust": "tsx src/index.ts knowledge:author:trust",
     "rag:knowledge:history": "tsx src/index.ts knowledge:history",

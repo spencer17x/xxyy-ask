@@ -128,6 +128,34 @@ describe('Telegram knowledge normalization', () => {
     });
   });
 
+  it('treats a Telegram administrator lookup made at message time as current evidence', () => {
+    const result = extractTelegramKnowledgeCandidates(
+      {
+        id: -100123,
+        messages: [
+          { date: '2026-07-24T01:00:00Z', from_id: 'user456', id: 10, text: 'XXYY 支持吗？' },
+          {
+            date: '2026-07-24T01:02:00Z',
+            from_id: 'user123',
+            id: 11,
+            reply_to_message_id: 10,
+            text: '已经支持这个产品功能。',
+          },
+        ],
+      },
+      {
+        currentAdministratorUserIds: new Set(['123']),
+        currentAdministratorVerifiedAt: '2026-07-24T01:03:00Z',
+      },
+    );
+
+    expect(result.candidates[0]?.riskFlags).not.toContain('historical_role_unverified');
+    expect(result.candidates[0]?.authorVerification).toMatchObject({
+      status: 'telegram_api_current',
+      verifiedAt: '2026-07-24T01:03:00.000Z',
+    });
+  });
+
   it('redacts sensitive content before returning an in-memory candidate', () => {
     const result = extractTelegramKnowledgeCandidates(
       {

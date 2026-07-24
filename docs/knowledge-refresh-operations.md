@@ -2,7 +2,7 @@
 
 ## 定位
 
-`pnpm rag:refresh` 是官方文档和官方 X / Twitter 知识更新的一次性运维 Job，不是常驻 daemon。cron、systemd timer、Kubernetes CronJob 或云调度器负责按计划启动它；API、Telegram Bot 和客服 Agent 进程仍然只读正式知识，不自行抓取、迁移或写库。
+`pnpm rag:refresh` 是官方文档、官方 X / Twitter 和客服群候选知识的一次性自动更新 Job，不是常驻 daemon。cron、systemd timer、Kubernetes CronJob 或云调度器负责按计划启动它。API 和客服 Agent 只读正式知识；Telegram Bot 可以创建、自动决定候选并写入发布队列，但不执行迁移、embedding 或 pgvector 发布。
 
 该入口只执行仓库内固定 allowlist 命令，不接受任意 shell command、URL、endpoint、header 或 credential 参数。
 
@@ -27,6 +27,7 @@ pnpm rag:refresh
 
 1. `pnpm x:scrape`
 2. `pnpm rag:sync:x`
+3. `pnpm rag:knowledge:automation:work -- --limit 20`
 
 官网、媒体和 X 的低频全量刷新：
 
@@ -41,8 +42,11 @@ pnpm rag:refresh -- --full
 3. `pnpm docs:audit`
 4. `pnpm x:scrape -- --full`
 5. `pnpm rag:ingest`
+6. `pnpm rag:knowledge:automation:work -- --limit 20`
 
-`--skip-scrape` 只用于已经由受控上游准备好源文件的恢复或重放：增量模式只执行 `rag:sync:x`，全量模式只执行 `rag:ingest`。它不会从任意外部目录导入内容。
+`--skip-scrape` 只用于已经由受控上游准备好源文件的恢复或重放：增量模式执行 `rag:sync:x` 后运行知识自动化，全量模式执行 `rag:ingest` 后运行知识自动化。它不会从任意外部目录导入内容。
+
+最后一步会自动决定异常遗留的 `pending`，为 `approved` 候选幂等补建发布任务，重试尝试次数少于 3 的失败任务，并最多执行 20 条发布。它不会放宽身份、内容或发布门禁；达到重试上限的任务保持失败。
 
 任一步返回非零或无法启动，Job 立即停止并以非零退出；后续步骤不会运行。抓取或审计在最终 ingest 前失败时，线上 pgvector 保持原版本，但工作区中的源文件可能已经变化，需要先审阅差异再重试。命令不会自动创建 Git commit 或 push。
 
@@ -88,7 +92,7 @@ pnpm rag:refresh -- --full
 - 调度器把非零退出视为失败并通知维护者；
 - 监控 `latest.json` 的 `status`、`finishedAt` 和预期新鲜度；
 - 全量 Job 前确认工作区可写、Postgres 已备份且 embedding 配置稳定；
-- 定期执行 `pnpm rag:stats` 和 `pnpm rag:evaluate -- --provider` 做人工验收。
+- 定期执行 `pnpm rag:stats` 和 `pnpm rag:evaluate -- --provider` 做自动健康检查，并对长期 `failed` PublicationJob 建立告警。
 
 调度器应使用受控工作目录和平台 secret 注入环境变量，不在 crontab、命令参数、回执或仓库中写密钥。不可变生产镜像可把该命令作为独立 release/CronJob 运行，但需要为官方源文件提供受控可写工作区；API 容器本身不应获得该写权限。
 
@@ -98,7 +102,7 @@ pnpm rag:refresh -- --full
 2. 查看该步骤自己的受控日志；回执不会复制可能含敏感信息的输出。
 3. 确认没有仍在运行的同工作区 Job，不要手工删除活跃锁。
 4. 若同机进程已退出，下一次运行会自动回收锁；跨主机锁未到 6 小时时先核实远端任务。
-5. 审阅抓取造成的工作区差异，修复来源、Provider 或数据库问题后重跑相同模式。
+5. 检查抓取造成的工作区差异，修复来源、Provider 或数据库问题后重跑相同模式。
 6. 用 `pnpm rag:stats` 确认 ingestion run 和 chunk 时间，再执行必要的问答抽查。
 
 如果 receipt 写入失败，Job 也会以失败结束；知识步骤可能已经成功，因此必须结合数据库 ingestion run 核对，而不是盲目重复全量重建。

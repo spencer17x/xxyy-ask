@@ -168,6 +168,20 @@ describe('parseCliArgs', () => {
       command: 'knowledge:publish',
       id: 'knowledge_candidate_1',
     });
+    expect(
+      parseCliArgs([
+        'knowledge:automation:work',
+        '--',
+        '--limit',
+        '5',
+        '--worker-id',
+        'worker:one',
+      ]),
+    ).toEqual({
+      command: 'knowledge:automation:work',
+      limit: 5,
+      workerId: 'worker:one',
+    });
     expect(parseCliArgs(['knowledge:publication:work'])).toEqual({
       command: 'knowledge:publication:work',
     });
@@ -368,6 +382,13 @@ describe('CLI output formatting', () => {
           succeededThreadCount: 1,
         },
         adminReplyCount: 4,
+        automation: {
+          approvedCount: 1,
+          decisions: [],
+          policyVersion: 'knowledge-automation-v1',
+          publicationQueuedCount: 1,
+          rejectedCount: 0,
+        },
         candidateCount: 2,
         createdCount: 1,
         curationMode: 'auto',
@@ -382,7 +403,7 @@ describe('CLI output formatting', () => {
         unverifiedAuthorMessageCount: 8,
         verifiedAuthorMessageCount: 4,
       }),
-    ).toContain('Extracted 2 candidates: 1 created, 1 duplicates.');
+    ).toContain('Automation knowledge-automation-v1: 1 approved, 0 rejected');
     expect(formatKnowledgeCandidateList([candidate])).toContain(candidate.id);
     expect(
       formatKnowledgePublicationSummary({

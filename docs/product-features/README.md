@@ -1,6 +1,6 @@
 # XXYY 完整知识库
 
-本目录以 https://docs.xxyy.io/ 为 XXYY 官方文档唯一来源，以 https://x.com/useXXYYio 为官方 X 更新唯一来源；客服群知识目录当前留空，只接收后续人工审核发布的聊天知识。
+本目录以 https://docs.xxyy.io/ 为 XXYY 官方文档唯一来源，以 https://x.com/useXXYYio 为官方 X 更新唯一来源；客服群知识只接收通过管理员身份验证、严格自动决策和发布门禁的聊天知识。
 
 ## 覆盖范围
 
@@ -20,7 +20,7 @@
 - `enriched/media/`：图片 OCR sidecar 与逐资产状态清单。
 - `enriched/videos/`：视频字幕、音频转写或关键帧 OCR sidecar，以及视频提取/正文知识覆盖双维度状态清单。
 - `enriched/reviewed/`：从官网内容派生并经人工校正的官方文档兜底。
-- `admin-verified/`：XXYY 客服群审核知识；当前为空，未来只写入通过人工审核和发布门禁的聊天知识。
+- `admin-verified/`：XXYY 客服群治理知识；只由自动发布 Worker 写入通过严格策略和发布门禁的聊天知识。
 - 媒体 sidecar 会把原始图片或视频地址写入 chunk 元数据；检索命中解析文字时可同步返回对应媒体。
 - `xxyy-product-functions.md`：历史中文产品功能聚合归档；仅在 `pages/` 没有可入库页面时作为兼容兜底，不与逐页官网文档重复入库。
 - `xxyy-x-updates.md`：官方 X 历史更新聚合。

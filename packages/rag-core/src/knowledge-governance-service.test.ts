@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { PgKnowledgeCandidateStore } from './knowledge-candidates.js';
+import type { KnowledgeCandidate, PgKnowledgeCandidateStore } from './knowledge-candidates.js';
 import {
   createKnowledgeGovernanceService,
   UnverifiedTelegramKnowledgeAuthorError,
@@ -77,6 +77,48 @@ describe('createKnowledgeGovernanceService', () => {
       },
       curationMode: 'auto',
     });
+  });
+
+  it('runs strict automation immediately after candidate persistence', async () => {
+    const pending = candidateRow('pending');
+    const approved = candidateRow('approved');
+    const process = vi.fn(() =>
+      Promise.resolve({
+        approvedCount: 1,
+        decisions: [
+          {
+            candidate: approved,
+            decision: {
+              decision: 'approve' as const,
+              policyVersion: 'knowledge-automation-v1' as const,
+              reasonCodes: ['approved_strict_policy' as const],
+            },
+          },
+        ],
+        policyVersion: 'knowledge-automation-v1' as const,
+        publicationQueuedCount: 1,
+        rejectedCount: 0,
+      }),
+    );
+    const service = createKnowledgeGovernanceService({
+      automation: {
+        process,
+        reconcile: () => Promise.reject(new Error('not used')),
+      },
+      candidateStore: candidateStore({
+        createMany: () => Promise.resolve({ created: [pending], duplicateCount: 0 }),
+      }),
+      trustedAuthorStore: trustedAuthorStore([trustedAuthor()]),
+    });
+
+    const result = await service.importTelegram({ rawExport: telegramExport() });
+
+    expect(process).toHaveBeenCalledWith([pending]);
+    expect(result.automation).toMatchObject({
+      approvedCount: 1,
+      publicationQueuedCount: 1,
+    });
+    expect(result.created).toEqual([approved]);
   });
 
   it('keeps legacy useAgent semantics and rejects ambiguous mode inputs', async () => {
@@ -263,7 +305,7 @@ function telegramExport() {
   };
 }
 
-function candidateRow(status: 'approved' | 'pending') {
+function candidateRow(status: 'approved' | 'pending'): KnowledgeCandidate {
   return {
     canonicalAnswer: '答案',
     contentHash: 'hash',

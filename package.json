@@ -44,6 +44,7 @@
     "rag:feedback:backlog": "pnpm --filter @xxyy/cli rag:feedback:backlog",
     "rag:ingest": "pnpm --filter @xxyy/cli rag:ingest",
     "rag:knowledge:approve": "pnpm --filter @xxyy/cli rag:knowledge:approve",
+    "rag:knowledge:automation:work": "pnpm --filter @xxyy/cli rag:knowledge:automation:work",
     "rag:knowledge:author:list": "pnpm --filter @xxyy/cli rag:knowledge:author:list",
     "rag:knowledge:author:trust": "pnpm --filter @xxyy/cli rag:knowledge:author:trust",
     "rag:knowledge:history": "pnpm --filter @xxyy/cli rag:knowledge:history",

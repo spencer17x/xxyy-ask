@@ -19,15 +19,21 @@ export interface TelegramUpdate {
   message?: TelegramMessage;
 }
 
-interface TelegramMessage {
+export interface TelegramMessage {
   chat: {
     id: number;
     type?: 'channel' | 'group' | 'private' | 'supergroup';
   };
+  date?: number;
   from?: {
     id: number;
+    is_bot?: boolean;
   };
   message_id: number;
+  reply_to_message?: TelegramMessage;
+  sender_chat?: {
+    id: number;
+  };
   text?: string;
 }
 
@@ -87,7 +93,12 @@ export interface CreateTelegramBotOptions {
   api: TelegramApi;
   chatService: TelegramChatService;
   config: TelegramBotConfig;
+  knowledgeAutomation?: TelegramKnowledgeAutomation;
   logger?: TelegramBotLogger;
+}
+
+export interface TelegramKnowledgeAutomation {
+  captureReply(message: TelegramMessage): Promise<boolean>;
 }
 
 type TelegramChatService = Pick<ChatService, 'ask'> & Partial<Pick<ChatService, 'stream'>>;
@@ -163,6 +174,25 @@ export function createTelegramBot(options: CreateTelegramBotOptions): TelegramBo
 
     const chatId = message.chat.id;
     const text = message.text?.trim();
+    if (
+      text !== undefined &&
+      text.length > 0 &&
+      options.knowledgeAutomation !== undefined &&
+      isGroupChat(message)
+    ) {
+      try {
+        if (await options.knowledgeAutomation.captureReply(message)) {
+          options.logger?.info(
+            `Telegram knowledge reply ${message.chat.id}:${message.message_id} was processed.`,
+          );
+          return;
+        }
+      } catch {
+        options.logger?.error(
+          `Telegram knowledge automation failed for ${message.chat.id}:${message.message_id}.`,
+        );
+      }
+    }
     if (text === undefined || text.length === 0) {
       await options.api.sendMessage({
         chatId,
@@ -225,6 +255,10 @@ export function createTelegramBot(options: CreateTelegramBotOptions): TelegramBo
       }
     },
   };
+}
+
+function isGroupChat(message: TelegramMessage): boolean {
+  return message.chat.type === 'group' || message.chat.type === 'supergroup';
 }
 
 function createTelegramChatRequest(message: TelegramMessage, text: string): ChatRequest {

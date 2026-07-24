@@ -33,6 +33,20 @@ export { formatEvaluationFailureJsonl } from './evaluation-failures.js';
 export { validateAnswerGrounding } from './grounding-validation.js';
 export type { AnswerGroundingValidation, GroundingClaimResult } from './grounding-validation.js';
 export {
+  createKnowledgeAutomationController,
+  evaluateKnowledgeCandidateAutomation,
+  KNOWLEDGE_AUTOMATION_POLICY_VERSION,
+  KNOWLEDGE_AUTOMATION_REVIEWER,
+  knowledgeAutomationReasonCodes,
+} from './knowledge-automation.js';
+export type {
+  KnowledgeAutomationController,
+  KnowledgeAutomationDecision,
+  KnowledgeAutomationOutcome,
+  KnowledgeAutomationReasonCode,
+  KnowledgeAutomationRunResult,
+} from './knowledge-automation.js';
+export {
   createPgKnowledgeCandidateStore,
   InvalidKnowledgeCandidateStateError,
   sanitizeKnowledgeCandidateText,
@@ -45,6 +59,7 @@ export type {
   KnowledgeCandidateHistory,
   KnowledgeCandidateRevision,
   KnowledgeCandidateReviewRecord,
+  KnowledgeCandidateSourceChannel,
   KnowledgeCandidateStatus,
   KnowledgeGovernanceAuditEvent,
   ReviseKnowledgeCandidateInput,

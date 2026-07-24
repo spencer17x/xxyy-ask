@@ -53,11 +53,11 @@ API 内置基础保护：
 知识管理默认关闭。使用 `pnpm admin:token:create -- <id> <role>` 生成高熵令牌，只把 SHA-256 record 配置到 `KNOWLEDGE_ADMIN_TOKENS_JSON`，明文令牌进入组织密码管理器。生产要求：
 
 - 强制 HTTPS；管理入口优先限制在 VPN、零信任代理或独立管理域名。
-- 按 `viewer`、`reviewer`、`publisher`、`admin` 最小授权，不把共享 admin token 发给日常审核人员。
+- 按 `viewer`、`reviewer`、`publisher`、`admin` 最小授权；正常自动化不需要日常审核账号，管理令牌只用于可观测、身份配置和紧急恢复。
 - 轮换或撤销令牌时更新配置并滚动重启 API；审计记录使用稳定 actor ID，不写入令牌。
 - `/admin` 页面设置 CSP、`no-store`、`X-Frame-Options: DENY` 和 `no-referrer`；管理 API 不开放跨域。
-- API 只创建和审核候选、维护可信作者及申请发布，不在 HTTP 请求内执行长时间 ingest，也不直接编辑 pgvector。
-- 发布由 `pnpm rag:knowledge:publication:work` 领取持久化任务，完成/失败写入受 worker ID 与 attempt count fencing 保护。对 `failed`、租约频繁过期、attempt count 异常和长期 queued 建立告警。
+- API 管理面只导入、自动决定候选、维护可信作者及创建发布任务，不在 HTTP 请求内执行长时间 ingest，也不直接编辑 pgvector。Telegram Bot 的实时采集使用相同自动治理，并只写候选、review 和任务。
+- 外部 scheduler 运行 `pnpm rag:knowledge:automation:work`（`rag:refresh` 已包含该步骤）对账状态、补建任务、重试少于三次的失败并执行发布。完成/失败写入受 worker ID 与 attempt count fencing 保护；对达到三次仍 `failed`、租约频繁过期、attempt count 异常和长期 queued 建立告警。
 - 部署先执行 `pnpm rag:migrate`。API 进程不会自行迁移管理表。
 
 当前 Bearer Token adapter 是本地 MVP 的认证边界；接入企业 IdP 时应保持同一 `KnowledgeAdminPrincipal` 与权限契约，避免把身份提供方逻辑写入知识治理核心。
@@ -68,7 +68,7 @@ API 内置基础保护：
 
 - 日志只保留脱敏后的 `messagePreview` 和长度，不保留完整明文问题。
 - `rag_feedback` 会写入反馈问题、答案、intent、引用数和评论；写入前会脱敏凭证类文本。
-- Web 的显式 👍/👎 和 Web/Telegram 的无引用产品回答会进入 `rag_feedback`；`automatic_low_evidence` 只作为人工审核信号，不自动发布知识。
+- Web 的显式 👍/👎 和 Web/Telegram 的无引用产品回答会进入 `rag_feedback`；`automatic_low_evidence` 只作为离线评测和质量告警信号，不会进入知识自动发布路径。
 - LLM prompt 会脱敏用户问题和检索片段中的凭证类文本。
 - `requestId` 可以用于排查单次请求，但不要把它设计成长期用户标识。
 - LangSmith trace 不存 session/user ID 明文；requestId 只用于短期关联。trace retention 应不长于 API 日志，除非经过单独的数据治理审批。
@@ -89,7 +89,7 @@ API 内置基础保护：
 
 ## Deployment And Operations
 
-生产模式不会启动本地 Docker，也不会由 API 服务自动迁移或写库。迁移和知识库写入必须走显式命令。
+生产模式不会启动本地 Docker，也不会由 API 服务自动迁移或写正式知识。管理 API 和 Telegram Bot 只可写治理候选、决策与发布任务；迁移、embedding 和 pgvector 写入必须走独立 Job。
 
 Docker / container 要求：
 
@@ -97,6 +97,7 @@ Docker / container 要求：
 - 运行时通过平台 secret 注入 `OPENAI_API_KEY` 和数据库凭据。
 - 容器启动命令只启动 API / Web 服务；迁移、ingest 和 sync 使用独立 release job 或一次性任务执行。
 - liveness probe 使用 `/health`，readiness 或发布自检可以使用 `/health/deep`。
+- 启用群聊知识实时采集时，确认 Bot 已加入目标群、可调用 `getChatAdministrators`，并按部署需要通过 BotFather 关闭 Privacy Mode；无法验证管理员时自动失败关闭。
 
 单机 Docker Compose 试运行可使用 `pnpm run app:up`。它会后台启动 pgvector、执行迁移、在空库时首次 ingest，并启动 API/Web 与 Telegram；`app:status`、`app:logs`、`app:restart`、`app:stop` 和 `app:down` 用于日常管理。默认端口仅绑定 `127.0.0.1`，服务器应通过 Caddy/Nginx 提供 HTTPS。`app:down` 保留数据库 volume，禁止在没有已验证备份时执行 `docker compose down -v`。
 

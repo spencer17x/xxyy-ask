@@ -46,9 +46,9 @@
 - `apps/chain-operations-cli`：与客服运行面隔离的 Provider/worker 运维入口；验证 manifest/secret、初始化 budget/circuit、执行双 Provider snapshot probe 和 retention/reconciliation 单次 worker。
 - `apps/cli`：`rag:ingest`、`rag:sync:x`、`rag:migrate`、`rag:stats`、`rag:evaluate`、`rag:ask`。
 - `apps/api`：HTTP API 和 Web UI 服务入口。
-- `apps/telegram-bot`：Telegram Bot long polling 入口。
+- `apps/telegram-bot`：Telegram Bot long polling 入口；群内当前管理员直接回复会进入严格自动知识治理，但 Bot 不执行 pgvector 发布。
 - `apps/web`：静态聊天 UI。
-- `scripts/rag-refresh.mjs`：供外部 scheduler 调用的固定知识刷新 Job；提供 dry-run、同工作区锁和脱敏回执，不嵌入 API/Telegram 进程。
+- `scripts/rag-refresh.mjs`：供外部 scheduler 调用的固定知识刷新 Job；提供 dry-run、同工作区锁和脱敏回执，并在最后自动对账、重试和执行群聊知识发布，不嵌入 API/Telegram 进程。
 - `docs/product-features`：知识库种子文档和静态资产。
 
 ## 运行模式
@@ -97,7 +97,7 @@ TRUST_PROXY=false
 - `pnpm run app:dev -- --sync`：启动前检查知识库，空库时 ingest，然后执行增量 X / Twitter 抓取和 `rag:sync:x`。
 - `pnpm run app:dev -- --full-sync`：启动前全量同步 `docs.xxyy.io` 中英文页面、图片 OCR、视频字幕/关键帧和 `x.com/useXXYYio` 更新，经审计后重建知识库。
 - `pnpm run app:dev -- --ingest`：启动前只执行知识库 ingest。
-- `pnpm rag:refresh`：独立增量刷新 Job；`--full` 执行官网/媒体/X 全量重建，`--dry-run` 只验证固定计划。生产定时任务优先使用该入口。
+- `pnpm rag:refresh`：独立增量刷新 Job；`--full` 执行官网/媒体/X 全量重建，两种模式最后都会运行严格自动知识治理与发布队列；`--dry-run` 只验证固定计划。生产定时任务优先使用该入口。
 - `pnpm chain:control:migrate` 与 `pnpm chain:provision:*`：只用于隔离的链上控制面 provisioning；不自动加载 `.env`，不接入客服或 Agent。
 - `NODE_ENV=production pnpm run app:dev`：生产模式跳过本地 Docker，默认不刷新知识库；可加 `--sync` 或 `--full-sync` 显式更新。
 - `pnpm run telegram:dev`：启动 Telegram Bot long polling。
@@ -141,13 +141,14 @@ pnpm run app:dev -- --full-sync
 命令说明：
 
 - `pnpm docs:sync`：根据 `docs.xxyy.io` 中英文 sitemap 同步全部官网 Markdown 页面和站内图片；同步后需要执行 `pnpm rag:ingest`。
-- 正式知识库只接受 `docs.xxyy.io`、`x.com/useXXYYio` 和经审核发布的客服群知识；外部参考资料不参与入库。
+- 正式知识库只接受 `docs.xxyy.io`、`x.com/useXXYYio` 和通过严格自动策略与发布门禁的客服群知识；外部参考资料不参与入库。
 - `pnpm docs:enrich:media`：为官网图片和视频生成独立的 OCR/字幕/转写 sidecar；视频提取状态与经 SHA 校验的正文知识覆盖状态分开记录，无公开字幕且需要完整转写的视频需显式配置 `TRANSCRIPTION_MODEL`。
 - `pnpm docs:audit`：检查官网空页/404、资源 SHA、OCR、视频知识覆盖及其正文证据和英文兜底。
 - `pnpm rag:ingest`：执行数据库迁移、重新生成全部 embeddings、写入 pgvector，并记录 ingestion run。
 - `pnpm rag:sync:x`：同步官方 X / Twitter 更新，只 embedding 新增或变更的 X chunks，不会 prune 旧 chunk。
-- `pnpm rag:refresh`：执行 scheduler-safe 知识刷新，使用 `.rag/knowledge-refresh/refresh.lock` 防止同工作区重入，并写入不含环境变量或异常原文的 latest/历史 receipt；外部 scheduler 仍需配置 single concurrency 和失败告警。
+- `pnpm rag:refresh`：执行 scheduler-safe 知识刷新，使用 `.rag/knowledge-refresh/refresh.lock` 防止同工作区重入，并写入不含环境变量或异常原文的 latest/历史 receipt；固定计划最后运行 `rag:knowledge:automation:work`，外部 scheduler 仍需配置 single concurrency 和失败告警。
 - `pnpm admin:token:create -- <id> <role>`：生成只显示一次的管理令牌和 SHA-256 配置记录。
+- `pnpm rag:knowledge:automation:work`：自动决定遗留候选、补建发布任务、重试少于三次的失败任务，并按 `--limit` 执行发布队列；正常流程不需要逐条人工审核。
 - `pnpm rag:knowledge:publication:work`：领取一条持久化 PublicationJob，执行发布门禁与事务性 ingest；生产 API 不直接执行发布。
 - `pnpm rag:migrate`：只执行数据库迁移，不调用 embedding 或 LLM。
 - `pnpm rag:stats`：查看当前知识库文档数、chunk 数、source URL 数、最新 chunk 更新时间和最近一次 ingestion run。
@@ -176,7 +177,7 @@ env -u DATABASE_URL -u POSTGRES_DB -u POSTGRES_USER -u POSTGRES_PASSWORD OPENAI_
 - 不要在 `docker-compose.yml` 写死数据库密码；使用 `.env` 注入。
 - 不要把真实 API key 写入测试、README 或日志。
 - 不要提交 chain-control request、plan、attestation、receipt、authority private key 或真实 identity/evidence fingerprint；通过受保护的运维通道提供。远程 control DB 必须验证 TLS，且不能与 Product RAG 共库。
-- 生产 API 服务端不负责迁移；迁移和写库由独立 `pnpm rag:refresh` Job、`pnpm run app:dev -- --sync`、`pnpm run app:dev -- --full-sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成。本地 `pnpm run app:dev -- --sync` 可以为空知识库做首次 bootstrap。
+- 生产 API 服务端不负责迁移；迁移和正式知识写库由独立 `pnpm rag:refresh` Job、`pnpm rag:knowledge:automation:work`、`pnpm run app:dev -- --sync`、`pnpm run app:dev -- --full-sync`、`pnpm rag:ingest` 或 `pnpm rag:sync:x` 完成。本地 `pnpm run app:dev -- --sync` 可以为空知识库做首次 bootstrap。Telegram Bot 只允许创建、自动决定候选和排队，不直接写 pgvector。
 - 新增行为需要加测试；风险较高的改动跑 `pnpm check`。
 - 对外错误信息应清晰区分：
   - LLM 配置缺失

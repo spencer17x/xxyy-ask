@@ -21,6 +21,7 @@ import {
   classifyQuestion,
   composeQualityTracers,
   createInMemoryQualityTracer,
+  createKnowledgeAutomationController,
   createKnowledgeGovernanceService,
   createLazyRetriever,
   createLocalRetriever,
@@ -63,6 +64,7 @@ import type {
   KnowledgeCandidate,
   KnowledgeCandidateHistory,
   KnowledgeCandidateStatus,
+  KnowledgeAutomationRunResult,
   KnowledgeCurationMode,
   KnowledgeCuratorAgentRunStats,
   KnowledgePublicationJob,
@@ -169,6 +171,7 @@ type CliCommand =
       reviewedBy: string;
     }
   | { command: 'knowledge:publish'; id: string }
+  | { command: 'knowledge:automation:work'; limit: number; workerId?: string }
   | { command: 'knowledge:publication:work'; workerId?: string }
   | { command: 'migrate' }
   | { command: 'stats' }
@@ -208,6 +211,7 @@ interface TelegramKnowledgeImportSummary {
   threadCount: number;
   unverifiedAuthorMessageCount: number;
   verifiedAuthorMessageCount: number;
+  automation?: KnowledgeAutomationRunResult;
 }
 
 interface KnowledgePublicationSummary {
@@ -217,6 +221,11 @@ interface KnowledgePublicationSummary {
   file: string;
   jobId: string;
   runId?: string;
+}
+
+interface KnowledgeAutomationWorkerSummary {
+  automation: KnowledgeAutomationRunResult;
+  publications: KnowledgePublicationSummary[];
 }
 
 interface CliIo {
@@ -256,6 +265,7 @@ const HELP_TEXT = [
   '  pnpm rag:knowledge:approve -- <id> --reviewer <id> [--effective-at <date>] [--source-url <url>]',
   '  pnpm rag:knowledge:reject -- <id> --reviewer <id> [--note <reason>]',
   '  pnpm rag:knowledge:publish -- <id>',
+  '  pnpm rag:knowledge:automation:work -- [--limit 20] [--worker-id <id>]',
   '  pnpm rag:knowledge:publication:work -- [--worker-id <id>]',
   '  pnpm rag:ask -- "question"',
   '  pnpm rag:ask -- --debug-retrieve "question"',
@@ -317,6 +327,10 @@ export function parseCliArgs(args: readonly string[]): CliCommand {
 
   if (command === 'knowledge:publish') {
     return parseKnowledgePublishArgs(rawRest);
+  }
+
+  if (command === 'knowledge:automation:work') {
+    return parseKnowledgeAutomationWorkArgs(rawRest);
   }
 
   if (command === 'knowledge:publication:work') {
@@ -687,6 +701,47 @@ function parseKnowledgePublicationWorkArgs(rawArgs: readonly string[]): CliComma
   return { command: 'knowledge:publication:work', workerId: args[1] };
 }
 
+function parseKnowledgeAutomationWorkArgs(rawArgs: readonly string[]): CliCommand {
+  const args = stripPnpmSeparator(rawArgs);
+  let limit = 20;
+  let workerId: string | undefined;
+  const seen = new Set<string>();
+  for (let index = 0; index < args.length; index += 2) {
+    const option = args[index];
+    const value = args[index + 1];
+    if (
+      option === undefined ||
+      value === undefined ||
+      !option.startsWith('--') ||
+      value.startsWith('--') ||
+      seen.has(option)
+    ) {
+      return {
+        command: 'help',
+        error:
+          'knowledge:automation:work accepts optional unique --limit <1..100> and --worker-id <id> flags.',
+      };
+    }
+    seen.add(option);
+    if (option === '--limit') {
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+        return { command: 'help', error: '--limit must be an integer between 1 and 100.' };
+      }
+      limit = parsed;
+    } else if (option === '--worker-id') {
+      workerId = value;
+    } else {
+      return { command: 'help', error: `Unknown knowledge automation option: ${option}` };
+    }
+  }
+  return {
+    command: 'knowledge:automation:work',
+    limit,
+    ...(workerId === undefined ? {} : { workerId }),
+  };
+}
+
 function stripPnpmSeparator(args: readonly string[]): readonly string[] {
   return args[0] === '--' ? args.slice(1) : args;
 }
@@ -830,6 +885,11 @@ export function formatTelegramKnowledgeImportSummary(
     `Agent failure categories: ${summary.agentRunStats.failureCounts.timeout} timeout, ${summary.agentRunStats.failureCounts.provider_error} provider, ${summary.agentRunStats.failureCounts.invalid_output} invalid-output, ${summary.agentRunStats.failureCounts.unknown} unknown (no raw error text).`,
     `Verified ${summary.verifiedAuthorMessageCount} author messages; ${summary.unverifiedAuthorMessageCount} other messages were not treated as authoritative.`,
     `Skipped ${summary.skippedBoundaryCount} boundary replies and ${summary.skippedMissingReplyCount} messages without a direct user reply.`,
+    ...(summary.automation === undefined
+      ? []
+      : [
+          `Automation ${summary.automation.policyVersion}: ${summary.automation.approvedCount} approved, ${summary.automation.rejectedCount} rejected, ${summary.automation.publicationQueuedCount} publication jobs queued.`,
+        ]),
   ].join('\n');
 }
 
@@ -852,6 +912,15 @@ export function formatKnowledgePublicationSummary(summary: KnowledgePublicationS
     `Publication job: ${summary.jobId}`,
     `Document: ${summary.file}`,
     ...(summary.runId === undefined ? [] : [`Ingestion run: ${summary.runId}`]),
+  ].join('\n');
+}
+
+export function formatKnowledgeAutomationWorkerSummary(
+  summary: KnowledgeAutomationWorkerSummary,
+): string {
+  return [
+    `Automation ${summary.automation.policyVersion}: ${summary.automation.approvedCount} approved, ${summary.automation.rejectedCount} rejected, ${summary.automation.publicationQueuedCount} queued or running.`,
+    `Published ${summary.publications.length} knowledge candidates in this run.`,
   ].join('\n');
 }
 
@@ -1308,6 +1377,19 @@ export async function runCli(
     try {
       const summary = await publishKnowledgeCandidate({ ...io, cwd: workspaceCwd }, config, parsed);
       writeLine(io.stdout, formatKnowledgePublicationSummary(summary));
+      return 0;
+    } catch (error) {
+      if (writeConfigurationError(io, error)) {
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.command === 'knowledge:automation:work') {
+    try {
+      const summary = await workKnowledgeAutomation({ ...io, cwd: workspaceCwd }, config, parsed);
+      writeLine(io.stdout, formatKnowledgeAutomationWorkerSummary(summary));
       return 0;
     } catch (error) {
       if (writeConfigurationError(io, error)) {
@@ -1900,8 +1982,9 @@ async function importTelegramKnowledgeCandidates(
 
   try {
     const store = createPgKnowledgeCandidateStore({ client: pool });
+    const publicationStore = createPgKnowledgePublicationJobStore({ client: pool });
     const trustedAuthorStore = createPgTrustedAuthorStore({ client: pool });
-    await store.migrate();
+    await publicationStore.migrate();
     const trustedAuthors =
       normalizedExport.chatId === undefined
         ? []
@@ -1940,6 +2023,10 @@ async function importTelegramKnowledgeCandidates(
           })
         : undefined;
     const governance = createKnowledgeGovernanceService({
+      automation: createKnowledgeAutomationController({
+        candidateStore: store,
+        publicationJobStore: publicationStore,
+      }),
       candidateStore: store,
       inspector: createPgKnowledgeMatchInspector({ candidateStore: store, client: pool }),
       trustedAuthorStore,
@@ -1969,6 +2056,7 @@ async function importTelegramKnowledgeCandidates(
       threadCount: result.threadCount,
       unverifiedAuthorMessageCount: result.unverifiedAuthorMessageCount,
       verifiedAuthorMessageCount: result.verifiedAuthorMessageCount,
+      ...(result.automation === undefined ? {} : { automation: result.automation }),
     };
   } finally {
     await pool.end();
@@ -2176,6 +2264,39 @@ async function workKnowledgePublicationQueue(
   } finally {
     await pool.end();
   }
+}
+
+async function workKnowledgeAutomation(
+  io: CliIo,
+  config: ReturnType<typeof loadRagConfig>,
+  command: Extract<CliCommand, { command: 'knowledge:automation:work' }>,
+): Promise<KnowledgeAutomationWorkerSummary> {
+  const pool = createPgPool(config.databaseUrl);
+  let automation: KnowledgeAutomationRunResult;
+  try {
+    const candidateStore = createPgKnowledgeCandidateStore({ client: pool });
+    const publicationStore = createPgKnowledgePublicationJobStore({ client: pool });
+    await publicationStore.migrate();
+    automation = await createKnowledgeAutomationController({
+      candidateStore,
+      publicationJobStore: publicationStore,
+    }).reconcile({ limit: command.limit });
+  } finally {
+    await pool.end();
+  }
+
+  const publications: KnowledgePublicationSummary[] = [];
+  for (let index = 0; index < command.limit; index += 1) {
+    const publication = await workKnowledgePublicationQueue(io, config, {
+      command: 'knowledge:publication:work',
+      ...(command.workerId === undefined ? {} : { workerId: command.workerId }),
+    });
+    if (publication === undefined) {
+      break;
+    }
+    publications.push(publication);
+  }
+  return { automation, publications };
 }
 
 async function executeKnowledgePublicationJob(

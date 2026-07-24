@@ -16,6 +16,11 @@ const COMMANDS = {
     command: 'pnpm',
     label: 'ingest knowledge',
   },
+  automateGovernedKnowledge: {
+    args: ['rag:knowledge:automation:work', '--', '--limit', '20'],
+    command: 'pnpm',
+    label: 'automate governed knowledge',
+  },
   refreshDocs: {
     args: ['docs:sync'],
     command: 'pnpm',
@@ -44,6 +49,7 @@ const COMMANDS = {
 };
 
 const ALLOWED_COMMANDS = [
+  COMMANDS.automateGovernedKnowledge,
   COMMANDS.ingestKnowledge,
   COMMANDS.refreshDocs,
   COMMANDS.enrichMedia,
@@ -342,6 +348,7 @@ function createPlanFromOptions(options) {
     plan.push(COMMANDS.refreshXUpdates(options.full));
   }
   plan.push(options.full ? COMMANDS.ingestKnowledge : COMMANDS.syncXKnowledge);
+  plan.push(COMMANDS.automateGovernedKnowledge);
   return plan.map((command) => ({
     args: [...command.args],
     command: command.command,
